@@ -10,15 +10,27 @@ export class MapMakerScene extends Phaser.Scene {
     private mapData: IMap | null = null;
     private tileGroup!: Phaser.GameObjects.Group;
     private cursorGroup!: Phaser.GameObjects.Group;
+    private dimTexture!: Phaser.GameObjects.RenderTexture;
     
     // editor state
-    private selectedTool: 'place' | 'erase' | 'fill' = 'place';
+    private selectedTool: 'place' | 'erase' | 'fill' | 'select' = 'place';
     private selectedLayer: MapLayer = MapLayer.BACKGROUND;
     private selectedTileId: string | null = null;
     private brushRadius: number = 1;
     private diffusion: number = 100;
-    private shape: 'square' | 'circle' | 'perlin-square' | 'perlin-circle' = 'square';
+    private shape: 'square' | 'circle' | 'perlin-square' | 'perlin-circle' | 'freeform' = 'square';
     private availableTiles: (ITile | ITileGroup)[] = [];
+    
+    // selection state
+    private selection: Set<string> = new Set();
+    private isSelecting: boolean = false;
+    private selectionStart: {x:number, y:number} | null = null;
+    private selectionMoving: boolean = false;
+    private selectionMoveOffset: {x:number, y:number} = {x:0,y:0};
+    private selectionFloatingGroup!: Phaser.GameObjects.Group;
+    private isPasteMode: boolean = false;
+    private pastePreview: {x:number, y:number, id:string}[] = [];
+
     private layerVisibility: Record<MapLayer, boolean> = {
         [MapLayer.BACKGROUND]: true,
         [MapLayer.GROUND]: true,
@@ -70,7 +82,24 @@ export class MapMakerScene extends Phaser.Scene {
         // groups
         this.tileGroup = this.add.group();
         this.cursorGroup = this.add.group();
+        this.selectionFloatingGroup = this.add.group();
         this.gridGraphics = this.add.graphics();
+        
+        // dimming texture
+        this.dimTexture = this.add.renderTexture(0, 0, 800, 600);
+        this.dimTexture.setDepth(150);
+        this.dimTexture.setOrigin(0,0);
+        
+        if (!this.textures.exists('mm-eraser-brush')) {
+            const g = this.make.graphics();
+            g.fillStyle(0xffffff);
+            g.fillRect(0,0,32,32);
+            g.generateTexture('mm-eraser-brush', 32, 32);
+            g.destroy();
+        }
+
+        this.selectionFloatingGroup.setDepth(151);
+
         this.highlightGraphics = this.add.graphics();
         this.highlightGraphics.setDepth(100);
 
@@ -114,6 +143,12 @@ export class MapMakerScene extends Phaser.Scene {
         window.addEventListener('mapmaker:redo', () => this.redo());
         window.addEventListener('mapmaker:zoom-fit', () => this.zoomFit());
 
+        window.addEventListener('mapmaker:copy', () => this.copySelection());
+        window.addEventListener('mapmaker:paste', () => this.pasteSelection());
+        window.addEventListener('mapmaker:stencil', () => this.saveSelectionAsStencil());
+        window.addEventListener('mapmaker:layershift', () => this.shiftSelectionLayer());
+        window.addEventListener('mapmaker:cancel-selection', () => this.clearSelection());
+
         window.addEventListener('mapmaker:ui-enter', () => {
             this.highlightGraphics.clear();
         });
@@ -124,6 +159,13 @@ export class MapMakerScene extends Phaser.Scene {
                 this.updateCursor(this.input.activePointer);
             }
         });
+
+        window.addEventListener('mapmaker:start-test', ((e: CustomEvent) => {
+            const { mapId } = e.detail;
+            this.scene.launch('MapTesterScene', { mapId });
+            this.scene.sleep();
+            if (this.ui) this.ui.hide();
+        }) as EventListener);
 
         this.input.on('gameout', () => {
             this.highlightGraphics.clear();
@@ -214,6 +256,7 @@ export class MapMakerScene extends Phaser.Scene {
         if (snapshot) {
             this.mapData.layers = JSON.parse(snapshot);
             this.renderMap();
+            this.updatePreviewsAll();
             localStorage.setItem(`mm_history_${this.mapData._id}`, JSON.stringify({
                 stack: this.historyStack,
                 index: this.historyIndex
@@ -248,6 +291,10 @@ export class MapMakerScene extends Phaser.Scene {
         if (state.library) {
             this.availableTiles = state.library;
             this.loadTileTextures(state.library);
+        }
+        
+        if (state.clipboard) {
+            (this as any)._clipboard = state.clipboard;
         }
 
         if (state.currentMap && (!this.mapData || this.mapData._id !== state.currentMap._id)) {
@@ -284,6 +331,13 @@ export class MapMakerScene extends Phaser.Scene {
         
         this.tileGroup.clear(true, true);
         
+        // resize dim texture
+        if (this.dimTexture) {
+            this.dimTexture.resize(map.width * 32, map.height * 32);
+            this.dimTexture.setOrigin(0,0);
+            this.dimTexture.clear();
+        }
+
         if (this.availableTiles.length > 0) {
              this.loadTileTextures(this.availableTiles);
         }
@@ -422,7 +476,9 @@ export class MapMakerScene extends Phaser.Scene {
     private onPointerDown(pointer: Phaser.Input.Pointer) {
         this.lastFootprint.clear();
         this.currentActionModified = false;
-
+        
+        this.highlightGraphics.clear(); 
+        
         if (pointer.button === 2 || pointer.button === 1 || (pointer.button === 0 && this.input.keyboard?.checkDown(this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)))) {
             this.isDragging = true;
             this.dragStart.set(pointer.x, pointer.y);
@@ -433,9 +489,31 @@ export class MapMakerScene extends Phaser.Scene {
 
         if (this.mapData?.state !== MapState.DRAFT) return;
         if (this.layerLocked[this.selectedLayer]) return;
+        if (!this.layerVisibility[this.selectedLayer]) return;
 
         if (pointer.button === 0 && this.mapData) {
-            if (this.selectedTool === 'fill') {
+            if (this.selectedTool === 'select') {
+                const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+                const cx = Math.floor(worldPoint.x / 32);
+                const cy = Math.floor(worldPoint.y / 32);
+                const key = `${cx},${cy}`;
+
+                if (this.selection.has(key)) {
+                    this.selectionMoving = true;
+                    this.selectionMoveOffset = { x: 0, y: 0 };
+                    this.dragStart.set(cx, cy);
+                    
+                    if (this.selectionFloatingGroup.getLength() === 0) {
+                         this.updateSelectionVisuals();
+                    }
+                } else {
+                    this.clearSelection();
+                    this.isSelecting = true;
+                    this.selectionStart = { x: cx, y: cy };
+                    this.selection.add(key);
+                    this.updateSelectionVisuals();
+                }
+            } else if (this.selectedTool === 'fill') {
                 this.fillTile(pointer);
             } else {
                 this.paintTile(pointer);
@@ -444,9 +522,21 @@ export class MapMakerScene extends Phaser.Scene {
     }
 
     private onPointerUp(pointer: Phaser.Input.Pointer) {
+        if (this.isSelecting) {
+            this.isSelecting = false;
+            window.dispatchEvent(new CustomEvent('mapmaker:selection-changed', { detail: { hasSelection: this.selection.size > 0 } }));
+            return;
+        }
+
+        if (this.selectionMoving) {
+            this.selectionMoving = false;
+            this.finalizeSelectionMove();
+            return;
+        }
+
         if (pointer.button === 2 && this.isDragging) {
             const dist = Phaser.Math.Distance.Between(pointer.x, pointer.y, this.dragStart.x, this.dragStart.y);
-            if (dist < 5 && this.mapData?.state === MapState.DRAFT && !this.layerLocked[this.selectedLayer]) {
+            if (dist < 5 && this.mapData?.state === MapState.DRAFT && !this.layerLocked[this.selectedLayer] && this.layerVisibility[this.selectedLayer]) {
                 const oldTool = this.selectedTool;
                 this.selectedTool = 'erase';
                 const oldRadius = this.brushRadius;
@@ -481,10 +571,51 @@ export class MapMakerScene extends Phaser.Scene {
             
             this.cameras.main.scrollX = this.targetScroll.x;
             this.cameras.main.scrollY = this.targetScroll.y;
-        } else {
-            this.updateCursor(pointer);
+        } else if (this.selectionMoving) {
+            const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+            const cx = Math.floor(worldPoint.x / 32);
+            const cy = Math.floor(worldPoint.y / 32);
             
-            if (pointer.isDown && this.selectedTool !== 'fill' && this.mapData?.state === MapState.DRAFT && !this.layerLocked[this.selectedLayer]) {
+            const dx = cx - this.dragStart.x;
+            const dy = cy - this.dragStart.y;
+            
+            if (dx !== this.selectionMoveOffset.x || dy !== this.selectionMoveOffset.y) {
+                this.selectionMoveOffset = { x: dx, y: dy };
+                this.updateSelectionVisuals();
+            }
+        } else if (this.isSelecting) {
+            const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+            const cx = Math.floor(worldPoint.x / 32);
+            const cy = Math.floor(worldPoint.y / 32);
+            
+            if (this.shape === 'freeform') {
+                 this.selection.add(`${cx},${cy}`);
+                 this.updateSelectionVisuals();
+            } else {
+                 // square
+                 if (this.selectionStart) {
+                     this.selection.clear();
+                     const minX = Math.min(this.selectionStart.x, cx);
+                     const maxX = Math.max(this.selectionStart.x, cx);
+                     const minY = Math.min(this.selectionStart.y, cy);
+                     const maxY = Math.max(this.selectionStart.y, cy);
+                     
+                     for(let x=minX; x<=maxX; x++) {
+                         for(let y=minY; y<=maxY; y++) {
+                             this.selection.add(`${x},${y}`);
+                         }
+                     }
+                     this.updateSelectionVisuals();
+                 }
+            }
+        } else {
+            if(!this.isSelecting && !this.selectionMoving) {
+                this.updateCursor(pointer);
+            } else {
+                this.highlightGraphics.clear();
+            }
+            
+            if (pointer.isDown && this.selectedTool !== 'fill' && this.selectedTool !== 'select' && this.mapData?.state === MapState.DRAFT && !this.layerLocked[this.selectedLayer] && this.layerVisibility[this.selectedLayer]) {
                  this.paintTile(pointer);
             }
         }
@@ -511,6 +642,216 @@ export class MapMakerScene extends Phaser.Scene {
         return (item && 'tiles' in item) ? item as ITileGroup : undefined;
     }
 
+    private clearSelection() {
+        this.selection.clear();
+        this.selectionStart = null;
+        this.selectionMoveOffset = { x: 0, y: 0 };
+        if(this.dimTexture) this.dimTexture.clear();
+        this.selectionFloatingGroup.clear(true, true);
+        window.dispatchEvent(new CustomEvent('mapmaker:selection-changed', { detail: { hasSelection: false } }));
+    }
+
+    private updateSelectionVisuals() {
+        this.dimTexture.clear();
+        this.selectionFloatingGroup.clear(true, true);
+        this.highlightGraphics.clear();
+        
+        if (this.selection.size === 0 && !this.isSelecting) return;
+
+        this.dimTexture.fill(0x000000, 0.6);
+
+        const eraser = this.make.image({ key: 'mm-eraser-brush' }, false);
+        eraser.setOrigin(0,0);
+        
+        if (this.isPasteMode) {
+             this.pastePreview.forEach(t => {
+                 const x = (t.x + this.selectionMoveOffset.x) * 32;
+                 const y = (t.y + this.selectionMoveOffset.y) * 32;
+                 this.dimTexture.erase(eraser, x, y);
+             });
+        } else {
+             this.selection.forEach(key => {
+                 const [sx, sy] = key.split(',').map(Number);
+                 const x = (sx + this.selectionMoveOffset.x) * 32;
+                 const y = (sy + this.selectionMoveOffset.y) * 32;
+                 this.dimTexture.erase(eraser, x, y);
+             });
+        }
+        
+        eraser.destroy();
+
+        if (this.isPasteMode) {
+             this.pastePreview.forEach(t => {
+                const tx = t.x + (this.selectionMoveOffset?.x || 0);
+                const ty = t.y + (this.selectionMoveOffset?.y || 0);
+                if (this.textures.exists(t.id)) {
+                    const img = this.add.image(tx * 32 + 16, ty * 32 + 16, t.id);
+                    img.setDisplaySize(32, 32);
+                    this.selectionFloatingGroup.add(img);
+                }
+             });
+        } else if (this.mapData && this.selectedLayer) {
+            const layer = this.mapData.layers[this.selectedLayer];
+            this.selection.forEach(key => {
+                const [x, y] = key.split(',').map(Number);
+                const tileId = layer[key];
+                
+                const drawX = (x + this.selectionMoveOffset.x);
+                const drawY = (y + this.selectionMoveOffset.y);
+
+                if (tileId && this.textures.exists(tileId)) {
+                    const img = this.add.image(drawX * 32 + 16, drawY * 32 + 16, tileId);
+                    img.setDisplaySize(32, 32);
+                    img.setDepth(151);
+                    this.selectionFloatingGroup.add(img);
+                }
+            });
+        }
+        this.selectionFloatingGroup.setDepth(151);
+    }
+    
+    private finalizeSelectionMove() {
+        if (!this.mapData || !this.selectedLayer) return;
+
+        const layer = this.mapData.layers[this.selectedLayer];
+        const newSelection = new Set<string>();
+
+        if (this.isPasteMode) {
+            this.pastePreview.forEach(t => {
+                const tx = t.x + this.selectionMoveOffset.x;
+                const ty = t.y + this.selectionMoveOffset.y;
+                if (tx >= 0 && ty >= 0 && tx < this.mapData!.width && ty < this.mapData!.height) {
+                    layer[`${tx},${ty}`] = t.id;
+                    newSelection.add(`${tx},${ty}`);
+                }
+            });
+            this.isPasteMode = false;
+        } else {
+            // Normal move
+            if (this.selectionMoveOffset.x === 0 && this.selectionMoveOffset.y === 0) return;
+            
+            const moves: {x:number, y:number, id:string}[] = [];
+            // collect
+            this.selection.forEach(key => {
+                const [x, y] = key.split(',').map(Number);
+                if (layer[key]) {
+                    moves.push({ x: x + this.selectionMoveOffset.x, y: y + this.selectionMoveOffset.y, id: layer[key] });
+                    delete layer[key];
+                }
+            });
+            // apply
+            moves.forEach(m => {
+                if (m.x >= 0 && m.y >= 0 && m.x < this.mapData!.width && m.y < this.mapData!.height) {
+                    layer[`${m.x},${m.y}`] = m.id;
+                    newSelection.add(`${m.x},${m.y}`);
+                }
+            });
+        }
+
+        this.selection = newSelection;
+        this.selectionMoveOffset = { x: 0, y: 0 };
+        this.hasUnsavedChanges = true;
+        this.currentActionModified = true;
+        this.renderMap();
+        this.pushHistoryState();
+        this.updateSelectionVisuals();
+    }
+    
+    private pasteSelection() {
+        if (this.layerLocked[this.selectedLayer] || !this.layerVisibility[this.selectedLayer]) return;
+
+        const clipboard = (this as any)._clipboard;
+        if (!clipboard || clipboard.length === 0) return;
+
+        const center = this.cameras.main.midPoint;
+        const cx = Math.floor(center.x / 32);
+        const cy = Math.floor(center.y / 32);
+        
+        this.isPasteMode = true;
+        this.pastePreview = clipboard.map((c: any) => ({ ...c, x: cx + c.x, y: cy + c.y }));
+        
+        this.selection.clear();
+        this.pastePreview.forEach(p => this.selection.add(`${p.x},${p.y}`));
+        
+        this.selectionMoveOffset = { x: 0, y: 0 };
+        this.selectedTool = 'select';
+        
+        window.dispatchEvent(new CustomEvent('mapmaker:selection-changed', { detail: { hasSelection: true } }));
+        
+        this.updateSelectionVisuals();
+    }
+
+    private saveSelectionAsStencil() {
+        if (this.selection.size === 0) return;
+        const name = prompt("Stencil Name:");
+        if (!name) return;
+
+        const tiles: {x:number, y:number, tileId:string}[] = [];
+        const layer = this.mapData!.layers[this.selectedLayer];
+        
+        let minX = Infinity, minY = Infinity;
+        this.selection.forEach(key => {
+             const [x,y] = key.split(',').map(Number);
+             if (layer[key]) {
+                 minX = Math.min(minX, x);
+                 minY = Math.min(minY, y);
+             }
+        });
+
+        this.selection.forEach(key => {
+             const [x,y] = key.split(',').map(Number);
+             if (layer[key]) {
+                 tiles.push({ x: x - minX, y: y - minY, tileId: layer[key] });
+             }
+        });
+
+        if (tiles.length === 0) return;
+
+        const stencil = {
+            name,
+            itemType: 'group',
+            tiles,
+            previewUrl: ''
+        };
+
+        fetch(Config.getApiUrl('/tile-groups'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(stencil)
+        }).then(res => res.json()).then(newGroup => {
+             newGroup.itemType = 'group';
+             alert('Stencil saved to library');
+        });
+    }
+
+    private shiftSelectionLayer() {
+        if (this.layerLocked[this.selectedLayer] || !this.layerVisibility[this.selectedLayer]) return;
+
+        const targetLayer = prompt("Target Layer (background, ground, wall, deco, object):");
+        if (!targetLayer || !Object.values(MapLayer).includes(targetLayer as any)) return;
+        
+        const oldL = this.mapData!.layers[this.selectedLayer];
+        const newL = this.mapData!.layers[targetLayer as MapLayer];
+        
+        const newSelection = new Set<string>();
+
+        this.selection.forEach(key => {
+            if (oldL[key]) {
+                const id = oldL[key];
+                delete oldL[key];
+                newL[key] = id;
+                newSelection.add(key);
+            }
+        });
+        
+        this.selectedLayer = targetLayer as MapLayer;
+        this.ui['state'].selectedLayer = this.selectedLayer;
+        this.renderMap();
+        this.pushHistoryState();
+        this.currentActionModified = true;
+        this.updateSelectionVisuals();
+    }
+
     private updateCursor(pointer: Phaser.Input.Pointer) {
         if (!this.mapData) return;
         
@@ -519,7 +860,7 @@ export class MapMakerScene extends Phaser.Scene {
             this.highlightGraphics.clear();
             this.cursorGroup.getChildren().forEach((c: any) => c.setVisible(false));
             return;
-        } else if (this.layerLocked[this.selectedLayer] && !this.isDragging) {
+        } else if ((this.layerLocked[this.selectedLayer] || !this.layerVisibility[this.selectedLayer]) && !this.isDragging) {
             this.input.setDefaultCursor('not-allowed');
             this.highlightGraphics.clear();
             this.cursorGroup.getChildren().forEach((c: any) => c.setVisible(false));
@@ -881,6 +1222,7 @@ export class MapMakerScene extends Phaser.Scene {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     layers: this.mapData.layers,
+                    layerProperties: this.mapData.layerProperties,
                     palette: palette
                 })
             });

@@ -302,7 +302,7 @@ router.get("/maps/:id", async (req, res) => {
 
 router.put("/maps/:id", async (req, res) => {
     try {
-        const { layers, width, height, palette } = req.body;
+        const { layers, width, height, palette, layerProperties } = req.body;
 
         const map = await MapModel.findById(req.params.id);
         if (!map) return res.status(404).json({ error: "Map not found" });
@@ -312,6 +312,11 @@ router.put("/maps/:id", async (req, res) => {
         }
 
         map.layers = layers;
+        map.markModified('layers');
+        if (layerProperties) {
+            map.layerProperties = layerProperties;
+            map.markModified('layerProperties');
+        }
         if (palette) map.palette = palette;
         if (width) map.width = width;
         if (height) map.height = height;

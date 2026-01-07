@@ -29,6 +29,8 @@ export class MapMakerUI {
         layerPanelCollapsed: boolean;
         libraryCollapsed: boolean;
         draggingItem: { item: ITile | ITileGroup | IFolder, sourceList: 'library' | 'palette' } | null;
+        clipboard: any[] | null;
+        hasSelection: boolean;
     };
     private onStateChange: ((state: any) => void) | null = null;
     private mapList: IMap[] = [];
@@ -81,19 +83,22 @@ export class MapMakerUI {
             },
             layerPanelCollapsed: false,
             libraryCollapsed: false,
-            draggingItem: null
+            draggingItem: null,
+            clipboard: null,
+            hasSelection: false
         };
 
         this.setupToast();
         this.loadKeybinds();
+        
+        // initialize static ui
+        this.renderStaticUI();
+        
         this.checkSession();
         document.addEventListener('keydown', this.handleGlobalKeydown.bind(this));
         document.addEventListener('click', (e: any) => {
             if (!e.target.closest('.mm-context-menu')) this.closeContextMenu();
         });
-
-        // initialize static ui
-        this.renderStaticUI();
 
         window.addEventListener('mapmaker:history-avail', (e: any) => {
             const { canUndo, canRedo } = e.detail;
@@ -104,6 +109,16 @@ export class MapMakerUI {
             
             if (undoBtn) undoBtn.style.opacity = canUndo ? '1' : '0.3';
             if (redoBtn) redoBtn.style.opacity = canRedo ? '1' : '0.3';
+        });
+
+        window.addEventListener('mapmaker:selection-changed', (e: any) => {
+            this.state.hasSelection = e.detail.hasSelection;
+            this.updateFooterState();
+        });
+
+        window.addEventListener('mapmaker:clipboard-changed', (e: any) => {
+            this.state.clipboard = e.detail.clipboard;
+            this.updateFooterState();
         });
 
         window.addEventListener('mapmaker:zoom-changed', (e: any) => {
@@ -158,7 +173,16 @@ export class MapMakerUI {
 
             <!-- Footer Controls -->
             <div class="mm-footer-controls mm-pointer-events-auto">
+               <div id="mm-selection-panel" class="mm-selection-panel" style="display: none;">
+                   <button id="mm-sel-copy" class="mm-icon-btn" title="Copy (Ctrl+C)"><i class="fa-solid fa-copy"></i></button>
+                   <button id="mm-sel-move-layer" class="mm-icon-btn" title="Shift Layer"><i class="fa-solid fa-layer-group"></i></button>
+                   <button id="mm-sel-stencil" class="mm-icon-btn" title="Save as Stencil (Ctrl+S)"><i class="fa-solid fa-rubber-stamp"></i></button>
+                   <div class="mm-divider-vert"></div>
+                   <button id="mm-sel-cancel" class="mm-icon-btn mm-btn-success" title="Done"><i class="fa-solid fa-check"></i></button>
+               </div>
+               
                <div class="mm-footer-group">
+                  <button id="mm-paste-btn" class="mm-icon-btn large" title="Paste (Ctrl+V)" style="display: none; margin-right: 0.5rem;"><i class="fa-solid fa-paste"></i></button>
                   <button id="mm-undo-btn" class="mm-icon-btn large" title="Undo (Ctrl+Z)" style="opacity: 0.3;" disabled><i class="fa-solid fa-rotate-left"></i></button>
                   <div class="mm-zoom-controls" id="mm-zoom-btn" title="Reset Zoom">
                      <span id="mm-zoom-display">100%</span>
@@ -169,6 +193,8 @@ export class MapMakerUI {
         `;
 
         // bind statics
+        this.bindFooterEvents();
+        
         const undoBtn = this.root.querySelector('#mm-undo-btn');
         if (undoBtn) undoBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('mapmaker:undo')));
         
@@ -177,6 +203,49 @@ export class MapMakerUI {
         
         const zoomBtn = this.root.querySelector('#mm-zoom-btn');
         if (zoomBtn) zoomBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('mapmaker:zoom-fit')));
+    }
+
+    private bindFooterEvents() {
+        const selCopy = this.root.querySelector('#mm-sel-copy');
+        const selLayer = this.root.querySelector('#mm-sel-move-layer');
+        const selStencil = this.root.querySelector('#mm-sel-stencil');
+        const selCancel = this.root.querySelector('#mm-sel-cancel');
+        const pasteBtn = this.root.querySelector('#mm-paste-btn');
+
+        if(selCopy) selCopy.addEventListener('click', () => window.dispatchEvent(new CustomEvent('mapmaker:copy')));
+        if(selLayer) selLayer.addEventListener('click', () => window.dispatchEvent(new CustomEvent('mapmaker:layershift')));
+        if(selStencil) selStencil.addEventListener('click', () => window.dispatchEvent(new CustomEvent('mapmaker:stencil')));
+        if(selCancel) selCancel.addEventListener('click', () => window.dispatchEvent(new CustomEvent('mapmaker:cancel-selection')));
+        if(pasteBtn) pasteBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('mapmaker:paste')));
+
+        this.root.addEventListener('click', (e: any) => {
+            const btn = e.target.closest('.toggle-lock');
+            if (btn) {
+                e.stopPropagation();
+                const layer = btn.getAttribute('data-layer') as MapLayer;
+                this.state.layerLocked[layer] = !this.state.layerLocked[layer];
+                this.renderEditor();
+                this.updateState();
+            }
+        });
+
+        this.root.addEventListener('click', (e: any) => {
+            const btn = e.target.closest('.toggle-collidable');
+            if (btn) {
+                e.stopPropagation();
+                if (!this.state.currentMap || this.state.currentMap.state !== MapState.DRAFT) return;
+
+                const layer = btn.getAttribute('data-layer') as MapLayer;
+                if (!this.state.currentMap.layerProperties) this.state.currentMap.layerProperties = {};
+                if (!this.state.currentMap.layerProperties[layer]) this.state.currentMap.layerProperties[layer] = { collidable: false };
+                
+                const current = this.state.currentMap.layerProperties[layer]!.collidable;
+                this.state.currentMap.layerProperties[layer]!.collidable = !current;
+                
+                this.renderEditor();
+                this.saveMap(); 
+            }
+        });
     }
 
     private closeContextMenu() {
@@ -299,6 +368,18 @@ export class MapMakerUI {
         });
     }
 
+    private updateFooterState() {
+        const selPanel = this.root.querySelector('#mm-selection-panel') as HTMLElement;
+        const pasteBtn = this.root.querySelector('#mm-paste-btn') as HTMLElement;
+        
+        if (selPanel) {
+            selPanel.style.display = this.state.hasSelection ? 'flex' : 'none';
+        }
+        if (pasteBtn) {
+            pasteBtn.style.display = (this.state.clipboard && this.state.clipboard.length > 0) ? 'block' : 'none';
+        }
+    }
+
     private setupToast() {
         const toast = document.createElement('div');
         toast.id = 'mm-toast';
@@ -343,9 +424,11 @@ export class MapMakerUI {
         const path = window.location.pathname;
         if (path === '/maps/home') {
             this.loadDashboard();
+        } else if (path === '/maps/test') {
+            this.loadTestDashboard();
         } else if (path.startsWith('/maps/')) {
             const mapId = path.split('/')[2];
-            if (mapId && mapId !== 'home' && mapId !== 'pin') {
+            if (mapId && mapId !== 'home' && mapId !== 'pin' && mapId !== 'test') {
                 this.openEditor(mapId);
             } else {
                 // fallback to home
@@ -357,15 +440,12 @@ export class MapMakerUI {
         }
     }
 
-    private showToast(message: string) {
-        const toast = this.root.querySelector('#mm-toast');
-        if (toast) {
-            toast.textContent = message;
-            toast.classList.add('visible');
-            setTimeout(() => {
-                toast.classList.remove('visible');
-            }, 3000);
-        }
+    public hide() {
+        this.root.style.display = 'none';
+    }
+
+    public show() {
+        this.root.style.display = 'block';
     }
 
     private renderLogin() {
@@ -420,13 +500,101 @@ export class MapMakerUI {
     }
 
     private async loadDashboard() {
+        this.showLoader();
         try {
-            const res = await fetch(Config.getApiUrl('/maps'));
+            const [res] = await Promise.all([
+                fetch(Config.getApiUrl('/maps')),
+                new Promise(resolve => setTimeout(resolve, 600)) // min 600ms
+            ]);
+            
             this.mapList = await res.json();
             this.renderDashboard();
         } catch (e) {
             console.error(e);
             alert('Failed to load maps');
+        } finally {
+            this.hideLoader();
+        }
+    }
+
+    private async loadTestDashboard() {
+        this.showLoader();
+        try {
+            const [res] = await Promise.all([
+                fetch(Config.getApiUrl('/maps')),
+                new Promise(resolve => setTimeout(resolve, 600))
+            ]);
+            
+            this.mapList = await res.json();
+            this.renderTestDashboard();
+        } catch (e) {
+            console.error(e);
+        } finally {
+            this.hideLoader();
+        }
+    }
+
+    private renderTestDashboard() {
+        this.root.innerHTML = `
+            <div class="mm-dashboard-container mm-pointer-events-auto">
+                <div class="mm-dashboard-header">
+                    <div>
+                        <h1>Map Tester</h1>
+                        <p>Select a map to test physics and collisions.</p>
+                    </div>
+                    <button id="mm-back-dash" class="mm-btn mm-btn-secondary">Back to Studio</button>
+                </div>
+                
+                <div class="mm-map-grid">
+                    ${this.mapList.map(map => `
+                        <div class="mm-map-card" data-id="${map._id}">
+                            <div class="mm-map-preview"></div>
+                            <div class="mm-map-info">
+                                <div class="mm-map-name">${map.name}</div>
+                                <div class="mm-map-meta">
+                                    <span class="mm-tag mm-tag-${map.state}">${map.state}</span>
+                                    <span>${map.width}x${map.height}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+
+        this.root.querySelector('#mm-back-dash')!.addEventListener('click', () => {
+             history.pushState(null, '', '/maps/home');
+             this.loadDashboard();
+        });
+
+        this.root.querySelectorAll('.mm-map-card').forEach(card => {
+            card.addEventListener('click', () => {
+                const id = card.getAttribute('data-id');
+                if (id) {
+                     window.dispatchEvent(new CustomEvent('mapmaker:start-test', { detail: { mapId: id } }));
+                }
+            });
+        });
+    }
+
+    private showLoader() {
+        if (document.body.querySelector('#mm-loader')) return;
+        const loader = document.createElement('div');
+        loader.id = 'mm-loader';
+        loader.className = 'mm-loader-overlay mm-pointer-events-auto';
+        loader.innerHTML = `
+            <div class="mm-loader-spinner"></div>
+            <p style="color:var(--mm-text-muted); font-family: 'Minecraft', sans-serif; font-size: 1.5rem;">Loading...</p>
+        `;
+        document.body.appendChild(loader);
+    }
+
+    private hideLoader() {
+        const loader = document.body.querySelector('#mm-loader');
+        if (loader) {
+            loader.classList.add('fade-out');
+            (loader as HTMLElement).style.opacity = '0';
+            setTimeout(() => loader.remove(), 500);
         }
     }
 
@@ -436,6 +604,7 @@ export class MapMakerUI {
                 <div class="mm-header">
                     <h1 style="color: white; margin: 0;">Map Maker Studio</h1>
                     <div style="display: flex; gap: 1rem;">
+                        <button id="mm-tester-btn" class="mm-btn mm-btn-secondary" style="width: auto;"><i class="fa-solid fa-gamepad"></i> Map Tester</button>
                         <button id="mm-new-map-btn" class="mm-btn" style="width: auto;"><i class="fa-solid fa-plus"></i> New Map</button>
                         <button id="mm-close-dash-btn" class="mm-btn mm-btn-danger" style="width: auto;"><i class="fa-solid fa-right-from-bracket"></i> Exit Studio</button>
                     </div>
@@ -462,6 +631,11 @@ export class MapMakerUI {
                 this.openEditor(id!);
             });
         });
+
+        (this.root.querySelector('#mm-tester-btn') as HTMLElement).onclick = () => {
+             history.pushState(null, '', '/maps/test');
+             this.loadTestDashboard();
+        };
 
         (this.root.querySelector('#mm-new-map-btn') as HTMLElement).onclick = () => this.createNewMap();
         (this.root.querySelector('#mm-close-dash-btn') as HTMLElement).onclick = () => {
@@ -525,10 +699,27 @@ export class MapMakerUI {
     }
 
     private async openEditor(mapId: string) {
+        this.showLoader();
         try {
+            const minLoadTime = new Promise(resolve => setTimeout(resolve, 600));
             const mapRes = await fetch(Config.getApiUrl(`/maps/${mapId}`));
             if (!mapRes.ok) throw new Error(`Map not found (${mapRes.status})`);
             const map = await mapRes.json();
+
+            // sanitize map data
+            if (!map.layers) {
+                map.layers = {
+                    background: {},
+                    ground: {},
+                    wall: {},
+                    deco: {},
+                    object: {}
+                };
+            } else {
+                ['background', 'ground', 'wall', 'deco', 'object'].forEach(k => {
+                    if (!map.layers[k]) map.layers[k] = {};
+                });
+            }
             
             // fetch sequence
             const [tilesRes, groupsRes, libStructRes] = await Promise.all([
@@ -597,12 +788,21 @@ export class MapMakerUI {
                 this.state.selectedTileId = null;
             }
 
+            await minLoadTime;
+
+            // check scaffold
+            if (!this.root.querySelector('#mm-sidebars')) {
+                this.renderStaticUI();
+            }
+
             this.renderEditor();
             this.onStateChange?.(this.state);
             window.dispatchEvent(new CustomEvent('mapmaker:open'));
         } catch (e: any) {
             console.error(e);
             alert('Failed to load editor: ' + e.message);
+        } finally {
+            this.hideLoader();
         }
     }
 
@@ -707,6 +907,9 @@ export class MapMakerUI {
             const preview = this.state.layerPreviews[l];
             const label = layer.charAt(0).toUpperCase() + layer.slice(1);
             
+            // collidable check
+            const isCollidable = this.state.currentMap?.layerProperties?.[l]?.collidable ?? false;
+
             const previewStyle = preview ? `background-image: url(${preview});` : '';
             const bindKey = this.getKeyForTarget('layer', layer);
             const badge = bindKey ? `<div class="mm-keybind-badge">${bindKey}</div>` : '';
@@ -715,6 +918,11 @@ export class MapMakerUI {
             <div class="mm-layer-item ${isActive ? 'active' : ''}" data-layer="${layer}" data-bind-type="layer" data-bind-value="${layer}">
                 ${badge}
                 <div class="mm-layer-controls">
+                    ${isDraft ? `
+                    <button class="mm-icon-btn toggle-collidable ${isCollidable ? 'active' : ''}" data-layer="${layer}" title="Toggle Collidable">
+                        ${isCollidable ? '<i class="fa-solid fa-person-falling-burst"></i>' : '<i class="fa-solid fa-person"></i>'}
+                    </button>
+                    ` : ''}
                     <button class="mm-icon-btn toggle-vis ${isVisible ? 'active' : ''}" data-layer="${layer}" title="Toggle Visibility">
                         ${isVisible ? '<i class="fa-solid fa-eye"></i>' : '<i class="fa-solid fa-eye-slash"></i>'}
                     </button>
@@ -796,7 +1004,7 @@ export class MapMakerUI {
                     : this.state.palette.length === 0 ? `<div class="mm-sidebar-lock-overlay"><p>Add tiles from Library to start editing</p></div>` : ''}
 
                     <div class="mm-sidebar-section">
-                    <div class="mm-tool-grid" style="grid-template-columns: repeat(3, 1fr);">
+                    <div class="mm-tool-grid" style="grid-template-columns: repeat(4, 1fr);">
                         <div class="mm-tool-btn ${this.state.selectedTool === 'place' ? 'active' : ''}" data-tool="place" title="Place" data-bind-type="tool" data-bind-value="place">
                             ${this.getKeyForTarget('tool', 'place') ? `<div class="mm-keybind-badge" style="left:2px; right:auto;">${this.getKeyForTarget('tool', 'place')}</div>` : ''}
                             <i class="fa-solid fa-pencil"></i>
@@ -809,10 +1017,26 @@ export class MapMakerUI {
                             ${this.getKeyForTarget('tool', 'fill') ? `<div class="mm-keybind-badge" style="left:2px; right:auto;">${this.getKeyForTarget('tool', 'fill')}</div>` : ''}
                             <i class="fa-solid fa-fill-drip"></i>
                         </div>
+                        <div class="mm-tool-btn ${this.state.selectedTool === 'select' ? 'active' : ''}" data-tool="select" title="Select" data-bind-type="tool" data-bind-value="select">
+                            ${this.getKeyForTarget('tool', 'select') ? `<div class="mm-keybind-badge" style="left:2px; right:auto;">${this.getKeyForTarget('tool', 'select')}</div>` : ''}
+                            <i class="fa-solid fa-vector-square"></i>
+                        </div>
                     </div>
                     
-                    <div style="display: ${brushControlsDisplay}; margin-bottom:0.5rem;">
+                    <div style="display: ${this.state.selectedTool === 'fill' ? 'none' : 'block'}; margin-bottom:0.5rem;">
                         <label class="mm-label">Shape</label>
+                        ${this.state.selectedTool === 'select' ? `
+                             <div class="mm-tool-grid" style="grid-template-columns: repeat(2, 1fr); gap: 0.5rem;">
+                                 <div class="mm-tool-btn ${this.state.shape === 'square' ? 'active' : ''}" data-shape="square" data-bind-type="shape" data-bind-value="square" title="Rectangle">
+                                     ${this.getKeyForTarget('shape', 'square') ? `<div class="mm-keybind-badge" style="left:2px; right:auto;">${this.getKeyForTarget('shape', 'square')}</div>` : ''}
+                                     <i class="fa-solid fa-vector-square"></i>
+                                 </div>
+                                 <div class="mm-tool-btn ${this.state.shape === 'freeform' ? 'active' : ''}" data-shape="freeform" data-bind-type="shape" data-bind-value="freeform" title="Freeform">
+                                     ${this.getKeyForTarget('shape', 'freeform') ? `<div class="mm-keybind-badge" style="left:2px; right:auto;">${this.getKeyForTarget('shape', 'freeform')}</div>` : ''}
+                                     <i class="fa-solid fa-hand-pointer"></i>
+                                 </div>
+                             </div>
+                        ` : `
                         <div class="mm-tool-grid" style="grid-template-columns: repeat(2, 1fr); gap: 0.5rem;">
                             <div class="mm-tool-btn ${this.state.shape === 'square' ? 'active' : ''}" data-shape="square" data-bind-type="shape" data-bind-value="square" title="Square">
                                 ${this.getKeyForTarget('shape', 'square') ? `<div class="mm-keybind-badge" style="left:2px; right:auto;">${this.getKeyForTarget('shape', 'square')}</div>` : ''}
@@ -831,12 +1055,14 @@ export class MapMakerUI {
                                 <i class="fa-solid fa-virus"></i>
                             </div>
                         </div>
+                        `}
                         ${this.state.shape.startsWith('perlin') ? 
                             `<button id="mm-regen-noise-btn" class="mm-btn" style="margin-top:0.5rem; font-size:0.75rem; padding:0.4rem; background: #444;"><i class="fa-solid fa-dice"></i> Regenerate Pattern</button>` 
                             : ''
                         }
                     </div>
 
+                    ${this.state.selectedTool === 'select' ? '' : `
                     <div style="display: ${brushControlsDisplay}; margin-bottom:0.5rem;">
                         <label class="mm-label">Brush Size: <span id="mm-radius-val">${this.state.radius}</span></label>
                         <input type="range" id="mm-radius-input" min="1" max="9" step="2" value="${this.state.radius}" style="width:100%">
@@ -846,6 +1072,7 @@ export class MapMakerUI {
                         <label class="mm-label">Density: <span id="mm-diffusion-val">${this.state.diffusion}%</span></label>
                         <input type="range" id="mm-diffusion-input" min="1" max="100" value="${this.state.diffusion}" style="width:100%">
                     </div>
+                    `}
                 </div>
 
                 <div class="mm-sidebar-section" style="flex:1; display:flex; flex-direction:column; overflow:hidden; padding-bottom:0;">
@@ -1192,17 +1419,6 @@ export class MapMakerUI {
                 e.stopPropagation();
                 const layer = el.getAttribute('data-layer') as MapLayer;
                 this.state.layerVisibility[layer] = !this.state.layerVisibility[layer];
-                this.renderEditor();
-                this.updateState();
-            });
-        });
-
-        // layer lock toggle
-        this.root.querySelectorAll('.toggle-lock').forEach(el => {
-            el.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const layer = el.getAttribute('data-layer') as MapLayer;
-                this.state.layerLocked[layer] = !this.state.layerLocked[layer];
                 this.renderEditor();
                 this.updateState();
             });

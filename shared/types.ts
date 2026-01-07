@@ -88,6 +88,11 @@ export interface IMap {
     layers: {
         [key in MapLayer]: IMapLayerData;
     };
+    layerProperties?: {
+        [key in MapLayer]?: {
+            collidable: boolean;
+        }
+    };
     createdAt: Date;
     updatedAt: Date;
 }

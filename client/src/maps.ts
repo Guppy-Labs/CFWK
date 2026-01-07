@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { MapMakerScene } from './scenes/MapMakerScene';
+import { MapTesterScene } from './scenes/MapTesterScene';
 
 const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,
@@ -13,7 +14,7 @@ const config: Phaser.Types.Core.GameConfig = {
             debug: false
         }
     },
-    scene: [MapMakerScene],
+    scene: [MapMakerScene, MapTesterScene],
     pixelArt: true,
     scale: {
         mode: Phaser.Scale.RESIZE,

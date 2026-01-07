@@ -10,12 +10,13 @@ const MapSchema: Schema = new Schema({
     height: { type: Number, default: 20 },
     palette: { type: Schema.Types.Mixed, default: [] },
     layers: {
-        background: { type: Map, of: String, default: {} },
-        ground: { type: Map, of: String, default: {} },
-        wall: { type: Map, of: String, default: {} },
-        deco: { type: Map, of: String, default: {} },
-        object: { type: Map, of: String, default: {} }
-    }
+        background: { type: Schema.Types.Mixed, default: {} },
+        ground: { type: Schema.Types.Mixed, default: {} },
+        wall: { type: Schema.Types.Mixed, default: {} },
+        deco: { type: Schema.Types.Mixed, default: {} },
+        object: { type: Schema.Types.Mixed, default: {} }
+    },
+    layerProperties: { type: Schema.Types.Mixed, default: {} }
 }, {
     timestamps: true
 });
