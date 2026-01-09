@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:title" content="CFWK">
+    <meta property="og:description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:image" content="/favicon.png">
+    <meta property="og:type" content="website">
+    <title>CFWK - Login</title>
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+      :root {
+          color-scheme: dark;
+          --mm-primary: #ff66aa;
+          --mm-primary-hover: #ff4499;
+          /* Ensure specific dark theme vars are present in case css fails to load */
+          --mm-bg-input: #252525;
+          --mm-text-main: #e0e0e0;
+          --mm-border: #333333;
+      }
+
+      /* Override any rounded corners from shared styles */
+      * {
+        border-radius: 0 !important;
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background-color: var(--mm-bg-dark);
+        color: var(--mm-text-main);
+        font-family: 'Minecraft', sans-serif;
+        display: flex;
+        justify-content: flex-end; /* Right align main container */
+        align-items: center;
+        height: 100vh;
+        overflow: hidden;
+        padding-right: 10%; /* Spacing from right edge */
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+    /* Release Countdown (Fixed Top Center) */
+    .release-countdown.login-page-countdown {
+        position: fixed;
+        top: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 50;
+        transform-origin: top center;
+        max-width: 90vw; /* Prevent overflow on resize */
+    }
+
+    /* Short screens: Scale down to avoid overlapping the centered card */
+    @media (max-height: 800px) {
+        .release-countdown.login-page-countdown {
+            top: 10px;
+            transform: translateX(-50%) scale(0.75);
+        }
+    }
+
+    /* Mobile / Narrow: Scale down further */
+    @media (max-width: 768px) {
+        .release-countdown.login-page-countdown {
+            top: 10px;
+            padding: 4px 8px;
+            width: max-content;
+            /* Prioritize keeping it small */
+            transform: translateX(-50%) scale(0.7);
+        }
+    }
+
+    /* Very Small Screens */
+    @media (max-width: 480px) {
+        .release-countdown.login-page-countdown {
+             transform: translateX(-50%) scale(0.6);
+        }
+    }
+
+      
+      input {
+        user-select: text;
+        -webkit-user-select: text;
+      }
+
+      #split-container {
+        display: flex;
+        width: 100%;
+        max-width: 1000px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 2rem;
+        gap: 4rem;
+      }
+
+      .title-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+      }
+
+      .main-title {
+        font-size: 5rem;
+        line-height: 1.1;
+        color: var(--mm-primary);
+        text-shadow: 4px 4px 0px #000;
+        text-transform: uppercase;
+        margin: 0;
+        text-align: right;        transition: opacity 0.4s ease-in-out;
+        opacity: 1;
+      }
+      
+      .main-title.fade-out {
+          opacity: 0;
+      }
+      
+      .exit-down {
+          animation: slideDownFade 0.8s ease-in forwards;
+      }
+      
+      @keyframes slideDownFade {
+          0% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(100vh); }
+      }
+
+      .main-title div {
+        margin-bottom: 0.5rem;
+      }
+
+      .login-box {
+        flex: 0 0 350px;
+        background-color: var(--mm-bg-panel);
+        border: 2px solid var(--mm-border);
+        padding: 2rem;
+        box-shadow: var(--mm-shadow);
+      }
+
+      .login-header {
+        margin-bottom: 2rem;
+        border-bottom: 2px solid var(--mm-border);
+        padding-bottom: 1rem;
+      }
+      
+      .login-header h2 {
+        margin: 0;
+        font-size: 1.5rem;
+        color: var(--mm-text-main);
+      }
+
+      .desc-text {
+        font-size: 0.8rem;
+        color: var(--mm-text-muted);
+        margin-top: 0.5rem;
+      }
+
+      .input-group {
+        margin-bottom: 1.5rem;
+      }
+
+      .input-group label {
+        display: block;
+        margin-bottom: 0.5rem;
+        color: var(--mm-text-muted);
+        font-size: 0.9rem;
+      }
+
+      .input-group input {
+        width: 100%;
+        padding: 12px;
+        background-color: #252525;
+        background-color: var(--mm-bg-input);
+        border: 2px solid var(--mm-border);
+        color: white;
+        color: var(--mm-text-main);
+        font-family: 'Minecraft', sans-serif;
+        font-size: 1rem;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+
+      /* Fix chrome autofill white background */
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover, 
+      input:-webkit-autofill:focus, 
+      input:-webkit-autofill:active{
+          -webkit-box-shadow: 0 0 0 30px var(--mm-bg-input) inset !important;
+          -webkit-text-fill-color: var(--mm-text-main) !important;
+          transition: background-color 5000s ease-in-out 0s;
+      }
+
+      .input-group input:focus {
+        border-color: var(--mm-primary);
+      }
+
+      .login-btn {
+        width: 100%;
+        padding: 15px;
+        background-color: var(--mm-primary);
+        border: none;
+        color: white;
+        font-family: 'Minecraft', sans-serif;
+        font-size: 1.2rem;
+        cursor: pointer;
+        transition: background-color 0.2s, transform 0.1s;
+        text-shadow: 1px 1px 0 #000;
+      }
+
+      .login-btn:hover {
+        background-color: var(--mm-primary-hover);
+      }
+
+      .login-btn:active {
+        transform: translateY(2px);
+      }
+
+      .divider {
+        display: flex;
+        align-items: center;
+        text-align: center;
+        margin: 1.5rem 0;
+        color: var(--mm-text-muted);
+        font-size: 0.8rem;
+      }
+      .divider::before, .divider::after {
+        content: '';
+        flex: 1;
+        border-bottom: 2px solid var(--mm-border);
+      }
+      .divider span {
+        padding: 0 10px;
+      }
+
+      .social-buttons {
+          display: flex;
+          gap: 1rem;
+      }
+      .social-btn {
+          flex: 1;
+          padding: 10px;
+          border: 2px solid var(--mm-border);
+          background: var(--mm-bg-input);
+          color: var(--mm-text-main);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          font-family: 'Minecraft', sans-serif;
+          transition: all 0.2s;
+          font-size: 0.9rem;
+      }
+      .social-btn:hover {
+          background: var(--mm-bg-panel);
+          border-color: var(--mm-primary);
+      }
+
+      .social-google:hover {
+          animation: google-glow 1.5s infinite alternate;
+          border-color: transparent;
+      }
+
+      .social-discord:hover {
+          box-shadow: 0 0 15px #5865F2;
+          border-color: #5865F2;
+          color: #5865F2; 
+      }
+
+      .alert-box {
+          background-color: rgba(213, 58, 58, 0.2);
+          border: 1px solid var(--mm-danger);
+          color: var(--mm-danger);
+          padding: 10px;
+          margin-top: 1rem;
+          margin-bottom: 0;
+          font-size: 0.85rem;
+          text-align: center;
+          font-weight: bold;
+      }
+
+      .auth-container {
+        flex: 0 0 350px;
+        position: relative;
+        perspective: 1000px;
+        min-height: 600px;
+      }
+
+      .login-box {
+        background-color: var(--mm-bg-panel);
+        border: 2px solid var(--mm-border);
+        padding: 2rem;
+        box-shadow: var(--mm-shadow);
+        width: 100%;
+        transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.4s ease-in-out, visibility 0.4s;
+        backface-visibility: hidden;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateX(100%);
+        position: absolute;
+        top: 0; 
+        left: 0;
+      }
+      
+      .login-box.active {
+          opacity: 1;
+          visibility: visible;
+          transform: translateX(0);
+      }
+      
+      .login-box.start-right {
+          transform: translateX(100%) !important;
+          opacity: 0 !important;
+      }
+      
+      .login-box.exit-right {
+          transform: translateX(100%) !important;
+          opacity: 0 !important;
+      }
+
+      .switch-link {
+          text-align: center;
+          margin-top: 1.5rem;
+          color: var(--mm-text-muted);
+          font-size: 0.9rem;
+      }
+      .switch-link a {
+          color: var(--mm-primary);
+          text-decoration: none;
+          cursor: pointer;
+          font-weight: bold;
+      }
+      .switch-link a:hover {
+          text-decoration: underline;
+      }
+
+      #fish-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -1;
+        pointer-events: none;
+      }
+
+      @keyframes google-glow {
+          0% {
+              box-shadow: -3px -3px 8px #ea4335, 3px -3px 8px #fbbc05, 3px 3px 8px #34a853, -3px 3px 8px #4285f4;
+          }
+          50% {
+               box-shadow: -2px -2px 12px #ea4335, 2px -2px 12px #fbbc05, 2px 2px 12px #34a853, -2px 2px 12px #4285f4;
+          }
+          100% {
+              box-shadow: -3px -3px 8px #ea4335, 3px -3px 8px #fbbc05, 3px 3px 8px #34a853, -3px 3px 8px #4285f4;
+          }
+      }
+      
+      @media (max-width: 768px) {
+        body {
+            display: block;
+            padding: 0;
+            padding-right: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            height: auto;
+            min-height: 100vh;
+        }
+        #split-container {
+            flex-direction: column;
+            gap: 1.5rem;
+            padding: 5rem 1rem 2rem 1rem; /* Added top padding for countdown */
+            margin: 0 auto;
+            justify-content: flex-start;
+            width: 100%;
+            overflow-x: hidden;
+        }
+        .title-section {
+            align-items: center;
+            width: 100%;
+        }
+        .main-title {
+            font-size: 3rem;
+            text-align: center;
+        }
+        .desktop-title {
+            display: none !important;
+        }
+        .mobile-title {
+            display: block !important;
+            font-size: 3.5rem;   /* Reduced from 5rem */
+            letter-spacing: 2px; /* Reduced from 5px */
+            margin-bottom: 1rem;
+        }
+        
+        .auth-container {
+            width: 100%;
+            max-width: 400px; /* Limit width on tablets/large phones */
+            flex: 0 1 auto;
+            min-height: auto;
+            padding: 0;
+        }
+        
+        .login-box {
+            position: relative; 
+            transform: none !important; 
+            opacity: 1 !important;
+            visibility: visible !important;
+            width: 100%;
+            display: none;
+            padding: 1.5rem; /* Reduced padding */
+        }
+
+        .login-box.active {
+            display: block;
+        }
+        
+        .auth-container {
+             perspective: none;
+        }
+      }
+      
+      .mobile-title {
+          display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Countdown -->
+    <div id="countdown-container" class="release-countdown login-page-countdown" style="display: none;">
+        <div class="countdown-prefix">RELEASE IN</div>
+        <div class="countdown-digits">
+            <div class="countdown-item">
+                <div class="countdown-val-wrapper"><span id="cd-days" class="countdown-val">00</span></div>
+                <span class="countdown-label">Days</span>
+            </div>
+            <div class="countdown-sep">:</div>
+            <div class="countdown-item">
+                <div class="countdown-val-wrapper"><span id="cd-hours" class="countdown-val">00</span></div>
+                <span class="countdown-label">Hrs</span>
+            </div>
+            <div class="countdown-sep">:</div>
+            <div class="countdown-item">
+                <div class="countdown-val-wrapper"><span id="cd-minutes" class="countdown-val">00</span></div>
+                <span class="countdown-label">Min</span>
+            </div>
+            <div class="countdown-sep">:</div>
+            <div class="countdown-item">
+                <div class="countdown-val-wrapper"><span id="cd-seconds" class="countdown-val">00</span></div>
+                <span class="countdown-label">Sec</span>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="fish-canvas"></canvas>
+    <div id="split-container">
+      <div class="title-section">
+        <h1 class="main-title desktop-title">
+          <div>Cute</div>
+          <div>Fish</div>
+          <div>Wish</div>
+          <div>Knives</div>
+        </h1>
+        <h1 class="main-title mobile-title">
+            CFWK
+        </h1>
+      </div>
+      
+<div class="auth-container">
+        <!-- LOGIN CARD -->
+        <div class="login-box active" id="login-card">
+          <div class="login-header">
+            <h2>LOGIN</h2>
+            <div class="desc-text">to enjoy with <strong>67</strong> other players</div>
+          </div>
+
+          <form id="login-form">
+            <div class="input-group">
+              <label>Email</label>
+              <input type="email" id="login-email" placeholder="hero@example.com" required />
+            </div>
+            
+            <div class="input-group">
+              <label>Password</label>
+              <input type="password" id="login-password" placeholder="..." required />
+              <div style="text-align: right; margin-top: 4px;">
+                <a href="/forgot" style="font-size: 0.8rem; color: var(--mm-text-muted); text-decoration: none;">Forgot Password?</a>
+              </div>
+            </div>
+            
+            <button type="submit" class="login-btn">
+              Connect
+            </button>
+
+            <div class="switch-link">
+              Need an account? <a id="to-register">Register</a>
+            </div>
+
+            <div class="divider">
+                <span>OR</span>
+            </div>
+
+            <div class="social-buttons">
+                <button type="button" class="social-btn social-google" id="google-login">
+                    <i class="fa-brands fa-google"></i> Google
+                </button>
+                <button type="button" class="social-btn social-discord" id="discord-login">
+                    <i class="fa-brands fa-discord"></i> Discord
+                </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- REGISTER CARD -->
+        <div class="login-box hidden" id="register-card">
+          <div class="login-header">
+            <h2>PREREGISTER</h2>
+            <div class="desc-text">Be ready ahead of your enemies!</div>
+
+          </div>
+
+          <form id="register-form">
+            <div class="input-group">
+              <label>Email</label>
+              <input type="email" id="reg-email" placeholder="hero@example.com" required />
+            </div>
+            
+            <div class="input-group">
+              <label>Password</label>
+              <input type="password" id="reg-password" placeholder="******" required />
+            </div>
+            
+            <button type="submit" class="login-btn">
+              Register
+            </button>
+
+            <div class="switch-link">
+              Already have an account? <a id="to-login">Login</a>
+            </div>
+
+            <div class="divider">
+                <span>OR</span>
+            </div>
+
+            <div class="social-buttons">
+                <button type="button" class="social-btn social-google" id="google-register">
+                    <i class="fa-brands fa-google"></i> Google
+                </button>
+                <button type="button" class="social-btn social-discord" id="discord-register">
+                    <i class="fa-brands fa-discord"></i> Discord
+                </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+    
+    <script type="module" src="/src/login.ts"></script>
+  </body>
+</html>

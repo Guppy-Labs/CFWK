@@ -94,7 +94,7 @@ export class MapMakerUI {
         // initialize static ui
         this.renderStaticUI();
         
-        this.checkSession();
+        this.checkAuth();
         document.addEventListener('keydown', this.handleGlobalKeydown.bind(this));
         document.addEventListener('click', (e: any) => {
             if (!e.target.closest('.mm-context-menu')) this.closeContextMenu();
@@ -387,42 +387,36 @@ export class MapMakerUI {
         this.root.appendChild(toast);
     }
 
-    private checkSession() {
-        const session = localStorage.getItem('mm_session');
-        let isValid = false;
-        
-        if (session) {
-            try {
-                const data = JSON.parse(session);
-                if (data.valid && data.expires > Date.now()) {
-                    isValid = true;
+    private async checkAuth() {
+        try {
+            const res = await fetch('/api/auth/me');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.user) {
+                    const perms = data.user.permissions || [];
+                    if (perms.includes('access.maps')) {
+                         this.handleRouting();
+                         return;
+                    } else {
+                        alert('You do not have permission to access the Map Maker Studio.');
+                        window.location.href = '/';
+                        return;
+                    }
                 }
-            } catch (e) {
-                console.error('Invalid session');
             }
+        } catch (e) {
+            console.error(e);
         }
-
-        const path = window.location.pathname;
-
-        if (!isValid) {
-            // force login
-            if (path.startsWith('/maps')) {
-                history.replaceState(null, '', '/maps/pin');
-            }
-            this.renderLogin();
-        } else {
-            if (path === '/maps/pin' || path === '/maps') {
-                history.replaceState(null, '', '/maps/home');
-                this.loadDashboard();
-            } else {
-                this.handleRouting();
-            }
-        }
+        
+        // Not authenticated
+        window.location.href = '/login';
     }
 
     private handleRouting() {
         const path = window.location.pathname;
-        if (path === '/maps/home') {
+        if (path === '/maps' || path === '/maps/') {
+            this.loadDashboard();
+        } else if (path === '/maps/home') {
             this.loadDashboard();
         } else if (path === '/maps/test') {
             this.loadTestDashboard();
@@ -446,57 +440,6 @@ export class MapMakerUI {
 
     public show() {
         this.root.style.display = 'block';
-    }
-
-    private renderLogin() {
-        this.root.innerHTML = `
-            <div class="mm-login-overlay mm-pointer-events-auto">
-                <div class="mm-card">
-                    <h2>Map Maker Access</h2>
-                    <div style="margin-bottom: 1rem;">
-                        <label class="mm-label">Access PIN</label>
-                        <input type="password" id="mm-pin" class="mm-input" placeholder="••••">
-                    </div>
-                    <button id="mm-login-btn" class="mm-btn">Enter Studio</button>
-                    <button id="mm-cancel-btn" class="mm-btn mm-btn-secondary" style="margin-top: 0.8rem">Cancel</button>
-                </div>
-            </div>
-        `;
-
-        const loginBtn = this.root.querySelector('#mm-login-btn') as HTMLButtonElement;
-        const pinInput = this.root.querySelector('#mm-pin') as HTMLInputElement;
-        const cancelBtn = this.root.querySelector('#mm-cancel-btn') as HTMLButtonElement;
-
-        const attemptLogin = () => {
-            if (pinInput.value === '2223') {
-                // set persistent session
-                const expiry = new Date();
-                expiry.setDate(expiry.getDate() + 2); // 2 days
-                localStorage.setItem('mm_session', JSON.stringify({
-                    valid: true,
-                    expires: expiry.getTime()
-                }));
-
-                // nav to route
-                const currentPath = window.location.pathname;
-                if (currentPath === '/maps/pin' || currentPath === '/maps') {
-                    history.pushState(null, '', '/maps/home');
-                    this.loadDashboard();
-                } else {
-                    // stay and load
-                    this.handleRouting();
-                }
-            } else {
-                alert('Invalid PIN');
-            }
-        };
-
-        loginBtn.onclick = attemptLogin;
-        pinInput.onkeydown = (e) => { if (e.key === 'Enter') attemptLogin(); };
-
-        cancelBtn.onclick = () => {
-            window.location.href = '/';
-        };
     }
 
     private async loadDashboard() {

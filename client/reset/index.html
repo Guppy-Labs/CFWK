@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <meta name="description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:title" content="CFWK">
+    <meta property="og:description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:image" content="/favicon.png">
+    <meta property="og:type" content="website">
+    <title>Reset Password - CFWK</title>
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <style>
+        body {
+            background-color: var(--mm-bg-dark);
+            color: var(--mm-text-main);
+            font-family: 'Minecraft', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: var(--mm-bg-panel);
+            padding: 2rem;
+            border: 2px solid var(--mm-border);
+            width: 100%;
+            max-width: 400px;
+        }
+        h2 { text-align: center; color: var(--mm-primary); margin-top: 0; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; margin-bottom: 0.5rem; color: var(--mm-text-muted); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Reset Password</h2>
+        <form id="reset-form">
+            <div class="form-group">
+                <label>New Password</label>
+                <input type="password" id="password" class="mm-input" required minlength="6">
+            </div>
+            <div class="form-group">
+                <label>Confirm Password</label>
+                <input type="password" id="confirm-password" class="mm-input" required minlength="6">
+            </div>
+            <button type="submit" class="mm-btn">Reset Password</button>
+            <p id="msg" style="margin-top: 1rem; text-align: center; display: none;"></p>
+        </form>
+        <div style="text-align: center; margin-top: 1rem;">
+            <a href="/login" style="color: var(--mm-text-muted);">Back to Login</a>
+        </div>
+    </div>
+
+    <script type="module" src="/src/reset.ts"></script>
+</body>
+</html>

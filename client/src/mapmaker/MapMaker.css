@@ -9,8 +9,8 @@
     --mm-bg-panel: #1e1e1e;
     --mm-bg-input: #252525;
     --mm-border: #333333;
-    --mm-primary: #3a7bd5;
-    --mm-primary-hover: #2860b0;
+    --mm-primary: #ff66aa;
+    --mm-primary-hover: #ff4499;
     --mm-danger: #d53a3a;
     --mm-danger-hover: #b02828;
     --mm-text-main: #e0e0e0;
@@ -60,6 +60,13 @@
 }
 .mm-btn:hover { background: var(--mm-primary-hover); transform: translateY(-1px); }
 .mm-btn:active { transform: translateY(0); }
+.mm-btn:disabled {
+    background: var(--mm-bg-input);
+    color: var(--mm-text-muted);
+    cursor: not-allowed;
+    transform: none;
+    opacity: 0.6;
+}
 
 .mm-btn-danger { background: var(--mm-danger); }
 .mm-btn-danger:hover { background: var(--mm-danger-hover); }
@@ -94,6 +101,11 @@
 .mm-input:focus, .mm-select:focus {
     outline: none;
     border-color: var(--mm-primary);
+}
+.mm-input:disabled, .mm-select:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+    background: var(--mm-bg-dark);
 }
 .mm-label {
     display: block;
@@ -452,28 +464,6 @@ input[type=range]::-moz-range-track {
     100% { opacity: 0.5; transform: scale(0.9); }
 }
 
-/* --- Toast --- */
-.mm-toast {
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.85);
-    color: white;
-    padding: 0.8rem 1.5rem;
-    border-radius: 8px;
-    border: 1px solid var(--mm-primary);
-    z-index: 5000;
-    font-weight: 500;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-    opacity: 0;
-    transition: opacity 0.3s;
-    pointer-events: none !important;
-}
-.mm-toast.visible {
-    opacity: 1;
-}
-
 /* --- Modal --- */
 .mm-modal-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -760,4 +750,151 @@ input[type=range]::-moz-range-track {
 @keyframes mm-spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+/* --- Toasts --- */
+#toast-container {
+    position: fixed;
+    top: 20px;
+    left: 0;
+    width: 100%;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+    align-items: center;
+}
+
+.mm-toast {
+    background: var(--mm-bg-panel);
+    border: 2px solid var(--mm-border);
+    color: var(--mm-text-main);
+    padding: 12px 20px;
+    min-width: 250px;
+    box-shadow: var(--mm-shadow);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    pointer-events: auto;
+    animation: toast-inner 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    border-left: 4px solid var(--mm-primary);
+    font-family: 'Minecraft', sans-serif;
+    font-size: 14px;
+    opacity: 1;
+}
+
+.mm-toast.error { border-left-color: var(--mm-danger); }
+.mm-toast.success { border-left-color: #4caf50; }
+.mm-toast.info { border-left-color: var(--mm-primary); }
+
+@keyframes toast-inner {
+    from { transform: translateY(-50px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes toast-outer {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(-50px); opacity: 0; }
+}
+
+.release-countdown {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 5px 15px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(2px);
+}
+
+.countdown-digits {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.countdown-prefix {
+    font-size: 1rem;
+    color: var(--mm-text-muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    font-weight: bold;
+    opacity: 0.8;
+    padding-right: 10px;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.countdown-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 45px;
+    padding: 0 4px;
+}
+
+.countdown-val-wrapper {
+    position: relative;
+    height: 30px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.countdown-val {
+    font-size: 1.6rem;
+    color: var(--mm-primary);
+    font-weight: bold;
+    line-height: 30px;
+    text-shadow: 2px 2px 0px #000;
+}
+
+.countdown-label {
+    font-size: 0.65rem;
+    color: var(--mm-text-muted);
+    letter-spacing: 1px;
+    margin-top: 2px;
+    text-transform: uppercase;
+}
+
+.countdown-sep {
+    font-size: 1.2rem;
+    color: var(--mm-text-muted);
+    margin-bottom: 12px;
+    opacity: 0.5;
+    animation: pulse-sep 1s infinite;
+}
+
+@keyframes pulse-sep {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+.large-countdown {
+    margin: 2rem 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.large-countdown .countdown-item {
+    min-width: 80px;
+}
+
+.large-countdown .countdown-val {
+    font-size: 4rem;
+    line-height: 1.1;
+}
+
+.large-countdown .countdown-label {
+    font-size: 1rem;
+    margin-top: 5px;
+}
+
+.large-countdown .countdown-sep {
+    font-size: 3rem;
+    margin-top: -20px;
+    margin-bottom: 0;
+    padding: 0 10px;
 }

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <meta name="description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:title" content="CFWK">
+    <meta property="og:description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:image" content="/favicon.png">
+    <meta property="og:type" content="website">
+    <title>Coming Soon - CFWK</title>
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: var(--mm-bg-dark);
+            color: var(--mm-text-main);
+            font-family: 'Minecraft', sans-serif;
+            text-align: center;
+        }
+        h1 {
+            color: var(--mm-primary);
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+        }
+        p {
+            color: var(--mm-text-muted);
+            margin-bottom: 2rem;
+            font-size: 1.2rem;
+        }
+        .logout-btn {
+            background-color: var(--mm-bg-panel);
+            border: 1px solid var(--mm-border);
+            color: var(--mm-text-muted);
+            padding: 0.8rem 1.5rem;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        .logout-btn:hover {
+            color: var(--mm-text-main);
+            border-color: var(--mm-text-main);
+        }
+    </style>
+</head>
+<body>
+    <h1>Coming Soon</h1>
+    <p>You don't have access to the game yet.</p>
+    <button class="logout-btn" onclick="logout()">Logout</button>
+
+    <script>
+        // check auth status
+        fetch('/api/auth/me')
+            .then(res => {
+                if (!res.ok) throw new Error('Not logged in');
+                return res.json();
+            })
+            .then(data => {
+                if (!data.user) throw new Error('No user');
+                if (data.user.permissions && data.user.permissions.includes('access.game')) {
+                    window.location.href = '/';
+                }
+            })
+            .catch(() => {
+                window.location.href = '/login';
+            });
+
+        function logout() {
+            fetch('/api/auth/logout', { method: 'POST' })
+                .then(() => window.location.href = '/login');
+        }
+    </script>
+</body>
+</html>

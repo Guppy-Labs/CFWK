@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CFWK - Forgot Password</title>
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+      :root {
+          color-scheme: dark;
+          --mm-primary: #ff66aa;
+          --mm-primary-hover: #ff4499;
+          --mm-bg-input: #252525;
+          --mm-text-main: #e0e0e0;
+          --mm-border: #333333;
+      }
+      * { border-radius: 0 !important; box-sizing: border-box; }
+      body {
+        margin: 0;
+        background-color: var(--mm-bg-dark);
+        color: var(--mm-text-main);
+        font-family: 'Minecraft', sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+      }
+      .container {
+        width: 100%;
+        max-width: 400px;
+        padding: 2rem;
+        background-color: var(--mm-bg-panel);
+        border: 2px solid var(--mm-border);
+        box-shadow: var(--mm-shadow);
+      }
+      h2 { margin-top: 0; color: var(--mm-primary); }
+      p { color: var(--mm-text-muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+      .input-group { margin-bottom: 1rem; }
+      .input-group label { display: block; margin-bottom: 0.5rem; color: var(--mm-text-muted); }
+      .input-group input {
+        width: 100%;
+        padding: 10px;
+        background-color: var(--mm-bg-input);
+        border: 2px solid var(--mm-border);
+        color: var(--mm-text-main);
+        font-family: inherit;
+        outline: none;
+      }
+      .input-group input:focus { border-color: var(--mm-primary); }
+      .btn {
+        width: 100%;
+        padding: 12px;
+        background-color: var(--mm-primary);
+        border: none;
+        color: white;
+        font-family: inherit;
+        cursor: pointer;
+        font-weight: bold;
+        text-transform: uppercase;
+      }
+      .btn:hover { background-color: var(--mm-primary-hover); }
+      .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      .back-link {
+        display: block;
+        margin-top: 1rem;
+        text-align: center;
+        color: var(--mm-text-muted);
+        text-decoration: none;
+        font-size: 0.9rem;
+      }
+      .back-link:hover { color: var(--mm-text-main); }
+      .msg { margin-top: 1rem; padding: 10px; display: none; text-align: center; }
+      .msg.error { color: #ff4444; background: rgba(255, 68, 68, 0.1); border: 1px solid #ff4444; }
+      .msg.success { color: #44ff44; background: rgba(68, 255, 68, 0.1); border: 1px solid #44ff44; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Forgot Password</h2>
+      <p>Enter your email address to receive a password reset link.</p>
+      <form id="forgot-form">
+        <div class="input-group">
+          <label>Email Address</label>
+          <input type="email" id="email" required placeholder="name@example.com">
+        </div>
+        <button type="submit" class="btn" id="submit-btn">Send Reset Link</button>
+      </form>
+      <div id="message" class="msg"></div>
+      <a href="/login" class="back-link">Back to Login</a>
+    </div>
+    <script type="module" src="/src/forgot.ts"></script>
+  </body>
+</html>

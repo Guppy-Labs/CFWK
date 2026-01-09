@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:title" content="CFWK">
+    <meta property="og:description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:image" content="/favicon.png">
+    <meta property="og:type" content="website">
+    <title>CFWK - Onboarding</title>
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <style>
+      :root {
+          --mm-primary: #ff66aa;
+          --mm-primary-hover: #ff4499;
+      }
+      * { border-radius: 0 !important; box-sizing: border-box; }
+      body {
+        margin: 0;
+        background-color: var(--mm-bg-dark);
+        color: var(--mm-text-main);
+        font-family: 'Minecraft', sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+      }
+      .box {
+        background-color: var(--mm-bg-panel);
+        border: 2px solid var(--mm-border);
+        padding: 2rem;
+        box-shadow: var(--mm-shadow);
+        width: 100%;
+        max-width: 400px;
+        text-align: center;
+      }
+      .input-group {
+        margin-bottom: 1.5rem;
+        text-align: left;
+      }
+      .input-group label {
+        display: block;
+        margin-bottom: 0.5rem;
+        color: var(--mm-text-muted);
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .input-group input {
+        width: 100%;
+        padding: 0.8rem;
+        background: var(--mm-bg-dark);
+        border: 2px solid var(--mm-border);
+        color: var(--mm-text-main);
+        font-family: inherit;
+        font-size: 1rem;
+      }
+      button {
+        width: 100%;
+        padding: 1rem;
+        background: var(--mm-primary);
+        color: white;
+        border: none;
+        font-family: inherit;
+        font-size: 1.1rem;
+        cursor: pointer;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        transition: background 0.2s;
+      }
+      button:hover {
+        background: var(--mm-primary-hover);
+      }
+      h2 { margin-top: 0; color: var(--mm-primary); }
+      p { color: var(--mm-text-muted); font-size: 0.9rem; margin-bottom: 2rem; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+        <h2>Welcome!</h2>
+        <p>Please choose a username to continue. You can only change this once every 14 days.</p>
+        <form id="onboarding-form">
+            <div class="input-group">
+                <label>Username</label>
+                <input type="text" id="username" placeholder="CoolPlayer123" required minlength="3" maxlength="20" />
+            </div>
+            <button type="submit">Confirm</button>
+        </form>
+    </div>
+    <script type="module" src="/src/onboarding.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <meta name="description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:title" content="CFWK">
+    <meta property="og:description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:image" content="/favicon.png">
+    <meta property="og:type" content="website">
+    <title>Check Your Email - CFWK</title>
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            border-radius: 0 !important;
+            box-sizing: border-box;
+        }
+        body {
+            background-color: var(--mm-bg-dark);
+            color: var(--mm-text-main);
+            font-family: 'Minecraft', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            user-select: none;
+        }
+        .container {
+            text-align: center;
+            background-color: var(--mm-bg-panel);
+            padding: 3rem;
+            border: 2px solid var(--mm-border);
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5rem;
+        }
+        
+        .icon-box {
+            font-size: 4rem;
+            margin-bottom: 0.5rem;
+            color: var(--mm-primary);
+        }
+        
+        h2 {
+            font-size: 2rem;
+            margin: 0;
+            color: var(--mm-primary);
+            text-shadow: 2px 2px 0 #000;
+        }
+        
+        p {
+            font-size: 1.1rem;
+            margin: 0;
+            color: var(--mm-text-muted);
+            line-height: 1.5;
+        }
+        
+        .mm-btn {
+            font-size: 1.1rem;
+            padding: 12px 30px;
+            margin-top: 1rem;
+            width: 100%;
+            cursor: pointer;
+        }
+        
+        .mm-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(1);
+        }
+
+        .login-link {
+            color: var(--mm-text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            margin-top: 1rem;
+        }
+        .login-link:hover {
+            color: var(--mm-primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon-box">
+            <i class="fa-solid fa-envelope-open-text"></i>
+        </div>
+        <h2>Check Your Email</h2>
+        <p>
+            We've sent a verification link to <strong id="email-display" style="color: #fff;">your email</strong>.
+            Please click the link to activate your account.
+        </p>
+        
+        <button id="resend-btn" class="mm-btn">Resend Email</button>
+        <p id="timer-msg" style="font-size: 0.9rem; display: none;">Wait <span id="timer">120</span>s to resend</p>
+        
+        <a href="/login" class="login-link">Back to Login</a>
+    </div>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const email = params.get('email');
+        const emailDisplay = document.getElementById('email-display');
+        const resendBtn = document.getElementById('resend-btn');
+        const timerMsg = document.getElementById('timer-msg');
+        const timerSpan = document.getElementById('timer');
+        
+        if (email) {
+            emailDisplay.textContent = email;
+        } else {
+            emailDisplay.textContent = "your email address";
+        }
+
+        let cooldown = 0;
+        
+        const lastSent = localStorage.getItem('last_email_sent_' + email);
+        if (lastSent) {
+            const diff = Date.now() - parseInt(lastSent);
+            if (diff < 120000) {
+                cooldown = Math.ceil((120000 - diff) / 1000);
+                startTimer();
+            }
+        }
+
+        function startTimer() {
+            resendBtn.disabled = true;
+            resendBtn.textContent = "Email Sent";
+            timerMsg.style.display = 'block';
+            
+            const interval = setInterval(() => {
+                cooldown--;
+                timerSpan.textContent = cooldown;
+                
+                if (cooldown <= 0) {
+                    clearInterval(interval);
+                    resendBtn.disabled = false;
+                    resendBtn.textContent = "Resend Email";
+                    timerMsg.style.display = 'none';
+                }
+            }, 1000);
+        }
+
+        resendBtn.addEventListener('click', async () => {
+            if (!email) {
+                alert("Email not found. Please register again.");
+                return;
+            }
+            
+            resendBtn.disabled = true;
+            resendBtn.textContent = "Sending...";
+            
+            try {
+                const res = await fetch('/api/auth/resend-verification', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                
+                const data = await res.json();
+                
+                if (res.ok) {
+                    localStorage.setItem('last_email_sent_' + email, Date.now().toString());
+                    cooldown = 120;
+                    timerSpan.textContent = cooldown;
+                    startTimer();
+                } else {
+                    resendBtn.disabled = false;
+                    resendBtn.textContent = "Resend Email";
+                    alert(data.message || "Failed to send email");
+                }
+            } catch (e) {
+                resendBtn.disabled = false;
+                resendBtn.textContent = "Resend Email";
+                alert("Connection Error");
+            }
+        });
+    </script>
+</body>
+</html>

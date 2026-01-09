@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <meta name="description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:title" content="CFWK">
+    <meta property="og:description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:image" content="/favicon.png">
+    <meta property="og:type" content="website">
+    <title>CFWK - Account</title>
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background-color: var(--mm-bg-dark);
+            color: var(--mm-text-main);
+            font-family: 'Minecraft', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--mm-bg-dark);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--mm-bg-panel);
+            border: 1px solid var(--mm-border);
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--mm-bg-input);
+            border-color: var(--mm-primary);
+        }
+
+        /* Navbar */
+        .navbar {
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            background-color: var(--mm-bg-panel);
+            border-bottom: 2px solid var(--mm-border);
+        }
+
+        .navbar-brand {
+            font-size: 1.5rem;
+            color: var(--mm-primary);
+            text-decoration: none;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .navbar-user {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background-color: var(--mm-bg-input);
+            border: 2px solid var(--mm-border);
+            object-fit: cover;
+        }
+        
+        .nav-username {
+            font-size: 1.1rem;
+            color: var(--mm-text-main);
+            font-weight: bold;
+        }
+
+        /* Main Content */
+        .container {
+            flex: 1;
+            max-width: 800px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 2rem;
+            box-sizing: border-box;
+            overflow-y: auto;
+        }
+
+        .settings-panel {
+            background-color: var(--mm-bg-panel);
+            border: 2px solid var(--mm-border);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .panel-header {
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--mm-border);
+        }
+
+        .panel-title {
+            margin: 0;
+            font-size: 1.25rem;
+            color: var(--mm-primary);
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--mm-text-muted);
+        }
+
+        .status-row {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        
+        .status-input {
+            flex: 1;
+        }
+
+        .linked-accounts {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .link-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .link-btn {
+            flex: 1;
+            /* Existing styles continued... */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 12px;
+            background-color: var(--mm-bg-input);
+            border: 2px solid var(--mm-border);
+            color: var(--mm-text-muted);
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            font-family: inherit;
+        }
+
+        .link-btn:not(.linked):hover {
+            border-color: var(--mm-primary);
+            color: var(--mm-text-main);
+        }
+
+        .link-btn.linked {
+            border-color: var(--mm-primary);
+            color: var(--mm-primary);
+            cursor: default;
+            background-color: rgba(255, 102, 170, 0.1);
+        }
+
+        .link-btn i {
+            font-size: 1.2rem;
+        }
+
+        .unlink-btn {
+            background: rgba(213, 58, 58, 0.1);
+            border: 1px solid var(--mm-danger);
+            color: var(--mm-danger);
+            width: 44px; /* Match height approx */
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: none; /* Hidden by default */
+            font-size: 1rem;
+        }
+
+        .unlink-btn:hover {
+            background: var(--mm-danger);
+            color: white;
+        }
+
+        .status-row .mm-input {
+            margin-bottom: 0;
+        }
+
+        /* Countdown Styles */
+        .release-countdown {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 5px 15px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(2px);
+        }
+
+        .countdown-digits {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .countdown-prefix {
+            font-size: 1rem;
+            color: var(--mm-text-muted);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: bold;
+            opacity: 0.8;
+            padding-right: 10px;
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .countdown-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 45px;
+            padding: 0 4px;
+        }
+        
+        .countdown-val-wrapper {
+            position: relative;
+            height: 30px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .countdown-val {
+            font-size: 1.6rem;
+            color: var(--mm-primary);
+            font-weight: bold;
+            line-height: 30px;
+            text-shadow: 2px 2px 0px #000;
+        }
+
+        .countdown-label {
+            font-size: 0.65rem;
+            color: var(--mm-text-muted);
+            letter-spacing: 1px;
+            margin-top: 2px;
+            text-transform: uppercase;
+        }
+        
+        .countdown-sep {
+            font-size: 1.2rem;
+            color: var(--mm-text-muted);
+            margin-bottom: 12px;
+            opacity: 0.5;
+            animation: pulse-sep 1s infinite;
+        }
+        
+        @keyframes pulse-sep {
+             0% { opacity: 1; text-shadow: 0 0 5px var(--mm-primary); }
+             49% { opacity: 1; text-shadow: 0 0 5px var(--mm-primary); }
+             50% { opacity: 0.3; }
+             100% { opacity: 0.3; }
+        }
+
+        .val-change {
+            animation: bounce-val 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes bounce-val {
+            0% { transform: scale(1); filter: brightness(1); }
+            50% { transform: scale(1.3); filter: brightness(1.5); color: #fff; }
+            100% { transform: scale(1); filter: brightness(1); }
+        }
+
+        @media (max-width: 1150px) {
+            .navbar {
+                flex-wrap: wrap;
+                gap: 1rem;
+            }
+
+            .release-countdown {
+                position: static;
+                transform: none;
+                order: 3;
+                width: 100%;
+                justify-content: center;
+                margin-top: 0.5rem;
+            }
+        }
+
+        /* User Menu Dropdown */
+        .user-menu-container {
+            position: relative;
+        }
+
+        .user-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            padding: 6px 12px;
+            transition: background-color 0.2s;
+            border: 1px solid var(--mm-border);
+        }
+
+        .user-card:hover, .user-card.active {
+            background-color: var(--mm-bg-input);
+            border-color: var(--mm-primary);
+        }
+
+        .user-chevron {
+            font-size: 0.8rem;
+            color: var(--mm-text-muted);
+            transition: transform 0.2s;
+        }
+
+        .user-card.active .user-chevron {
+            transform: rotate(180deg);
+        }
+
+        .user-dropdown {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            width: 220px;
+            background-color: var(--mm-bg-panel);
+            border: 1px solid var(--mm-border);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            padding: 8px 0;
+            display: none;
+            z-index: 1000;
+            overflow: hidden;
+            animation: fadeInMenu 0.2s ease-out;
+        }
+        
+        @keyframes fadeInMenu {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .user-dropdown.show {
+            display: block;
+        }
+
+        .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            color: var(--mm-text-main);
+            text-decoration: none;
+            font-size: 0.95rem;
+            transition: background-color 0.2s;
+            background: none;
+            border: none;
+            width: 100%;
+            text-align: left;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .dropdown-item:hover {
+            background-color: var(--mm-bg-input);
+        }
+
+        .dropdown-item i {
+            width: 20px;
+            text-align: center;
+            color: var(--mm-text-muted);
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background-color: var(--mm-border);
+            margin: 6px 0;
+        }
+
+        .item-danger {
+            color: #ff5555;
+        }
+        
+        .item-danger:hover {
+            background-color: rgba(255, 85, 85, 0.1);
+        }
+        
+        .item-danger i {
+            color: #ff5555;
+        }
+
+        /* Special Info Card */
+        .info-card {
+            background: rgba(33, 150, 243, 0.1);
+            border: 1px solid #2196f3;
+            color: #2196f3;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            animation: fadeIn 0.5s;
+        }
+
+        .info-card h3 {
+            margin: 0 0 0.5rem 0;
+            color: #64b5f6;
+            font-size: 1.2rem;
+        }
+
+        .info-card p {
+            margin: 0;
+            color: #bbdefb;
+            font-size: 0.9rem;
+        }
+        
+        .btn-blue {
+            background-color: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: inherit;
+            text-decoration: none;
+            display: inline-block;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+        
+        .btn-blue:hover {
+            background-color: #1976d2;
+        }
+
+        /* Countdown Modal */
+        .modal {
+            display: none; 
+            position: fixed; 
+            z-index: 2000; 
+            left: 0;
+            top: 0;
+            width: 100%; 
+            height: 100%; 
+            overflow: auto; 
+            background-color: rgba(0,0,0,0.85); 
+            backdrop-filter: blur(5px);
+            animation: fadeIn 0.3s;
+        }
+
+        .modal-content {
+            background-color: var(--mm-bg-panel);
+            margin: 10% auto; 
+            padding: 40px;
+            border: 1px solid var(--mm-primary);
+            width: 80%;
+            max-width: 900px;
+            box-shadow: 0 0 30px rgba(255, 102, 170, 0.2);
+            text-align: center;
+            position: relative;
+        }
+
+        .close-modal {
+            color: var(--mm-text-muted);
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .close-modal:hover,
+        .close-modal:focus {
+            color: var(--mm-primary);
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .large-countdown {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 2rem;
+            margin: 3rem 0;
+            font-family: inherit;
+        }
+
+        .lc-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .lc-val-wrapper span {
+            font-size: 5rem;
+            font-weight: bold;
+            color: var(--mm-primary);
+            text-shadow: 0 0 15px rgba(255, 102, 170, 0.4);
+            line-height: 1;
+            display: inline-block;
+        }
+        
+        @media (max-width: 800px) {
+            .lc-val-wrapper span {
+                font-size: 2.5rem;
+            }
+        }
+
+        .lc-label {
+            font-size: 1rem;
+            letter-spacing: 2px;
+            margin-top: 1rem;
+            color: var(--mm-text-muted);
+            text-transform: uppercase;
+        }
+
+        .lc-sep {
+            font-size: 4rem;
+            color: var(--mm-text-muted);
+            opacity: 0.3;
+            margin-top: -0.5rem;
+            animation: pulse-sep 1s infinite;
+        }
+
+        /* Responsive Modal */
+        @media (max-width: 800px) {
+            .large-countdown {
+                gap: 1rem;
+            }
+            .lc-sep {
+                font-size: 2rem;
+                margin-top: 0;
+            }
+        }
+        
+        .navbar .release-countdown {
+             cursor: pointer;
+             transition: color 0.2s;
+        }
+        .navbar .release-countdown:hover {
+             filter: brightness(1.1);
+        }
+
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="#" class="navbar-brand">
+            <i class="fa-solid fa-fish"></i> CFWK
+        </a>
+        
+        <!-- Countdown Container -->
+        <div id="countdown-container" class="release-countdown" style="display: none;">
+            <div class="countdown-prefix">RELEASE IN</div>
+            <div class="countdown-digits">
+                <div class="countdown-item">
+                    <div class="countdown-val-wrapper"><span id="cd-days" class="countdown-val">00</span></div>
+                    <span class="countdown-label">Days</span>
+                </div>
+                <div class="countdown-sep">:</div>
+                <div class="countdown-item">
+                    <div class="countdown-val-wrapper"><span id="cd-hours" class="countdown-val">00</span></div>
+                    <span class="countdown-label">Hrs</span>
+                </div>
+                <div class="countdown-sep">:</div>
+                <div class="countdown-item">
+                    <div class="countdown-val-wrapper"><span id="cd-minutes" class="countdown-val">00</span></div>
+                    <span class="countdown-label">Min</span>
+                </div>
+                <div class="countdown-sep">:</div>
+                <div class="countdown-item">
+                    <div class="countdown-val-wrapper"><span id="cd-seconds" class="countdown-val">00</span></div>
+                    <span class="countdown-label">Sec</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="user-menu-container">
+            <div id="user-menu-trigger" class="user-card">
+                <span id="nav-username" class="nav-username">Loading...</span>
+                <img id="nav-avatar" class="user-avatar" src="" alt="User">
+                <i class="fa-solid fa-chevron-down user-chevron"></i>
+            </div>
+            
+            <div id="user-dropdown" class="user-dropdown">
+                <a href="/account" class="dropdown-item">
+                    <i class="fa-solid fa-user"></i> Account
+                </a>
+                <a href="#" class="dropdown-item">
+                    <i class="fa-solid fa-gear"></i> Settings
+                </a>
+                <div class="dropdown-divider"></div>
+                <button id="logout-btn" class="dropdown-item item-danger">
+                    <i class="fa-solid fa-right-from-bracket"></i> Log Out
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        
+        <!-- MapMaker Card -->
+        <div id="mapmaker-card" class="info-card" style="display: none;">
+            <div>
+                <h3><i class="fa-solid fa-map"></i> You are a Mapper</h3>
+                <p>You have permission to create and edit game maps. Use the Map Editor to build and get reviewed.</p>
+            </div>
+            <a href="/maps" class="btn-blue">Open Editor</a>
+        </div>
+        
+        <!-- Profile Section -->
+        <div class="settings-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">Public Profile</h2>
+            </div>
+
+            <div class="form-group">
+                <div style="display: flex; gap: 2rem; align-items: start;">
+                    <div style="flex-shrink: 0; display: flex; flex-direction: column; align-items: center;">
+                        <img id="settings-avatar" class="user-avatar" style="width: 100px; height: 100px; margin-bottom: 0.5rem;" src="" alt="">
+                        <input type="file" id="avatar-input" accept="image/*" style="display: none;">
+                        <button id="change-avatar-btn" class="mm-btn mm-btn-secondary" style="width: 100px; padding: 0.6rem 0;">Change Photo</button>
+                    </div>
+                    <div style="flex-grow: 1;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Status Message</label>
+                            <div class="status-row">
+                                <input type="text" id="status-input" class="mm-input" placeholder="What's on your mind?">
+                                <button id="save-status-btn" class="mm-btn" style="width: auto;">Set</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Username Section -->
+        <div class="settings-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">Change Username</h2>
+            </div>
+            
+            <div id="username-info-box" style="padding: 10px; margin-bottom: 1rem; border: 1px solid transparent; font-size: 0.9rem;"></div>
+
+            <div class="form-group">
+                <label>Username</label>
+                <div class="status-row">
+                    <input type="text" id="username-input" class="mm-input" placeholder="Username">
+                    <button id="save-username-btn" class="mm-btn" style="width: auto;">Update</button>
+                </div>
+                <small id="username-msg" style="color: var(--mm-text-muted); font-size: 0.8rem;"></small>
+            </div>
+        </div>
+
+        <!-- Linked Accounts -->
+        <div class="settings-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">Linked Accounts</h2>
+            </div>
+            <div class="linked-accounts">
+                <div class="link-wrapper">
+                    <a href="/api/account/link/google" id="link-google" class="link-btn">
+                        <i class="fa-brands fa-google"></i>
+                        <span class="link-text">Link Google Account</span>
+                    </a>
+                    <button id="unlink-google" class="unlink-btn" title="Unlink Google"><i class="fa-solid fa-link-slash"></i></button>
+                </div>
+                <div class="link-wrapper">
+                    <a href="/api/account/link/discord" id="link-discord" class="link-btn">
+                        <i class="fa-brands fa-discord"></i>
+                        <span class="link-text">Link Discord Account</span>
+                    </a>
+                    <button id="unlink-discord" class="unlink-btn" title="Unlink Discord"><i class="fa-solid fa-link-slash"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Security -->
+        <div class="settings-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">Security</h2>
+            </div>
+            
+            <form id="password-form" style="display: flex; flex-direction: column; gap: 1rem;">
+                <div class="form-group" id="current-password-group" style="display: none; margin: 0;">
+                    <label>Current Password</label>
+                    <input type="password" id="current-password" class="mm-input">
+                </div>
+
+                <div class="form-group" style="margin: 0;">
+                    <label>New Password</label>
+                    <input type="password" id="new-password" class="mm-input" required minlength="6">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                    <label>Confirm Password</label>
+                    <input type="password" id="confirm-password" class="mm-input" required minlength="6">
+                </div>
+                <button type="submit" class="mm-btn" style="margin-top: 0.5rem;">Update Password</button>
+            </form>
+        </div>
+
+    </div>
+    
+    <div id="unlink-modal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <span class="close-modal link-close">&times;</span>
+            <h2 class="panel-title" style="margin-bottom: 2rem; border-bottom: none; font-size: 1.5rem;">Unlink Account?</h2>
+            <p style="margin-bottom: 2rem; color: var(--mm-text-muted);">
+                Are you sure you want to unlink <strong id="unlink-provider-name" style="color: var(--mm-text-main);">Publisher</strong>? 
+                You will no longer be able to log in with this account.
+            </p>
+            <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+                <button class="mm-btn" id="cancel-unlink-btn" style="background: transparent; border: 1px solid var(--mm-border);">Cancel</button>
+                <button class="mm-btn mm-btn-danger" id="confirm-unlink-btn">Unlink Account</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Countdown Modal -->
+    <div id="countdown-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2 style="font-size: 2rem; letter-spacing: 4px; color: #fff; margin-bottom: 1rem;">CFWK RELEASE</h2>
+            <div style="width: 100px; height: 2px; background: var(--mm-primary); margin: 0 auto;"></div>
+            
+            <div class="large-countdown">
+                <div class="lc-item">
+                    <div class="lc-val-wrapper"><span id="lc-days">00</span></div>
+                    <span class="lc-label">DAYS</span>
+                </div>
+                <div class="lc-sep">:</div>
+                <div class="lc-item">
+                    <div class="lc-val-wrapper"><span id="lc-hours">00</span></div>
+                    <span class="lc-label">HOURS</span>
+                </div>
+                <div class="lc-sep">:</div>
+                <div class="lc-item">
+                    <div class="lc-val-wrapper"><span id="lc-minutes">00</span></div>
+                    <span class="lc-label">MINS</span>
+                </div>
+                <div class="lc-sep">:</div>
+                <div class="lc-item">
+                    <div class="lc-val-wrapper"><span id="lc-seconds">00</span></div>
+                    <span class="lc-label">SECS</span>
+                </div>
+            </div>
+            
+            <p style="color: var(--mm-text-muted); margin-bottom: 2rem;">Get ready to dive in.</p>
+        </div>
+    </div>
+
+    <script type="module" src="/src/account.ts"></script>
+</body>
+</html>

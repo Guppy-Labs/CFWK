@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <meta name="description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:title" content="CFWK">
+    <meta property="og:description" content="CFWK - Create, Play, and Share Custom Maps.">
+    <meta property="og:image" content="/favicon.png">
+    <meta property="og:type" content="website">
+    <title>Verifying Email - CFWK</title>
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            border-radius: 0 !important;
+            box-sizing: border-box;
+        }
+        body {
+            background-color: var(--mm-bg-dark);
+            color: var(--mm-text-main);
+            font-family: 'Minecraft', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            user-select: none;
+        }
+        .container {
+            text-align: center;
+            background-color: var(--mm-bg-panel);
+            padding: 3rem;
+            border: 2px solid var(--mm-border);
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5rem;
+        }
+        
+        .icon-box {
+            font-size: 4rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .icon-spin {
+            animation: spin 1s linear infinite;
+            color: var(--mm-text-muted);
+        }
+        
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        
+        .icon-success { color: #ff66aa; }
+        .icon-error { color: #f44336; }
+
+        h2 {
+            font-size: 2rem;
+            margin: 0;
+            color: var(--mm-primary);
+            text-shadow: 2px 2px 0 #000;
+        }
+        
+        p {
+            font-size: 1.1rem;
+            margin: 0;
+            color: var(--mm-text-muted);
+            line-height: 1.5;
+        }
+        
+        .mm-btn {
+            font-size: 1.2rem;
+            padding: 12px 30px;
+            margin-top: 1rem;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="icon-container" class="icon-box">
+            <i class="fa-solid fa-circle-notch icon-spin"></i>
+        </div>
+        <h2 id="status">Verifying...</h2>
+        <p id="message">Please wait while we verify your email address.</p>
+        <a href="/login" class="mm-btn" style="display: none; text-decoration: none;" id="login-btn">
+            Continue to Login
+        </a>
+    </div>
+
+    <script>
+        async function verify() {
+            const params = new URLSearchParams(window.location.search);
+            const token = params.get('token');
+            const statusEl = document.getElementById('status');
+            const msgEl = document.getElementById('message');
+            const btn = document.getElementById('login-btn');
+            const iconContainer = document.getElementById('icon-container');
+
+            if (!token) {
+                showError("Invalid verification link.");
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/auth/verify-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    showSuccess();
+                } else {
+                    showError(data.message || "Something went wrong.");
+                }
+            } catch (e) {
+                showError("Connection error. Please try again.");
+            }
+            
+            function showSuccess() {
+                statusEl.textContent = "Verified!";
+                msgEl.textContent = "Your email has been successfully verified. You are ready to play!";
+                btn.style.display = 'inline-block';
+                iconContainer.innerHTML = '<i class="fa-solid fa-check-circle icon-success"></i>';
+                document.querySelector('.container').style.borderColor = '#ff66aa';
+                document.querySelector('.container').style.boxShadow = '0 0 20px rgba(255, 102, 170, 0.3)';
+            }
+            
+            function showError(msg) {
+                statusEl.textContent = "Verification Failed";
+                msgEl.textContent = msg;
+                statusEl.style.color = '#f44336';
+                iconContainer.innerHTML = '<i class="fa-solid fa-circle-xmark icon-error"></i>';
+                document.querySelector('.container').style.borderColor = '#f44336';
+            }
+        }
+        verify();
+    </script>
+</body>
+</html>
