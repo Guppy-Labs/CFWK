@@ -6,7 +6,7 @@ import { Tile } from "./models/Tile";
 import { TileGroup } from "./models/TileGroup";
 import { MapModel } from "./models/Map";
 import { Library } from "./models/Library";
-import { MapState, MapLayer } from "@cfwk/shared";
+import { MapState, DefaultLayers, ITile, IFolder } from "@cfwk/shared";
 
 const router = express.Router();
 
@@ -142,18 +142,40 @@ router.delete("/tiles/:id", async (req, res) => {
                 }
             }
             
-            const layerKeys = Object.values(MapLayer);
-            for (const key of layerKeys) {
-                const layer = map.layers[key] as any;
-                if (layer) {
-                    const coords = Array.from(layer.keys());
-                    for (const coord of coords) {
-                        if (layer.get(coord) === tileId) {
-                            layer.delete(coord);
-                            changed = true;
+            if (map.layers && Array.isArray(map.layers)) {
+                map.layers.forEach((layer: any) => {
+                    if (layer.data) {
+                        let layerChanged = false;
+                        for (const coord in layer.data) {
+                            if (layer.data[coord] === tileId) {
+                                delete layer.data[coord];
+                                layerChanged = true;
+                                changed = true;
+                            }
+                        }
+                        if (layerChanged) {
+                            map.markModified('layers');
                         }
                     }
-                }
+                });
+            } else if (map.layers && typeof map.layers === 'object') {
+                 // Legacy object support
+                 Object.values(map.layers).forEach((layer: any) => {
+                     // layer is the data object itself in old format, or Map? 
+                     // Mongoose Mixed returns POJO.
+                     // Old format: layers: { 'background': { '0,0': 'id' } }
+                     if (layer) {
+                         let layerChanged = false;
+                         for (const coord in layer) {
+                             if (layer[coord] === tileId) {
+                                 delete layer[coord];
+                                 layerChanged = true;
+                                 changed = true;
+                             }
+                         }
+                         if (layerChanged) map.markModified('layers');
+                     }
+                 });
             }
             
             if (changed) await map.save();
@@ -264,13 +286,13 @@ router.post("/maps", async (req, res) => {
             width: width || 20,
             height: height || 20,
             state: MapState.DRAFT,
-            layers: {
-                background: {},
-                ground: {},
-                wall: {},
-                deco: {},
-                object: {}
-            }
+            layers: [
+                { id: DefaultLayers.BACKGROUND, name: 'Background', type: 'tile', visible: true, locked: false, data: {} },
+                { id: DefaultLayers.GROUND, name: 'Ground', type: 'tile', visible: true, locked: false, data: {} },
+                { id: DefaultLayers.WALL, name: 'Walls', type: 'tile', visible: true, locked: false, data: {} },
+                { id: DefaultLayers.DECO, name: 'Decoration', type: 'tile', visible: true, locked: false, data: {} },
+                { id: DefaultLayers.OBJECT, name: 'Objects', type: 'tile', visible: true, locked: false, data: {} }
+            ]
         });
         await map.save();
         res.json(map);
@@ -302,7 +324,7 @@ router.get("/maps/:id", async (req, res) => {
 
 router.put("/maps/:id", async (req, res) => {
     try {
-        const { layers, width, height, palette, layerProperties } = req.body;
+        const { layers, width, height, palette } = req.body;
 
         const map = await MapModel.findById(req.params.id);
         if (!map) return res.status(404).json({ error: "Map not found" });
@@ -311,12 +333,11 @@ router.put("/maps/:id", async (req, res) => {
             return res.status(403).json({ error: "Only draft maps can be edited" });
         }
 
-        map.layers = layers;
-        map.markModified('layers');
-        if (layerProperties) {
-            map.layerProperties = layerProperties;
-            map.markModified('layerProperties');
+        if (layers) {
+            map.layers = layers;
+            map.markModified('layers');
         }
+
         if (palette) map.palette = palette;
         if (width) map.width = width;
         if (height) map.height = height;

@@ -1,6 +1,9 @@
-import Phaser from 'phaser';
-import { Config } from '../config';
-import { IMap, MapLayer } from '@cfwk/shared';
+/**
+ * LEGACY MAP TESTER
+ * Used to validate maps from the deprecated custom editor. New TMX maps will
+ * be tested with a separate Phaser Tilemap workflow.
+ */
+import { IMap, SYSTEM_TILES } from '@cfwk/shared';
 
 export class MapTesterScene extends Phaser.Scene {
     private player!: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
@@ -9,6 +12,11 @@ export class MapTesterScene extends Phaser.Scene {
     private mapId: string | null = null;
     private colliders: Phaser.Physics.Arcade.StaticGroup[] = [];
     private tileRegistry: Map<string, any> = new Map();
+
+    // Above/Overhead system
+    private aboveClusters: Map<number, Phaser.GameObjects.Image[]> = new Map();
+    private aboveGrid: Map<string, number> = new Map(); // "x,y" -> clusterId
+    private activeClusterIds: Set<number> = new Set();
 
     constructor() {
         super('MapTesterScene');
@@ -22,8 +30,14 @@ export class MapTesterScene extends Phaser.Scene {
         if (!this.textures.exists('player')) {
             const g = this.make.graphics({x:0, y:0});
             g.fillStyle(0x00ff00);
-            g.fillRect(0,0,24,24);
-            g.generateTexture('player', 24, 24);
+            g.fillRect(0,0,24,51);
+            g.generateTexture('player', 24, 51);
+        }
+        if (!this.textures.exists(SYSTEM_TILES.INVISIBLE)) {
+            const g = this.make.graphics({ x: 0, y: 0 });
+            g.fillStyle(0x000000, 1/255);
+            g.fillRect(0, 0, 32, 32);
+            g.generateTexture(SYSTEM_TILES.INVISIBLE, 32, 32);
         }
     }
 
@@ -93,9 +107,9 @@ export class MapTesterScene extends Phaser.Scene {
 
         // 2. from layers
         if (this.mapData.layers) {
-            Object.values(this.mapData.layers).forEach(layer => {
-                if (layer) {
-                    Object.values(layer).forEach((tileId: string) => {
+            this.mapData.layers.forEach(layer => {
+                if (layer && layer.data) {
+                    Object.values(layer.data).forEach((tileId: string) => {
                          if (tileId) usedTileIds.add(tileId);
                     });
                 }
@@ -133,16 +147,14 @@ export class MapTesterScene extends Phaser.Scene {
         this.physics.world.setBounds(0, 0, this.mapData.width * 32, this.mapData.height * 32);
         this.cameras.main.setBounds(0, 0, this.mapData.width * 32, this.mapData.height * 32);
 
-        const layers = [MapLayer.BACKGROUND, MapLayer.GROUND, MapLayer.WALL, MapLayer.DECO, MapLayer.OBJECT];
-        
-        layers.forEach(layerKey => {
-            if (!this.mapData?.layers) return;
-            const layerData = this.mapData.layers[layerKey];
-            
-            if (!layerData) return;
+        const aboveImages: { x: number, y: number, image: Phaser.GameObjects.Image }[] = [];
 
-            const props = this.mapData.layerProperties?.[layerKey];
-            const isCollidable = props?.collidable ?? false;
+        this.mapData.layers.forEach((layer, index) => {
+            if (layer.visible === false) return; // default true
+
+            // Legacy support: check both properties.collidable and root collidable
+            const isCollidable = (layer.properties?.collidable === true) || ((layer as any).collidable === true);
+            const isAbove = layer.properties?.above === true;
 
             let colliderGroup: Phaser.Physics.Arcade.StaticGroup | null = null;
             if (isCollidable) {
@@ -150,33 +162,125 @@ export class MapTesterScene extends Phaser.Scene {
                 this.colliders.push(colliderGroup);
             }
 
-            Object.entries(layerData).forEach(([coord, tileId]) => {
+            Object.entries(layer.data).forEach(([coord, tileId]) => {
+                if (tileId === SYSTEM_TILES.SPAWN) return; // Do not render spawn point
+                
                 const [gx, gy] = coord.split(',').map(Number);
-                if (this.textures.exists(tileId)) {
+                if (this.textures.exists(tileId as string)) {
                     if (isCollidable && colliderGroup) {
-                         const tile = colliderGroup.create(gx * 32 + 16, gy * 32 + 16, tileId);
+                         const tile = colliderGroup.create(gx * 32 + 16, gy * 32 + 16, tileId as string);
                          tile.setDisplaySize(32, 32);
                          tile.refreshBody(); // important for static physics body resize
+                         
+                         // Fix for invisible tiles in tester:
+                         if (tileId === SYSTEM_TILES.INVISIBLE) {
+                             // Force full box
+                             tile.setSize(32,32);
+                         } 
+                         else if (tileId !== SYSTEM_TILES.COLLISION) {
+                             // Attempt to match size for others later if needed, but tester is simple
+                         }
+
+                         tile.setDepth(index * 10);
                     } else {
-                         const img = this.add.image(gx * 32 + 16, gy * 32 + 16, tileId);
+                         const img = this.add.image(gx * 32 + 16, gy * 32 + 16, tileId as string);
                          img.setDisplaySize(32, 32);
+                         
+                         if (isAbove) {
+                             img.setDepth(2000 + index); // High depth for overhead
+                             aboveImages.push({ x: gx, y: gy, image: img });
+                         } else {
+                             img.setDepth(index * 10);
+                         }
                     }
                 }
             });
+        });
+
+        this.buildAboveClusters(aboveImages);
+    }
+
+    private buildAboveClusters(aboveImages: { x: number, y: number, image: Phaser.GameObjects.Image }[]) {
+        this.aboveClusters.clear();
+        this.aboveGrid.clear();
+        this.activeClusterIds.clear();
+
+        // Group images by coordinate
+        const byCoord = new Map<string, Phaser.GameObjects.Image[]>();
+        aboveImages.forEach(item => {
+            const key = `${item.x},${item.y}`;
+            if (!byCoord.has(key)) byCoord.set(key, []);
+            byCoord.get(key)!.push(item.image);
+        });
+        
+        // Build clusters (BFS)
+        const coords = Array.from(byCoord.keys());
+        const visited = new Set<string>();
+        let nextClusterId = 1;
+        
+        coords.forEach(startKey => {
+            if (visited.has(startKey)) return;
+            
+            const clusterId = nextClusterId++;
+            const queue = [startKey];
+            visited.add(startKey);
+            this.aboveClusters.set(clusterId, []);
+            
+            while(queue.length > 0) {
+                const key = queue.shift()!;
+                const [cx, cy] = key.split(',').map(Number);
+                
+                // Add to cluster
+                this.aboveGrid.set(key, clusterId);
+                const imgs = byCoord.get(key);
+                if (imgs) this.aboveClusters.get(clusterId)!.push(...imgs);
+                
+                // Check neighbors
+                const neighbors = [
+                    `${cx+1},${cy}`, `${cx-1},${cy}`, `${cx},${cy+1}`, `${cx},${cy-1}`
+                ];
+                
+                neighbors.forEach(nKey => {
+                    if (byCoord.has(nKey) && !visited.has(nKey)) {
+                        visited.add(nKey);
+                        queue.push(nKey);
+                    }
+                });
+            }
         });
     }
 
     private spawnPlayer() {
         if (!this.mapData) return;
         
-        const cx = (this.mapData.width * 32) / 2;
-        const cy = (this.mapData.height * 32) / 2;
+        let cx = (this.mapData.width * 32) / 2;
+        let cy = (this.mapData.height * 32) / 2;
+
+        // Find Spawn Point
+        let found = false;
+        for (const layer of this.mapData.layers) {
+            if (found) break;
+            if (!layer || !layer.data) continue;
+            for (const [coord, tileId] of Object.entries(layer.data)) {
+                if (tileId === SYSTEM_TILES.SPAWN) {
+                    const [gx, gy] = coord.split(',').map(Number);
+                    cx = gx * 32 + 16;
+                    cy = gy * 32 + 16;
+                    found = true;
+                    break; 
+                }
+            }
+        }
         
         this.player = this.physics.add.sprite(cx, cy, 'player');
         this.player.setCollideWorldBounds(true);
-        this.player.setDisplaySize(24, 24);
+        this.player.setDisplaySize(24, 51);
+        this.player.body.setSize(24, 25);
+        this.player.body.setOffset(0, 26);
+        this.player.setDepth(1000); // Between standard layers and Above layers
         
         this.cameras.main.startFollow(this.player, true);
+        this.cameras.main.setZoom(1.3);
 
         // colliders
         this.colliders.forEach(group => {
@@ -187,7 +291,7 @@ export class MapTesterScene extends Phaser.Scene {
     update() {
         if (!this.player || !this.cursors) return;
 
-        const speed = 200;
+        const speed = 100;
         this.player.setVelocity(0);
 
         if (this.cursors.left.isDown) {
@@ -206,5 +310,56 @@ export class MapTesterScene extends Phaser.Scene {
         if (this.player.body.velocity.x !== 0 && this.player.body.velocity.y !== 0) {
             this.player.body.velocity.normalize().scale(speed);
         }
+
+        // Handle Above Layer Fading with margin
+        const margin = 8;
+        const width = 24; 
+        const height = 51; 
+        
+        // Trigger Box relative to player center
+        const minX = this.player.x - (width/2) - margin;
+        const maxX = this.player.x + (width/2) + margin;
+        const minY = this.player.y - (height/2) - margin;
+        const maxY = this.player.y + (height/2) + margin;
+        
+        // Convert to Tile Coords range
+        const tMinX = Math.floor(minX / 32);
+        const tMaxX = Math.floor(maxX / 32);
+        const tMinY = Math.floor(minY / 32);
+        const tMaxY = Math.floor(maxY / 32);
+        
+        const currentClusterIds = new Set<number>();
+        
+        for (let ty = tMinY; ty <= tMaxY; ty++) {
+            for (let tx = tMinX; tx <= tMaxX; tx++) {
+                const key = `${tx},${ty}`;
+                const cId = this.aboveGrid.get(key);
+                if (cId !== undefined) {
+                    currentClusterIds.add(cId);
+                }
+            }
+        }
+
+        // 1. If in active but not current -> Fade In (Restore)
+        this.activeClusterIds.forEach(id => {
+            if (!currentClusterIds.has(id)) {
+                const imgs = this.aboveClusters.get(id);
+                if (imgs) {
+                    this.tweens.add({ targets: imgs, alpha: 1, duration: 200 });
+                }
+                this.activeClusterIds.delete(id);
+            }
+        });
+        
+        // 2. If in current but not active -> Fade Out (Transparent)
+        currentClusterIds.forEach(id => {
+            if (!this.activeClusterIds.has(id)) {
+                const imgs = this.aboveClusters.get(id);
+                if (imgs) {
+                    this.tweens.add({ targets: imgs, alpha: 0.4, duration: 200 });
+                }
+                this.activeClusterIds.add(id);
+            }
+        });
     }
 }

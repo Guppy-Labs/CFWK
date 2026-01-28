@@ -119,8 +119,10 @@ const lcMinutes = document.getElementById('lc-minutes') as HTMLElement;
 const lcSeconds = document.getElementById('lc-seconds') as HTMLElement;
 
 const mapmakerCard = document.getElementById('mapmaker-card') as HTMLElement;
+const preregCard = document.getElementById('prereg-card') as HTMLElement;
+const navPlayBtn = document.getElementById('nav-play-btn') as HTMLElement;
 
-const releaseDate = new Date('2026-05-09T06:00:00').getTime();
+const releaseDate = new Date('2026-04-09T06:00:00').getTime();
 let countdownInterval: any;
 
 function openCountdownModal() {
@@ -193,10 +195,14 @@ function renderUser(user: any) {
     
     if (perms.includes('access.maps')) {
         if (mapmakerCard) mapmakerCard.style.display = 'flex';
+    } else {
+        if (preregCard) preregCard.style.display = 'flex';
     }
 
     if (!perms.includes('access.game')) {
         startCountdown();
+    } else {
+        if(navPlayBtn) navPlayBtn.style.display = 'inline-flex';
     }
 
     if (user.hasPassword) {

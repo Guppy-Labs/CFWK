@@ -35,7 +35,7 @@ form.addEventListener('submit', async (e) => {
         
         if (res.ok) {
             Toast.success('Username set! Welcome aboard.');
-            setTimeout(() => window.location.href = '/', 1000);
+            setTimeout(() => window.location.href = '/account', 1000);
         } else {
             Toast.error(data.message || 'Failed to set username');
         }

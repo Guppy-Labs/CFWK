@@ -1,16 +1,13 @@
-import { ITile, IMap, MapState, MapLayer, ITileGroup } from '@cfwk/shared';
+import { ITile, IMap, MapState, ITileGroup, DefaultLayers, IFolder, ILayer, SYSTEM_TILES } from '@cfwk/shared';
 import { Config } from '../config';
 
-export interface IFolder {
-    itemType: 'folder';
-    id: string;
-    name: string;
-    color: string;
-    icon: string;
-    items: (ITile | ITileGroup)[];
-    collapsed?: boolean;
-}
+// Removed IFolder definition since it is now imported from shared
 
+/**
+ * LEGACY MAP MAKER UI
+ * This UI supports the deprecated custom map editor. It remains for legacy
+ * content, while new maps are authored in Tiled (TMX) and rendered in Phaser.
+ */
 export class MapMakerUI {
     private root: HTMLElement;
     private state: {
@@ -18,14 +15,13 @@ export class MapMakerUI {
         library: (ITile | ITileGroup | IFolder)[];
         palette: (ITile | ITileGroup | IFolder)[];
         selectedTool: 'place' | 'erase' | 'fill';
-        selectedLayer: MapLayer;
+        selectedLayer: string;
         selectedTileId: string | null;
         radius: number;
         diffusion: number;
         shape: 'square' | 'circle' | 'perlin-square' | 'perlin-circle';
-        layerVisibility: Record<MapLayer, boolean>;
-        layerLocked: Record<MapLayer, boolean>;
-        layerPreviews: Record<MapLayer, string>;
+        // layerVisibility/Locked now stored in layers themselves or managed dynamically
+        layerPreviews: Record<string, string>;
         layerPanelCollapsed: boolean;
         libraryCollapsed: boolean;
         draggingItem: { item: ITile | ITileGroup | IFolder, sourceList: 'library' | 'palette' } | null;
@@ -55,32 +51,12 @@ export class MapMakerUI {
             library: [],
             palette: [],
             selectedTool: 'place',
-            selectedLayer: MapLayer.BACKGROUND,
+            selectedLayer: DefaultLayers.GROUND,
             selectedTileId: null,
             radius: 1,
             diffusion: 100,
             shape: 'square',
-            layerVisibility: {
-                [MapLayer.BACKGROUND]: true,
-                [MapLayer.GROUND]: true,
-                [MapLayer.WALL]: true,
-                [MapLayer.DECO]: true,
-                [MapLayer.OBJECT]: true
-            },
-            layerLocked: {
-                [MapLayer.BACKGROUND]: false,
-                [MapLayer.GROUND]: false,
-                [MapLayer.WALL]: false,
-                [MapLayer.DECO]: false,
-                [MapLayer.OBJECT]: false
-            },
-            layerPreviews: {
-                [MapLayer.BACKGROUND]: '',
-                [MapLayer.GROUND]: '',
-                [MapLayer.WALL]: '',
-                [MapLayer.DECO]: '',
-                [MapLayer.OBJECT]: ''
-            },
+            layerPreviews: {},
             layerPanelCollapsed: false,
             libraryCollapsed: false,
             draggingItem: null,
@@ -217,35 +193,6 @@ export class MapMakerUI {
         if(selStencil) selStencil.addEventListener('click', () => window.dispatchEvent(new CustomEvent('mapmaker:stencil')));
         if(selCancel) selCancel.addEventListener('click', () => window.dispatchEvent(new CustomEvent('mapmaker:cancel-selection')));
         if(pasteBtn) pasteBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('mapmaker:paste')));
-
-        this.root.addEventListener('click', (e: any) => {
-            const btn = e.target.closest('.toggle-lock');
-            if (btn) {
-                e.stopPropagation();
-                const layer = btn.getAttribute('data-layer') as MapLayer;
-                this.state.layerLocked[layer] = !this.state.layerLocked[layer];
-                this.renderEditor();
-                this.updateState();
-            }
-        });
-
-        this.root.addEventListener('click', (e: any) => {
-            const btn = e.target.closest('.toggle-collidable');
-            if (btn) {
-                e.stopPropagation();
-                if (!this.state.currentMap || this.state.currentMap.state !== MapState.DRAFT) return;
-
-                const layer = btn.getAttribute('data-layer') as MapLayer;
-                if (!this.state.currentMap.layerProperties) this.state.currentMap.layerProperties = {};
-                if (!this.state.currentMap.layerProperties[layer]) this.state.currentMap.layerProperties[layer] = { collidable: false };
-                
-                const current = this.state.currentMap.layerProperties[layer]!.collidable;
-                this.state.currentMap.layerProperties[layer]!.collidable = !current;
-                
-                this.renderEditor();
-                this.saveMap(); 
-            }
-        });
     }
 
     private closeContextMenu() {
@@ -322,7 +269,11 @@ export class MapMakerUI {
         if (!target) return;
 
         if (target.type === 'layer') {
-            this.state.selectedLayer = target.value as MapLayer;
+            const desiredLayer = target.value;
+            // Validate layer exists
+            if (this.state.currentMap && this.state.currentMap.layers.some(l => l.id === desiredLayer)) {
+                this.state.selectedLayer = desiredLayer;
+            }
         } else if (target.type === 'tool') {
             this.state.selectedTool = target.value as any;
             if (this.state.selectedTool === 'fill') {
@@ -649,18 +600,36 @@ export class MapMakerUI {
             if (!mapRes.ok) throw new Error(`Map not found (${mapRes.status})`);
             const map = await mapRes.json();
 
-            // sanitize map data
-            if (!map.layers) {
-                map.layers = {
-                    background: {},
-                    ground: {},
-                    wall: {},
-                    deco: {},
-                    object: {}
+            // sanitize map data - Convert legacy object layers to array if needed
+            if (!map.layers || !Array.isArray(map.layers)) {
+                const oldLayers = map.layers || {};
+                const newLayers: any[] = [];
+                
+                // Helper to migrate legacy layer
+                const migrate = (id: string, name: string) => {
+                    newLayers.push({
+                        id: id,
+                        name: name,
+                        type: 'tile',
+                        visible: true,
+                        locked: false,
+                        data: oldLayers[id] || {}
+                    });
                 };
+                
+                migrate(DefaultLayers.BACKGROUND, 'Background');
+                migrate(DefaultLayers.GROUND, 'Ground');
+                migrate(DefaultLayers.WALL, 'Walls');
+                migrate(DefaultLayers.DECO, 'Decoration');
+                migrate(DefaultLayers.OBJECT, 'Objects');
+                
+                map.layers = newLayers;
             } else {
-                ['background', 'ground', 'wall', 'deco', 'object'].forEach(k => {
-                    if (!map.layers[k]) map.layers[k] = {};
+                // Ensure properties exist on loaded array layers
+                map.layers.forEach((l: any) => {
+                    if (l.visible === undefined) l.visible = true;
+                    if (l.locked === undefined) l.locked = false;
+                    if (!l.data) l.data = {};
                 });
             }
             
@@ -698,6 +667,21 @@ export class MapMakerUI {
             } else {
                  this.state.library = allItems;
             }
+
+            // Inject System Tiles
+            this.state.library.unshift({
+                id: SYSTEM_TILES.INVISIBLE,
+                name: 'Invisible Collision',
+                itemType: 'tile',
+                imageUrl: '' 
+            } as any);
+
+            this.state.library.unshift({
+                id: SYSTEM_TILES.SPAWN,
+                name: 'Spawn Point',
+                itemType: 'tile',
+                imageUrl: '' // Special render
+            } as any);
 
             this.state.currentMap = map;
             this.state.palette = [];
@@ -806,6 +790,17 @@ export class MapMakerUI {
                 const isActive = this.state.selectedTileId === item.id;
                 const isGroup = (item as any).itemType === 'group';
                 
+                let style = `background-image: url('${Config.getImageUrl(img)}');`;
+                let label = '';
+                
+                if (item.id === SYSTEM_TILES.SPAWN) {
+                    style = 'background-color: rgba(0, 0, 255, 0.5);';
+                    label = '<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;">SPAWN</div>';
+                } else if (item.id === SYSTEM_TILES.INVISIBLE) {
+                    style = 'background-color: rgba(255, 0, 255, 0.3); border: 1px dashed rgba(255,255,255,0.5);'; // Pinkish-transparent for visibility in editor against black bg
+                    label = '<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold; text-shadow:0 0 2px black;">INV</div>';
+                }
+
                 return `
                 <div class="mm-tile-item ${isActive ? 'active' : ''} ${isGroup ? 'mm-tile-group' : ''}" 
                         draggable="true"
@@ -813,13 +808,144 @@ export class MapMakerUI {
                         data-type="item"
                         data-list="${listType}"
                         data-action="${listType === 'library' ? 'add-to-palette' : 'select'}"
-                        style="background-image: url('${Config.getImageUrl(img)}'); position: relative;"
+                        style="${style} position: relative;"
                         title="${item.name}">
+                        ${label}
                         ${isActive ? '<div class="mm-tile-selected-indicator"><i class="fa-solid fa-check"></i></div>' : ''}
                 </div>
             `;
             }
         }).join('');
+    }
+
+    // --- Layer Management ---
+
+    private async addLayer() {
+        if (!this.state.currentMap || this.state.currentMap.state !== MapState.DRAFT) return;
+        
+        const name = prompt("Enter new layer name:", "New Layer");
+        if (!name) return;
+
+        const id = `custom_${Date.now()}`;
+        const layers = this.state.currentMap.layers as ILayer[];
+        
+        // Add to top (end of array)
+        layers.push({
+            id: id,
+            name: name,
+            type: 'tile',
+            visible: true,
+            locked: false,
+            data: {}
+        });
+        
+        this.state.selectedLayer = id;
+        this.renderEditor();
+        this.saveMap();
+    }
+
+    private async deleteLayer(id: string) {
+        if (!this.state.currentMap || this.state.currentMap.state !== MapState.DRAFT) return;
+        const layers = this.state.currentMap.layers as ILayer[];
+
+        if (layers.length <= 1) {
+            alert("Cannot delete the last layer.");
+            return;
+        }
+
+        const layerObj = layers.find(l => l.id === id);
+        if (!layerObj) return;
+
+        if (!confirm(`Are you sure you want to delete layer "${layerObj.name}"? This cannot be undone.`)) return;
+
+        const idx = layers.findIndex(l => l.id === id);
+        if (idx !== -1) {
+            layers.splice(idx, 1);
+            if (this.state.selectedLayer === id) {
+                // select previous or first
+                const newIdx = Math.max(0, idx - 1);
+                this.state.selectedLayer = layers[newIdx] ? layers[newIdx].id : '';
+            }
+            this.renderEditor();
+            this.saveMap();
+        }
+    }
+
+    private renameLayer(id: string) {
+        if (!this.state.currentMap) return;
+        const layer = this.state.currentMap.layers.find((l:any) => l.id === id);
+        if (!layer) return;
+
+        const newName = prompt("Enter new layer name:", layer.name);
+        if (newName && newName !== layer.name) {
+            layer.name = newName;
+            this.renderEditor();
+            this.saveMap();
+        }
+    }
+
+    private moveLayer(id: string, dir: 'up' | 'down') {
+        if (!this.state.currentMap) return;
+        const layers = this.state.currentMap.layers;
+        const index = layers.findIndex((l:any) => l.id === id);
+        if (index === -1) return;
+
+        if (dir === 'up') {
+            if (index >= layers.length - 1) return;
+            // swap with next (visual up is array end)
+            [layers[index], layers[index + 1]] = [layers[index + 1], layers[index]];
+        } else {
+            if (index <= 0) return;
+            // swap with prev
+            [layers[index], layers[index - 1]] = [layers[index - 1], layers[index]];
+        }
+        
+        this.renderEditor();
+        this.saveMap();
+    }
+
+    private toggleLayerProperty(id: string, prop: 'visible' | 'locked' | 'collidable' | 'above') {
+        if (!this.state.currentMap) return;
+        const layer = this.state.currentMap.layers.find((l:any) => l.id === id);
+        if (!layer) return;
+
+        if (prop === 'collidable') {
+            if (!layer.properties) layer.properties = {};
+            layer.properties.collidable = !layer.properties.collidable;
+            // Mutually exclusive
+            if (layer.properties.collidable) {
+                layer.properties.above = false;
+                layer.properties.solidRoof = false;
+            }
+        } else if (prop === 'above') {
+            if (!layer.properties) layer.properties = {};
+            
+            const isAbove = layer.properties.above === true;
+            const isSolid = layer.properties.solidRoof === true;
+
+            if (!isAbove && !isSolid) {
+                // State 1 -> 2: Standard -> Roof
+                layer.properties.above = true;
+                layer.properties.solidRoof = false;
+                layer.properties.collidable = false;
+            } else if (isAbove && !isSolid) {
+                // State 2 -> 3: Roof -> Solid Roof
+                layer.properties.above = true;
+                layer.properties.solidRoof = true;
+                layer.properties.collidable = false;
+            } else {
+                // State 3 -> 1: Solid Roof -> Standard
+                layer.properties.above = false;
+                layer.properties.solidRoof = false;
+            }
+        } else {
+            layer[prop] = !layer[prop];
+        }
+        
+        // update render
+        this.renderEditor();
+        this.updateState();
+        if (prop === 'collidable' || prop === 'above') this.saveMap();
     }
 
     private renderEditor() {
@@ -838,48 +964,84 @@ export class MapMakerUI {
         
         const isFill = this.state.selectedTool === 'fill';
         const brushControlsDisplay = (isFill || isGroup) ? 'none' : 'block';
-        const isCollapsed = this.state.layerPanelCollapsed;
-        const isLibraryCollapsed = this.state.libraryCollapsed;
-        const selectedLayerLabel = this.state.selectedLayer.charAt(0).toUpperCase() + this.state.selectedLayer.slice(1);
+          const isCollapse = this.state.layerPanelCollapsed;
+          const isLibraryCollapsed = this.state.libraryCollapsed;
+          
+          // Find selected layer name safely
+          const selectedLayerObj = map.layers.find((l:any) => l.id === this.state.selectedLayer);
+          const selectedLayerLabel = selectedLayerObj ? selectedLayerObj.name : 'None';
 
-        const renderLayerItem = (layer: string) => {
-            const l = layer as MapLayer;
-            const isActive = this.state.selectedLayer === l;
-            const isVisible = this.state.layerVisibility[l];
-            const isLocked = this.state.layerLocked[l];
-            const preview = this.state.layerPreviews[l];
-            const label = layer.charAt(0).toUpperCase() + layer.slice(1);
+        const renderLayerItem = (layer: any, index: number) => {
+            const isActive = this.state.selectedLayer === layer.id;
             
-            // collidable check
-            const isCollidable = this.state.currentMap?.layerProperties?.[l]?.collidable ?? false;
+            // Vis/Lock come from layer object now
+            const isVisible = layer.visible !== false;
+            const isLocked = layer.locked === true;
+            const isCollidable = layer.properties?.collidable === true;
+            const isAbove = layer.properties?.above === true;
+            const isSolid = layer.properties?.solidRoof === true;
 
+            let aboveIcon = '<i class="fa-solid fa-arrow-up-from-bracket"></i>';
+            let aboveTitle = "Set Layer Type (Standard)";
+            let aboveClass = "";
+
+            if (isSolid) {
+                aboveIcon = '<i class="fa-solid fa-cube"></i>';
+                aboveTitle = "Solid Roof (High Z, No Fade)";
+                aboveClass = "active";
+            } else if (isAbove) {
+                aboveIcon = '<i class="fa-solid fa-layer-group"></i>';
+                aboveTitle = "Roof (High Z, Fades)";
+                aboveClass = "active";
+            }
+            
+            const preview = this.state.layerPreviews[layer.id];
             const previewStyle = preview ? `background-image: url(${preview});` : '';
-            const bindKey = this.getKeyForTarget('layer', layer);
-            const badge = bindKey ? `<div class="mm-keybind-badge">${bindKey}</div>` : '';
+            
+            // Layer Controls (Show only if active)
+            let controls = '';
+            // Only show advanced controls if map is draft and active
+            if (isActive && isDraft) {
+                controls = `
+                <div class="mm-layer-actions" style="display:flex; gap:2px; margin-right:5px;">
+                     <button class="mm-icon-btn small layer-move-up" data-id="${layer.id}" title="Move Up" ${index === 0 ? 'disabled' : ''}><i class="fa-solid fa-arrow-up"></i></button>
+                     <button class="mm-icon-btn small layer-move-down" data-id="${layer.id}" title="Move Down" ${index === map.layers.length - 1 ? 'disabled' : ''}><i class="fa-solid fa-arrow-down"></i></button>
+                     <button class="mm-icon-btn small layer-rename" data-id="${layer.id}" title="Rename"><i class="fa-solid fa-pen"></i></button>
+                     <button class="mm-icon-btn small layer-delete danger" data-id="${layer.id}" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                </div>
+                `;
+            }
 
             return `
-            <div class="mm-layer-item ${isActive ? 'active' : ''}" data-layer="${layer}" data-bind-type="layer" data-bind-value="${layer}">
-                ${badge}
+            <div class="mm-layer-item ${isActive ? 'active' : ''}" data-id="${layer.id}" style="padding-right: 5px;">
                 <div class="mm-layer-controls">
                     ${isDraft ? `
-                    <button class="mm-icon-btn toggle-collidable ${isCollidable ? 'active' : ''}" data-layer="${layer}" title="Toggle Collidable">
+                    <button class="mm-icon-btn toggle-collidable ${isCollidable ? 'active' : ''}" data-id="${layer.id}" title="Toggle Collidable (Wall)">
                         ${isCollidable ? '<i class="fa-solid fa-person-falling-burst"></i>' : '<i class="fa-solid fa-person"></i>'}
                     </button>
+                    <button class="mm-icon-btn toggle-above ${aboveClass}" data-id="${layer.id}" title="${aboveTitle}">
+                        ${aboveIcon}
+                    </button>
                     ` : ''}
-                    <button class="mm-icon-btn toggle-vis ${isVisible ? 'active' : ''}" data-layer="${layer}" title="Toggle Visibility">
+                    <button class="mm-icon-btn toggle-vis ${isVisible ? 'active' : ''}" data-id="${layer.id}" title="Toggle Visibility">
                         ${isVisible ? '<i class="fa-solid fa-eye"></i>' : '<i class="fa-solid fa-eye-slash"></i>'}
                     </button>
-                    <button class="mm-icon-btn toggle-lock ${isLocked ? 'active' : ''}" data-layer="${layer}" title="Toggle Lock">
+                    <button class="mm-icon-btn toggle-lock ${isLocked ? 'active' : ''}" data-id="${layer.id}" title="Toggle Lock">
                         ${isLocked ? '<i class="fa-solid fa-lock"></i>' : '<i class="fa-solid fa-lock-open"></i>'}
                     </button>
                 </div>
-                <div class="mm-layer-name">${label}</div>
+                
+                <div class="mm-layer-name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${layer.name}</div>
+                ${controls}
                 <div class="mm-layer-preview" style="${previewStyle}"></div>
             </div>`;
         };
 
         const sidebarsContainer = this.root.querySelector('#mm-sidebars');
         if (!sidebarsContainer) return;
+
+        // Render layers in reverse order for display (top layer on top)
+        const reversedLayers = [...map.layers].map((l:any, i:number) => ({ l, originalIndex: i })).reverse();
 
         sidebarsContainer.innerHTML = `
             <div class="mm-left-sidebar">
@@ -903,19 +1065,22 @@ export class MapMakerUI {
 
                 <!-- Layer Panel -->
                 <div class="mm-layer-panel mm-pointer-events-auto">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:${isCollapsed ? '0' : '1rem'}; padding-bottom:${isCollapsed ? '0' : '0.5rem'}; border-bottom:${isCollapsed ? 'none' : '1px solid #333'};">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:${isCollapse ? '0' : '1rem'}; padding-bottom:${isCollapse ? '0' : '0.5rem'}; border-bottom:${isCollapse ? 'none' : '1px solid #333'};">
                         <h3 style="color:white; margin:0; font-size:1.1rem;">Layers</h3>
-                        <button id="mm-collapse-layers-btn" class="mm-icon-btn" title="${isCollapsed ? 'Expand' : 'Collapse'}">
-                            ${isCollapsed ? '<i class="fa-solid fa-chevron-down"></i>' : '<i class="fa-solid fa-chevron-up"></i>'}
-                        </button>
+                        <div style="display:flex; gap: 5px;">
+                            ${isDraft ? `<button id="mm-add-layer-btn" class="mm-icon-btn" title="Add Layer"><i class="fa-solid fa-plus"></i></button>` : ''}
+                            <button id="mm-collapse-layers-btn" class="mm-icon-btn" title="${isCollapse ? 'Expand' : 'Collapse'}">
+                                ${isCollapse ? '<i class="fa-solid fa-chevron-down"></i>' : '<i class="fa-solid fa-chevron-up"></i>'}
+                            </button>
+                        </div>
                     </div>
-                    ${isCollapsed ? `
+                    ${isCollapse ? `
                         <div style="color:#aaa; font-size:0.9rem; margin-top:0.5rem; display:flex; align-items:center; justify-content:space-between;">
                             <span>Selected: <span style="color:white; font-weight:bold;">${selectedLayerLabel}</span></span>
                         </div>
                     ` : `
                         <div class="mm-layer-list">
-                            ${Object.values(MapLayer).map(renderLayerItem).join('')}
+                            ${reversedLayers.map(x => renderLayerItem(x.l, x.originalIndex)).join('')}
                         </div>
                     `}
                 </div>
@@ -1345,25 +1510,101 @@ export class MapMakerUI {
             });
         });
 
-        // layer click
+        // -- Layer Management --
+
+        // Layer selection
         this.root.querySelectorAll('.mm-layer-item').forEach(el => {
             el.addEventListener('click', (e) => {
-                if ((e.target as HTMLElement).closest('.mm-icon-btn')) return;
+                // Ignore clicks on controls
+                if ((e.target as HTMLElement).closest('.layer-controls') || 
+                    (e.target as HTMLElement).closest('.layer-vis-toggle')) return;
                 
-                this.state.selectedLayer = el.getAttribute('data-layer') as MapLayer;
-                this.renderEditor();
-                this.updateState();
+                const layerId = el.getAttribute('data-id');
+                if (layerId) {
+                    this.state.selectedLayer = layerId;
+                    this.renderEditor();
+                    this.updateState();
+                }
             });
         });
 
-        // layer vis toggle
+        // Add Layer
+        const addLayerBtn = this.root.querySelector('#mm-add-layer-btn');
+        if (addLayerBtn) {
+            addLayerBtn.addEventListener('click', () => {
+                this.addLayer();
+            });
+        }
+
+        // Layer Visibility
         this.root.querySelectorAll('.toggle-vis').forEach(el => {
             el.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const layer = el.getAttribute('data-layer') as MapLayer;
-                this.state.layerVisibility[layer] = !this.state.layerVisibility[layer];
-                this.renderEditor();
-                this.updateState();
+                const layerId = el.getAttribute('data-id');
+                if (layerId) this.toggleLayerProperty(layerId, 'visible');
+            });
+        });
+
+        // Layer Lock
+        this.root.querySelectorAll('.toggle-lock').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const layerId = el.getAttribute('data-id');
+                if (layerId) this.toggleLayerProperty(layerId, 'locked');
+            });
+        });
+
+        // Layer Physics/Collision
+        this.root.querySelectorAll('.toggle-collidable').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const layerId = el.getAttribute('data-id');
+                if (layerId) this.toggleLayerProperty(layerId, 'collidable');
+            });
+        });
+
+        // Layer Above (Overhead)
+        this.root.querySelectorAll('.toggle-above').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const layerId = el.getAttribute('data-id');
+                if (layerId) this.toggleLayerProperty(layerId, 'above');
+            });
+        });
+
+        // Move Up
+        this.root.querySelectorAll('.layer-move-up').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const layerId = el.getAttribute('data-id');
+                if (layerId) this.moveLayer(layerId, 'up');
+            });
+        });
+
+        // Move Down
+        this.root.querySelectorAll('.layer-move-down').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const layerId = el.getAttribute('data-id');
+                if (layerId) this.moveLayer(layerId, 'down');
+            });
+        });
+
+        // Rename
+        this.root.querySelectorAll('.layer-rename').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const layerId = el.getAttribute('data-id');
+                if (layerId) this.renameLayer(layerId);
+            });
+        });
+
+        // Delete
+        this.root.querySelectorAll('.layer-delete').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const layerId = el.getAttribute('data-id');
+                if (layerId) this.deleteLayer(layerId);
             });
         });
 
@@ -1497,8 +1738,8 @@ export class MapMakerUI {
 
         window.addEventListener('mapmaker:preview', (e: any) => {
             const { layer, image } = e.detail;
-            if (this.state.layerPreviews[layer as MapLayer] !== image) {
-                this.state.layerPreviews[layer as MapLayer] = image;
+            if (this.state.layerPreviews[layer] !== image) {
+                this.state.layerPreviews[layer] = image;
                 this.renderEditor();
             }
         });
@@ -1799,6 +2040,21 @@ export class MapMakerUI {
             } else {
                 this.state.library = allItems;
             }
+
+            // Inject System Tiles
+            this.state.library.unshift({
+                id: SYSTEM_TILES.INVISIBLE,
+                name: 'Invisible Collision',
+                itemType: 'tile',
+                imageUrl: '' 
+            } as any);
+
+            this.state.library.unshift({
+                id: SYSTEM_TILES.SPAWN,
+                name: 'Spawn Point',
+                itemType: 'tile',
+                imageUrl: '' // Special render
+            } as any);
 
             this.renderEditor();
             this.updateState();

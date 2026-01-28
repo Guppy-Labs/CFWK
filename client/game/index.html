@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <title>CFWK - Play</title>
+    <!-- Use shared styles for consistency -->
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* Font Import */
+        @font-face {
+            font-family: 'Minecraft';
+            src: url('https://cdn.jsdelivr.net/gh/IdreesInc/Minecraft-Font@master/Minecraft.otf') format('opentype');
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--mm-bg-dark);
+            color: var(--mm-text-main);
+            font-family: 'Minecraft', monospace;
+            display: flex;
+            flex-direction: column;
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh; /* Dynamic viewport height determines the actual visible screen size on mobile/tablets */
+            overflow: hidden;
+            
+            /* Grid background effect from landing page */
+            background-image: 
+                linear-gradient(rgba(255, 102, 170, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 102, 170, 0.03) 1px, transparent 1px);
+            background-size: 32px 32px;
+        }
+
+        .game-navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.8rem 2rem;
+            background-color: var(--mm-bg-panel);
+            border-bottom: 2px solid var(--mm-border);
+            flex-shrink: 0;
+        }
+
+        .nav-brand {
+            font-size: 1.2rem;
+            color: var(--mm-primary);
+            text-decoration: none;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .back-link {
+            color: var(--mm-text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            padding: 0.5rem 1rem;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .back-link:hover {
+            color: var(--mm-text-main);
+            border-color: var(--mm-border);
+            background: rgba(255,255,255,0.05);
+        }
+
+        #game-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+            min-height: 0; /* allows flex container to shrink below content size */
+            overflow: hidden; /* ensures no scrolling */
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #app {
+            box-shadow: 0 0 0 4px var(--mm-border), 0 10px 20px rgba(0,0,0,0.5);
+            max-width: 100%;
+            max-height: 100%;
+            display: grid; /* removes font-size/line-height gaps for canvas */
+        }
+
+        /* Mobile Adjustments */
+        @media (max-width: 768px) {
+            #game-container {
+                padding: 0.5rem;
+            }
+            
+            .nav-brand {
+                font-size: 1rem;
+            }
+            
+            .game-navbar {
+                padding: 0.5rem 1rem;
+            }
+        }
+    </style>
+  </head>
+  <body>
+    
+    <nav class="game-navbar">
+        <a href="/account" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back</a>
+        <div class="nav-brand"><i class="fa-solid fa-gamepad"></i> CUTE FISH</div>
+        <div style="width: 100px;"></div> <!-- Spacer for centering if needed -->
+    </nav>
+
+    <div id="game-container">
+        <div id="app"></div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

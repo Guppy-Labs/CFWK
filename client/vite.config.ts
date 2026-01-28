@@ -23,6 +23,8 @@ const mapsRewritePlugin = () => ({
         req.url = '/sent/index.html';
       } else if (shouldRewriteToForgot(req?.url)) {
         req.url = '/forgot/index.html';
+      } else if (shouldRewriteToGame(req?.url)) {
+        req.url = '/game/index.html';
       }
       next();
     });
@@ -47,11 +49,21 @@ const mapsRewritePlugin = () => ({
         req.url = '/sent/index.html';
       } else if (shouldRewriteToForgot(req?.url)) {
         req.url = '/forgot/index.html';
+      } else if (shouldRewriteToGame(req?.url)) {
+        req.url = '/game/index.html';
       }
       next();
     });
   }
 });
+
+function shouldRewriteToGame(url?: string) {
+  if (!url) return false;
+  const pathname = url.split('?')[0];
+  // Support both /game and /play
+  if (pathname === '/game' || pathname === '/game/' || pathname === '/play' || pathname === '/play/') return true;
+  return false;
+}
 
 function shouldRewriteToLogin(url?: string) {
   if (!url) return false;
@@ -151,6 +163,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),
+          game: resolve(__dirname, 'game/index.html'),
           maps: resolve(__dirname, 'maps/index.html'),
           onboarding: resolve(__dirname, 'onboarding/index.html'),
           account: resolve(__dirname, 'account/index.html'),

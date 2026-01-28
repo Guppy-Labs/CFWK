@@ -1,3 +1,7 @@
+/**
+ * LEGACY MAP MAKER ENTRY
+ * The custom map editor remains available for legacy content only.
+ */
 import Phaser from 'phaser';
 import { MapMakerScene } from './scenes/MapMakerScene';
 import { MapTesterScene } from './scenes/MapTesterScene';

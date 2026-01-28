@@ -1,6 +1,11 @@
+/**
+ * LEGACY MAP MAKER SCENE
+ * This custom editor remains for backward compatibility, but the project now
+ * targets TMX maps authored in Tiled and rendered via Phaser Tilemap.
+ */
 import Phaser from 'phaser';
 import { MapMakerUI } from '../mapmaker/MapMakerUI';
-import { ITile, ITileGroup, IMap, MapLayer, MapState } from '@cfwk/shared';
+import { ITile, ITileGroup, IMap, MapState, SYSTEM_TILES } from '@cfwk/shared';
 import { Config } from '../config';
 
 export class MapMakerScene extends Phaser.Scene {
@@ -14,7 +19,7 @@ export class MapMakerScene extends Phaser.Scene {
     
     // editor state
     private selectedTool: 'place' | 'erase' | 'fill' | 'select' = 'place';
-    private selectedLayer: MapLayer = MapLayer.BACKGROUND;
+    private selectedLayer: string = '';
     private selectedTileId: string | null = null;
     private brushRadius: number = 1;
     private diffusion: number = 100;
@@ -31,20 +36,9 @@ export class MapMakerScene extends Phaser.Scene {
     private isPasteMode: boolean = false;
     private pastePreview: {x:number, y:number, id:string}[] = [];
 
-    private layerVisibility: Record<MapLayer, boolean> = {
-        [MapLayer.BACKGROUND]: true,
-        [MapLayer.GROUND]: true,
-        [MapLayer.WALL]: true,
-        [MapLayer.DECO]: true,
-        [MapLayer.OBJECT]: true
-    };
-    private layerLocked: Record<MapLayer, boolean> = {
-        [MapLayer.BACKGROUND]: false,
-        [MapLayer.GROUND]: false,
-        [MapLayer.WALL]: false,
-        [MapLayer.DECO]: false,
-        [MapLayer.OBJECT]: false
-    };
+    // Removed local dictionaries in favor of source-of-truth in mapData
+    // private layerVisibility: Record<string, boolean> = {}; 
+    // private layerLocked: Record<string, boolean> = {};
 
     // state tracking
     private lastFootprint: Set<string> = new Set();
@@ -300,9 +294,12 @@ export class MapMakerScene extends Phaser.Scene {
         if (state.currentMap && (!this.mapData || this.mapData._id !== state.currentMap._id)) {
             this.loadMap(state.currentMap);
         } 
-        else if (state.currentMap && this.mapData && this.mapData.state !== state.currentMap.state) {
+        else if (state.currentMap && this.mapData) {
             this.mapData.state = state.currentMap.state;
-            this.updateCursor(this.input.activePointer); 
+            this.updateCursor(this.input.activePointer);
+            
+            // Re-render map to reflect potential layer visibility/order changes
+            this.renderMap();
         }
 
         this.selectedTool = state.selectedTool;
@@ -312,16 +309,21 @@ export class MapMakerScene extends Phaser.Scene {
         this.diffusion = state.diffusion;
         this.shape = state.shape;
         
-        if (state.layerVisibility) {
-            this.layerVisibility = state.layerVisibility;
-            this.renderMap();
-        }
-        if (state.layerLocked) {
-            this.layerLocked = state.layerLocked;
-        }
         if (state.palette && this.mapData) {
             this.mapData.palette = state.palette;
         }
+    }
+
+    private isLayerVisible(layerId: string): boolean {
+        if (!this.mapData) return false;
+        const layer = this.mapData.layers.find(l => l.id === layerId);
+        return layer ? (layer.visible !== false) : false;
+    }
+
+    private isLayerLocked(layerId: string): boolean {
+        if (!this.mapData) return true;
+        const layer = this.mapData.layers.find(l => l.id === layerId);
+        return layer ? (layer.locked === true) : true;
     }
 
     private loadMap(map: IMap) {
@@ -351,13 +353,14 @@ export class MapMakerScene extends Phaser.Scene {
     }
 
     private updatePreviewsAll() {
-        Object.values(MapLayer).forEach(l => this.updateLayerPreview(l));
+        if (!this.mapData) return;
+        this.mapData.layers.forEach(l => this.updateLayerPreview(l.id));
     }
 
-    private updateLayerPreview(layer: MapLayer) {
+    private updateLayerPreview(layerId: string) {
         if (!this.mapData) return;
-        const layerData = this.mapData.layers[layer];
-        if (!layerData) return;
+        const layer = this.mapData.layers.find(l => l.id === layerId);
+        if (!layer) return;
 
         // create texture
         const width = this.mapData.width * 32;
@@ -371,10 +374,10 @@ export class MapMakerScene extends Phaser.Scene {
         
         const sprites: Phaser.GameObjects.Image[] = [];
         
-        Object.entries(layerData).forEach(([coord, tileId]) => {
+        Object.entries(layer.data).forEach(([coord, tileId]) => {
             const [gx, gy] = coord.split(',').map(Number);
-            if (this.textures.exists(tileId)) {
-                const tempSprite = this.make.image({ key: tileId }, false);
+            if (this.textures.exists(tileId as string)) {
+                const tempSprite = this.make.image({ key: tileId as string }, false);
                 tempSprite.setOrigin(0, 0);
                 tempSprite.setScale(scale);
                 tempSprite.setPosition(gx * 32 * scale, gy * 32 * scale);
@@ -388,13 +391,13 @@ export class MapMakerScene extends Phaser.Scene {
             
             rt.snapshot((img: any) => {
                 window.dispatchEvent(new CustomEvent('mapmaker:preview', {
-                    detail: { layer, image: img.src }
+                    detail: { layer: layerId, image: img.src }
                 }));
                 rt.destroy();
             });
         } else {
             window.dispatchEvent(new CustomEvent('mapmaker:preview', {
-                detail: { layer, image: '' }
+                detail: { layer: layerId, image: '' }
             }));
             rt.destroy();
         }
@@ -426,19 +429,17 @@ export class MapMakerScene extends Phaser.Scene {
         if (!this.mapData) return;
         
         this.tileGroup.clear(true, true);
-
-        const layers = [MapLayer.BACKGROUND, MapLayer.GROUND, MapLayer.WALL, MapLayer.DECO, MapLayer.OBJECT];
         
-        layers.forEach(layerKey => {
-            if (!this.layerVisibility[layerKey]) return;
+        this.mapData.layers.forEach(layer => {
+            if (layer.visible === false) return; // default true
 
-            const layerData = this.mapData!.layers[layerKey];
-            if (!layerData) return;
-
-            Object.entries(layerData).forEach(([coord, tileId]) => {
+            Object.entries(layer.data).forEach(([coord, tileId]) => {
                 const [gx, gy] = coord.split(',').map(Number);
-                if (this.textures.exists(tileId)) {
-                    const sprite = this.add.image(gx * 32 + 16, gy * 32 + 16, tileId);
+                if (tileId === SYSTEM_TILES.SPAWN) {
+                    const rect = this.add.rectangle(gx * 32 + 16, gy * 32 + 16, 32, 32, 0x0000ff, 0.5);
+                    this.tileGroup.add(rect);
+                } else if (this.textures.exists(tileId as string)) {
+                    const sprite = this.add.image(gx * 32 + 16, gy * 32 + 16, tileId as string);
                     sprite.setDisplaySize(32, 32);
                     this.tileGroup.add(sprite);
                 }
@@ -488,8 +489,8 @@ export class MapMakerScene extends Phaser.Scene {
         }
 
         if (this.mapData?.state !== MapState.DRAFT) return;
-        if (this.layerLocked[this.selectedLayer]) return;
-        if (!this.layerVisibility[this.selectedLayer]) return;
+        if (this.isLayerLocked(this.selectedLayer)) return;
+        if (!this.isLayerVisible(this.selectedLayer)) return;
 
         if (pointer.button === 0 && this.mapData) {
             if (this.selectedTool === 'select') {
@@ -536,7 +537,7 @@ export class MapMakerScene extends Phaser.Scene {
 
         if (pointer.button === 2 && this.isDragging) {
             const dist = Phaser.Math.Distance.Between(pointer.x, pointer.y, this.dragStart.x, this.dragStart.y);
-            if (dist < 5 && this.mapData?.state === MapState.DRAFT && !this.layerLocked[this.selectedLayer] && this.layerVisibility[this.selectedLayer]) {
+            if (dist < 5 && this.mapData?.state === MapState.DRAFT && !this.isLayerLocked(this.selectedLayer) && this.isLayerVisible(this.selectedLayer)) {
                 const oldTool = this.selectedTool;
                 this.selectedTool = 'erase';
                 const oldRadius = this.brushRadius;
@@ -615,7 +616,7 @@ export class MapMakerScene extends Phaser.Scene {
                 this.highlightGraphics.clear();
             }
             
-            if (pointer.isDown && this.selectedTool !== 'fill' && this.selectedTool !== 'select' && this.mapData?.state === MapState.DRAFT && !this.layerLocked[this.selectedLayer] && this.layerVisibility[this.selectedLayer]) {
+            if (pointer.isDown && this.selectedTool !== 'fill' && this.selectedTool !== 'select' && this.mapData?.state === MapState.DRAFT && !this.isLayerLocked(this.selectedLayer) && this.isLayerVisible(this.selectedLayer)) {
                  this.paintTile(pointer);
             }
         }
@@ -690,22 +691,24 @@ export class MapMakerScene extends Phaser.Scene {
                     this.selectionFloatingGroup.add(img);
                 }
              });
-        } else if (this.mapData && this.selectedLayer) {
-            const layer = this.mapData.layers[this.selectedLayer];
-            this.selection.forEach(key => {
-                const [x, y] = key.split(',').map(Number);
-                const tileId = layer[key];
-                
-                const drawX = (x + this.selectionMoveOffset.x);
-                const drawY = (y + this.selectionMoveOffset.y);
-
-                if (tileId && this.textures.exists(tileId)) {
-                    const img = this.add.image(drawX * 32 + 16, drawY * 32 + 16, tileId);
-                    img.setDisplaySize(32, 32);
-                    img.setDepth(151);
-                    this.selectionFloatingGroup.add(img);
-                }
-            });
+         } else if (this.mapData && this.selectedLayer) {
+            const layer = this.mapData.layers.find(l => l.id === this.selectedLayer)?.data;
+            if (layer) {
+                this.selection.forEach(key => {
+                    const [x, y] = key.split(',').map(Number);
+                    const tileId = layer[key];
+                    
+                    const drawX = (x + this.selectionMoveOffset.x);
+                    const drawY = (y + this.selectionMoveOffset.y);
+    
+                    if (tileId && this.textures.exists(tileId as string)) {
+                        const img = this.add.image(drawX * 32 + 16, drawY * 32 + 16, tileId as string);
+                        img.setDisplaySize(32, 32);
+                        img.setDepth(151);
+                        this.selectionFloatingGroup.add(img);
+                    }
+                });
+            }
         }
         this.selectionFloatingGroup.setDepth(151);
     }
@@ -713,7 +716,10 @@ export class MapMakerScene extends Phaser.Scene {
     private finalizeSelectionMove() {
         if (!this.mapData || !this.selectedLayer) return;
 
-        const layer = this.mapData.layers[this.selectedLayer];
+        const layerObj = this.mapData.layers.find(l => l.id === this.selectedLayer);
+        if (!layerObj) return;
+        const layer = layerObj.data;
+
         const newSelection = new Set<string>();
 
         if (this.isPasteMode) {
@@ -735,7 +741,7 @@ export class MapMakerScene extends Phaser.Scene {
             this.selection.forEach(key => {
                 const [x, y] = key.split(',').map(Number);
                 if (layer[key]) {
-                    moves.push({ x: x + this.selectionMoveOffset.x, y: y + this.selectionMoveOffset.y, id: layer[key] });
+                    moves.push({ x: x + this.selectionMoveOffset.x, y: y + this.selectionMoveOffset.y, id: layer[key] as string });
                     delete layer[key];
                 }
             });
@@ -758,7 +764,7 @@ export class MapMakerScene extends Phaser.Scene {
     }
     
     private pasteSelection() {
-        if (this.layerLocked[this.selectedLayer] || !this.layerVisibility[this.selectedLayer]) return;
+        if (!this.selectedLayer || this.isLayerLocked(this.selectedLayer) || !this.isLayerVisible(this.selectedLayer)) return;
 
         const clipboard = (this as any)._clipboard;
         if (!clipboard || clipboard.length === 0) return;
@@ -787,7 +793,9 @@ export class MapMakerScene extends Phaser.Scene {
         if (!name) return;
 
         const tiles: {x:number, y:number, tileId:string}[] = [];
-        const layer = this.mapData!.layers[this.selectedLayer];
+        const layerObj = this.mapData!.layers.find(l => l.id === this.selectedLayer);
+        if (!layerObj) return;
+        const layer = layerObj.data;
         
         let minX = Infinity, minY = Infinity;
         this.selection.forEach(key => {
@@ -801,7 +809,7 @@ export class MapMakerScene extends Phaser.Scene {
         this.selection.forEach(key => {
              const [x,y] = key.split(',').map(Number);
              if (layer[key]) {
-                 tiles.push({ x: x - minX, y: y - minY, tileId: layer[key] });
+                 tiles.push({ x: x - minX, y: y - minY, tileId: layer[key] as string });
              }
         });
 
@@ -825,27 +833,40 @@ export class MapMakerScene extends Phaser.Scene {
     }
 
     private shiftSelectionLayer() {
-        if (this.layerLocked[this.selectedLayer] || !this.layerVisibility[this.selectedLayer]) return;
+        if (!this.selectedLayer || this.isLayerLocked(this.selectedLayer) || !this.isLayerVisible(this.selectedLayer)) return;
 
-        const targetLayer = prompt("Target Layer (background, ground, wall, deco, object):");
-        if (!targetLayer || !Object.values(MapLayer).includes(targetLayer as any)) return;
+        const targetLayerName = prompt("Target Layer Name:");
+        if (!targetLayerName) return;
         
-        const oldL = this.mapData!.layers[this.selectedLayer];
-        const newL = this.mapData!.layers[targetLayer as MapLayer];
+        const targetLayerObj = this.mapData!.layers.find(l => l.name === targetLayerName);
+        if (!targetLayerObj) {
+            alert("Layer not found.");
+            return;
+        }
+
+        const oldL = this.mapData!.layers.find(l => l.id === this.selectedLayer);
+        const newL = targetLayerObj;
         
+        if (!oldL) return;
+
         const newSelection = new Set<string>();
 
         this.selection.forEach(key => {
-            if (oldL[key]) {
-                const id = oldL[key];
-                delete oldL[key];
-                newL[key] = id;
+            if (oldL.data[key]) {
+                const id = oldL.data[key];
+                delete oldL.data[key];
+                newL.data[key] = id;
                 newSelection.add(key);
             }
         });
         
-        this.selectedLayer = targetLayer as MapLayer;
-        this.ui['state'].selectedLayer = this.selectedLayer;
+        this.selectedLayer = newL.id;
+        // Sync UI
+        if (this.ui) {
+            (this.ui as any).state.selectedLayer = this.selectedLayer;
+            (this.ui as any).renderEditor();
+        }
+
         this.renderMap();
         this.pushHistoryState();
         this.currentActionModified = true;
@@ -860,7 +881,7 @@ export class MapMakerScene extends Phaser.Scene {
             this.highlightGraphics.clear();
             this.cursorGroup.getChildren().forEach((c: any) => c.setVisible(false));
             return;
-        } else if ((this.layerLocked[this.selectedLayer] || !this.layerVisibility[this.selectedLayer]) && !this.isDragging) {
+        } else if ((this.isLayerLocked(this.selectedLayer) || !this.isLayerVisible(this.selectedLayer)) && !this.isDragging) {
             this.input.setDefaultCursor('not-allowed');
             this.highlightGraphics.clear();
             this.cursorGroup.getChildren().forEach((c: any) => c.setVisible(false));
@@ -941,14 +962,19 @@ export class MapMakerScene extends Phaser.Scene {
                 
                 if (include) {
                     if (this.selectedTool === 'place' && this.selectedTileId) {
-                        const img = this.cursorGroup.get(x * 32 + 16, y * 32 + 16, this.selectedTileId);
-                        if (img) {
-                            img.setOrigin(0.5, 0.5);
-                            img.setVisible(true);
-                            img.setTexture(this.selectedTileId);
-                            img.setDisplaySize(32, 32);
-                            img.setAlpha(0.6);
-                            img.setDepth(101);
+                        if (this.selectedTileId === SYSTEM_TILES.SPAWN) {
+                            this.highlightGraphics.fillStyle(0x0000ff, 0.5);
+                            this.highlightGraphics.fillRect(x * 32, y * 32, 32, 32);
+                        } else {
+                            const img = this.cursorGroup.get(x * 32 + 16, y * 32 + 16, this.selectedTileId);
+                            if (img && this.textures.exists(this.selectedTileId)) {
+                                img.setOrigin(0.5, 0.5);
+                                img.setVisible(true);
+                                img.setTexture(this.selectedTileId);
+                                img.setDisplaySize(32, 32);
+                                img.setAlpha(0.6);
+                                img.setDepth(101);
+                            }
                         }
                     } else {
                         this.highlightGraphics.fillStyle(this.selectedTool === 'erase' ? 0xff0000 : 0x00ff00, 0.3);
@@ -964,8 +990,11 @@ export class MapMakerScene extends Phaser.Scene {
         if (!this.mapData || !this.selectedLayer) return coords;
         if (startX < 0 || startY < 0 || startX >= this.mapData.width || startY >= this.mapData.height) return coords;
 
-        const layer = this.mapData.layers[this.selectedLayer];
-        const targetId = layer[`${startX},${startY}`];
+        const layer = this.mapData.layers.find(l => l.id === this.selectedLayer);
+        if (!layer) return coords;
+        const layerData = layer.data;
+
+        const targetId = layerData[`${startX},${startY}`];
         
         const queue = [{ x: startX, y: startY }];
         const visited = new Set<string>();
@@ -980,7 +1009,7 @@ export class MapMakerScene extends Phaser.Scene {
             visited.add(key);
             processed++;
 
-            if (layer[key] !== targetId) continue;
+            if (layerData[key] !== targetId) continue;
 
             coords.add(key);
 
@@ -1030,10 +1059,13 @@ export class MapMakerScene extends Phaser.Scene {
         const cx = Math.floor(worldPoint.x / 32);
         const cy = Math.floor(worldPoint.y / 32);
 
+        const layerObj = this.mapData.layers.find(l => l.id === this.selectedLayer);
+        if (!layerObj) return;
+        const layer = layerObj.data;
+
         // multitile paint logic
         const group = this.selectedTileId ? this.getGroup(this.selectedTileId) : undefined;
         if (group && this.selectedTool === 'place') {
-            const layer = this.mapData.layers[this.selectedLayer];
             let changed = false;
 
             let maxX = 0, maxY = 0;
@@ -1091,8 +1123,6 @@ export class MapMakerScene extends Phaser.Scene {
                 if (!this.shape.startsWith('perlin') && this.diffusion < 100) {
                     if (Math.random() * 100 > this.diffusion) continue;
                 }
-
-                const layer = this.mapData.layers[this.selectedLayer];
                 
                 if (this.selectedTool === 'erase') {
                     if (layer[coord]) {
@@ -1127,8 +1157,11 @@ export class MapMakerScene extends Phaser.Scene {
 
         if (startX < 0 || startY < 0 || startX >= this.mapData.width || startY >= this.mapData.height) return;
 
-        const layer = this.mapData.layers[this.selectedLayer];
-        const targetId = layer[`${startX},${startY}`];
+        const layer = this.mapData.layers.find(l => l.id === this.selectedLayer);
+        if (!layer) return;
+        const layerData = layer.data;
+
+        const targetId = layerData[`${startX},${startY}`];
 
         if (targetId === this.selectedTileId) return;
 
@@ -1146,10 +1179,10 @@ export class MapMakerScene extends Phaser.Scene {
             visited.add(key);
             processed++;
 
-            if (layer[key] !== targetId) continue;
+            if (layerData[key] !== targetId) continue;
 
             if (this.diffusion >= 100 || Math.random() * 100 <= this.diffusion) {
-                layer[key] = this.selectedTileId;
+                layerData[key] = this.selectedTileId;
                 this.hasUnsavedChanges = true;
                 this.currentActionModified = true;
             }

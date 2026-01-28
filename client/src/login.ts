@@ -18,7 +18,7 @@ fetch('/api/auth/me', { method: 'GET', headers: { 'Content-Type': 'application/j
     })
     .then(data => {
         if (data && data.user) {
-            window.location.href = '/';
+            window.location.href = '/account';
         }
     })
     .catch(() => {
@@ -146,7 +146,7 @@ async function manualLogin(email: string, pass: string) {
             const container = document.getElementById('split-container');
             if (container) container.classList.add('exit-down');
             
-            setTimeout(() => window.location.href = '/', 2500);
+            setTimeout(() => window.location.href = '/account', 2500);
         } else {
             Toast.error(data.message || 'Login failed');
         }
@@ -205,7 +205,7 @@ const cdHours = document.getElementById('cd-hours') as HTMLElement;
 const cdMinutes = document.getElementById('cd-minutes') as HTMLElement;
 const cdSeconds = document.getElementById('cd-seconds') as HTMLElement;
 
-const releaseDate = new Date('2026-05-09T06:00:00').getTime();
+const releaseDate = new Date('2026-04-09T06:00:00').getTime();
 
 if (countdownContainer) {
     startCountdown();

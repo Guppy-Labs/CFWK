@@ -37,13 +37,21 @@ export enum MapState {
     DEPLOYED = 'deployed'
 }
 
-export enum MapLayer {
-    BACKGROUND = 'background',
-    GROUND = 'ground',
-    WALL = 'wall',
-    DECO = 'deco',
-    OBJECT = 'object'
-}
+// Deprecated as enum, but used for defaults
+export const DefaultLayers = {
+    BACKGROUND: 'background',
+    GROUND: 'ground',
+    WALL: 'wall',
+    DECO: 'deco',
+    OBJECT: 'object'
+};
+
+export const SYSTEM_TILES = {
+    SPAWN: 'SYSTEM_SPAWN',
+    COLLISION: 'SYSTEM_COLLISION',
+    ShowAbove: 'SYSTEM_SHOW_ABOVE',
+    INVISIBLE: 'SYSTEM_INVISIBLE'
+};
 
 export interface ITile {
     _id?: string;
@@ -78,6 +86,20 @@ export interface IMapLayerData {
     [coordinate: string]: string; // "x,y": "tile_id"
 }
 
+export interface ILayer {
+    id: string;
+    name: string;
+    type: 'tile' | 'object';
+    visible: boolean;
+    locked: boolean;
+    data: IMapLayerData;
+    properties?: {
+        collidable?: boolean;
+        above?: boolean;
+        solidRoof?: boolean;
+    };
+}
+
 export interface IMap {
     _id?: string;
     name: string;
@@ -85,14 +107,7 @@ export interface IMap {
     width: number;
     height: number;
     palette: (string | ITile | IFolder)[];
-    layers: {
-        [key in MapLayer]: IMapLayerData;
-    };
-    layerProperties?: {
-        [key in MapLayer]?: {
-            collidable: boolean;
-        }
-    };
+    layers: ILayer[];
     createdAt: Date;
     updatedAt: Date;
 }
@@ -102,7 +117,5 @@ export interface IMapData {
     name: string;
     width: number;
     height: number;
-    layers: {
-        [key in MapLayer]: { x: number, y: number, tileId: string }[];
-    };
+    layers: { id: string, name: string, data: { x: number, y: number, tileId: string }[] }[];
 }

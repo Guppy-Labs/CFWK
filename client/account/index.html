@@ -567,9 +567,14 @@
 </head>
 <body>
     <nav class="navbar">
-        <a href="#" class="navbar-brand">
-            <i class="fa-solid fa-fish"></i> CFWK
-        </a>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <a href="#" class="navbar-brand">
+                <i class="fa-solid fa-fish"></i> CFWK
+            </a>
+            <a href="/game" id="nav-play-btn" class="mm-btn" style="display: none; background-color: var(--mm-primary); color: white; padding: 0.5rem 1rem; text-decoration: none; border: none; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-gamepad"></i> PLAY
+            </a>
+        </div>
         
         <!-- Countdown Container -->
         <div id="countdown-container" class="release-countdown" style="display: none;">
@@ -628,6 +633,16 @@
                 <p>You have permission to create and edit game maps. Use the Map Editor to build and get reviewed.</p>
             </div>
             <a href="/maps" class="btn-blue">Open Editor</a>
+        </div>
+
+        <!-- Pre Registration Card -->
+        <div id="prereg-card" class="info-card" style="display: none; border-color: var(--mm-primary); background: rgba(255,102,170,0.05);">
+            <div>
+                <h3 style="color: var(--mm-primary);"><i class="fa-solid fa-check-circle"></i> You are pre-registered!</h3>
+                <p>The game will be releasing when the timer reaches zero but there will be testing opportunities available before then.</p>
+                <!-- Add social links for staying up to date? -->
+            </div>
+             <!-- Maybe a "Share" button or something later -->
         </div>
         
         <!-- Profile Section -->

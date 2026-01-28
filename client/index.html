@@ -1,22 +1,371 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/png" href="/favicon.png">
-    <meta name="description" content="CFWK - Create, Play, and Share Custom Maps.">
-    <meta property="og:title" content="CFWK">
-    <meta property="og:description" content="CFWK - Create, Play, and Share Custom Maps.">
-    <meta property="og:image" content="/favicon.png">
-    <meta property="og:type" content="website">
-    <title>CFWK</title>
+    <title>CFWK - Cute Fish With Knives</title>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background-color: #000; }
-        canvas { display: block; }
+        /* Font Import */
+        @font-face {
+            font-family: 'Minecraft';
+            src: url('https://cdn.jsdelivr.net/gh/IdreesInc/Minecraft-Font@master/Minecraft.otf') format('opentype');
+        }
+
+        :root {
+            --bg-dark: #121212;
+            --bg-panel: #1e1e1e;
+            --primary: #ff66aa;
+            --primary-hover: #ff4499;
+            --text-main: #e0e0e0;
+            --text-muted: #aaaaaa;
+            --border: #333333;
+        }
+
+        * {
+            box-sizing: border-box;
+            border-radius: 0 !important; /* The "No Border Rounding" Rule */
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Minecraft', 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+            background-image: 
+                linear-gradient(rgba(255, 102, 170, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 102, 170, 0.03) 1px, transparent 1px);
+            background-size: 32px 32px; /* Grid effect */
+        }
+
+        .hero-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin-top: 10vh;
+            width: 100%;
+            max-width: 900px;
+            padding: 2rem;
+            position: relative;
+        }
+
+        /* Hero Graphic Area */
+        .hero-graphic {
+            width: 128px;
+            height: 128px;
+            image-rendering: pixelated;
+            background-image: url('/public/assets/fish_tilesheet.png'); 
+            /* Show a specific fish from the sheet assuming 32x32 tiles, scaled up */
+            background-position: 0 0; 
+            background-size: cover; /* Placeholder sizing, ideally we crop */
+            background-size: 512px; /* Assuming sheet is large */
+            margin-bottom: 2rem;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        /* Since I don't know the exact sprite sheet layout, I'll use a CSS visual placeholder that LOOKS like a pixel fish if the image fails, 
+           or just a generic 'logo' box */
+        .hero-logo-box {
+            width: 120px;
+            height: 120px;
+            background: var(--bg-panel);
+            border: 4px solid var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 2rem;
+            font-size: 4rem;
+            color: var(--primary);
+            box-shadow: 8px 8px 0px rgba(0,0,0,0.5);
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        h1.title {
+            font-size: 4rem;
+            text-transform: uppercase;
+            color: white;
+            text-shadow: 4px 4px 0px var(--primary);
+            margin: 0;
+            line-height: 1;
+            text-align: center;
+        }
+
+        p.subtitle {
+            font-size: 1.2rem;
+            color: var(--text-muted);
+            margin-top: 1rem;
+            margin-bottom: 3rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        /* Countdown Box */
+        .countdown-container {
+            background: var(--bg-panel);
+            border: 2px solid var(--border);
+            padding: 2rem;
+            margin-bottom: 3rem;
+            text-align: center;
+            position: relative;
+            box-shadow: 4px 4px 0px rgba(0,0,0,0.5);
+            min-width: 300px;
+        }
+        
+        .countdown-container::before {
+            content: '';
+            position: absolute;
+            top: -6px; left: -6px; right: -6px; bottom: -6px;
+            border: 2px solid var(--bg-dark);
+            z-index: -1;
+        }
+
+        .countdown-timer {
+            font-size: 2.5rem;
+            color: var(--primary);
+            text-shadow: 2px 2px 0px #000;
+        }
+        
+        .countdown-label {
+            color: var(--text-main);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Graphic Divider */
+        .divider {
+            height: 4px;
+            width: 100px;
+            background: var(--primary);
+            margin: 2rem 0;
+        }
+
+        /* Feature Grid */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2rem;
+            width: 100%;
+            max-width: 900px; /* Aligns with hero section */
+            padding: 0 2rem;  /* Prevents touching the edge */
+            margin-bottom: 4rem;
+        }
+
+        .feature-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+            transition: transform 0.2s;
+        }
+
+        @media screen and (max-width: 800px) {
+            h1.title {
+                font-size: 2.5rem;
+            }
+            
+            .countdown-container {
+                min-width: unset;
+                width: 100%;
+            }
+
+            .countdown-timer {
+                font-size: 1.5rem;
+            }
+
+            .hero-section {
+                padding: 1rem;
+            }
+            
+            .features {
+                padding: 0 1rem;
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .feature-item:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary);
+        }
+
+        .feature-item h3 {
+            color: var(--primary);
+            margin-top: 0;
+            text-transform: uppercase;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            padding: 1rem 2rem;
+            font-family: 'Minecraft', sans-serif;
+            text-transform: uppercase;
+            text-decoration: none;
+            font-size: 1.2rem;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #b02860; /* Darker pink shadow */
+            transition: all 0.1s;
+            margin: 0.5rem;
+        }
+
+        .btn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 0 #b02860;
+        }
+
+        .btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #b02860;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 2px solid var(--border);
+            color: var(--text-muted);
+            box-shadow: none;
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--text-main);
+            color: var(--text-main);
+            background: rgba(255,255,255,0.05);
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-large {
+            font-size: 1.5rem;
+            padding: 1.5rem 3rem;
+        }
+        
+        .hidden { display: none; }
+
+        footer {
+            margin-top: auto;
+            padding: 2rem;
+            color: var(--border);
+            font-size: 0.8rem;
+        }
+
+        a { color: var(--primary); text-decoration: none; }
     </style>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+</head>
+<body>
+
+    <div class="hero-section">
+        <!-- Hero Graphic Placeholder -->
+        <div class="hero-logo-box">
+             <img src="/favicon.png" alt="Fish Logo" style="width: 80%; height: 80%; image-rendering: pixelated;">
+        </div>
+
+        <h1 class="title">Cute Fish<br><span style="color:var(--primary)">With Knives</span></h1>
+        <p class="subtitle">Create. Battle. Survive.</p>
+
+        <div class="countdown-container">
+            <div class="countdown-label">Game Release In</div>
+            <div id="countdown" class="countdown-timer">--:--:--:--</div>
+        </div>
+
+        <!-- Auth Section -->
+        <div id="auth-actions">
+            <!-- Logged Out View -->
+            <div id="logged-out-view" style="text-align: center;">
+                <a href="/register" class="btn btn-large">Pre-register Now</a>
+                <div style="margin-top: 1rem;">
+                    <span style="color: var(--text-muted); font-size: 0.9rem;">Already have an account?</span>
+                    <a href="/login" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem; margin-left: 10px;">Login</a>
+                </div>
+            </div>
+
+            <!-- Logged In View -->
+            <div id="logged-in-view" class="hidden" style="text-align: center;">
+                <p id="welcome-msg" style="color: var(--text-main); margin-bottom: 2rem; font-size: 1.2rem;">Welcome back, Agent.</p>
+                <button id="jump-in-btn" class="btn btn-large">Jump Back In</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="features">
+        <div class="feature-item">
+            <h3>Adventure</h3>
+            <p>Journey out to discover new worlds and hidden secrets, all with one goal in mind...</p>
+        </div>
+        <div class="feature-item">
+            <h3>Multiplayer</h3>
+            <p>Battle against friends (and enemies) in real-time isometric combat.</p>
+        </div>
+        <div class="feature-item">
+            <h3>Cute & Deadly</h3>
+            <p>It's fish. They have knives. What else do you need to know?</p>
+        </div>
+    </div>
+
+    <footer>
+        &copy; <script>document.write(new Date().getFullYear());</script> Gubby Labs. All rights reserved.
+    </footer>
+
+    <script>
+        // --- Countdown Logic ---
+        const targetDate = new Date('2026-04-09T06:00:00').getTime();
+        
+        function updateCountdown() {
+            const now = new Date().getTime();
+            const dist = targetDate - now;
+
+            if (dist < 0) {
+                document.getElementById('countdown').innerHTML = "NOW";
+                return;
+            }
+
+            const d = Math.floor(dist / (1000 * 60 * 60 * 24));
+            const h = Math.floor((dist % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const m = Math.floor((dist % (1000 * 60 * 60)) / (1000 * 60));
+            const s = Math.floor((dist % (1000 * 60)) / 1000);
+
+            // Pad with zeros for that retro look
+            const pad = (n) => n.toString().padStart(2, '0');
+            document.getElementById('countdown').innerHTML = `${d}d ${pad(h)}:${pad(m)}:${pad(s)}`;
+        }
+        
+        setInterval(updateCountdown, 1000);
+        updateCountdown();
+
+        // --- Auth Logic ---
+        fetch('/api/auth/me')
+            .then(res => {
+                if(res.ok) return res.json();
+                throw new Error('No sesh');
+            })
+            .then(data => {
+                if(data.user) {
+                    document.getElementById('logged-out-view').classList.add('hidden');
+                    document.getElementById('logged-in-view').classList.remove('hidden');
+                    document.getElementById('welcome-msg').textContent = `Welcome back, ${data.user.username}.`;
+                    
+                    const btn = document.getElementById('jump-in-btn');
+                    btn.onclick = () => {
+                        window.location.href = '/game/';
+                    };
+                }
+            })
+            .catch(() => {
+                // Not logged in, default view remains
+            });
+    </script>
+</body>
 </html>
