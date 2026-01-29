@@ -53,7 +53,27 @@ function startMapMaker() {
         }
     };
 
-    new Phaser.Game(config);
+    const game = new Phaser.Game(config);
+    
+    // Use ResizeObserver for robust resize detection
+    const app = document.getElementById('app');
+    if (app) {
+        const resizeObserver = new ResizeObserver(() => {
+            if (game && game.scale) {
+                game.scale.resize(window.innerWidth, window.innerHeight);
+            }
+        });
+        resizeObserver.observe(app);
+    }
+
+    // Handle orientation change for mobile
+    window.addEventListener('orientationchange', () => {
+        setTimeout(() => {
+            if (game && game.scale) {
+                game.scale.resize(window.innerWidth, window.innerHeight);
+            }
+        }, 100);
+    });
 }
 
 init();

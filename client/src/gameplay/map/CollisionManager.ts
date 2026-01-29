@@ -59,47 +59,6 @@ export class CollisionManager {
         );
     }
 
-    /**
-     * Setup walkable bounds - create collision for tiles without ground coverage
-     */
-    setupWalkableBounds(map: Phaser.Tilemaps.Tilemap, groundLayerName: string, edgePadding: number = 9) {
-        const groundIndex = map.layers.findIndex((layer) => layer.name === groundLayerName);
-        if (groundIndex === -1) return;
-
-        const tileWidth = map.tileWidth;
-        const tileHeight = map.tileHeight;
-
-        for (let ty = 0; ty < map.height; ty++) {
-            for (let tx = 0; tx < map.width; tx++) {
-                let walkable = false;
-
-                for (let i = groundIndex; i < map.layers.length; i++) {
-                    const layerName = map.layers[i].name;
-                    const tile = map.getTileAt(tx, ty, false, layerName);
-                    if (tile && tile.index !== -1) {
-                        walkable = true;
-                        break;
-                    }
-                }
-
-                if (!walkable) {
-                    const paddedWidth = tileWidth + edgePadding * 2;
-                    const paddedHeight = tileHeight + edgePadding * 2;
-                    this.createRectangleBody(
-                        tx * tileWidth + tileWidth / 2,
-                        ty * tileHeight + tileHeight / 2,
-                        paddedWidth,
-                        paddedHeight
-                    );
-                }
-            }
-        }
-
-        if (this.bodies.length > 0) {
-            (this.scene.matter.world as Phaser.Physics.Matter.World).add(this.bodies);
-        }
-    }
-
     private createPolygonBody(x: number, y: number, polygon: { x: number; y: number }[]) {
         const body = Matter.Bodies.fromVertices(
             x,

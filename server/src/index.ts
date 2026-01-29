@@ -11,10 +11,12 @@ import passport from "passport";
 import cookieParser from "cookie-parser";
 
 import { GameRoom } from "./rooms/GameRoom";
+import { InstanceRoom } from "./rooms/InstanceRoom";
 import authRoutes from "./routes/auth";
 import accountRoutes from "./routes/account";
 import apiRoutes from "./routes";
 import initPassport from "./config/passport";
+import { InstanceManager } from "./managers/InstanceManager";
 
 dotenv.config();
 
@@ -64,6 +66,46 @@ const gameServer = new Server({
 });
 
 gameServer.define("game_room", GameRoom);
+
+// Initialize the instance manager with the game server
+const instanceManager = InstanceManager.getInstance();
+instanceManager.setGameServer(gameServer);
+
+// Register InstanceRoom type for dynamic instance creation
+gameServer.define("instance", InstanceRoom);
+
+// API endpoint to join an instance
+app.post("/api/instance/join", async (req, res) => {
+    try {
+        const locationId = req.body.locationId || "lobby";
+        const instance = await instanceManager.getOrCreateInstance(locationId);
+        
+        if (!instance) {
+            return res.status(500).json({ 
+                success: false, 
+                error: "Failed to create or find instance" 
+            });
+        }
+        
+        res.json({
+            success: true,
+            instance: {
+                instanceId: instance.instanceId,
+                locationId: instance.locationId,
+                mapFile: instance.mapFile,
+                roomName: instance.roomName,
+                currentPlayers: instance.currentPlayers,
+                maxPlayers: instance.maxPlayers
+            }
+        });
+    } catch (error) {
+        console.error("[Instance] Error joining instance:", error);
+        res.status(500).json({ 
+            success: false, 
+            error: "Internal server error" 
+        });
+    }
+});
 
 app.use("/colyseus", monitor());
 

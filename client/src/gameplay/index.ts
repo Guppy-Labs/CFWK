@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
+import { UIScene } from './scenes/UIScene';
 
 function updateAppSize() {
     const container = document.getElementById('game-container');
@@ -53,7 +54,11 @@ function hideLoader() {
 
 let gameInstance: Phaser.Game | undefined;
 
-export function startGame() {
+// Store user data globally for scenes to access
+export let currentUser: { _id: string; username: string } | null = null;
+
+export function startGame(userData: { _id: string; username: string }) {
+    currentUser = userData;
     showLoader();
     const { width, height } = updateAppSize();
 
@@ -69,7 +74,7 @@ export function startGame() {
                 debug: false
             }
         },
-        scene: [BootScene, GameScene],
+        scene: [BootScene, GameScene, UIScene],
         pixelArt: true,
         roundPixels: false,
         scale: {
@@ -87,10 +92,35 @@ export function startGame() {
         hideLoader();
     });
 
+    // Use ResizeObserver for robust resize detection
+    // This catches: window resize, dev tools toggle, mobile rotation, container changes
+    const container = document.getElementById('game-container');
+    if (container) {
+        const resizeObserver = new ResizeObserver(() => {
+            const { width: newWidth, height: newHeight } = updateAppSize();
+            if (gameInstance && gameInstance.scale) {
+                gameInstance.scale.resize(newWidth, newHeight);
+            }
+        });
+        resizeObserver.observe(container);
+    }
+
+    // Fallback for browsers without ResizeObserver or edge cases
     window.addEventListener('resize', () => {
         const { width: newWidth, height: newHeight } = updateAppSize();
-        if (gameInstance) {
+        if (gameInstance && gameInstance.scale) {
             gameInstance.scale.resize(newWidth, newHeight);
         }
+    });
+    
+    // Handle orientation change explicitly for mobile
+    window.addEventListener('orientationchange', () => {
+        // Small delay to let the browser finish rotating
+        setTimeout(() => {
+            const { width: newWidth, height: newHeight } = updateAppSize();
+            if (gameInstance && gameInstance.scale) {
+                gameInstance.scale.resize(newWidth, newHeight);
+            }
+        }, 100);
     });
 }

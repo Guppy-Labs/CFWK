@@ -18,7 +18,7 @@ export interface PlayerInput {
     action: boolean; // Space bar for casting/reeling
 }
 
-export type PlayerAnim = 'idle' | 'walk' | 'cast' | 'reel';
+export type PlayerAnim = 'idle' | 'walk' | 'run' | 'cast' | 'reel';
 
 export interface IPlayer {
     x: number;
@@ -26,6 +26,8 @@ export interface IPlayer {
     anim: PlayerAnim;
     isFishing: boolean;
     username: string;
+    odcid?: string;      // MongoDB ObjectId for consistent color tinting
+    direction?: number;   // 0-7 for 8-way direction
 }
 
 // --- Map System Types ---
@@ -118,4 +120,40 @@ export interface IMapData {
     width: number;
     height: number;
     layers: { id: string, name: string, data: { x: number, y: number, tileId: string }[] }[];
+}
+
+// --- Instance System Types ---
+
+/**
+ * Represents a game world location type.
+ * Each location can have multiple instances.
+ */
+export interface ILocationConfig {
+    id: string;           // "lobby", "forest_1", etc.
+    name: string;         // "Main Lobby"
+    mapFile: string;      // "lobby.tmj" - the Tiled map file
+    maxPlayers: number;   // Max players per instance
+    isPublic: boolean;    // Can anyone join?
+}
+
+/**
+ * Information about a specific instance the client should join.
+ * Returned by the server when client requests where to go.
+ */
+export interface IInstanceInfo {
+    instanceId: string;      // Unique instance ID (e.g., "lobby-1", "lobby-2")
+    locationId: string;      // Which location this is ("lobby")
+    mapFile: string;         // Which map to load ("lobby.tmj")
+    roomName: string;        // Colyseus room name to join
+    currentPlayers: number;  // How many players currently
+    maxPlayers: number;      // Max capacity
+}
+
+/**
+ * Response from /api/instance/join
+ */
+export interface IJoinInstanceResponse {
+    success: boolean;
+    instance?: IInstanceInfo;
+    error?: string;
 }

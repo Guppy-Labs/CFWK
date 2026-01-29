@@ -1,5 +1,10 @@
 import { startGame } from './gameplay';
 
+export interface UserData {
+    _id: string;
+    username: string;
+}
+
 // Auth check
 async function checkAuth() {
     try {
@@ -25,7 +30,10 @@ async function checkAuth() {
              return;
         }
 
-        startGame();
+        startGame({
+            _id: data.user._id,
+            username: data.user.username
+        });
     } catch (e) {
         window.location.href = '/login';
     }

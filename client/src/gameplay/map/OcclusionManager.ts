@@ -100,6 +100,33 @@ export class OcclusionManager {
         });
     }
 
+    /**
+     * Check if a sprite is inside an occlusion region
+     * Returns true if the sprite should be occluded (behind layers)
+     */
+    isInOcclusionRegion(x: number, y: number, halfWidth: number = 4): boolean {
+        if (this.regions.length === 0) return false;
+
+        const footLeftX = x - halfWidth;
+        const footRightX = x + halfWidth;
+
+        for (const region of this.regions) {
+            if (this.isSegmentIntersectingPolygon(footLeftX, y, footRightX, y, region.polygon)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get the base depth for occludable layers
+     */
+    getOccludableBaseDepth(): number {
+        // Return the lowest base depth of any occludable layer
+        if (this.layers.length === 0) return 200;
+        return Math.min(...this.layers.map(l => l.baseDepth));
+    }
+
     private isPointInPolygon(x: number, y: number, polygon: Phaser.Math.Vector2[]): boolean {
         let inside = false;
         for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {

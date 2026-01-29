@@ -1,0 +1,125 @@
+/**
+ * Site-wide shared styles for components used across CFWK
+ * Toast notifications, common UI elements, etc.
+ */
+
+/* Font Import */
+@font-face {
+    font-family: 'Minecraft';
+    src: url('https://cdn.jsdelivr.net/gh/IdreesInc/Minecraft-Font@master/Minecraft.otf') format('opentype');
+}
+
+/* --- Toasts --- */
+#toast-container {
+    position: fixed;
+    top: 0; /* Dynamically set by JS based on navbar height */
+    left: 0;
+    width: 100%;
+    z-index: 900; /* Below navbar (typically 1000+) so toasts slide from behind */
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+    align-items: center;
+    overflow: visible;
+}
+
+.toast-wrapper {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    animation: toast-drop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: auto;
+}
+
+.toast-chain {
+    position: absolute;
+    top: -25px; /* Extend up behind navbar */
+    width: 10px;
+    height: 50px;
+    object-fit: cover;
+    image-rendering: pixelated;
+    z-index: -1;
+}
+
+.toast-chain-left {
+    left: 20px;
+}
+
+.toast-chain-right {
+    right: 20px;
+}
+
+.mm-toast {
+    background: var(--mm-bg-panel, #1e1e1e);
+    border: 2px solid var(--mm-border, #333333);
+    color: var(--mm-text-main, #e0e0e0);
+    padding: 12px 20px;
+    min-width: 250px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    border-left: 4px solid var(--mm-primary, #ff66aa);
+    font-family: 'Minecraft', sans-serif;
+    font-size: 14px;
+    opacity: 1;
+    margin-top: 25px; /* Space for chains */
+}
+
+.mm-toast.error { border-left-color: #f44336; }
+.mm-toast.success { border-left-color: #4caf50; }
+.mm-toast.info { border-left-color: var(--mm-primary, #ff66aa); }
+
+@keyframes toast-drop {
+    0% { transform: translateY(-100px); opacity: 0; }
+    50% { opacity: 1; }
+    70% { transform: translateY(8px); }
+    85% { transform: translateY(-4px); }
+    100% { transform: translateY(0); }
+}
+
+@keyframes toast-outer {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(-100px); opacity: 0; }
+}
+
+/* Bottom mode - for pages without navbar */
+#toast-container.bottom-mode {
+    flex-direction: column-reverse;
+}
+
+.toast-wrapper.bottom {
+    flex-direction: column-reverse;
+    animation: toast-rise 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.toast-wrapper.bottom .mm-toast {
+    margin-top: 0;
+    margin-bottom: 25px; /* Space for chains below */
+}
+
+.toast-wrapper.bottom .toast-chain {
+    top: auto;
+    bottom: -25px; /* Extend down to page bottom */
+}
+
+@keyframes toast-rise {
+    0% { transform: translateY(100px); opacity: 0; }
+    50% { opacity: 1; }
+    70% { transform: translateY(-8px); }
+    85% { transform: translateY(4px); }
+    100% { transform: translateY(0); }
+}
+
+/* Bottom mode exit animation */
+.toast-wrapper.bottom[style*="toast-outer"] {
+    animation: toast-outer-bottom 0.5s forwards !important;
+}
+
+@keyframes toast-outer-bottom {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(100px); opacity: 0; }
+}
