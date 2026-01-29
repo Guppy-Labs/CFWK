@@ -1,5 +1,5 @@
 /**
- * THIS FILE IS ALL TEMPLATE CODE AND WILL BE REMOVED/REPLACED AT A LATER DATE.
+ * GAMEPLAY BOOTSTRAP SCENE
  * Guppy Labs 2026
  */
 
@@ -16,7 +16,7 @@ export class BootScene extends Phaser.Scene {
             .fillStyle(0x00ff00)
             .fillRect(0, 0, 24, 51)
             .generateTexture('player', 24, 51);
-            
+
         this.make.graphics({ x: 0, y: 0 })
             .fillStyle(0x0000ff)
             .fillRect(0, 0, 800, 600)

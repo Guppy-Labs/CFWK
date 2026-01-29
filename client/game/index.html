@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <link rel="icon" type="image/png" href="/favicon.png">
     <title>CFWK - Play</title>
-    <!-- Use shared styles for consistency -->
-    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <!-- Game-only styles (avoid legacy editor dependencies) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
@@ -14,6 +13,15 @@
         @font-face {
             font-family: 'Minecraft';
             src: url('https://cdn.jsdelivr.net/gh/IdreesInc/Minecraft-Font@master/Minecraft.otf') format('opentype');
+        }
+
+        :root {
+            --mm-bg-dark: #121212;
+            --mm-bg-panel: #1e1e1e;
+            --mm-border: #333333;
+            --mm-primary: #ff66aa;
+            --mm-text-main: #e0e0e0;
+            --mm-text-muted: #aaaaaa;
         }
 
         body {
@@ -87,7 +95,48 @@
             box-shadow: 0 0 0 4px var(--mm-border), 0 10px 20px rgba(0,0,0,0.5);
             max-width: 100%;
             max-height: 100%;
-            display: grid; /* removes font-size/line-height gaps for canvas */
+            position: relative;
+            display: block; /* allow absolute overlay */
+        }
+
+        #app canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .game-loader {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 40px;
+            background: rgba(18, 18, 18, 0.9);
+            color: var(--mm-text-main);
+            z-index: 5;
+        }
+
+        .loader-spinner {
+            width: 42px;
+            height: 42px;
+            border: 4px solid rgba(255, 102, 170, 0.2);
+            border-top-color: var(--mm-primary);
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+        }
+
+        .loader-text {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--mm-text-muted);
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
 
         /* Mobile Adjustments */
@@ -115,7 +164,12 @@
     </nav>
 
     <div id="game-container">
-        <div id="app"></div>
+        <div id="app">
+            <div id="game-loader" class="game-loader" aria-live="polite">
+                <div class="loader-spinner"></div>
+                <div class="loader-text">Loading world...</div>
+            </div>
+        </div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

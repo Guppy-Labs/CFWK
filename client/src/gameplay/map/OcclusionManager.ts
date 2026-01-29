@@ -1,0 +1,171 @@
+import Phaser from 'phaser';
+import { TiledObjectLayer, OccludableLayer, OccluderRegion, getTiledProperty } from './TiledTypes';
+
+/**
+ * Manages depth-based occlusion for layered sprites
+ */
+export class OcclusionManager {
+    private regions: OccluderRegion[] = [];
+    private layers: OccludableLayer[] = [];
+    private playerFrontDepth: number;
+    private playerOccludedDepthOffset: number;
+
+    constructor(playerFrontDepth: number = 260, playerOccludedDepthOffset: number = 20) {
+        this.playerFrontDepth = playerFrontDepth;
+        this.playerOccludedDepthOffset = playerOccludedDepthOffset;
+    }
+
+    /**
+     * Get occluder regions for debug drawing
+     */
+    getRegions(): OccluderRegion[] {
+        return this.regions;
+    }
+
+    /**
+     * Get occludable layers
+     */
+    getLayers(): OccludableLayer[] {
+        return this.layers;
+    }
+
+    /**
+     * Register an occludable layer
+     */
+    addOccludableLayer(layer: Phaser.Tilemaps.TilemapLayer, baseDepth: number, tag: string, order: number) {
+        this.layers.push({ layer, baseDepth, tag, order });
+    }
+
+    /**
+     * Setup occluder regions from the Occluders object layer
+     */
+    setupFromObjectLayers(map: Phaser.Tilemaps.Tilemap) {
+        const objectLayers = map.objects as TiledObjectLayer[];
+        const occluderLayer = objectLayers.find(
+            (layer) => layer.type === 'objectgroup' && layer.name.toLowerCase() === 'occluders'
+        );
+
+        if (!occluderLayer) return;
+
+        occluderLayer.objects.forEach((obj) => {
+            if (!obj.polygon || obj.polygon.length < 3) return;
+
+            const points = obj.polygon.map(
+                (p) => new Phaser.Math.Vector2((obj.x || 0) + p.x, (obj.y || 0) + p.y)
+            );
+
+            const targetsRaw = getTiledProperty(obj, 'Targets')
+                ?? getTiledProperty(obj, 'Occludes')
+                ?? getTiledProperty(obj, 'OcclusionTags');
+
+            const targetTags = typeof targetsRaw === 'string'
+                ? targetsRaw.split(',').map((t) => t.trim()).filter(Boolean)
+                : null;
+
+            this.regions.push({ polygon: points, targetTags });
+        });
+    }
+
+    /**
+     * Update layer depths based on player position
+     */
+    update(player: Phaser.Physics.Matter.Sprite) {
+        if (this.regions.length === 0) return;
+
+        // Reset layers to base depth
+        this.layers.forEach((entry) => entry.layer.setDepth(entry.baseDepth));
+
+        const bottomLeft = player.getBottomLeft();
+        const bottomRight = player.getBottomRight();
+        const y = bottomLeft.y;
+
+        const activeTags = new Set<string>();
+
+        this.regions.forEach((region) => {
+            if (!this.isSegmentIntersectingPolygon(bottomLeft.x, y, bottomRight.x, y, region.polygon)) return;
+
+            if (region.targetTags && region.targetTags.length > 0) {
+                region.targetTags.forEach((tag) => activeTags.add(tag));
+            } else {
+                this.layers.forEach((entry) => activeTags.add(entry.tag));
+            }
+        });
+
+        if (activeTags.size === 0) return;
+
+        this.layers.forEach((entry) => {
+            if (!activeTags.has(entry.tag)) return;
+            const elevatedDepth = this.playerFrontDepth + this.playerOccludedDepthOffset + entry.order;
+            entry.layer.setDepth(elevatedDepth);
+        });
+    }
+
+    private isPointInPolygon(x: number, y: number, polygon: Phaser.Math.Vector2[]): boolean {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x;
+            const yi = polygon[i].y;
+            const xj = polygon[j].x;
+            const yj = polygon[j].y;
+
+            const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    private isSegmentIntersectingPolygon(
+        x1: number,
+        y1: number,
+        x2: number,
+        y2: number,
+        polygon: Phaser.Math.Vector2[]
+    ): boolean {
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        if (this.isPointInPolygon(midX, midY, polygon)) return true;
+
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const x3 = polygon[j].x;
+            const y3 = polygon[j].y;
+            const x4 = polygon[i].x;
+            const y4 = polygon[i].y;
+
+            if (this.segmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4)) return true;
+        }
+
+        return false;
+    }
+
+    private segmentsIntersect(
+        x1: number, y1: number, x2: number, y2: number,
+        x3: number, y3: number, x4: number, y4: number
+    ): boolean {
+        const d1 = this.direction(x3, y3, x4, y4, x1, y1);
+        const d2 = this.direction(x3, y3, x4, y4, x2, y2);
+        const d3 = this.direction(x1, y1, x2, y2, x3, y3);
+        const d4 = this.direction(x1, y1, x2, y2, x4, y4);
+
+        if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+            return true;
+        }
+
+        return (
+            (d1 === 0 && this.onSegment(x3, y3, x4, y4, x1, y1)) ||
+            (d2 === 0 && this.onSegment(x3, y3, x4, y4, x2, y2)) ||
+            (d3 === 0 && this.onSegment(x1, y1, x2, y2, x3, y3)) ||
+            (d4 === 0 && this.onSegment(x1, y1, x2, y2, x4, y4))
+        );
+    }
+
+    private direction(x1: number, y1: number, x2: number, y2: number, x3: number, y3: number): number {
+        return (x3 - x1) * (y2 - y1) - (x2 - x1) * (y3 - y1);
+    }
+
+    private onSegment(x1: number, y1: number, x2: number, y2: number, x: number, y: number): boolean {
+        return (
+            Math.min(x1, x2) <= x && x <= Math.max(x1, x2) &&
+            Math.min(y1, y2) <= y && y <= Math.max(y1, y2)
+        );
+    }
+}
