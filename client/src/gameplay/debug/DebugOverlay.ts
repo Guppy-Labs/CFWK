@@ -1,16 +1,21 @@
 import Phaser from 'phaser';
 import { OccluderRegion } from '../map/TiledTypes';
+import { WorldTimeState, formatFullDateTime } from '@cfwk/shared';
 
 /**
  * Debug overlay for visualizing collision bodies, occluders, and player state
  */
 export class DebugOverlay {
     private scene: Phaser.Scene;
+    private uiScene: Phaser.Scene;
     private graphics?: Phaser.GameObjects.Graphics;
+    private timeText?: Phaser.GameObjects.Text;
     private enabled = false;
+    private textOnly = false;
 
-    constructor(scene: Phaser.Scene) {
+    constructor(scene: Phaser.Scene, uiScene?: Phaser.Scene) {
         this.scene = scene;
+        this.uiScene = uiScene ?? scene;
     }
 
     /**
@@ -23,8 +28,9 @@ export class DebugOverlay {
     /**
      * Toggle debug visibility
      */
-    toggle() {
+    toggle(textOnly = false) {
         this.enabled = !this.enabled;
+        this.textOnly = textOnly;
 
         if (!this.graphics) {
             this.graphics = this.scene.add.graphics();
@@ -32,7 +38,31 @@ export class DebugOverlay {
             this.graphics.setScrollFactor(1);
         }
 
-        this.graphics.setVisible(this.enabled);
+        if (!this.timeText) {
+            this.timeText = this.uiScene.add.text(
+                10,
+                10,
+                'Debug Mode Active',
+                {
+                    fontFamily: 'Arial, sans-serif',
+                    fontSize: '14px',
+                    color: '#00ff00',
+                    backgroundColor: '#000000',
+                    padding: { x: 8, y: 6 }
+                }
+            );
+            this.timeText.setOrigin(0, 0); // Top-left alignment
+            this.timeText.setScrollFactor(0); // Fixed to camera
+            this.timeText.setDepth(9999); // Very high depth to ensure visibility
+        }
+
+        this.graphics.setVisible(this.enabled && !this.textOnly);
+        this.timeText.setVisible(this.enabled);
+        
+        // Force immediate text update when toggling on
+        if (this.enabled) {
+            this.updateTimeDisplay();
+        }
     }
 
     /**
@@ -42,15 +72,37 @@ export class DebugOverlay {
         collisionBodies: MatterJS.BodyType[],
         occluderRegions: OccluderRegion[],
         spawnPoint?: Phaser.Math.Vector2,
-        player?: Phaser.Physics.Matter.Sprite
+        player?: Phaser.Physics.Matter.Sprite,
+        worldTime?: WorldTimeState
     ) {
         if (!this.graphics || !this.enabled) return;
         this.graphics.clear();
 
-        this.drawOccluders(occluderRegions);
-        this.drawColliders(collisionBodies);
-        this.drawSpawnPoint(spawnPoint);
-        this.drawPlayer(player);
+        if (!this.textOnly) {
+            this.drawOccluders(occluderRegions);
+            this.drawColliders(collisionBodies);
+            this.drawSpawnPoint(spawnPoint);
+            this.drawPlayer(player);
+        }
+        this.updateTimeDisplay(worldTime);
+    }
+
+    /**
+     * Update the time display text
+     */
+    private updateTimeDisplay(worldTime?: WorldTimeState) {
+        if (!this.timeText) return;
+        
+        if (!worldTime) {
+            this.timeText.setText('World Time: Loading...');
+            return;
+        }
+        
+        const timeStr = formatFullDateTime(worldTime);
+        const brightnessStr = `Brightness: ${(worldTime.brightness * 100).toFixed(1)}%`;
+        const dayNightStr = worldTime.isDaytime ? 'Day' : 'Night';
+        
+        this.timeText.setText(`${timeStr}\n${brightnessStr} | ${dayNightStr}`);
     }
 
     private drawOccluders(regions: OccluderRegion[]) {

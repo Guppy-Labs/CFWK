@@ -1,4 +1,4 @@
-import { startGame } from './gameplay';
+import { startGame, setLoaderText } from './gameplay';
 
 export interface UserData {
     _id: string;
@@ -8,6 +8,8 @@ export interface UserData {
 // Auth check
 async function checkAuth() {
     try {
+        setLoaderText('Authenticating...');
+        
         const res = await fetch('/api/auth/me');
         if (!res.ok) {
             window.location.href = '/login';
@@ -30,6 +32,8 @@ async function checkAuth() {
              return;
         }
 
+        setLoaderText('Initializing game...');
+        
         startGame({
             _id: data.user._id,
             username: data.user.username

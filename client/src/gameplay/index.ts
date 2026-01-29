@@ -15,41 +15,17 @@ function updateAppSize() {
     app.style.width = `${width}px`;
     app.style.height = `${height}px`;
 
-    const placeholder = app.querySelector<HTMLCanvasElement>('#game-placeholder');
-    if (placeholder) {
-        placeholder.width = width;
-        placeholder.height = height;
-        placeholder.style.width = '100%';
-        placeholder.style.height = '100%';
-    }
-
     return { width, height };
 }
 
-function showLoader() {
-    const app = document.getElementById('app');
-    if (!app) return;
-
-    let placeholder = app.querySelector<HTMLCanvasElement>('#game-placeholder');
-    if (!placeholder) {
-        placeholder = document.createElement('canvas');
-        placeholder.id = 'game-placeholder';
-        placeholder.style.display = 'block';
-        placeholder.style.width = '100%';
-        placeholder.style.height = '100%';
-        app.prepend(placeholder);
-    }
-
-    const loader = document.getElementById('game-loader');
-    if (loader) loader.style.display = 'flex';
-}
-
-function hideLoader() {
+export function hideLoader() {
     const loader = document.getElementById('game-loader');
     if (loader) loader.style.display = 'none';
+}
 
-    const placeholder = document.getElementById('game-placeholder');
-    if (placeholder) placeholder.remove();
+export function setLoaderText(text: string) {
+    const loaderText = document.getElementById('loader-text');
+    if (loaderText) loaderText.textContent = text;
 }
 
 let gameInstance: Phaser.Game | undefined;
@@ -59,7 +35,7 @@ export let currentUser: { _id: string; username: string } | null = null;
 
 export function startGame(userData: { _id: string; username: string }) {
     currentUser = userData;
-    showLoader();
+    // Loader is already visible from HTML, just ensure #app is sized correctly
     const { width, height } = updateAppSize();
 
     const config: Phaser.Types.Core.GameConfig = {
@@ -88,9 +64,7 @@ export function startGame(userData: { _id: string; username: string }) {
 
     const game = new Phaser.Game(config);
     gameInstance = game;
-    game.events.once('ready', () => {
-        hideLoader();
-    });
+    // Loader is hidden by GameScene after map is fully loaded
 
     // Use ResizeObserver for robust resize detection
     // This catches: window resize, dev tools toggle, mobile rotation, container changes

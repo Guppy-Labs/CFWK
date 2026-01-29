@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
-import { PlayerInput, IPlayer, PlayerAnim } from "@cfwk/shared";
+import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 
 /**
@@ -14,6 +14,21 @@ export class InstancePlayerSchema extends Schema implements IPlayer {
     @type("string") username: string = "";
     @type("string") odcid: string = ""; // MongoDB ObjectId for consistent color
     @type("number") direction: number = 0; // 0-7 for 8-way direction
+    @type("boolean") isAfk: boolean = false; // AFK status for transparency
+}
+
+/**
+ * World time state synchronized to all clients
+ */
+export class WorldTimeSchema extends Schema {
+    @type("number") year: number = 1;
+    @type("number") season: Season = Season.Winter;
+    @type("number") dayOfYear: number = 1;
+    @type("number") dayOfSeason: number = 1;
+    @type("number") hour: number = 0;
+    @type("number") minute: number = 0;
+    @type("number") second: number = 0;
+    @type("number") brightness: number = 0.5;
 }
 
 /**
@@ -24,6 +39,7 @@ export class InstanceState extends Schema {
     @type("string") locationId: string = "";
     @type("string") mapFile: string = "";
     @type({ map: InstancePlayerSchema }) players = new MapSchema<InstancePlayerSchema>();
+    @type(WorldTimeSchema) worldTime = new WorldTimeSchema();
 }
 
 /**
@@ -35,6 +51,7 @@ export class InstanceState extends Schema {
 export class InstanceRoom extends Room<InstanceState> {
     private instanceId: string = "";
     private instanceManager = InstanceManager.getInstance();
+    private timeUpdateInterval?: ReturnType<typeof setInterval>;
 
     onCreate(options: { instanceId: string; locationId: string; mapFile: string; maxPlayers: number }) {
         console.log(`[InstanceRoom] Creating room for instance: ${options.instanceId}`);
@@ -48,6 +65,14 @@ export class InstanceRoom extends Room<InstanceState> {
         state.locationId = options.locationId;
         state.mapFile = options.mapFile;
         this.setState(state);
+
+        // Initialize world time
+        this.updateWorldTime();
+
+        // Update world time every second (client can interpolate for smoother updates)
+        this.timeUpdateInterval = setInterval(() => {
+            this.updateWorldTime();
+        }, 1000);
 
         // Handle player input
         this.onMessage("input", (client, input: PlayerInput) => {
@@ -84,6 +109,15 @@ export class InstanceRoom extends Room<InstanceState> {
                 if (typeof data.direction === 'number') {
                     player.direction = data.direction;
                 }
+            }
+        });
+
+        // Handle AFK status
+        this.onMessage("afk", (client, data: { isAfk: boolean }) => {
+            const player = this.state.players.get(client.sessionId);
+            if (player) {
+                player.isAfk = data.isAfk;
+                console.log(`[InstanceRoom] Player ${client.sessionId} AFK: ${data.isAfk}`);
             }
         });
     }
@@ -138,5 +172,23 @@ export class InstanceRoom extends Room<InstanceState> {
 
     onDispose() {
         console.log(`[InstanceRoom] Instance ${this.instanceId} disposed`);
+        if (this.timeUpdateInterval) {
+            clearInterval(this.timeUpdateInterval);
+        }
+    }
+
+    /**
+     * Calculate and update the world time state
+     */
+    private updateWorldTime() {
+        const time = calculateWorldTime();
+        this.state.worldTime.year = time.year;
+        this.state.worldTime.season = time.season;
+        this.state.worldTime.dayOfYear = time.dayOfYear;
+        this.state.worldTime.dayOfSeason = time.dayOfSeason;
+        this.state.worldTime.hour = time.hour;
+        this.state.worldTime.minute = time.minute;
+        this.state.worldTime.second = time.second;
+        this.state.worldTime.brightness = time.brightness;
     }
 }

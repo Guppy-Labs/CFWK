@@ -160,6 +160,15 @@ export class NetworkManager {
     }
 
     /**
+     * Send AFK status to the server
+     */
+    sendAfk(isAfk: boolean) {
+        if (this.currentRoom) {
+            this.currentRoom.send("afk", { isAfk });
+        }
+    }
+
+    /**
      * Get the local player's session ID
      */
     getSessionId(): string | null {

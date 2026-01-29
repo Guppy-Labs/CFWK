@@ -196,7 +196,7 @@ export class PlayerAnimationController {
             let turnRate = 0.4; // Default fast (Standing still / starting)
             if (actualSpeed > 2.5) {
                 // Running (Sprint speed is ~3.2)
-                turnRate = 0.08; 
+                turnRate = 0.04; 
             } else if (actualSpeed > 0.5) {
                 // Walking (Walk speed is ~1.6)
                 turnRate = 0.15;
@@ -211,10 +211,11 @@ export class PlayerAnimationController {
         const targetAngleFromInput = isInputMoving ? Math.atan2(vy, vx) : this.currentRotation;
         
         const diff = Math.abs(Phaser.Math.Angle.Wrap(this.currentRotation - targetAngleFromInput));
-        // Use a threshold to decide if we show the turning frame (sliding/momentum effect)
-        const isTurning = isInputMoving && diff > 0.35;
+        // Use rotation animation only when turning from a STANDSTILL (not while already moving)
+        // This creates a quick turn-in-place animation before walking
+        const isTurningFromStandstill = isInputMoving && diff > 0.35 && actualSpeed < 0.3;
 
-        if (isTurning) {
+        if (isTurningFromStandstill) {
              // Override animation with static rotation frame
             player.setTexture('player-rotate');
             player.setFlipX(false);

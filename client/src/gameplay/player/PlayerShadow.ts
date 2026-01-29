@@ -55,6 +55,13 @@ export class PlayerShadow {
     }
 
     /**
+     * Set shadow alpha (for AFK transparency)
+     */
+    setAlpha(alpha: number) {
+        this.shadow.setAlpha(this.alpha * alpha);
+    }
+
+    /**
      * Clean up resources
      */
     destroy() {

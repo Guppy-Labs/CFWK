@@ -58,6 +58,7 @@ export type RemotePlayerConfig = {
     depth: number;
     occlusionManager?: OcclusionManager;
     skipSpawnEffect?: boolean; // True for players already in room on initial sync
+    isAfk?: boolean; // Initial AFK state
 };
 
 /**
@@ -95,6 +96,11 @@ export class RemotePlayer {
 
     // Despawn callback
     private onDespawnComplete?: () => void;
+
+    // AFK state
+    private isAfk: boolean = false;
+    private afkAlpha: number = 1;
+    private readonly afkTargetAlpha = 0.4;
 
     constructor(scene: Phaser.Scene, config: RemotePlayerConfig) {
         this.scene = scene;
@@ -327,6 +333,13 @@ export class RemotePlayer {
         this.updateAnimation(anim, this.currentDirection);
     }
 
+    /**
+     * Set AFK state from server
+     */
+    setAfk(isAfk: boolean) {
+        this.isAfk = isAfk;
+    }
+
     private updateAnimation(anim: string, direction: Direction) {
         const directionNames = ['down', 'down-right', 'right', 'up-right', 'up', 'up-right', 'right', 'down-right'];
         const dirName = directionNames[direction] || 'down';
@@ -386,6 +399,25 @@ export class RemotePlayer {
         
         // Update nameplate position (above the sprite, accounting for origin)
         this.nameplate.setPosition(this.sprite.x, this.sprite.y - 36);
+
+        // Update AFK transparency
+        this.updateAfkAlpha();
+    }
+
+    /**
+     * Update AFK transparency smoothly
+     */
+    private updateAfkAlpha() {
+        const targetAlpha = this.isAfk ? this.afkTargetAlpha : 1;
+        
+        // Smooth transition
+        this.afkAlpha += (targetAlpha - this.afkAlpha) * 0.05;
+        
+        // Apply alpha to sprite and nameplate (unless spawning/despawning)
+        if (!this.isSpawning && this.particles.length === 0) {
+            this.sprite.setAlpha(this.afkAlpha);
+            this.nameplate.setAlpha(this.afkAlpha);
+        }
     }
 
     /**

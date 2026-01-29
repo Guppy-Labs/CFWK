@@ -6,11 +6,10 @@
 import Phaser from 'phaser';
 import { SYSTEM_TILES, IInstanceInfo } from '@cfwk/shared';
 import { NetworkManager } from '../network/NetworkManager';
-import { currentUser } from '../index';
+import { currentUser, setLoaderText } from '../index';
 
 export class BootScene extends Phaser.Scene {
     private instanceInfo: IInstanceInfo | null = null;
-    private loadingText!: Phaser.GameObjects.Text;
     private networkManager = NetworkManager.getInstance();
 
     constructor() {
@@ -37,13 +36,8 @@ export class BootScene extends Phaser.Scene {
     }
 
     create() {
-        // Show loading text
-        this.loadingText = this.add.text(
-            this.scale.width / 2,
-            this.scale.height / 2,
-            'Connecting to world...',
-            { fontSize: '24px', color: '#ffffff' }
-        ).setOrigin(0.5);
+        // Update loader text (HTML loader is already visible)
+        setLoaderText('Connecting to world...');
 
         // Request instance from server
         this.requestInstance();
@@ -105,23 +99,16 @@ export class BootScene extends Phaser.Scene {
     }
 
     private showDuplicateConnectionError() {
-        // Clear loading text
-        this.loadingText.destroy();
-        
-        // Show error message
-        const errorText = this.add.text(
-            this.scale.width / 2,
-            this.scale.height / 2 - 20,
-            'Already Connected',
-            { fontSize: '28px', color: '#ff6b6b', fontFamily: 'Minecraft, monospace' }
-        ).setOrigin(0.5);
-
-        this.add.text(
-            this.scale.width / 2,
-            this.scale.height / 2 + 30,
-            'You are already playing in another window.\nPlease close other tabs to continue.',
-            { fontSize: '14px', color: '#ffffff', fontFamily: 'Minecraft, monospace', align: 'center', lineSpacing: 10 }
-        ).setOrigin(0.5);
+        // Update loader to show error (keeps same visual style)
+        const loader = document.getElementById('game-loader');
+        if (loader) {
+            loader.innerHTML = `
+                <div style="text-align: center;">
+                    <div style="font-size: 1.5rem; color: #ff6b6b; margin-bottom: 20px; font-family: 'Minecraft', monospace; text-transform: uppercase; letter-spacing: 2px;">Already Connected</div>
+                    <div style="font-size: 0.8rem; color: #aaa; font-family: 'Minecraft', monospace; line-height: 1.8;">You are already playing in another window.<br>Please close other tabs to continue.</div>
+                </div>
+            `;
+        }
     }
 
     private startGame(instance: IInstanceInfo) {

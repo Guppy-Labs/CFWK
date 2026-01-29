@@ -81,6 +81,13 @@ export class PlayerController {
     private syncTimer = 0;
     private readonly syncInterval = 50; // ms between position syncs
 
+    // AFK tracking
+    private lastActivityTime = 0;
+    private isAfk = false;
+    private readonly afkThreshold = 60000; // 1 minute until AFK
+    private readonly afkKickThreshold = 300000; // 5 minutes until kick
+    private afkAlpha = 1; // Current transparency (1 = fully visible)
+
     constructor(scene: Phaser.Scene, config: PlayerControllerConfig = {}) {
         this.scene = scene;
         this.config = {
@@ -109,6 +116,9 @@ export class PlayerController {
 
         this.setupInput();
         this.setupCollisionTracking();
+        
+        // Initialize activity time
+        this.lastActivityTime = Date.now();
     }
 
     /**
@@ -258,7 +268,7 @@ export class PlayerController {
             const currentSpeedMag = currentVel ? Math.hypot(currentVel.x, currentVel.y) : 0;
             
             let turnRate = 0.4;
-            if (currentSpeedMag > 2.0) turnRate = 0.08; // Sprinting/Running turns slow
+            if (currentSpeedMag > 2.0) turnRate = 0.04; // Sprinting/Running turns slow
             else if (currentSpeedMag > 0.5) turnRate = 0.15; // Walking turns average
 
             // 3. Smoothly rotate our "Physics Facing" towards the Input
@@ -318,8 +328,61 @@ export class PlayerController {
         // Update shadow
         this.shadow?.update();
 
+        // Update AFK state
+        this.updateAfkState(isMoving || inputSprint);
+
         // Sync state to server
         this.syncToServer(delta);
+    }
+
+    /**
+     * Update AFK state based on activity
+     */
+    private updateAfkState(hasInput: boolean) {
+        if (!this.player) return;
+
+        const now = Date.now();
+
+        // Any input resets the activity timer
+        if (hasInput) {
+            this.lastActivityTime = now;
+            
+            // If was AFK, clear it
+            if (this.isAfk) {
+                this.isAfk = false;
+                this.networkManager.sendAfk(false);
+                this.afkAlpha = 1;
+                this.player.setAlpha(1);
+                this.shadow?.setAlpha(1);
+            }
+            return;
+        }
+
+        const idleTime = now - this.lastActivityTime;
+
+        // 5 minute kick
+        if (idleTime >= this.afkKickThreshold) {
+            console.log('[PlayerController] AFK timeout - disconnecting');
+            this.networkManager.disconnect();
+            // Redirect to login or show message
+            window.location.href = '/login?reason=afk';
+            return;
+        }
+
+        // 1 minute AFK - go semi-transparent
+        if (idleTime >= this.afkThreshold && !this.isAfk) {
+            this.isAfk = true;
+            this.networkManager.sendAfk(true);
+            console.log('[PlayerController] Player is now AFK');
+        }
+
+        // Smoothly transition to semi-transparent when AFK
+        if (this.isAfk) {
+            const targetAlpha = 0.4;
+            this.afkAlpha += (targetAlpha - this.afkAlpha) * 0.05;
+            this.player.setAlpha(this.afkAlpha);
+            this.shadow?.setAlpha(this.afkAlpha);
+        }
     }
 
     /**

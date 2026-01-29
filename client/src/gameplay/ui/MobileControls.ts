@@ -61,10 +61,7 @@ export class MobileControls {
         
         this.setupEventListeners();
         
-        // Only show on touch devices
-        if (this.isTouchDevice()) {
-            this.show();
-        }
+        // Don't auto-show - GameScene will show controls when the game is ready
     }
     
     /**

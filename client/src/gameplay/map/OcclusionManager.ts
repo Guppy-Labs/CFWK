@@ -9,6 +9,7 @@ export class OcclusionManager {
     private layers: OccludableLayer[] = [];
     private playerFrontDepth: number;
     private playerOccludedDepthOffset: number;
+    private activeTags: Set<string> = new Set();
 
     constructor(playerFrontDepth: number = 260, playerOccludedDepthOffset: number = 20) {
         this.playerFrontDepth = playerFrontDepth;
@@ -70,6 +71,9 @@ export class OcclusionManager {
      * Update layer depths based on player position
      */
     update(player: Phaser.Physics.Matter.Sprite) {
+        // Clear active tags
+        this.activeTags.clear();
+        
         if (this.regions.length === 0) return;
 
         // Reset layers to base depth
@@ -79,25 +83,49 @@ export class OcclusionManager {
         const bottomRight = player.getBottomRight();
         const y = bottomLeft.y;
 
-        const activeTags = new Set<string>();
-
         this.regions.forEach((region) => {
             if (!this.isSegmentIntersectingPolygon(bottomLeft.x, y, bottomRight.x, y, region.polygon)) return;
 
             if (region.targetTags && region.targetTags.length > 0) {
-                region.targetTags.forEach((tag) => activeTags.add(tag));
+                region.targetTags.forEach((tag) => this.activeTags.add(tag));
             } else {
-                this.layers.forEach((entry) => activeTags.add(entry.tag));
+                this.layers.forEach((entry) => this.activeTags.add(entry.tag));
             }
         });
 
-        if (activeTags.size === 0) return;
+        if (this.activeTags.size === 0) return;
 
         this.layers.forEach((entry) => {
-            if (!activeTags.has(entry.tag)) return;
+            if (!this.activeTags.has(entry.tag)) return;
             const elevatedDepth = this.playerFrontDepth + this.playerOccludedDepthOffset + entry.order;
             entry.layer.setDepth(elevatedDepth);
         });
+    }
+
+    /**
+     * Check if a layer tag is currently being occluded (elevated in front of player)
+     */
+    isTagOccluded(tag: string): boolean {
+        return this.activeTags.has(tag);
+    }
+
+    /**
+     * Get the elevated depth for a layer when it's occluded
+     */
+    getOccludedDepth(tag: string): number {
+        const layer = this.layers.find(l => l.tag === tag);
+        if (layer) {
+            return this.playerFrontDepth + this.playerOccludedDepthOffset + layer.order;
+        }
+        return this.playerFrontDepth + this.playerOccludedDepthOffset;
+    }
+
+    /**
+     * Get the base depth for a layer by tag
+     */
+    getBaseDepthForTag(tag: string): number {
+        const layer = this.layers.find(l => l.tag === tag);
+        return layer?.baseDepth ?? 200;
     }
 
     /**

@@ -28,6 +28,7 @@ export interface IPlayer {
     username: string;
     odcid?: string;      // MongoDB ObjectId for consistent color tinting
     direction?: number;   // 0-7 for 8-way direction
+    isAfk?: boolean;     // AFK status for transparency
 }
 
 // --- Map System Types ---
@@ -157,3 +158,6 @@ export interface IJoinInstanceResponse {
     instance?: IInstanceInfo;
     error?: string;
 }
+
+// Re-export WorldTime module
+export * from './WorldTime';
