@@ -155,59 +155,145 @@
             pointer-events: none;
         }
 
-        /* Unique compass/needle spinner */
-        .loader-compass {
+        /* Fish Loader */
+        .loader-fish-container {
+            position: relative;
+            width: 140px;
+            height: 80px;
+            animation: fish-drift 4s ease-in-out infinite;
+        }
+
+        .loader-fish {
+            position: absolute;
+            left: 50%;
+            top: 50%;
             width: 64px;
             height: 64px;
-            position: relative;
+            background-image: url('/assets/fish_tilesheet.png');
+            /* Random fish from top 4 rows (0-indexed), 2x scale */
+            background-position: 0 0;
+            background-size: 2304px 2176px;
+            image-rendering: pixelated;
+            animation: fish-wiggle 0.9s ease-in-out infinite;
+            filter: drop-shadow(0 0 16px rgba(255, 102, 170, 0.4));
+            transform: translate(-50%, -50%) rotate(45deg);
         }
 
-        .loader-compass::before {
+        .loader-fish::before {
             content: '';
             position: absolute;
-            inset: 0;
-            border: 3px solid rgba(255, 102, 170, 0.2);
+            inset: 6px 10px 16px 12px;
             border-radius: 50%;
+            background: radial-gradient(circle at 30% 40%, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0) 60%);
+            opacity: 0;
+            animation: fish-glint 2.6s ease-in-out infinite;
+            pointer-events: none;
         }
 
-        .loader-compass::after {
-            content: '';
+        /* Bubble trail */
+        .loader-bubbles {
             position: absolute;
+            left: 15%;
             top: 50%;
-            left: 50%;
+            transform: translateY(-50%);
+        }
+
+        .loader-bubble {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: rgba(255, 102, 170, 0.4);
+            border-radius: 50%;
+            animation: bubble-rise 2s ease-out infinite;
+        }
+
+        .loader-bubble:nth-child(1) {
+            animation-delay: 0s;
+            left: 0;
+        }
+
+        .loader-bubble:nth-child(2) {
+            animation-delay: 0.4s;
+            left: 10px;
             width: 4px;
-            height: 26px;
-            background: linear-gradient(to bottom, var(--mm-primary) 50%, rgba(255, 102, 170, 0.3) 50%);
-            transform-origin: center top;
-            transform: translateX(-50%);
-            animation: compass-spin 1.2s ease-in-out infinite;
+            height: 4px;
         }
 
-        /* Center dot */
-        .loader-compass-center {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 8px;
-            height: 8px;
-            background: var(--mm-primary);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 0 8px var(--mm-primary);
+        .loader-bubble:nth-child(3) {
+            animation-delay: 0.8s;
+            left: 5px;
+            width: 5px;
+            height: 5px;
+        }
+
+        @keyframes fish-drift {
+            0%, 100% {
+                transform: translateX(0) translateY(0);
+            }
+            25% {
+                transform: translateX(6px) translateY(-4px);
+            }
+            50% {
+                transform: translateX(0) translateY(3px);
+            }
+            75% {
+                transform: translateX(-6px) translateY(-2px);
+            }
+        }
+
+        @keyframes fish-wiggle {
+            0%, 100% { 
+                transform: translate(-50%, -50%) rotate(45deg) scaleX(1); 
+            }
+            50% { 
+                transform: translate(-50%, -50%) rotate(43deg) scaleX(0.98); 
+            }
+        }
+
+        @keyframes fish-glint {
+            0% {
+                opacity: 0;
+                transform: translateX(-6px) scale(0.9);
+            }
+            35% {
+                opacity: 0.5;
+                transform: translateX(0) scale(1);
+            }
+            70% {
+                opacity: 0;
+                transform: translateX(6px) scale(1.05);
+            }
+            100% {
+                opacity: 0;
+            }
+        }
+
+        @keyframes bubble-rise {
+            0% {
+                opacity: 0;
+                transform: translateY(0) scale(0.5);
+            }
+            15% {
+                opacity: 0.7;
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-35px) scale(1);
+            }
         }
 
         .loader-text {
-            font-size: 0.85rem;
+            font-size: 0.75rem;
             text-transform: uppercase;
-            letter-spacing: 3px;
+            letter-spacing: 4px;
             color: var(--mm-text-muted);
             font-family: 'Minecraft', monospace;
+            animation: text-pulse 2s ease-in-out infinite;
         }
 
-        @keyframes compass-spin {
-            0% { transform: translateX(-50%) rotate(-30deg); }
-            50% { transform: translateX(-50%) rotate(210deg); }
-            100% { transform: translateX(-50%) rotate(330deg); }
+        @keyframes text-pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
         }
 
         /* Mobile Adjustments */
@@ -316,8 +402,13 @@
 
     <div id="game-container">
         <div id="game-loader" class="game-loader" aria-live="polite">
-            <div class="loader-compass">
-                <div class="loader-compass-center"></div>
+            <div class="loader-fish-container">
+                <div class="loader-bubbles">
+                    <div class="loader-bubble"></div>
+                    <div class="loader-bubble"></div>
+                    <div class="loader-bubble"></div>
+                </div>
+                <div class="loader-fish"></div>
             </div>
             <div id="loader-text" class="loader-text">Loading world...</div>
         </div>
@@ -335,6 +426,18 @@
                 var h = Math.max(200, Math.floor(rect.height));
                 app.style.width = w + 'px';
                 app.style.height = h + 'px';
+            }
+
+            // Randomize loader fish from top 4 rows
+            var fishEl = document.querySelector('.loader-fish');
+            if (fishEl) {
+                var cols = 18;
+                var rows = 4;
+                var col = Math.floor(Math.random() * cols);
+                var row = Math.floor(Math.random() * rows);
+                var x = -col * 64;
+                var y = -row * 64;
+                fishEl.style.backgroundPosition = x + 'px ' + y + 'px';
             }
         })();
     </script>
@@ -439,6 +542,12 @@
             document.addEventListener('mozfullscreenchange', updateIcon);
             document.addEventListener('MSFullscreenChange', updateIcon);
         })();
+
+        // Disable context menu (right-click) on the game page
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            return false;
+        });
     </script>
   </body>
 </html>

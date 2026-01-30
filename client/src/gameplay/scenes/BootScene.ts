@@ -6,6 +6,7 @@
 import Phaser from 'phaser';
 import { SYSTEM_TILES, IInstanceInfo } from '@cfwk/shared';
 import { NetworkManager } from '../network/NetworkManager';
+import { DisconnectModal } from '../../ui/DisconnectModal';
 import { currentUser, setLoaderText } from '../index';
 
 export class BootScene extends Phaser.Scene {
@@ -37,7 +38,7 @@ export class BootScene extends Phaser.Scene {
 
     create() {
         // Update loader text (HTML loader is already visible)
-        setLoaderText('Connecting to world...');
+        setLoaderText(`Connecting to game...`);
 
         // Request instance from server
         this.requestInstance();
@@ -53,6 +54,14 @@ export class BootScene extends Phaser.Scene {
             currentPlayers: 1,
             maxPlayers: 50
         };
+
+        // Check if user was previously disconnected - send them to limbo
+        if (DisconnectModal.wasDisconnected()) {
+            DisconnectModal.clearDisconnectedFlag();
+            console.log('[BootScene] User was previously disconnected, sending to limbo');
+            this.startGame(limboFallback);
+            return;
+        }
 
         // Race between instance request and timeout
         const instancePromise = (async () => {
@@ -72,6 +81,9 @@ export class BootScene extends Phaser.Scene {
                 if (connectionError === "DUPLICATE_CONNECTION") {
                     return "DUPLICATE_CONNECTION" as const;
                 }
+                if (connectionError && connectionError.startsWith("BANNED|")) {
+                    return connectionError;
+                }
                 return null;
             }
             
@@ -87,6 +99,16 @@ export class BootScene extends Phaser.Scene {
         // Handle duplicate connection error
         if (result === "DUPLICATE_CONNECTION") {
             this.showDuplicateConnectionError();
+            return;
+        }
+
+        // Handle Ban
+        if (typeof result === "string" && result.startsWith("BANNED|")) {
+            const dateStr = result.split('|')[1];
+            const date = new Date(dateStr);
+            DisconnectModal.show(0, `You are banned until ${date.toLocaleString()}`, "BANNED");
+            // Still send to limbo so they have "somewhere" to be
+            this.startGame(limboFallback);
             return;
         }
         

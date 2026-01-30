@@ -1,4 +1,17 @@
 import { startGame, setLoaderText } from './gameplay';
+import { ErrorModal } from './ui/ErrorModal';
+
+// --- Global Error Handling ---
+window.onerror = function(message, source, lineno, colno, error) {
+    console.error('[Global Error]', message, error);
+    ErrorModal.show(error || message, `${source}:${lineno}:${colno}`);
+    return false; // Let default handler run too (logging to console)
+};
+
+window.onunhandledrejection = function(event) {
+    console.error('[Unhandled Rejection]', event.reason);
+    ErrorModal.show(event.reason, 'Unhandled Promise Rejection');
+};
 
 export interface UserData {
     _id: string;

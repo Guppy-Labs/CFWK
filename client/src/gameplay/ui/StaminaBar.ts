@@ -15,7 +15,7 @@ export class StaminaBar {
     private currentOpacity = 0;
 
     // Config
-    private readonly maxOpacity = 1.0;
+    private readonly maxOpacity = 0.7;
     private readonly barThicknessRatio = 0.008; // Thickness as % of screen diagonal
     private readonly minThickness = 4;
     private readonly maxThickness = 16;

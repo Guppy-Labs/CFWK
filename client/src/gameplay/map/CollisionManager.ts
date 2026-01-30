@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { TiledObjectLayer, getTiledProperty } from './TiledTypes';
+import { BorderGenerator } from './BorderGenerator';
 
 // Access Matter.js through Phaser's bundled version
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -12,6 +13,7 @@ const Matter = (Phaser.Physics.Matter as any).Matter as typeof MatterJS;
 interface ContainmentZone {
     polygon: Phaser.Geom.Polygon;
     bounds: Phaser.Geom.Rectangle;
+    isGenerated?: boolean; // True if this was auto-generated from Border Pad
 }
 
 /**
@@ -20,10 +22,16 @@ interface ContainmentZone {
 export class CollisionManager {
     private scene: Phaser.Scene;
     private bodies: MatterJS.BodyType[] = [];
+    private containmentBodies: MatterJS.BodyType[] = [];
     private containmentZones: ContainmentZone[] = [];
+    private borderGenerator: BorderGenerator;
+    private generatedBorderPolygon: { x: number; y: number }[] = [];
+    private bodiesAdded = false;
+    private readonly containmentWallThickness = 8;
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
+        this.borderGenerator = new BorderGenerator(scene);
     }
 
     /**
@@ -38,6 +46,13 @@ export class CollisionManager {
      */
     getContainmentZones(): ContainmentZone[] {
         return this.containmentZones;
+    }
+    
+    /**
+     * Get the generated border polygon for debug display
+     */
+    getGeneratedBorderPolygon(): { x: number; y: number }[] {
+        return this.generatedBorderPolygon;
     }
 
     /**
@@ -88,9 +103,35 @@ export class CollisionManager {
             (this.scene.matter.world as Phaser.Physics.Matter.World).add(this.bodies);
         }
 
+        this.bodiesAdded = true;
+
         (this.scene.matter.world as Phaser.Physics.Matter.World).setBounds(
             0, 0, map.widthInPixels, map.heightInPixels
         );
+    }
+    
+    /**
+     * Generate and add a border from ground layers if map has Border Pad property
+     * Call this after setupFromObjectLayers if no explicit containment zones exist
+     */
+    setupGeneratedBorder(map: Phaser.Tilemaps.Tilemap, groundLayers: Phaser.Tilemaps.TilemapLayer[], mapKey: string) {
+        // Only generate if no containment zones already exist
+        if (this.containmentZones.length > 0) {
+            console.log('[CollisionManager] Skipping border generation - containment zones already exist');
+            return;
+        }
+        
+        const result = this.borderGenerator.generateFromMap(map, groundLayers, mapKey);
+        
+        if (result.generated && result.polygon.length >= 3) {
+            // Store for debug display
+            this.generatedBorderPolygon = result.polygon;
+            
+            // Create containment zone from generated polygon
+            this.createContainmentZone(0, 0, result.polygon, true);
+            
+            console.log(`[CollisionManager] Added generated border containment zone with ${result.polygon.length} points`);
+        }
     }
 
     private createPolygonBody(x: number, y: number, polygon: { x: number; y: number }[]) {
@@ -142,7 +183,7 @@ export class CollisionManager {
      * Create a containment zone from a polygon (inverted collision)
      * Player cannot leave this zone once inside
      */
-    private createContainmentZone(x: number, y: number, polygon: { x: number; y: number }[]) {
+    private createContainmentZone(x: number, y: number, polygon: { x: number; y: number }[], isGenerated: boolean = false) {
         // Convert to world coordinates
         const worldPoints = polygon.map(p => new Phaser.Geom.Point(x + p.x, y + p.y));
         const phaserPolygon = new Phaser.Geom.Polygon(worldPoints);
@@ -156,12 +197,58 @@ export class CollisionManager {
             if (p.y > maxY) maxY = p.y;
         });
 
-        const zone = {
+        const zone: ContainmentZone = {
             polygon: phaserPolygon,
-            bounds: new Phaser.Geom.Rectangle(minX, minY, maxX - minX, maxY - minY)
+            bounds: new Phaser.Geom.Rectangle(minX, minY, maxX - minX, maxY - minY),
+            isGenerated
         };
         this.containmentZones.push(zone);
-        console.log('[CollisionManager] Created containment zone:', { x, y, bounds: zone.bounds, pointCount: worldPoints.length });
+        console.log(`[CollisionManager] Created ${isGenerated ? 'generated ' : ''}containment zone:`, { x, y, bounds: zone.bounds, pointCount: worldPoints.length });
+
+        // Create physics walls along the containment boundary
+        const wallBodies = this.createContainmentWallBodies(worldPoints);
+        if (wallBodies.length > 0) {
+            this.containmentBodies.push(...wallBodies);
+            this.bodies.push(...wallBodies);
+            if (this.bodiesAdded) {
+                (this.scene.matter.world as Phaser.Physics.Matter.World).add(wallBodies);
+            }
+        }
+    }
+
+    /**
+     * Create thin wall bodies along the containment polygon boundary
+     */
+    private createContainmentWallBodies(points: Phaser.Geom.Point[]): MatterJS.BodyType[] {
+        const bodies: MatterJS.BodyType[] = [];
+        if (points.length < 2) return bodies;
+
+        for (let i = 0; i < points.length; i++) {
+            const p1 = points[i];
+            const p2 = points[(i + 1) % points.length];
+
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            if (length < 1) continue;
+
+            const cx = (p1.x + p2.x) / 2;
+            const cy = (p1.y + p2.y) / 2;
+            const angle = Math.atan2(dy, dx);
+
+            const body = Matter.Bodies.rectangle(
+                cx,
+                cy,
+                length,
+                this.containmentWallThickness,
+                { isStatic: true, friction: 0, frictionStatic: 0, frictionAir: 0 }
+            );
+
+            Matter.Body.setAngle(body, angle);
+            bodies.push(body);
+        }
+
+        return bodies;
     }
 
     /**
@@ -189,6 +276,9 @@ export class CollisionManager {
      * Call this each frame with the player to constrain their movement
      */
     enforceContainment(player: Phaser.Physics.Matter.Sprite) {
+        // If we have physics containment walls, let Matter handle containment
+        if (this.containmentBodies.length > 0) return;
+
         const currentX = player.x;
         const currentY = player.y;
 

@@ -44,6 +44,8 @@ export class MobileControls {
     
     // Visibility
     private isVisible = false;
+    private keyboardUsed = false; // Once keyboard is used, hide controls permanently
+    private keyboardListener?: (e: KeyboardEvent) => void;
     
     constructor() {
         this.container = this.createContainer();
@@ -60,24 +62,92 @@ export class MobileControls {
         this.container.appendChild(this.fullscreenButton);
         
         this.setupEventListeners();
+        this.setupKeyboardDetection();
         
         // Don't auto-show - GameScene will show controls when the game is ready
     }
     
     /**
-     * Detect if device supports touch
+     * Detect if device is actually a mobile device (not just touch-capable)
+     * Desktop touch screens and tablets with keyboards should not show controls
+     */
+    static isMobileDevice(): boolean {
+        // Check user agent for mobile indicators
+        const userAgent = navigator.userAgent.toLowerCase();
+        const mobileKeywords = [
+            'android', 'webos', 'iphone', 'ipad', 'ipod', 'blackberry',
+            'windows phone', 'opera mini', 'mobile', 'tablet'
+        ];
+        const isMobileUA = mobileKeywords.some(keyword => userAgent.includes(keyword));
+        
+        // Also check screen size as a secondary indicator
+        const isSmallScreen = window.innerWidth <= 1024 && window.innerHeight <= 1366;
+        
+        // Must have touch AND be identified as mobile by UA or have small screen
+        const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        
+        return hasTouch && (isMobileUA || isSmallScreen);
+    }
+    
+    /**
+     * @deprecated Use isMobileDevice() instead
+     * Detect if device supports touch (kept for backwards compatibility)
      */
     static isTouchDevice(): boolean {
-        return (
-            'ontouchstart' in window ||
-            navigator.maxTouchPoints > 0 ||
-            // @ts-ignore - msMaxTouchPoints for older IE/Edge
-            navigator.msMaxTouchPoints > 0
-        );
+        return MobileControls.isMobileDevice();
     }
     
     private isTouchDevice(): boolean {
-        return MobileControls.isTouchDevice();
+        return MobileControls.isMobileDevice();
+    }
+    
+    /**
+     * Check if any text input is currently focused (e.g., chat input)
+     */
+    private isTextInputFocused(): boolean {
+        const active = document.activeElement;
+        if (!active) return false;
+        
+        const tagName = active.tagName.toLowerCase();
+        if (tagName === 'input' || tagName === 'textarea') {
+            return true;
+        }
+        
+        // Check for contenteditable
+        if (active.getAttribute('contenteditable') === 'true') {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Setup keyboard detection to hide controls when keyboard is used
+     */
+    private setupKeyboardDetection() {
+        this.keyboardListener = (e: KeyboardEvent) => {
+            // Ignore if a text input is focused (e.g., chat)
+            if (this.isTextInputFocused()) return;
+            
+            // Ignore modifier keys alone
+            if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+            
+            // Movement or common game keys detected - user has a keyboard
+            const gameKeys = ['w', 'a', 's', 'd', 'W', 'A', 'S', 'D', 
+                'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+                ' ', 'Enter', 'Escape'];
+            
+            if (gameKeys.includes(e.key)) {
+                this.keyboardUsed = true;
+                this.hide();
+                // Remove listener - decision is permanent until page reload
+                if (this.keyboardListener) {
+                    window.removeEventListener('keydown', this.keyboardListener);
+                }
+            }
+        };
+        
+        window.addEventListener('keydown', this.keyboardListener);
     }
     
     /**
@@ -95,9 +165,14 @@ export class MobileControls {
     }
     
     /**
-     * Show controls
+     * Show controls (only on mobile devices, and only if keyboard hasn't been used)
      */
     show() {
+        // Don't show if keyboard was used or not a mobile device
+        if (this.keyboardUsed || !MobileControls.isMobileDevice()) {
+            return;
+        }
+        
         // Append to #app so controls work in fullscreen mode
         const gameContainer = document.getElementById('app') || document.body;
         if (!gameContainer.contains(this.container)) {
@@ -120,6 +195,9 @@ export class MobileControls {
      * Destroy controls
      */
     destroy() {
+        if (this.keyboardListener) {
+            window.removeEventListener('keydown', this.keyboardListener);
+        }
         this.container.remove();
         this.isVisible = false;
     }
@@ -182,8 +260,8 @@ export class MobileControls {
         base.id = 'joystick-base';
         base.style.cssText = `
             position: absolute;
-            left: 30px;
-            bottom: 30px;
+            left: 50px;
+            bottom: 50px;
             width: 120px;
             height: 120px;
             border-radius: 50%;
@@ -281,8 +359,8 @@ export class MobileControls {
         `;
         button.style.cssText = `
             position: absolute;
-            right: 30px;
-            bottom: 30px;
+            right: 50px;
+            bottom: 50px;
             width: 80px;
             height: 80px;
             border-radius: 50%;
@@ -362,8 +440,8 @@ export class MobileControls {
         `;
         button.style.cssText = `
             position: absolute;
-            left: 30px;
-            bottom: 160px;
+            left: 50px;
+            bottom: 180px;
             width: 44px;
             height: 44px;
             border-radius: 50%;

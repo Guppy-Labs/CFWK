@@ -137,7 +137,8 @@ export default defineConfig(({ mode }) => {
 
   const hmrConfig = host !== 'localhost' ? {
       host: host,
-      clientPort: 443
+      clientPort: 443,
+      overlay: false
   } : undefined;
 
   return {

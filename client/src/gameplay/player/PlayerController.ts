@@ -5,6 +5,7 @@ import { PlayerShadow } from './PlayerShadow';
 import { MobileControls } from '../ui/MobileControls';
 import { NetworkManager } from '../network/NetworkManager';
 import { currentUser } from '../index';
+import { EmojiMap } from '../ui/EmojiMap';
 
 /**
  * Generates a consistent color from a string (user ID)
@@ -58,6 +59,8 @@ export class PlayerController {
     private spawnPoint?: Phaser.Math.Vector2;
     private animationController: PlayerAnimationController;
     private shadow?: PlayerShadow;
+    private chatBubble?: Phaser.GameObjects.Container;
+    private chatTimer?: Phaser.Time.TimerEvent;
 
     private config: Required<PlayerControllerConfig>;
 
@@ -230,15 +233,18 @@ export class PlayerController {
 
         const deltaSeconds = delta / 1000;
 
+        // Check if chat is focused - disable game inputs
+        const chatFocused = this.scene.registry.get('chatFocused') === true;
+
         // Get mobile input state
         const mobileInput = this.mobileControls?.getInputState();
 
-        // Combine keyboard and mobile inputs (OR logic)
-        const inputLeft = this.cursors?.left?.isDown || this.wasd?.left.isDown || mobileInput?.left;
-        const inputRight = this.cursors?.right?.isDown || this.wasd?.right.isDown || mobileInput?.right;
-        const inputUp = this.cursors?.up?.isDown || this.wasd?.up.isDown || mobileInput?.up;
-        const inputDown = this.cursors?.down?.isDown || this.wasd?.down.isDown || mobileInput?.down;
-        const inputSprint = this.shiftKey?.isDown === true || mobileInput?.sprint === true;
+        // Combine keyboard and mobile inputs (OR logic) - but only if chat is not focused
+        const inputLeft = !chatFocused && (this.cursors?.left?.isDown || this.wasd?.left.isDown || mobileInput?.left);
+        const inputRight = !chatFocused && (this.cursors?.right?.isDown || this.wasd?.right.isDown || mobileInput?.right);
+        const inputUp = !chatFocused && (this.cursors?.up?.isDown || this.wasd?.up.isDown || mobileInput?.up);
+        const inputDown = !chatFocused && (this.cursors?.down?.isDown || this.wasd?.down.isDown || mobileInput?.down);
+        const inputSprint = !chatFocused && (this.shiftKey?.isDown === true || mobileInput?.sprint === true);
 
         const isMoving = !!(inputLeft || inputRight || inputUp || inputDown);
 
@@ -328,6 +334,24 @@ export class PlayerController {
         // Update shadow
         this.shadow?.update();
 
+        // Update chat bubble position
+        if (this.chatBubble && this.player) {
+            const text = this.chatBubble.list[1] as Phaser.GameObjects.Text;
+            const bubbleHeight = text ? text.height + 16 : 40;
+            // Position well above head (approx -45px which clears standard sprite height)
+            const yOffset = -45 - (bubbleHeight / 2);
+            this.chatBubble.setPosition(this.player.x, this.player.y + yOffset);
+            this.chatBubble.setDepth(99999);
+        }
+
+        // Update Y-based depth sorting (feet position = player.y + 3)
+        // Higher Y (lower on screen) = higher depth (drawn in front)
+        // Use small multiplier (0.01) to keep depth within safe range for occlusion system
+        // Player depth range: ~260-270 (occluded layers start at 280)
+        const feetY = this.player.y + 3;
+        const yDepth = this.config.depth + (feetY * 0.01);
+        this.player.setDepth(yDepth);
+
         // Update AFK state
         this.updateAfkState(isMoving || inputSprint);
 
@@ -383,6 +407,75 @@ export class PlayerController {
             this.player.setAlpha(this.afkAlpha);
             this.shadow?.setAlpha(this.afkAlpha);
         }
+    }
+
+    showChat(message: string) {
+        // Remove existing bubble if any
+        if (this.chatBubble) {
+            this.chatBubble.destroy();
+            this.chatBubble = undefined;
+        }
+        if (this.chatTimer) {
+            this.chatTimer.remove(false);
+            this.chatTimer = undefined;
+        }
+
+        const padding = 4;
+        const arrowHeight = 4;
+        const maxWidth = 120;
+
+        const parsedMessage = EmojiMap.parse(message);
+
+        // Create text
+        const text = this.scene.add.text(0, 0, parsedMessage, {
+            fontSize: '8px',
+            fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
+            color: '#000000',
+            wordWrap: { width: maxWidth, useAdvancedWrap: true },
+            align: 'center',
+            resolution: 2
+        }).setOrigin(0.5);
+
+        const width = text.width + padding * 2;
+        const height = text.height + padding * 2;
+
+        // Create background
+        const bg = this.scene.add.graphics();
+        bg.fillStyle(0xffffff, 0.95);
+        bg.fillRoundedRect(-width/2, -height/2, width, height, 4);
+        
+        // Arrow
+        bg.fillTriangle(
+            -5, height/2,
+            5, height/2,
+            0, height/2 + arrowHeight
+        );
+
+        if (!this.player) {
+            text.destroy();
+            bg.destroy();
+            return;
+        }
+
+        // Initial position setup
+        const yOffset = -45 - (height / 2);
+        this.chatBubble = this.scene.add.container(this.player.x, this.player.y + yOffset, [bg, text]);
+        this.chatBubble.setDepth(99999);
+
+        // Auto destroy
+        this.chatTimer = this.scene.time.delayedCall(4000, () => {
+             if (this.chatBubble) {
+                this.scene.tweens.add({
+                    targets: this.chatBubble,
+                    alpha: 0,
+                    duration: 300,
+                    onComplete: () => {
+                        this.chatBubble?.destroy();
+                        this.chatBubble = undefined;
+                    }
+                });
+            }
+        });
     }
 
     /**
@@ -479,6 +572,29 @@ export class PlayerController {
         return this.mobileControls;
     }
 
+    /**
+     * Check if player is currently moving
+     */
+    getIsMoving(): boolean {
+        if (!this.player?.body) return false;
+        const velocity = this.player.body.velocity as MatterJS.Vector;
+        return Math.abs(velocity.x) > 0.1 || Math.abs(velocity.y) > 0.1;
+    }
+
+    /**
+     * Check if player is currently sprinting
+     */
+    getIsSprinting(): boolean {
+        return this.isSprinting;
+    }
+    
+    /**
+     * Get current stamina (0-1)
+     */
+    getStamina(): number {
+        return this.stamina;
+    }
+
     private setupCollisionTracking() {
         this.scene.matter.world.on('beforeupdate', () => {
             this.contactNormals = [];
@@ -505,6 +621,12 @@ export class PlayerController {
      * Clean up resources
      */
     destroy() {
+        if (this.chatBubble) {
+            this.chatBubble.destroy();
+        }
+        if (this.chatTimer) {
+            this.chatTimer.remove(false);
+        }
         this.mobileControls?.destroy();
         this.shadow?.destroy();
     }

@@ -1,6 +1,53 @@
 import Phaser from 'phaser';
 import { OccluderRegion } from '../map/TiledTypes';
 import { WorldTimeState, formatFullDateTime } from '@cfwk/shared';
+import { ZoomRegion } from '../camera/CameraController';
+
+/**
+ * Water debug info from WaterEffectsManager
+ */
+export interface WaterDebugInfo {
+    blueRatio: number;
+    waterPercent: number;
+    totalPixels: number;
+    waterPixels: number;
+    inWater: boolean;
+    isWet: boolean;
+}
+
+/**
+ * Extended debug info for the overlay
+ */
+export interface ExtendedDebugInfo {
+    // Camera
+    cameraZoom?: number;
+    targetZoom?: number;
+    zoomRegions?: ZoomRegion[];
+    
+    // Player
+    playerX?: number;
+    playerY?: number;
+    playerVelX?: number;
+    playerVelY?: number;
+    playerDepth?: number;
+    isMoving?: boolean;
+    isSprinting?: boolean;
+    stamina?: number;
+    
+    // Fire POIs
+    firePositions?: { x: number; y: number }[];
+    
+    // Generated border
+    generatedBorder?: { x: number; y: number }[];
+    
+    // Network
+    isConnected?: boolean;
+    remotePlayerCount?: number;
+    instanceId?: string;
+    
+    // Performance
+    fps?: number;
+}
 
 /**
  * Debug overlay for visualizing collision bodies, occluders, and player state
@@ -73,7 +120,9 @@ export class DebugOverlay {
         occluderRegions: OccluderRegion[],
         spawnPoint?: Phaser.Math.Vector2,
         player?: Phaser.Physics.Matter.Sprite,
-        worldTime?: WorldTimeState
+        worldTime?: WorldTimeState,
+        waterDebug?: WaterDebugInfo,
+        extendedDebug?: ExtendedDebugInfo
     ) {
         if (!this.graphics || !this.enabled) return;
         this.graphics.clear();
@@ -81,28 +130,89 @@ export class DebugOverlay {
         if (!this.textOnly) {
             this.drawOccluders(occluderRegions);
             this.drawColliders(collisionBodies);
+            this.drawZoomRegions(extendedDebug?.zoomRegions);
+            this.drawFirePositions(extendedDebug?.firePositions);
+            this.drawGeneratedBorder(extendedDebug?.generatedBorder);
             this.drawSpawnPoint(spawnPoint);
             this.drawPlayer(player);
         }
-        this.updateTimeDisplay(worldTime);
+        this.updateTimeDisplay(worldTime, waterDebug, extendedDebug);
     }
 
     /**
      * Update the time display text
      */
-    private updateTimeDisplay(worldTime?: WorldTimeState) {
+    private updateTimeDisplay(worldTime?: WorldTimeState, waterDebug?: WaterDebugInfo, extendedDebug?: ExtendedDebugInfo) {
         if (!this.timeText) return;
         
-        if (!worldTime) {
-            this.timeText.setText('World Time: Loading...');
-            return;
+        const lines: string[] = [];
+        
+        // Performance
+        if (extendedDebug?.fps !== undefined) {
+            lines.push(`FPS: ${extendedDebug.fps.toFixed(0)}`);
         }
         
-        const timeStr = formatFullDateTime(worldTime);
-        const brightnessStr = `Brightness: ${(worldTime.brightness * 100).toFixed(1)}%`;
-        const dayNightStr = worldTime.isDaytime ? 'Day' : 'Night';
+        // World Time
+        if (worldTime) {
+            const timeStr = formatFullDateTime(worldTime);
+            const brightnessStr = `${(worldTime.brightness * 100).toFixed(0)}%`;
+            const dayNightStr = worldTime.isDaytime ? 'DAY' : 'NIGHT';
+            lines.push(`${timeStr} | ${brightnessStr} ${dayNightStr}`);
+        } else {
+            lines.push('World Time: Loading...');
+        }
         
-        this.timeText.setText(`${timeStr}\n${brightnessStr} | ${dayNightStr}`);
+        // Camera / Zoom
+        if (extendedDebug?.cameraZoom !== undefined) {
+            const zoomStr = `Zoom: ${extendedDebug.cameraZoom.toFixed(2)}x`;
+            const targetStr = extendedDebug.targetZoom !== undefined && 
+                Math.abs(extendedDebug.cameraZoom - extendedDebug.targetZoom) > 0.01
+                ? ` → ${extendedDebug.targetZoom.toFixed(2)}x`
+                : '';
+            lines.push(zoomStr + targetStr);
+        }
+        
+        // Player position & movement
+        if (extendedDebug?.playerX !== undefined && extendedDebug?.playerY !== undefined) {
+            const posStr = `Pos: (${extendedDebug.playerX.toFixed(0)}, ${extendedDebug.playerY.toFixed(0)})`;
+            const velStr = extendedDebug.playerVelX !== undefined && extendedDebug.playerVelY !== undefined
+                ? ` Vel: (${extendedDebug.playerVelX.toFixed(1)}, ${extendedDebug.playerVelY.toFixed(1)})`
+                : '';
+            lines.push(posStr + velStr);
+            
+            // Movement state
+            const moveState = extendedDebug.isMoving 
+                ? (extendedDebug.isSprinting ? 'SPRINT' : 'WALK') 
+                : 'IDLE';
+            const staminaStr = extendedDebug.stamina !== undefined 
+                ? ` | Stamina: ${(extendedDebug.stamina * 100).toFixed(0)}%`
+                : '';
+            const depthStr = extendedDebug.playerDepth !== undefined
+                ? ` | Depth: ${extendedDebug.playerDepth.toFixed(1)}`
+                : '';
+            lines.push(moveState + staminaStr + depthStr);
+        }
+        
+        // Water debug
+        if (waterDebug) {
+            const waterStr = `Water: ${(waterDebug.waterPercent * 100).toFixed(0)}%`;
+            const stateStr = waterDebug.inWater ? 'IN WATER' : (waterDebug.isWet ? 'WET' : 'DRY');
+            lines.push(`${waterStr} | ${stateStr}`);
+        }
+        
+        // Network status
+        if (extendedDebug?.isConnected !== undefined) {
+            const connStr = extendedDebug.isConnected ? 'ONLINE' : 'OFFLINE';
+            const playersStr = extendedDebug.remotePlayerCount !== undefined 
+                ? ` | Players: ${extendedDebug.remotePlayerCount + 1}` // +1 for local player
+                : '';
+            const instanceStr = extendedDebug.instanceId 
+                ? ` | ${extendedDebug.instanceId.substring(0, 8)}...`
+                : '';
+            lines.push(connStr + playersStr + instanceStr);
+        }
+        
+        this.timeText.setText(lines.join('\n'));
     }
 
     private drawOccluders(regions: OccluderRegion[]) {
@@ -141,6 +251,81 @@ export class DebugOverlay {
             this.graphics!.closePath();
             this.graphics!.fillPath();
             this.graphics!.strokePath();
+        });
+    }
+    
+    private drawZoomRegions(regions?: ZoomRegion[]) {
+        if (!regions || regions.length === 0) return;
+
+        // Yellow/gold color for zoom regions
+        this.graphics!.lineStyle(2, 0xffc400, 0.8);
+        this.graphics!.fillStyle(0xffc400, 0.1);
+
+        regions.forEach((region) => {
+            const poly = region.polygon;
+            if (poly.length < 3) return;
+
+            this.graphics!.beginPath();
+            this.graphics!.moveTo(poly[0].x, poly[0].y);
+            for (let i = 1; i < poly.length; i++) {
+                this.graphics!.lineTo(poly[i].x, poly[i].y);
+            }
+            this.graphics!.closePath();
+            this.graphics!.fillPath();
+            this.graphics!.strokePath();
+            
+            // Draw zoom multiplier label at centroid
+            const cx = poly.reduce((sum, p) => sum + p.x, 0) / poly.length;
+            const cy = poly.reduce((sum, p) => sum + p.y, 0) / poly.length;
+            this.graphics!.fillStyle(0xffc400, 1);
+            this.graphics!.fillCircle(cx, cy, 3);
+        });
+    }
+    
+    private drawFirePositions(positions?: { x: number; y: number }[]) {
+        if (!positions || positions.length === 0) return;
+
+        // Orange/red color for fire POIs
+        positions.forEach((pos) => {
+            // Outer glow
+            this.graphics!.fillStyle(0xff6600, 0.3);
+            this.graphics!.fillCircle(pos.x, pos.y, 12);
+            
+            // Inner core
+            this.graphics!.fillStyle(0xff3300, 0.8);
+            this.graphics!.fillCircle(pos.x, pos.y, 5);
+            
+            // Cross marker
+            this.graphics!.lineStyle(1, 0xffcc00, 1);
+            this.graphics!.beginPath();
+            this.graphics!.moveTo(pos.x - 8, pos.y);
+            this.graphics!.lineTo(pos.x + 8, pos.y);
+            this.graphics!.moveTo(pos.x, pos.y - 8);
+            this.graphics!.lineTo(pos.x, pos.y + 8);
+            this.graphics!.strokePath();
+        });
+    }
+    
+    private drawGeneratedBorder(polygon?: { x: number; y: number }[]) {
+        if (!polygon || polygon.length < 3) return;
+
+        // Lime green color for generated border
+        this.graphics!.lineStyle(2, 0x00ff88, 0.9);
+        this.graphics!.fillStyle(0x00ff88, 0.08);
+
+        this.graphics!.beginPath();
+        this.graphics!.moveTo(polygon[0].x, polygon[0].y);
+        for (let i = 1; i < polygon.length; i++) {
+            this.graphics!.lineTo(polygon[i].x, polygon[i].y);
+        }
+        this.graphics!.closePath();
+        this.graphics!.fillPath();
+        this.graphics!.strokePath();
+        
+        // Draw small dots at each vertex to show smoothing
+        this.graphics!.fillStyle(0x00ff88, 0.7);
+        polygon.forEach((p) => {
+            this.graphics!.fillCircle(p.x, p.y, 2);
         });
     }
 

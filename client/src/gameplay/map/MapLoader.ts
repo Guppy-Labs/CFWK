@@ -14,6 +14,7 @@ export interface MapLoaderConfig {
 export interface MapLoadResult {
     map: Phaser.Tilemaps.Tilemap;
     lightingManager: LightingManager;
+    groundLayers: Phaser.Tilemaps.TilemapLayer[];
 }
 
 /**
@@ -24,8 +25,10 @@ export class MapLoader {
     private config: MapLoaderConfig;
     
     private map?: Phaser.Tilemaps.Tilemap;
+    private mapKey?: string;
     private lightingManager?: LightingManager;
     private tileAnimationManager?: TileAnimationManager;
+    private groundLayers: Phaser.Tilemaps.TilemapLayer[] = [];
 
     constructor(scene: Phaser.Scene, config: MapLoaderConfig) {
         this.scene = scene;
@@ -51,6 +54,7 @@ export class MapLoader {
         occlusionManager: OcclusionManager,
         onComplete: (result: MapLoadResult) => void
     ) {
+        this.mapKey = mapKey;
         const mapCache = this.scene.cache.tilemap.get(mapKey);
         const mapData = mapCache?.data as { tilesets?: TiledTilesetData[] } | undefined;
         this.map = this.scene.make.tilemap({ key: mapKey });
@@ -104,6 +108,7 @@ export class MapLoader {
 
         let groundDepthIndex = 0;
         let occludableDepthIndex = 0;
+        this.groundLayers = [];
 
         // Create tile layers
         this.map.layers.forEach((layerData) => {
@@ -116,6 +121,8 @@ export class MapLoader {
             if (this.config.groundLayerNames.has(layerData.name)) {
                 layer.setDepth(groundDepthIndex * 10);
                 groundDepthIndex += 1;
+                // Track ground layers for water detection
+                this.groundLayers.push(layer);
             } else {
                 const baseDepth = this.config.occludableBaseDepth + occludableDepthIndex * 10;
                 layer.setDepth(baseDepth);
@@ -129,6 +136,9 @@ export class MapLoader {
         // Setup collision and occlusion from object layers
         collisionManager.setupFromObjectLayers(this.map);
         occlusionManager.setupFromObjectLayers(this.map);
+        
+        // Generate border from ground layers if map has Border Pad property
+        collisionManager.setupGeneratedBorder(this.map, this.groundLayers, this.mapKey!);
 
         // Setup tile animations
         this.tileAnimationManager = new TileAnimationManager();
@@ -138,7 +148,8 @@ export class MapLoader {
     private getResult(): MapLoadResult {
         return {
             map: this.map!,
-            lightingManager: this.lightingManager!
+            lightingManager: this.lightingManager!,
+            groundLayers: this.groundLayers
         };
     }
 
@@ -152,6 +163,10 @@ export class MapLoader {
 
     getTileAnimationManager(): TileAnimationManager | undefined {
         return this.tileAnimationManager;
+    }
+
+    getGroundLayers(): Phaser.Tilemaps.TilemapLayer[] {
+        return this.groundLayers;
     }
 
     /**

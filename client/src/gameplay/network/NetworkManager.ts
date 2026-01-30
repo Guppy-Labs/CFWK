@@ -20,6 +20,10 @@ export class NetworkManager {
     
     private isConnecting: boolean = false;
     private connectionError: string | null = null;
+    
+    // Disconnect detection
+    private disconnectCallbacks: Array<(code: number) => void> = [];
+    private wasConnected: boolean = false;
 
     private constructor() {
         this.client = new Colyseus.Client(Config.WS_URL);
@@ -137,8 +141,40 @@ export class NetworkManager {
 
         this.currentRoom.onLeave((code) => {
             console.log(`[NetworkManager] Left room with code: ${code}`);
+            const hadConnection = this.wasConnected;
             this.currentRoom = null;
+            this.wasConnected = false;
+            
+            // Handle bans specifically
+            if (code === 4003) {
+                // For bans, we want to notify immediately, no delay
+                // The callback mechanism in GameScene will handle the UI
+                this.disconnectCallbacks.forEach(cb => cb(code));
+                return;
+            }
+
+            // Notify listeners if we had an active connection (server went offline)
+            if (hadConnection) {
+                this.disconnectCallbacks.forEach(cb => cb(code));
+            }
         });
+        
+        // Mark that we have an active connection
+        this.wasConnected = true;
+    }
+    
+    /**
+     * Register a callback for when the connection is lost
+     */
+    onDisconnect(callback: (code: number) => void): () => void {
+        this.disconnectCallbacks.push(callback);
+        // Return unsubscribe function
+        return () => {
+            const index = this.disconnectCallbacks.indexOf(callback);
+            if (index > -1) {
+                this.disconnectCallbacks.splice(index, 1);
+            }
+        };
     }
 
     /**
@@ -165,6 +201,15 @@ export class NetworkManager {
     sendAfk(isAfk: boolean) {
         if (this.currentRoom) {
             this.currentRoom.send("afk", { isAfk });
+        }
+    }
+
+    /**
+     * Send a chat message to the server
+     */
+    sendChatMessage(message: string) {
+        if (this.currentRoom) {
+            this.currentRoom.send("chat", { message });
         }
     }
 

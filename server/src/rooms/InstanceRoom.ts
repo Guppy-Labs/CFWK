@@ -2,6 +2,8 @@ import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
 import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
+import { CommandProcessor } from "../utils/CommandProcessor";
+import User from "../models/User";
 
 /**
  * Player state for instance rooms
@@ -56,6 +58,46 @@ export class InstanceRoom extends Room<InstanceState> {
     onCreate(options: { instanceId: string; locationId: string; mapFile: string; maxPlayers: number }) {
         console.log(`[InstanceRoom] Creating room for instance: ${options.instanceId}`);
         
+        // --- Admin Event Listeners ---
+        this.instanceManager.events.on('broadcast', (msg: string) => {
+            this.broadcast('chat', {
+                username: 'SYSTEM',
+                odcid: 'SYSTEM', // Special ID for red system color potentially
+                message: msg,
+                timestamp: Date.now(),
+                isSystem: true // Client can use this to color it red
+            });
+        });
+
+        this.instanceManager.events.on('ban', (bannedUserId: string) => {
+            // Check if user is in this room
+            try {
+                this.clients.forEach(client => {
+                    const player = this.state.players.get(client.sessionId);
+                    if (player && player.odcid === bannedUserId) {
+                        client.leave(4003, "You have been banned.");
+                    }
+                });
+            } catch (e) {
+                console.error("Error processing ban kick:", e);
+            }
+        });
+
+        this.instanceManager.events.on('msg_user', (data: { userId: string, message: string }) => {
+            this.clients.forEach(client => {
+                const player = this.state.players.get(client.sessionId);
+                if (player && player.odcid === data.userId) {
+                    client.send('chat', {
+                        username: 'SYSTEM',
+                        odcid: 'SYSTEM',
+                        message: data.message,
+                        timestamp: Date.now(),
+                        isSystem: true
+                    });
+                }
+            });
+        });
+
         this.instanceId = options.instanceId;
         this.maxClients = options.maxPlayers;
         
@@ -120,10 +162,96 @@ export class InstanceRoom extends Room<InstanceState> {
                 console.log(`[InstanceRoom] Player ${client.sessionId} AFK: ${data.isAfk}`);
             }
         });
+
+        // Handle chat messages
+        this.onMessage("chat", async (client, data: { message: string }) => {
+            const player = this.state.players.get(client.sessionId);
+            
+            if (player && data.message) {
+                const messageHelper = data.message.trim();
+
+                // --- Command Handling ---
+                if (messageHelper.startsWith('/')) {
+                    const parts = messageHelper.slice(1).split(' ');
+                    const command = parts[0];
+                    const args = parts.slice(1);
+                    
+                    // Execute command logic
+                    const result = await CommandProcessor.handleCommand(
+                        command, 
+                        args, 
+                        player.odcid, 
+                        player.username
+                    );
+                    
+                    // Send result back to issuer only
+                    client.send('chat', {
+                        username: 'SYSTEM',
+                        odcid: 'SYSTEM',
+                        message: result,
+                        timestamp: Date.now(),
+                        isSystem: true
+                    });
+                    return;
+                }
+
+                // --- Mute Check ---
+                // We fetch the latest user data to ensure mute is respected immediately
+                try {
+                    const user = await User.findById(player.odcid);
+                    if (user && user.mutedUntil) {
+                        if (user.mutedUntil.getTime() > Date.now()) {
+                            client.send('chat', {
+                                username: 'SYSTEM',
+                                odcid: 'SYSTEM',
+                                message: "You are muted.",
+                                timestamp: Date.now(),
+                                isSystem: true
+                            });
+                            return;
+                        } else {
+                            // Expired mute
+                            user.mutedUntil = undefined;
+                            await user.save();
+                        }
+                    }
+                } catch (err) {
+                    console.error("Error checking mute status:", err);
+                }
+
+                // Broadcast to all clients in the room (Standard Chat)
+                this.broadcast("chat", {
+                    sessionId: client.sessionId,
+                    username: player.username,
+                    odcid: player.odcid,
+                    message: data.message.slice(0, 100), // Basic length limit
+                    timestamp: Date.now()
+                });
+                
+                console.log(`[InstanceRoom] Chat from ${player.username}: ${data.message}`);
+            }
+        });
     }
 
     async onJoin(client: Client, options: { username?: string; odcid?: string }) {
         const odcid = options.odcid || client.sessionId;
+        
+        // --- Ban Check ---
+        if (odcid !== client.sessionId) {
+            try {
+                const user = await User.findById(odcid);
+                if (user && user.bannedUntil && user.bannedUntil.getTime() > Date.now()) {
+                    console.log(`[InstanceRoom] Rejecting banned user: ${user.username}`);
+                    // Throw special error format for client to parse
+                    // Format: BANNED|ISO_DATE_STRING
+                    throw new Error(`BANNED|${user.bannedUntil.toISOString()}`);
+                }
+            } catch (err: any) {
+                // If it's the ban error, rethrow it
+                if (err.message && err.message.startsWith("BANNED|")) throw err;
+                console.error("Error checking ban status:", err);
+            }
+        }
         
         // Check for duplicate connection
         if (odcid !== client.sessionId && this.instanceManager.isUserConnected(odcid)) {

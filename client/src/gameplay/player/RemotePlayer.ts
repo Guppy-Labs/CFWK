@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { OcclusionManager } from '../map/OcclusionManager';
+import { EmojiMap } from '../ui/EmojiMap';
 
 /**
  * Direction enum matching PlayerAnimationController
@@ -83,6 +84,8 @@ export class RemotePlayer {
     private playerColor: number;
     private baseDepth: number;
     private occlusionManager?: OcclusionManager;
+    private chatBubble?: Phaser.GameObjects.Container;
+    private chatTimer?: Phaser.Time.TimerEvent;
 
     // Interpolation
     private readonly interpSpeed = 0.25;
@@ -101,6 +104,7 @@ export class RemotePlayer {
     private isAfk: boolean = false;
     private afkAlpha: number = 1;
     private readonly afkTargetAlpha = 0.4;
+    private nameplateYOffset: number = -36;
 
     constructor(scene: Phaser.Scene, config: RemotePlayerConfig) {
         this.scene = scene;
@@ -113,11 +117,19 @@ export class RemotePlayer {
         this.baseDepth = config.depth;
         this.occlusionManager = config.occlusionManager;
         
+        // Check for mobile device (Android, iOS, etc.)
+        const os = this.scene.sys.game.device.os;
+        const isMobile = os.android || os.iOS || os.iPad || os.iPhone || os.windowsPhone;
+
+        // Adjust settings for mobile
+        const fontSize = isMobile ? '10px' : '6px';
+        this.nameplateYOffset = isMobile ? -42 : -36;
+
         // Generate consistent color from user ID
         this.playerColor = hashToColor(this.odcid);
         
         this.createSprite(config.x, config.y, config.skipSpawnEffect);
-        this.createNameplate(config.skipSpawnEffect);
+        this.createNameplate(config.skipSpawnEffect, fontSize);
         this.updateAnimation('idle', this.currentDirection);
     }
 
@@ -267,12 +279,12 @@ export class RemotePlayer {
         }
     }
 
-    private createNameplate(skipSpawnEffect?: boolean) {
-        const padding = { x: 3, y: 1 };
+    private createNameplate(skipSpawnEffect?: boolean, fontSize: string = '6px') {
+        const padding = { x: 2, y: 1 };
         
         // Create text - render at higher resolution for crisp display
         this.nameText = this.scene.add.text(0, 0, this.username, {
-            fontSize: '8px',
+            fontSize: fontSize,
             fontFamily: 'Minecraft, monospace',
             color: '#ffffff',
             resolution: 2  // Render at 2x resolution for crisp text
@@ -289,7 +301,7 @@ export class RemotePlayer {
         this.nameBg.fillRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight);
 
         // Container for nameplate (above the sprite, accounting for origin)
-        this.nameplate = this.scene.add.container(this.sprite.x, this.sprite.y - 36, [
+        this.nameplate = this.scene.add.container(this.sprite.x, this.sprite.y + this.nameplateYOffset, [
             this.nameBg,
             this.nameText
         ]);
@@ -381,24 +393,46 @@ export class RemotePlayer {
             this.sprite.y = this.targetY;
         }
         
-        // Calculate depth with occlusion awareness
-        // When in an occlusion region, remote player should appear BEHIND layers
-        let depth = this.baseDepth + (this.sprite.y * 0.01);
+        // Calculate depth with Y-sorting and occlusion awareness
+        // Feet position for depth = sprite.y + 3 (same as local player)
+        // Higher Y (lower on screen) = higher depth (drawn in front)
+        // Use small multiplier (0.01) to keep depth within safe range for occlusion system
+        const feetY = this.sprite.y + 3;
+        let depth = this.baseDepth + (feetY * 0.01);
         
         if (this.occlusionManager) {
-            // Check if remote player is in an occlusion region using their foot position
-            const isOccluded = this.occlusionManager.isInOcclusionRegion(this.sprite.x, this.sprite.y, 4);
-            
-            if (isOccluded) {
-                // Put remote player behind occludable layers (which start at ~200)
-                const occludableBase = this.occlusionManager.getOccludableBaseDepth();
-                depth = (occludableBase - 10) + (this.sprite.y * 0.01);
+            // Check occlusion tags at remote player's foot position
+            const occlusionTags = this.occlusionManager.getOcclusionTagsAt(this.sprite.x, this.sprite.y, 4);
+
+            if (occlusionTags.size > 0) {
+                // Put remote player behind only the targeted occludable layers
+                const minBase = this.occlusionManager.getMinBaseDepthForTags(occlusionTags);
+                depth = (minBase - 10) + (feetY * 0.01);
+            } else {
+                // If local player occlusion elevated layers, keep remote player in front of those layers
+                const activeTags = this.occlusionManager.getActiveTags();
+                if (activeTags.size > 0) {
+                    const maxOccludedDepth = this.occlusionManager.getMaxOccludedDepthForTags(activeTags);
+                    const frontDepth = (maxOccludedDepth + 1) + (feetY * 0.01);
+                    if (frontDepth > depth) depth = frontDepth;
+                }
             }
         }
         this.sprite.setDepth(depth);
         
         // Update nameplate position (above the sprite, accounting for origin)
-        this.nameplate.setPosition(this.sprite.x, this.sprite.y - 36);
+        this.nameplate.setPosition(this.sprite.x, this.sprite.y + this.nameplateYOffset);
+
+        if (this.chatBubble) {
+            // Position above nameplate
+            // Calculate height based on text content if possible, or just use bounds
+            // Assuming text is child 1
+            const text = this.chatBubble.list[1] as Phaser.GameObjects.Text;
+            const bubbleHeight = text ? text.height + 16 : 40;
+            const yOffset = this.nameplateYOffset - 10 - (bubbleHeight / 2);
+            this.chatBubble.setPosition(this.sprite.x, this.sprite.y + yOffset);
+            this.chatBubble.setDepth(99999); // Always top
+        }
 
         // Update AFK transparency
         this.updateAfkAlpha();
@@ -473,8 +507,11 @@ export class RemotePlayer {
                 // Snap to current target position and show sprite
                 this.sprite.x = this.targetX;
                 this.sprite.y = this.targetY;
-                this.sprite.setAlpha(1);
-                this.nameplate.setAlpha(1);
+                // Respect AFK state when spawn completes
+                const alpha = this.isAfk ? this.afkTargetAlpha : 1;
+                this.sprite.setAlpha(alpha);
+                this.nameplate.setAlpha(alpha);
+                this.afkAlpha = alpha;
                 this.isSpawning = false;
             } else {
                 // Despawn complete - call callback
@@ -499,6 +536,10 @@ export class RemotePlayer {
         return this.sessionId;
     }
 
+    getUsername(): string {
+        return this.username;
+    }
+
     /**
      * Destroy and clean up
      */
@@ -509,8 +550,78 @@ export class RemotePlayer {
         }
         this.particles = [];
         
+        if (this.chatBubble) {
+            this.chatBubble.destroy();
+        }
+        if (this.chatTimer) {
+            this.chatTimer.remove(false);
+        }
+
         this.sprite.destroy();
         this.nameplate.destroy();
+    }
+
+    showChat(message: string) {
+        // Remove existing bubble if any
+        if (this.chatBubble) {
+            this.chatBubble.destroy();
+            this.chatBubble = undefined;
+        }
+        if (this.chatTimer) {
+            this.chatTimer.remove(false);
+            this.chatTimer = undefined;
+        }
+
+        const padding = 4;
+        const arrowHeight = 4;
+        const maxWidth = 120;
+
+        const parsedMessage = EmojiMap.parse(message);
+
+        // Create text
+        const text = this.scene.add.text(0, 0, parsedMessage, {
+            fontSize: '8px',
+            fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
+            color: '#000000',
+            wordWrap: { width: maxWidth, useAdvancedWrap: true },
+            align: 'center',
+            resolution: 2
+        }).setOrigin(0.5);
+
+        const width = text.width + padding * 2;
+        const height = text.height + padding * 2;
+
+        // Create background
+        const bg = this.scene.add.graphics();
+        bg.fillStyle(0xffffff, 0.95);
+        bg.fillRoundedRect(-width/2, -height/2, width, height, 4);
+        
+        // Arrow
+        bg.fillTriangle(
+            -5, height/2,
+            5, height/2,
+            0, height/2 + arrowHeight
+        );
+
+        // Initial position setup (will be refined in setPosition)
+        const yOffset = -36 - 10 - (height / 2);
+        this.chatBubble = this.scene.add.container(this.sprite.x, this.sprite.y + yOffset, [bg, text]);
+        this.chatBubble.setDepth(99999);
+
+        // Auto destroy
+        this.chatTimer = this.scene.time.delayedCall(4000, () => {
+            if (this.chatBubble) {
+                this.scene.tweens.add({
+                    targets: this.chatBubble,
+                    alpha: 0,
+                    duration: 300,
+                    onComplete: () => {
+                        this.chatBubble?.destroy();
+                        this.chatBubble = undefined;
+                    }
+                });
+            }
+        });
     }
 
     /**

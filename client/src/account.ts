@@ -215,6 +215,43 @@ function renderUser(user: any) {
         // Show email reminder if no password set
         showPasswordEmailReminder(user.email);
     }
+
+    // Ban Check
+    if (user.bannedUntil) {
+        const bannedUntil = new Date(user.bannedUntil);
+        if (bannedUntil.getTime() > Date.now()) {
+            showBanAlert(bannedUntil);
+        }
+    }
+}
+
+function showBanAlert(bannedUntil: Date) {
+    const container = document.querySelector('.container');
+    if (!container) return;
+
+    const alertId = 'ban-alert-banner';
+    if (document.getElementById(alertId)) return;
+
+    const alert = document.createElement('div');
+    alert.id = alertId;
+    alert.style.backgroundColor = 'rgba(255, 0, 0, 0.15)';
+    alert.style.border = '1px solid #ff4444';
+    alert.style.color = '#ff4444';
+    alert.style.padding = '15px';
+    alert.style.marginBottom = '20px';
+    alert.style.display = 'flex';
+    alert.style.alignItems = 'center';
+    alert.style.gap = '10px';
+    
+    alert.innerHTML = `
+        <i class="fa-solid fa-ban" style="font-size: 1.5rem;"></i>
+        <div>
+            <div style="font-weight: bold; font-size: 1.1rem;">ACCOUNT BANNED</div>
+            <div style="font-size: 0.9rem;">You are banned from playing until: <strong>${bannedUntil.toLocaleString()}</strong></div>
+        </div>
+    `;
+    
+    container.insertBefore(alert, container.firstChild);
 }
 
 function showPasswordEmailReminder(email: string) {

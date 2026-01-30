@@ -170,6 +170,7 @@ export class FireParticleSystem {
     /**
      * Update the fire light flickering effect
      * Call this in the game's update loop
+     * Light intensity scales inversely with ambient brightness (bright during night, dim during day)
      */
     updateLight(delta: number) {
         if (!this.lightingManager) return;
@@ -184,15 +185,24 @@ export class FireParticleSystem {
 
         const totalFlicker = flicker1 + flicker2 + flicker3 + randomFlicker;
 
+        // Scale light intensity based on ambient brightness
+        // During day (brightness ~1.0): fire light barely visible (10% intensity)
+        // During night (brightness ~0.2-0.4): fire light fully visible (100% intensity)
+        const ambientBrightness = this.lightingManager.getAmbientBrightness();
+        // Inverse relationship: darker ambient = brighter fire light
+        // Use exponential curve for more natural falloff
+        const dayDimFactor = Math.max(0.1, 1 - Math.pow(ambientBrightness, 0.5) * 0.9);
+
         // Apply flickering to all lights
         for (const offset of this.lightOffsets) {
             const lightId = `${this.lightId}-${offset.id}`;
-            const newIntensity = this.baseIntensity * offset.intensityMult * (1 + totalFlicker);
+            const newIntensity = this.baseIntensity * offset.intensityMult * (1 + totalFlicker) * dayDimFactor;
             this.lightingManager.updateLightIntensity(lightId, newIntensity);
 
-            // Very subtle radius variation
+            // Very subtle radius variation - also scale radius down during day
             const radiusFlicker = 1 + (flicker1 + flicker2) * 0.1;
-            this.lightingManager.updateLightRadius(lightId, this.baseRadius * offset.radiusMult * radiusFlicker);
+            const radiusDayScale = 0.5 + dayDimFactor * 0.5; // 50-100% radius based on time
+            this.lightingManager.updateLightRadius(lightId, this.baseRadius * offset.radiusMult * radiusFlicker * radiusDayScale);
         }
     }
 
@@ -514,6 +524,13 @@ export class FireParticleSystem {
         });
 
         return fires;
+    }
+    
+    /**
+     * Get the position of this fire
+     */
+    getPosition(): { x: number; y: number } {
+        return { x: this.x, y: this.y };
     }
 
     /**

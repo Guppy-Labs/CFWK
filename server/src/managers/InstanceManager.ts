@@ -1,5 +1,6 @@
 import { Server, Room } from "colyseus";
 import { ILocationConfig, IInstanceInfo } from "@cfwk/shared";
+import { EventEmitter } from "events";
 
 /**
  * Represents an active instance of a location
@@ -28,6 +29,7 @@ interface ActiveInstance {
 export class InstanceManager {
     private static instance: InstanceManager;
     private gameServer?: Server;
+    public events: EventEmitter = new EventEmitter();
     
     // All registered location configs (lobby, forest, etc.)
     private locationConfigs: Map<string, ILocationConfig> = new Map();

@@ -123,3 +123,218 @@
     from { transform: translateY(0); opacity: 1; }
     to { transform: translateY(100px); opacity: 0; }
 }
+
+/* --- Disconnect Modal --- */
+.disconnect-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+    animation: modal-fade-in 0.3s ease-out;
+}
+
+@keyframes modal-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.disconnect-modal {
+    background: var(--mm-bg-panel, #1e1e1e);
+    border: 2px solid var(--mm-border, #333333);
+    padding: 2rem 3rem;
+    text-align: center;
+    max-width: 400px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    animation: modal-slide-in 0.3s ease-out;
+}
+
+@keyframes modal-slide-in {
+    from { transform: translateY(-20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.disconnect-modal-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    animation: pulse-icon 2s ease-in-out infinite;
+}
+
+@keyframes pulse-icon {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.disconnect-modal-title {
+    font-family: 'Minecraft', monospace;
+    font-size: 1.5rem;
+    color: #ff6b6b;
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.disconnect-modal-message {
+    font-family: 'Minecraft', monospace;
+    font-size: 0.85rem;
+    color: #aaa;
+    line-height: 1.8;
+    margin-bottom: 1.5rem;
+}
+
+.disconnect-modal-btn {
+    font-family: 'Minecraft', monospace;
+    background: var(--mm-primary, #ff66aa);
+    color: white;
+    border: none;
+    padding: 0.8rem 2rem;
+    cursor: pointer;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
+    transition: all 0.2s ease;
+}
+
+.disconnect-modal-btn:hover {
+    background: var(--mm-primary-hover, #ff4499);
+    transform: translateY(-2px);
+}
+
+.disconnect-modal-btn:active {
+    transform: translateY(0);
+}
+
+/* --- Error Modal --- */
+.error-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000; /* Higher than everything */
+    backdrop-filter: blur(2px);
+    animation: modal-fade-in 0.2s ease-out;
+}
+
+.error-modal {
+    background: var(--mm-bg-panel, #1e1e1e);
+    border: 2px solid #ff4444; /* Red border for errors */
+    display: flex;
+    flex-direction: column;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+    animation: modal-slide-in 0.2s ease-out;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.error-modal-header {
+    background: rgba(255, 68, 68, 0.1);
+    padding: 1rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    border-bottom: 1px solid #333;
+}
+
+.error-modal-icon {
+    font-size: 1.5rem;
+}
+
+.error-modal-title {
+    font-family: 'Minecraft', monospace;
+    font-size: 1.2rem;
+    color: #ff6b6b;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.error-modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.error-modal-message {
+    font-family: 'Minecraft', monospace;
+    font-size: 1rem;
+    color: #e0e0e0;
+    margin-bottom: 1rem;
+}
+
+.error-modal-details-container {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.error-modal-details {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.8rem;
+    color: #ff8888;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+/* Custom scrollbar for details */
+.error-modal-details::-webkit-scrollbar {
+    width: 8px;
+}
+.error-modal-details::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+.error-modal-details::-webkit-scrollbar-track {
+    background: #111;
+}
+
+.error-modal-footer {
+    padding: 1rem 1.5rem;
+    background: #252525;
+    border-top: 1px solid #333;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.error-modal-btn {
+    font-family: 'Minecraft', monospace;
+    background: #444;
+    color: white;
+    border: 1px solid #555;
+    padding: 0.6rem 1.2rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.2s;
+    border-radius: 2px;
+}
+
+.error-modal-btn:hover {
+    background: #555;
+}
+
+.error-modal-btn.reload {
+    background: #d32f2f;
+    border-color: #b71c1c;
+}
+
+.error-modal-btn.reload:hover {
+    background: #f44336;
+}

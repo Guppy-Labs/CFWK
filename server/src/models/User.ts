@@ -16,6 +16,8 @@ export interface IUser extends Document {
   passwordResetToken?: string;
   passwordResetExpires?: Date;
   lastPasswordResetRequest?: Date;
+  bannedUntil?: Date;
+  mutedUntil?: Date;
 }
 
 const UserSchema: Schema = new Schema({
@@ -32,7 +34,9 @@ const UserSchema: Schema = new Schema({
   verificationToken: { type: String },
   passwordResetToken: { type: String },
   passwordResetExpires: { type: Date },
-  lastPasswordResetRequest: { type: Date }
+  lastPasswordResetRequest: { type: Date },
+  bannedUntil: { type: Date, default: null },
+  mutedUntil: { type: Date, default: null }
 }, {
   timestamps: true
 });

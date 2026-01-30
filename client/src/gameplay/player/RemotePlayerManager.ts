@@ -111,6 +111,13 @@ export class RemotePlayerManager {
         return this.remotePlayers;
     }
 
+    showChat(sessionId: string, message: string) {
+        const player = this.remotePlayers.get(sessionId);
+        if (player) {
+            player.showChat(message);
+        }
+    }
+
     /**
      * Cleanup all remote players
      */

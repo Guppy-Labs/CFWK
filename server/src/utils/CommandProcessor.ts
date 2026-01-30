@@ -1,0 +1,175 @@
+import User from '../models/User';
+import { InstanceManager } from '../managers/InstanceManager';
+
+export class CommandProcessor {
+    // Basic duration parser (1d, 2h, 30m, 10s)
+    static parseDuration(durationStr: string): number | null {
+        const regex = /^(\d+)([dhms])$/;
+        const match = durationStr.match(regex);
+        if (!match) return null;
+
+        const value = parseInt(match[1]);
+        const unit = match[2];
+        
+        switch (unit) {
+            case 'd': return value * 24 * 60 * 60 * 1000;
+            case 'h': return value * 60 * 60 * 1000;
+            case 'm': return value * 60 * 1000;
+            case 's': return value * 1000;
+            default: return null;
+        }
+    }
+
+    static async handleCommand(
+        command: string, 
+        args: string[], 
+        issuerId: string, 
+        issuerName: string
+    ): Promise<string> {
+        // fetch issuer to check permissions
+        const issuer = await User.findById(issuerId);
+        if (!issuer || !issuer.permissions.includes('game.admin')) {
+            return "You do not have permission to use this command.";
+        }
+
+        switch (command.toLowerCase()) {
+            case 'ban':
+                return await this.handleBan(args, issuerName);
+            case 'tempban':
+                return await this.handleTempBan(args, issuerName);
+            case 'mute':
+                return await this.handleMute(args, issuerName);
+            case 'tempmute':
+                return await this.handleTempMute(args, issuerName);
+            case 'unban':
+                return await this.handleUnban(args, issuerName);
+            case 'unmute':
+                return await this.handleUnmute(args, issuerName);
+            case 'broadcast':
+                return this.handleBroadcast(args, issuerName);
+            case 'reboot':
+                return this.handleReboot(issuerName);
+            default:
+                return "Unknown command.";
+        }
+    }
+
+    private static async getUserByUsername(username: string) {
+        return User.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
+    }
+
+    private static async handleBan(args: string[], issuer: string): Promise<string> {
+        if (args.length < 1) return "Usage: /ban [username]";
+        const targetName = args[0];
+        const user = await this.getUserByUsername(targetName);
+        
+        if (!user) return `User '${targetName}' not found.`;
+        if (user.permissions.includes('game.admin')) return "Cannot ban an admin.";
+
+        // Ban forever (well, 100 years)
+        user.bannedUntil = new Date(Date.now() + 1000 * 365 * 24 * 60 * 60 * 1000); 
+        await user.save();
+
+        // Kick online players via InstanceManager event
+        InstanceManager.getInstance().events.emit('ban', user._id.toString());
+
+        return `User ${user.username} has been permanently banned.`;
+    }
+
+    private static async handleTempBan(args: string[], issuer: string): Promise<string> {
+        if (args.length < 2) return "Usage: /tempban [duration] [username]";
+        const durationStr = args[0];
+        const targetName = args[1];
+
+        const ms = this.parseDuration(durationStr);
+        if (!ms) return "Invalid duration format. Use 1d, 2h, 30m, etc.";
+
+        const user = await this.getUserByUsername(targetName);
+        if (!user) return `User '${targetName}' not found.`;
+        if (user.permissions.includes('game.admin')) return "Cannot ban an admin.";
+
+        user.bannedUntil = new Date(Date.now() + ms);
+        await user.save();
+
+        InstanceManager.getInstance().events.emit('ban', user._id.toString());
+
+        return `User ${user.username} banned for ${durationStr}.`;
+    }
+
+    private static async handleMute(args: string[], issuer: string): Promise<string> {
+        if (args.length < 1) return "Usage: /mute [username]";
+        const targetName = args[0];
+        
+        const user = await this.getUserByUsername(targetName);
+        if (!user) return `User '${targetName}' not found.`;
+
+        user.mutedUntil = new Date(Date.now() + 1000 * 365 * 24 * 60 * 60 * 1000); // 1000 years
+        await user.save();
+        
+        // Notify if online?
+        InstanceManager.getInstance().events.emit('msg_user', { userId: user._id.toString(), message: "You have been permanently muted." });
+
+        return `User ${user.username} has been permanently muted.`;
+    }
+
+    private static async handleTempMute(args: string[], issuer: string): Promise<string> {
+        if (args.length < 2) return "Usage: /tempmute [duration] [username]";
+        const durationStr = args[0];
+        const targetName = args[1];
+        
+        const ms = this.parseDuration(durationStr);
+        if (!ms) return "Invalid duration format.";
+
+        const user = await this.getUserByUsername(targetName);
+        if (!user) return `User '${targetName}' not found.`;
+
+        user.mutedUntil = new Date(Date.now() + ms);
+        await user.save();
+
+        InstanceManager.getInstance().events.emit('msg_user', { userId: user._id.toString(), message: `You have been muted for ${durationStr}.` });
+
+        return `User ${user.username} muted for ${durationStr}.`;
+    }
+
+    private static async handleUnban(args: string[], issuer: string): Promise<string> {
+        if (args.length < 1) return "Usage: /unban [username]";
+        const user = await this.getUserByUsername(args[0]);
+        if (!user) return "User not found.";
+
+        user.bannedUntil = undefined;
+        await user.save();
+        return `User ${user.username} unbanned.`;
+    }
+
+    private static async handleUnmute(args: string[], issuer: string): Promise<string> {
+        if (args.length < 1) return "Usage: /unmute [username]";
+        const user = await this.getUserByUsername(args[0]);
+        if (!user) return "User not found.";
+
+        user.mutedUntil = undefined;
+        await user.save();
+        
+        InstanceManager.getInstance().events.emit('msg_user', { userId: user._id.toString(), message: "You have been unmuted." });
+
+        return `User ${user.username} unmuted.`;
+    }
+
+    private static handleBroadcast(args: string[], issuer: string): string {
+        const msg = args.join(' ');
+        if (!msg) return "Usage: /broadcast [message]";
+
+        InstanceManager.getInstance().events.emit('broadcast', `${msg}`);
+        return "Broadcast sent.";
+    }
+
+    private static handleReboot(issuer: string): string {
+        console.log(`[Command] Reboot initiated by ${issuer}`);
+        InstanceManager.getInstance().events.emit('broadcast', "Server rebooting in 5 seconds...");
+        
+        setTimeout(() => {
+            process.exit(0);
+        }, 5000);
+
+        return "Server rebooting...";
+    }
+}

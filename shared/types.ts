@@ -8,6 +8,7 @@ export interface ChatMessage {
     sessionId: string;
     username: string;
     text: string;
+    isSystem?: boolean; // New field for system messages
 }
 
 export interface PlayerInput {
@@ -161,3 +162,4 @@ export interface IJoinInstanceResponse {
 
 // Re-export WorldTime module
 export * from './WorldTime';
+

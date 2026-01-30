@@ -16,6 +16,7 @@
     "concurrently": "^9.2.1"
   },
   "dependencies": {
+    "@2toad/profanity": "^3.2.0",
     "date-fns": "^4.1.0"
   }
 }

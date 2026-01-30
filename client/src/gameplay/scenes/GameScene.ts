@@ -12,15 +12,19 @@ import { CollisionManager } from '../map/CollisionManager';
 import { OcclusionManager } from '../map/OcclusionManager';
 import { PlayerController } from '../player/PlayerController';
 import { RemotePlayerManager } from '../player/RemotePlayerManager';
-import { DebugOverlay } from '../debug/DebugOverlay';
+import { DebugOverlay, ExtendedDebugInfo } from '../debug/DebugOverlay';
 import { DustParticleSystem } from '../fx/DustParticleSystem';
 import { FireParticleSystem } from '../fx/FireParticleSystem';
+import { WaterEffectsManager } from '../fx/WaterEffectsManager';
 import { LightingManager } from '../fx/LightingManager';
+import { VisualEffectsManager } from '../fx/VisualEffectsManager';
 import { WorldTimeManager } from '../time/WorldTimeManager';
+import { AudioManager } from '../audio/AudioManager';
 import { Toast } from '../../ui/Toast';
+import { DisconnectModal } from '../../ui/DisconnectModal';
 import { IInstanceInfo } from '@cfwk/shared';
 import { NetworkManager } from '../network/NetworkManager';
-import { hideLoader } from '../index';
+import { hideLoader, currentUser } from '../index';
 
 interface GameSceneData {
     instance: IInstanceInfo;
@@ -30,6 +34,7 @@ export class GameScene extends Phaser.Scene {
     private instanceInfo?: IInstanceInfo;
     private networkManager = NetworkManager.getInstance();
     private worldTimeManager = WorldTimeManager.getInstance();
+    private unsubscribeDisconnect?: () => void;
 
     // Managers
     private mapLoader?: MapLoader;
@@ -40,8 +45,12 @@ export class GameScene extends Phaser.Scene {
     private remotePlayerManager?: RemotePlayerManager;
     private debugOverlay?: DebugOverlay;
     private dustParticles?: DustParticleSystem;
+    private waterEffects?: WaterEffectsManager;
     private lightingManager?: LightingManager;
+    private visualEffectsManager?: VisualEffectsManager;
+    private audioManager?: AudioManager;
     private fires: FireParticleSystem[] = [];
+    private lastTablistSnapshot = '';
 
     // Constants
     private readonly groundLayerNames = new Set(['Ground', 'Water']);
@@ -80,6 +89,10 @@ export class GameScene extends Phaser.Scene {
             depth: this.playerFrontDepth
         });
         this.playerController.preload();
+
+        // Initialize audio manager and preload audio assets
+        this.audioManager = new AudioManager(this);
+        this.audioManager.preload();
     }
 
     create() {
@@ -89,6 +102,9 @@ export class GameScene extends Phaser.Scene {
         this.collisionManager = new CollisionManager(this);
         this.occlusionManager = new OcclusionManager(this.playerFrontDepth, this.playerOccludedDepthOffset);
         
+        // Initialize visual effects (Post-processing)
+        this.visualEffectsManager = new VisualEffectsManager(this);
+
         // Launch UI Scene
         this.scene.launch('UIScene');
         const uiScene = this.scene.get('UIScene');
@@ -105,15 +121,31 @@ export class GameScene extends Phaser.Scene {
         
         this.mapLoader?.loadMap(mapKey, this.collisionManager, this.occlusionManager, (result) => {
             this.lightingManager = result.lightingManager;
-            this.onMapLoaded(result.map);
+            this.onMapLoaded(result.map, result.groundLayers);
         });
     }
 
     private setupDebugToggle() {
         this.input.keyboard?.on('keydown-H', () => {
+            // Ignore if chat is focused
+            if (this.registry.get('chatFocused') === true) return;
+            
             const shiftDown = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT)?.isDown ?? false;
             this.debugOverlay?.toggle(shiftDown);
         });
+
+        // Add toggle for visual effects (key 'V')
+        this.input.keyboard?.on('keydown-V', () => {
+            if (this.registry.get('chatFocused') === true) return;
+            
+            const enabled = !this.registry.get('visualEffectsEnabled');
+            this.registry.set('visualEffectsEnabled', enabled);
+            this.visualEffectsManager?.setAllEffectsEnabled(enabled);
+            Toast.info(`Visual Effects: ${enabled ? 'ON' : 'OFF'}`, 2000);
+        });
+        
+        // Default to enabled
+        this.registry.set('visualEffectsEnabled', true);
     }
 
     private showConnectionStatus() {
@@ -124,7 +156,7 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
-    private onMapLoaded(map: Phaser.Tilemaps.Tilemap) {
+    private onMapLoaded(map: Phaser.Tilemaps.Tilemap, groundLayers: Phaser.Tilemaps.TilemapLayer[]) {
         // Spawn player
         const player = this.playerController?.spawn(map);
         if (player) {
@@ -137,6 +169,9 @@ export class GameScene extends Phaser.Scene {
 
             // Initialize dust particle system for player
             this.dustParticles = new DustParticleSystem(this, player, map);
+
+            // Initialize water effects (splash + wet footprints)
+            this.waterEffects = new WaterEffectsManager(this, player, groundLayers);
         }
 
         // Create fire effects from POI points in the map
@@ -151,6 +186,11 @@ export class GameScene extends Phaser.Scene {
         this.setupMultiplayer();
         this.worldTimeManager.initialize();
 
+        // Initialize audio (music and ambient sounds for this map)
+        const mapFile = this.instanceInfo?.mapFile || 'limbo.tmj';
+        const mapKey = `map-${mapFile.replace('.tmj', '')}`;
+        this.audioManager?.initialize(mapKey);
+
         // Map is fully loaded - hide the loader and show mobile controls
         hideLoader();
         this.playerController?.getMobileControls()?.show();
@@ -163,6 +203,10 @@ export class GameScene extends Phaser.Scene {
         this.fires.forEach(fire => {
             fire.setupLight(this.lightingManager!, 120, 1.5);
         });
+        
+        // Register fire positions with audio manager for distance-based volume
+        const firePositions = this.fires.map(fire => fire.getPosition());
+        this.audioManager?.setFirePositions(firePositions);
     }
 
     private setupMultiplayer() {
@@ -172,6 +216,35 @@ export class GameScene extends Phaser.Scene {
             lightingManager: this.lightingManager
         });
         this.remotePlayerManager.initialize();
+
+        // Listen for chat messages (relayed from UIScene) for chat bubbles
+        this.game.events.on('chat-message', this.handleChatMessage, this);
+        
+        // Listen for server disconnection
+        this.unsubscribeDisconnect = this.networkManager.onDisconnect((code) => {
+            console.log(`[GameScene] Server disconnected with code: ${code}`);
+            if (code === 4003) {
+                // Show ban message immediately
+                DisconnectModal.show(0, "You have been banned from the server.", "BANNED");
+            } else {
+                // Show generic disconnect modal after 5 seconds
+                DisconnectModal.show(5000);
+            }
+        });
+        
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+             this.game.events.off('chat-message', this.handleChatMessage, this);
+             this.unsubscribeDisconnect?.();
+        });
+    }
+
+    private handleChatMessage(data: { sessionId: string; message: string }) {
+        const mySessionId = this.networkManager.getSessionId();
+        if (data.sessionId === mySessionId) {
+            this.playerController?.showChat(data.message);
+        } else {
+            this.remotePlayerManager?.showChat(data.sessionId, data.message);
+        }
     }
 
     update(_time: number, delta: number) {
@@ -186,9 +259,33 @@ export class GameScene extends Phaser.Scene {
         if (player && this.collisionManager) {
             this.collisionManager.enforceContainment(player);
         }
+        
+        // Update camera zoom based on player feet line segment
+        if (player && this.cameraController) {
+            const bottomLeft = player.getBottomLeft();
+            const bottomRight = player.getBottomRight();
+            this.cameraController.update(bottomLeft.x, bottomRight.x, bottomLeft.y);
+        }
 
         // Update dust particles
         this.dustParticles?.update();
+
+        // Update water effects (splash + wet footprints)
+        this.waterEffects?.update(delta);
+
+        // Update footstep sounds based on player movement and water state
+        if (this.playerController) {
+            const isMoving = this.playerController.getIsMoving();
+            const isSprinting = this.playerController.getIsSprinting();
+            const inWater = this.waterEffects?.getIsInWater() ?? false;
+            const isWet = this.waterEffects?.getIsWet() ?? false;
+            this.audioManager?.updateFootsteps(isMoving, isSprinting, inWater, isWet);
+        }
+        
+        // Update fire volume based on player distance to nearest fire
+        if (player && this.audioManager) {
+            this.audioManager.updateFireVolume(player.x, player.y);
+        }
 
         // Update world time and lighting
         this.worldTimeManager.update(delta);
@@ -211,22 +308,79 @@ export class GameScene extends Phaser.Scene {
         // Update remote players
         this.remotePlayerManager?.update();
 
+        // Update tablist registry
+        this.updateTablistRegistry();
+
         // Update debug overlay
         if (this.debugOverlay?.isEnabled()) {
+            // Gather extended debug info
+            const extendedDebug: ExtendedDebugInfo = {
+                // Camera
+                cameraZoom: this.cameraController?.getCurrentZoom(),
+                targetZoom: this.cameraController?.getTargetZoom(),
+                zoomRegions: this.cameraController?.getZoomRegions(),
+                
+                // Player
+                playerX: player?.x,
+                playerY: player?.y,
+                playerVelX: (player?.body as MatterJS.BodyType)?.velocity?.x,
+                playerVelY: (player?.body as MatterJS.BodyType)?.velocity?.y,
+                playerDepth: player?.depth,
+                isMoving: this.playerController?.getIsMoving(),
+                isSprinting: this.playerController?.getIsSprinting(),
+                stamina: this.playerController?.getStamina(),
+                
+                // Fire POIs
+                firePositions: this.fires.map(f => f.getPosition()),
+                
+                // Network
+                isConnected: this.networkManager.isConnected(),
+                remotePlayerCount: this.remotePlayerManager?.getPlayers().size,
+                instanceId: this.instanceInfo?.instanceId,
+                
+                // Performance
+                fps: this.game.loop.actualFps,
+                
+                // Generated border
+                generatedBorder: this.collisionManager?.getGeneratedBorderPolygon(),
+            };
+            
             this.debugOverlay.draw(
                 this.collisionManager?.getBodies() || [],
                 this.occlusionManager?.getRegions() || [],
                 this.playerController?.getSpawnPoint(),
                 player,
-                worldTime
+                worldTime,
+                this.waterEffects?.getDebugInfo(),
+                extendedDebug
             );
         }
     }
+
+    private updateTablistRegistry() {
+        const localName = currentUser?.username || 'Guest';
+        const entries = [{ name: localName, isLocal: true }];
+
+        if (this.remotePlayerManager) {
+            const remotes = Array.from(this.remotePlayerManager.getPlayers().values());
+            remotes.forEach((remote) => {
+                entries.push({ name: remote.getUsername(), isLocal: false });
+            });
+        }
+
+        const snapshot = entries.map(e => `${e.isLocal ? '1' : '0'}:${e.name}`).join('|');
+        if (snapshot === this.lastTablistSnapshot) return;
+
+        this.lastTablistSnapshot = snapshot;
+        this.registry.set('tablistPlayers', entries);
+    }
     
     shutdown() {
+        this.audioManager?.destroy();
         this.remotePlayerManager?.destroy();
         this.fires.forEach(fire => fire.destroy());
         this.fires = [];
+        this.waterEffects?.destroy();
         this.mapLoader?.destroy();
         this.playerController?.destroy();
     }

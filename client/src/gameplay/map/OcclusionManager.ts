@@ -95,11 +95,43 @@ export class OcclusionManager {
 
         if (this.activeTags.size === 0) return;
 
-        this.layers.forEach((entry) => {
-            if (!this.activeTags.has(entry.tag)) return;
-            const elevatedDepth = this.playerFrontDepth + this.playerOccludedDepthOffset + entry.order;
-            entry.layer.setDepth(elevatedDepth);
+        // Find the lowest-order occluded layer to preserve ordering above it
+        let minActiveOrder = Infinity;
+        this.activeTags.forEach((tag) => {
+            const layer = this.layers.find(l => l.tag === tag);
+            if (layer && layer.order < minActiveOrder) minActiveOrder = layer.order;
         });
+
+        this.layers.forEach((entry) => {
+            const shouldElevate = entry.order >= minActiveOrder;
+            if (!shouldElevate) return;
+
+            const elevatedDepth = this.playerFrontDepth + this.playerOccludedDepthOffset + entry.order;
+            const maxDepth = this.getMaxDepthBelowHigherLayers(entry);
+            const finalDepth = maxDepth !== null ? Math.min(elevatedDepth, maxDepth) : elevatedDepth;
+            entry.layer.setDepth(finalDepth);
+        });
+    }
+
+    /**
+     * Get the highest depth a layer can be raised to without surpassing higher layers
+     */
+    private getMaxDepthBelowHigherLayers(entry: OccludableLayer): number | null {
+        let nearestHigher: OccludableLayer | null = null;
+
+        for (const layer of this.layers) {
+            if (layer.baseDepth <= entry.baseDepth) continue;
+            if (layer.layer.depth <= this.playerFrontDepth) continue;
+            if (!nearestHigher || layer.baseDepth < nearestHigher.baseDepth) {
+                nearestHigher = layer;
+            }
+        }
+
+        if (!nearestHigher) return null;
+
+        // Keep this layer just below the nearest higher layer's current depth
+        const higherDepth = nearestHigher.layer.depth;
+        return higherDepth - 1;
     }
 
     /**
@@ -107,6 +139,13 @@ export class OcclusionManager {
      */
     isTagOccluded(tag: string): boolean {
         return this.activeTags.has(tag);
+    }
+
+    /**
+     * Get a copy of currently active occlusion tags
+     */
+    getActiveTags(): Set<string> {
+        return new Set(this.activeTags);
     }
 
     /**
@@ -118,6 +157,19 @@ export class OcclusionManager {
             return this.playerFrontDepth + this.playerOccludedDepthOffset + layer.order;
         }
         return this.playerFrontDepth + this.playerOccludedDepthOffset;
+    }
+
+    /**
+     * Get the maximum occluded depth for a set of tags
+     */
+    getMaxOccludedDepthForTags(tags: Set<string>): number {
+        if (tags.size === 0) return this.playerFrontDepth + this.playerOccludedDepthOffset;
+        let max = -Infinity;
+        tags.forEach((tag) => {
+            const depth = this.getOccludedDepth(tag);
+            if (depth > max) max = depth;
+        });
+        return max === -Infinity ? this.playerFrontDepth + this.playerOccludedDepthOffset : max;
     }
 
     /**
@@ -144,6 +196,42 @@ export class OcclusionManager {
             }
         }
         return false;
+    }
+
+    /**
+     * Get the set of occlusion tags affecting a position
+     */
+    getOcclusionTagsAt(x: number, y: number, halfWidth: number = 4): Set<string> {
+        const tags = new Set<string>();
+        if (this.regions.length === 0) return tags;
+
+        const footLeftX = x - halfWidth;
+        const footRightX = x + halfWidth;
+
+        for (const region of this.regions) {
+            if (!this.isSegmentIntersectingPolygon(footLeftX, y, footRightX, y, region.polygon)) continue;
+
+            if (region.targetTags && region.targetTags.length > 0) {
+                region.targetTags.forEach((tag) => tags.add(tag));
+            } else {
+                this.layers.forEach((entry) => tags.add(entry.tag));
+            }
+        }
+
+        return tags;
+    }
+
+    /**
+     * Get the minimum base depth for a set of tags
+     */
+    getMinBaseDepthForTags(tags: Set<string>): number {
+        if (tags.size === 0) return this.getOccludableBaseDepth();
+        let min = Infinity;
+        tags.forEach((tag) => {
+            const depth = this.getBaseDepthForTag(tag);
+            if (depth < min) min = depth;
+        });
+        return min === Infinity ? this.getOccludableBaseDepth() : min;
     }
 
     /**

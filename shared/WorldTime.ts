@@ -123,51 +123,46 @@ function createTimeState(
     // Determine if it's daytime
     const isDaytime = currentHour >= daylight.sunrise && currentHour < daylight.sunset;
     
-    // Calculate sun/night progress and brightness
+    // Calculate sun/night progress and brightness (fully continuous)
     let sunProgress = 0;
     let nightProgress = 0;
     let brightness = 0;
-    
+
     const nightBaseBrightness = 0.35;
-    const nightVariation = 0.02; // subtle variation, mostly consistent darkness
     const dayPeakBrightness = 1.4;
+    const transitionHours = 2; // Sunrise/sunset transition length
 
-    if (isDaytime) {
-        // Daytime: calculate sun progress (0 at sunrise, 0.5 at noon, 1 at sunset)
-        const dayLength = daylight.sunset - daylight.sunrise;
-        sunProgress = (currentHour - daylight.sunrise) / dayLength;
-        
-        // Brightness stays high most of the day, with faster changes near sunrise/sunset
-        const transitionHours = 2; // ~4 hours total around sunrise+sunset
-        const hoursSinceSunrise = currentHour - daylight.sunrise;
-        const ramp = (t: number) => t * t * (3 - 2 * t); // smoothstep
+    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+    const smoothstep = (t: number) => t * t * (3 - 2 * t);
 
-        if (hoursSinceSunrise < transitionHours) {
-            const t = Phaser.Math.Clamp(hoursSinceSunrise / transitionHours, 0, 1);
-            brightness = nightBaseBrightness + (dayPeakBrightness - nightBaseBrightness) * ramp(t);
-        } else if (hoursSinceSunrise > dayLength - transitionHours) {
-            const t = Phaser.Math.Clamp((dayLength - hoursSinceSunrise) / transitionHours, 0, 1);
-            brightness = nightBaseBrightness + (dayPeakBrightness - nightBaseBrightness) * ramp(t);
-        } else {
-            brightness = dayPeakBrightness;
-        }
-    } else {
-        // Nighttime: calculate night progress
-        const nightLength = 24 - (daylight.sunset - daylight.sunrise);
-        
-        if (currentHour >= daylight.sunset) {
-            // After sunset, before midnight
-            nightProgress = (currentHour - daylight.sunset) / nightLength;
-        } else {
-            // After midnight, before sunrise
-            const hoursAfterSunset = (24 - daylight.sunset) + currentHour;
-            nightProgress = hoursAfterSunset / nightLength;
-        }
-        
-        // Night brightness is mostly constant, slightly darker at midnight
-        const nightCurve = Math.cos(nightProgress * Math.PI * 2); // 1 at sunset/sunrise, -1 at midnight
-        brightness = nightBaseBrightness + nightVariation * nightCurve;
-    }
+    const dayLength = daylight.sunset - daylight.sunrise;
+    const nightLength = 24 - dayLength;
+
+    // Day progress and night progress (0-1), using wrapped time so they are continuous
+    const timeSinceSunrise = (currentHour - daylight.sunrise + 24) % 24;
+    const timeSinceSunset = (currentHour - daylight.sunset + 24) % 24;
+    sunProgress = clamp(timeSinceSunrise / dayLength, 0, 1);
+    nightProgress = clamp(timeSinceSunset / nightLength, 0, 1);
+
+    // Day weight: smooth 0->1 at sunrise, smooth 1->0 at sunset (no branches, no jumps)
+    const sunriseStart = daylight.sunrise - transitionHours;
+    const sunriseEnd = daylight.sunrise + transitionHours;
+    const sunsetStart = daylight.sunset - transitionHours;
+    const sunsetEnd = daylight.sunset + transitionHours;
+
+    const sunriseT = clamp((currentHour - sunriseStart) / (sunriseEnd - sunriseStart), 0, 1);
+    const sunsetT = clamp((currentHour - sunsetStart) / (sunsetEnd - sunsetStart), 0, 1);
+
+    const sunriseWeight = smoothstep(sunriseT);      // 0 -> 1 around sunrise
+    const sunsetWeight = 1 - smoothstep(sunsetT);    // 1 -> 0 around sunset
+    const dayWeight = clamp(sunriseWeight * sunsetWeight, 0, 1);
+
+    // Gentle daytime curve so brightness changes smoothly across the day
+    // Peak at noon, slightly lower at morning/evening, still continuous
+    const dayCurve = 0.85 + 0.15 * Math.sin(Math.PI * sunProgress);
+
+    // Final brightness: continuous blend between night base and day curve
+    brightness = nightBaseBrightness + (dayPeakBrightness - nightBaseBrightness) * dayWeight * dayCurve;
     
     return {
         year,
