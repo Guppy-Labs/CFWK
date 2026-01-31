@@ -20,7 +20,16 @@ function updateAppSize() {
 
 export function hideLoader() {
     const loader = document.getElementById('game-loader');
-    if (loader) loader.style.display = 'none';
+    if (!loader) return;
+    
+    // Add exiting class to trigger animations
+    loader.classList.add('exiting');
+    
+    // Remove the loader after animations complete
+    setTimeout(() => {
+        loader.style.display = 'none';
+        loader.classList.remove('exiting');
+    }, 1100); // Wait for all animations to finish
 }
 
 export function setLoaderText(text: string) {

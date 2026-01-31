@@ -38,7 +38,7 @@ export class BootScene extends Phaser.Scene {
 
     create() {
         // Update loader text (HTML loader is already visible)
-        setLoaderText(`Connecting to game...`);
+        setLoaderText(`Connecting...`);
 
         // Request instance from server
         this.requestInstance();
@@ -81,7 +81,8 @@ export class BootScene extends Phaser.Scene {
                 if (connectionError === "DUPLICATE_CONNECTION") {
                     return "DUPLICATE_CONNECTION" as const;
                 }
-                if (connectionError && connectionError.startsWith("BANNED|")) {
+                // Check for IP ban or account ban
+                if (connectionError && (connectionError.startsWith("IP_BANNED|") || connectionError.startsWith("ACCOUNT_BANNED|"))) {
                     return connectionError;
                 }
                 return null;
@@ -102,12 +103,36 @@ export class BootScene extends Phaser.Scene {
             return;
         }
 
-        // Handle Ban
-        if (typeof result === "string" && result.startsWith("BANNED|")) {
+        // Handle IP Ban (shows "BANNED" - not account-specific)
+        if (typeof result === "string" && result.startsWith("IP_BANNED|")) {
             const dateStr = result.split('|')[1];
             const date = new Date(dateStr);
-            DisconnectModal.show(0, `You are banned until ${date.toLocaleString()}`, "BANNED");
-            // Still send to limbo so they have "somewhere" to be
+            
+            const fiftyYearsMs = 50 * 365 * 24 * 60 * 60 * 1000;
+            const isPermanent = date.getTime() - Date.now() > fiftyYearsMs;
+            
+            const banMessage = isPermanent 
+                ? "You are permanently banned."
+                : `You are banned until ${date.toLocaleString()}`;
+            
+            DisconnectModal.show(0, banMessage, "BANNED");
+            this.startGame(limboFallback);
+            return;
+        }
+
+        // Handle Account Ban (shows "ACCOUNT BANNED")
+        if (typeof result === "string" && result.startsWith("ACCOUNT_BANNED|")) {
+            const dateStr = result.split('|')[1];
+            const date = new Date(dateStr);
+            
+            const fiftyYearsMs = 50 * 365 * 24 * 60 * 60 * 1000;
+            const isPermanent = date.getTime() - Date.now() > fiftyYearsMs;
+            
+            const banMessage = isPermanent 
+                ? "Your account is permanently banned."
+                : `Your account is banned until ${date.toLocaleString()}`;
+            
+            DisconnectModal.show(0, banMessage, "ACCOUNT BANNED");
             this.startGame(limboFallback);
             return;
         }

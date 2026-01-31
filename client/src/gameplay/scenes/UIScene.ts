@@ -2,15 +2,18 @@ import Phaser from 'phaser';
 import { StaminaBar } from '../ui/StaminaBar';
 import { TabList, TabListEntry } from '../ui/TabList';
 import { Chat, ChatMessage } from '../ui/Chat';
+import { BookUI } from '../ui/BookUI';
 import { NetworkManager } from '../network/NetworkManager';
 
 export class UIScene extends Phaser.Scene {
     private staminaBar?: StaminaBar;
     private tabList?: TabList;
     private chat?: Chat;
+    private bookUI?: BookUI;
     private tabKeyDownHandler?: (event: KeyboardEvent) => void;
     private tabKeyUpHandler?: (event: KeyboardEvent) => void;
     private chatKeyHandler?: (event: KeyboardEvent) => void;
+    private bookKeyHandler?: (event: KeyboardEvent) => void;
     private networkManager = NetworkManager.getInstance();
     private nextTabListSync = 0;
 
@@ -18,10 +21,22 @@ export class UIScene extends Phaser.Scene {
         super({ key: 'UIScene' });
     }
 
+    preload() {
+        this.load.image('ui-book-cover', '/ui/BookCover01a.png');
+        this.load.image('ui-book-page-left', '/ui/BookPageL01a.png');
+        this.load.image('ui-book-page-right', '/ui/BookPageR01a.png');
+        this.load.image('ui-tab-active', '/ui/Marker01a.png');
+        this.load.image('ui-tab-inactive', '/ui/Marker01b.png');
+        this.load.image('ui-font', '/assets/font/game-font.png');
+    }
+
     create() {
         this.staminaBar = new StaminaBar(this);
         this.tabList = new TabList(this);
         this.chat = new Chat(this);
+        this.bookUI = new BookUI(this);
+
+        this.registry.set('guiOpen', false);
 
         // Setup chat callbacks
         this.chat.setOnSendMessage((message) => {
@@ -65,10 +80,12 @@ export class UIScene extends Phaser.Scene {
             tabKey.on('down', (event: KeyboardEvent) => {
                 // Don't show tablist while chat is focused
                 if (this.chat?.isChatFocused()) return;
+                if (this.registry.get('guiOpen') === true) return;
                 event.preventDefault();
                 this.tabList?.show();
             });
             tabKey.on('up', (event: KeyboardEvent) => {
+                if (this.registry.get('guiOpen') === true) return;
                 event.preventDefault();
                 this.tabList?.hide();
             });
@@ -79,11 +96,13 @@ export class UIScene extends Phaser.Scene {
             if (event.key !== 'Tab') return;
             // Don't show tablist while chat is focused
             if (this.chat?.isChatFocused()) return;
+            if (this.registry.get('guiOpen') === true) return;
             event.preventDefault();
             this.tabList?.show();
         };
         this.tabKeyUpHandler = (event: KeyboardEvent) => {
             if (event.key !== 'Tab') return;
+            if (this.registry.get('guiOpen') === true) return;
             event.preventDefault();
             this.tabList?.hide();
         };
@@ -92,6 +111,7 @@ export class UIScene extends Phaser.Scene {
 
         // Intercept chat keys at window level
         this.chatKeyHandler = (event: KeyboardEvent) => {
+            if (this.registry.get('guiOpen') === true) return;
             // Let the chat handle all keys when focused, or open keys when not
             if (this.chat?.handleKeyDown(event)) {
                 event.preventDefault();
@@ -99,6 +119,25 @@ export class UIScene extends Phaser.Scene {
             }
         };
         window.addEventListener('keydown', this.chatKeyHandler, { capture: true });
+
+        // Toggle book UI with E
+        this.bookKeyHandler = (event: KeyboardEvent) => {
+            if (event.repeat) return;
+            if (event.key.toLowerCase() !== 'e') return;
+            if (this.chat?.isChatFocused()) return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.bookUI?.toggle();
+            const isOpen = this.bookUI?.isOpen() === true;
+            this.registry.set('guiOpen', isOpen);
+            this.chat?.setMobileHintSuppressed(isOpen);
+            if (isOpen && this.chat?.isChatFocused()) {
+                this.chat.blur();
+            }
+        };
+        window.addEventListener('keydown', this.bookKeyHandler, { capture: true });
+
+        this.scale.on('resize', this.onResize, this);
 
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             if (this.tabKeyDownHandler) {
@@ -110,8 +149,17 @@ export class UIScene extends Phaser.Scene {
             if (this.chatKeyHandler) {
                 window.removeEventListener('keydown', this.chatKeyHandler, { capture: true } as any);
             }
+            if (this.bookKeyHandler) {
+                window.removeEventListener('keydown', this.bookKeyHandler, { capture: true } as any);
+            }
+            this.scale.off('resize', this.onResize, this);
             this.chat?.destroy();
+            this.bookUI?.destroy();
         });
+    }
+
+    private onResize() {
+        this.bookUI?.layout();
     }
 
     private setupChatListener() {

@@ -4,6 +4,7 @@ import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season } from "@c
 import { InstanceManager } from "../managers/InstanceManager";
 import { CommandProcessor } from "../utils/CommandProcessor";
 import User from "../models/User";
+import BannedIP from "../models/BannedIP";
 
 /**
  * Player state for instance rooms
@@ -236,19 +237,43 @@ export class InstanceRoom extends Room<InstanceState> {
     async onJoin(client: Client, options: { username?: string; odcid?: string }) {
         const odcid = options.odcid || client.sessionId;
         
-        // --- Ban Check ---
+        // Get client IP address
+        const clientIP = this.getClientIP(client);
+        
+        // --- IP Ban Check (before account check) ---
+        if (clientIP) {
+            try {
+                const ipBan = await BannedIP.findOne({ ip: clientIP });
+                if (ipBan && ipBan.bannedUntil.getTime() > Date.now()) {
+                    console.log(`[InstanceRoom] Rejecting IP-banned connection: ${clientIP}`);
+                    // IP_BANNED format - client shows "BANNED" instead of "ACCOUNT BANNED"
+                    throw new Error(`IP_BANNED|${ipBan.bannedUntil.toISOString()}`);
+                }
+            } catch (err: any) {
+                if (err.message && err.message.startsWith("IP_BANNED|")) throw err;
+                console.error("Error checking IP ban:", err);
+            }
+        }
+        
+        // --- Account Ban Check ---
         if (odcid !== client.sessionId) {
             try {
                 const user = await User.findById(odcid);
                 if (user && user.bannedUntil && user.bannedUntil.getTime() > Date.now()) {
                     console.log(`[InstanceRoom] Rejecting banned user: ${user.username}`);
                     // Throw special error format for client to parse
-                    // Format: BANNED|ISO_DATE_STRING
-                    throw new Error(`BANNED|${user.bannedUntil.toISOString()}`);
+                    // Format: ACCOUNT_BANNED|ISO_DATE_STRING
+                    throw new Error(`ACCOUNT_BANNED|${user.bannedUntil.toISOString()}`);
+                }
+                
+                // Track user's IP for future ban enforcement
+                if (user && clientIP && user.lastKnownIP !== clientIP) {
+                    user.lastKnownIP = clientIP;
+                    await user.save();
                 }
             } catch (err: any) {
                 // If it's the ban error, rethrow it
-                if (err.message && err.message.startsWith("BANNED|")) throw err;
+                if (err.message && err.message.startsWith("ACCOUNT_BANNED|")) throw err;
                 console.error("Error checking ban status:", err);
             }
         }
@@ -281,6 +306,32 @@ export class InstanceRoom extends Room<InstanceState> {
         
         // Notify instance manager
         this.instanceManager.playerJoined(this.instanceId);
+    }
+
+    /**
+     * Extract client IP from Colyseus client
+     */
+    private getClientIP(client: Client): string | null {
+        try {
+            // Colyseus exposes the underlying WebSocket
+            const req = (client as any).req || (client as any)._req;
+            if (req) {
+                // Check for proxy headers first
+                const forwarded = req.headers['x-forwarded-for'];
+                if (forwarded) {
+                    return forwarded.split(',')[0].trim();
+                }
+                const realIP = req.headers['x-real-ip'];
+                if (realIP) {
+                    return realIP;
+                }
+                // Fallback to socket address
+                return req.socket?.remoteAddress || null;
+            }
+        } catch (e) {
+            console.error("[InstanceRoom] Error getting client IP:", e);
+        }
+        return null;
     }
 
     onLeave(client: Client, consented: boolean) {

@@ -18,6 +18,7 @@ import { FireParticleSystem } from '../fx/FireParticleSystem';
 import { WaterEffectsManager } from '../fx/WaterEffectsManager';
 import { LightingManager } from '../fx/LightingManager';
 import { VisualEffectsManager } from '../fx/VisualEffectsManager';
+import { SeasonalEffectsManager } from '../fx/SeasonalEffectsManager';
 import { WorldTimeManager } from '../time/WorldTimeManager';
 import { AudioManager } from '../audio/AudioManager';
 import { Toast } from '../../ui/Toast';
@@ -48,6 +49,7 @@ export class GameScene extends Phaser.Scene {
     private waterEffects?: WaterEffectsManager;
     private lightingManager?: LightingManager;
     private visualEffectsManager?: VisualEffectsManager;
+    private seasonalEffectsManager?: SeasonalEffectsManager;
     private audioManager?: AudioManager;
     private fires: FireParticleSystem[] = [];
     private lastTablistSnapshot = '';
@@ -104,6 +106,9 @@ export class GameScene extends Phaser.Scene {
         
         // Initialize visual effects (Post-processing)
         this.visualEffectsManager = new VisualEffectsManager(this);
+        
+        // Initialize seasonal effects (weather particles + color tints)
+        this.seasonalEffectsManager = new SeasonalEffectsManager(this);
 
         // Launch UI Scene
         this.scene.launch('UIScene');
@@ -129,6 +134,7 @@ export class GameScene extends Phaser.Scene {
         this.input.keyboard?.on('keydown-H', () => {
             // Ignore if chat is focused
             if (this.registry.get('chatFocused') === true) return;
+            if (this.registry.get('guiOpen') === true) return;
             
             const shiftDown = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT)?.isDown ?? false;
             this.debugOverlay?.toggle(shiftDown);
@@ -137,6 +143,7 @@ export class GameScene extends Phaser.Scene {
         // Add toggle for visual effects (key 'V')
         this.input.keyboard?.on('keydown-V', () => {
             if (this.registry.get('chatFocused') === true) return;
+            if (this.registry.get('guiOpen') === true) return;
             
             const enabled = !this.registry.get('visualEffectsEnabled');
             this.registry.set('visualEffectsEnabled', enabled);
@@ -144,8 +151,20 @@ export class GameScene extends Phaser.Scene {
             Toast.info(`Visual Effects: ${enabled ? 'ON' : 'OFF'}`, 2000);
         });
         
+        // Add toggle for seasonal effects (key 'P')
+        this.input.keyboard?.on('keydown-P', () => {
+            if (this.registry.get('chatFocused') === true) return;
+            if (this.registry.get('guiOpen') === true) return;
+            
+            const enabled = !this.registry.get('seasonalEffectsEnabled');
+            this.registry.set('seasonalEffectsEnabled', enabled);
+            this.seasonalEffectsManager?.setEnabled(enabled);
+            Toast.info(`Seasonal Effects: ${enabled ? 'ON' : 'OFF'}`, 2000);
+        });
+        
         // Default to enabled
         this.registry.set('visualEffectsEnabled', true);
+        this.registry.set('seasonalEffectsEnabled', true);
     }
 
     private showConnectionStatus() {
@@ -185,6 +204,10 @@ export class GameScene extends Phaser.Scene {
         // Setup multiplayer and world time
         this.setupMultiplayer();
         this.worldTimeManager.initialize();
+        
+        // Initialize seasonal effects with current season
+        this.seasonalEffectsManager?.initialize();
+        this.seasonalEffectsManager?.setInitialSeason(this.worldTimeManager.getTime().season);
 
         // Initialize audio (music and ambient sounds for this map)
         const mapFile = this.instanceInfo?.mapFile || 'limbo.tmj';
@@ -225,7 +248,7 @@ export class GameScene extends Phaser.Scene {
             console.log(`[GameScene] Server disconnected with code: ${code}`);
             if (code === 4003) {
                 // Show ban message immediately
-                DisconnectModal.show(0, "You have been banned from the server.", "BANNED");
+                DisconnectModal.show(0, "You have been banned from Cute Fish With Knives.", "BANNED");
             } else {
                 // Show generic disconnect modal after 5 seconds
                 DisconnectModal.show(5000);
@@ -291,6 +314,10 @@ export class GameScene extends Phaser.Scene {
         this.worldTimeManager.update(delta);
         const worldTime = this.worldTimeManager.getTime();
         this.lightingManager?.updateFromWorldTime(worldTime);
+        
+        // Update seasonal effects (particles + color tints)
+        const playerVel = (player?.body as any)?.velocity || { x: 0, y: 0 };
+        this.seasonalEffectsManager?.update(worldTime, delta, playerVel);
 
         // Update occlusion
         if (player) {
@@ -381,6 +408,7 @@ export class GameScene extends Phaser.Scene {
         this.fires.forEach(fire => fire.destroy());
         this.fires = [];
         this.waterEffects?.destroy();
+        this.seasonalEffectsManager?.destroy();
         this.mapLoader?.destroy();
         this.playerController?.destroy();
     }

@@ -192,6 +192,26 @@ function renderUser(user: any) {
 
     // Permissions
     const perms = user.permissions || [];
+    // Ban Check (do this before showing play button)
+    let isBanned = false;
+    
+    // Check for account ban
+    if (user.bannedUntil) {
+        const bannedUntil = new Date(user.bannedUntil);
+        if (bannedUntil.getTime() > Date.now()) {
+            isBanned = true;
+            showBanAlert(bannedUntil, 'ACCOUNT BANNED');
+        }
+    }
+    
+    // Check for IP ban (separate from account ban)
+    if (user.ipBannedUntil && !isBanned) {
+        const ipBannedUntil = new Date(user.ipBannedUntil);
+        if (ipBannedUntil.getTime() > Date.now()) {
+            isBanned = true;
+            showBanAlert(ipBannedUntil, 'BANNED');
+        }
+    }
     
     if (perms.includes('access.maps')) {
         if (mapmakerCard) mapmakerCard.style.display = 'flex';
@@ -201,7 +221,7 @@ function renderUser(user: any) {
 
     if (!perms.includes('access.game')) {
         startCountdown();
-    } else {
+    } else if (!isBanned) {
         if(navPlayBtn) navPlayBtn.style.display = 'inline-flex';
     }
 
@@ -215,17 +235,9 @@ function renderUser(user: any) {
         // Show email reminder if no password set
         showPasswordEmailReminder(user.email);
     }
-
-    // Ban Check
-    if (user.bannedUntil) {
-        const bannedUntil = new Date(user.bannedUntil);
-        if (bannedUntil.getTime() > Date.now()) {
-            showBanAlert(bannedUntil);
-        }
-    }
 }
 
-function showBanAlert(bannedUntil: Date) {
+function showBanAlert(bannedUntil: Date, banType: 'ACCOUNT BANNED' | 'BANNED' = 'ACCOUNT BANNED') {
     const container = document.querySelector('.container');
     if (!container) return;
 
@@ -243,11 +255,19 @@ function showBanAlert(bannedUntil: Date) {
     alert.style.alignItems = 'center';
     alert.style.gap = '10px';
     
+    // Check if ban is "permanent" (more than 50 years from now)
+    const fiftyYearsMs = 50 * 365 * 24 * 60 * 60 * 1000;
+    const isPermanent = bannedUntil.getTime() - Date.now() > fiftyYearsMs;
+    
+    const banMessage = isPermanent 
+        ? 'You are permanently banned from playing.'
+        : `You are banned from playing until: <strong>${bannedUntil.toLocaleString()}</strong>`;
+    
     alert.innerHTML = `
         <i class="fa-solid fa-ban" style="font-size: 1.5rem;"></i>
         <div>
-            <div style="font-weight: bold; font-size: 1.1rem;">ACCOUNT BANNED</div>
-            <div style="font-size: 0.9rem;">You are banned from playing until: <strong>${bannedUntil.toLocaleString()}</strong></div>
+            <div style="font-weight: bold; font-size: 1.1rem;">${banType}</div>
+            <div style="font-size: 0.9rem;">${banMessage}</div>
         </div>
     `;
     

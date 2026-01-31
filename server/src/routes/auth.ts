@@ -3,6 +3,7 @@ import passport from 'passport';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import User from '../models/User';
+import BannedIP from '../models/BannedIP';
 import { ALLOWED_EMAILS } from '../config/access';
 import { sendEmail } from '../utils/email';
 
@@ -400,7 +401,7 @@ router.post('/resend-verification', async (req, res) => {
 });
 
 // Endpoint to check current session
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
     if (req.isAuthenticated()) {
         //@ts-ignore
         const u = req.user.toObject ? req.user.toObject() : { ...req.user };
@@ -408,6 +409,22 @@ router.get('/me', (req, res) => {
         //@ts-ignore
         u.hasPassword = !!req.user.password;
         delete u.password;
+        
+        // Check if user's IP is banned
+        const clientIP = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() 
+            || req.headers['x-real-ip']?.toString() 
+            || req.socket?.remoteAddress;
+        
+        if (clientIP) {
+            try {
+                const ipBan = await BannedIP.findOne({ ip: clientIP });
+                if (ipBan && ipBan.bannedUntil.getTime() > Date.now()) {
+                    u.ipBannedUntil = ipBan.bannedUntil;
+                }
+            } catch (e) {
+                console.error("Error checking IP ban:", e);
+            }
+        }
         
         return res.json({ user: u });
     }

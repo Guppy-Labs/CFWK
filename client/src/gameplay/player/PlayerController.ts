@@ -233,18 +233,20 @@ export class PlayerController {
 
         const deltaSeconds = delta / 1000;
 
-        // Check if chat is focused - disable game inputs
+        // Check if chat or GUI is open - disable game inputs
         const chatFocused = this.scene.registry.get('chatFocused') === true;
+        const guiOpen = this.scene.registry.get('guiOpen') === true;
+        const inputBlocked = chatFocused || guiOpen;
 
         // Get mobile input state
         const mobileInput = this.mobileControls?.getInputState();
 
         // Combine keyboard and mobile inputs (OR logic) - but only if chat is not focused
-        const inputLeft = !chatFocused && (this.cursors?.left?.isDown || this.wasd?.left.isDown || mobileInput?.left);
-        const inputRight = !chatFocused && (this.cursors?.right?.isDown || this.wasd?.right.isDown || mobileInput?.right);
-        const inputUp = !chatFocused && (this.cursors?.up?.isDown || this.wasd?.up.isDown || mobileInput?.up);
-        const inputDown = !chatFocused && (this.cursors?.down?.isDown || this.wasd?.down.isDown || mobileInput?.down);
-        const inputSprint = !chatFocused && (this.shiftKey?.isDown === true || mobileInput?.sprint === true);
+        const inputLeft = !inputBlocked && (this.cursors?.left?.isDown || this.wasd?.left.isDown || mobileInput?.left);
+        const inputRight = !inputBlocked && (this.cursors?.right?.isDown || this.wasd?.right.isDown || mobileInput?.right);
+        const inputUp = !inputBlocked && (this.cursors?.up?.isDown || this.wasd?.up.isDown || mobileInput?.up);
+        const inputDown = !inputBlocked && (this.cursors?.down?.isDown || this.wasd?.down.isDown || mobileInput?.down);
+        const inputSprint = !inputBlocked && (this.shiftKey?.isDown === true || mobileInput?.sprint === true);
 
         const isMoving = !!(inputLeft || inputRight || inputUp || inputDown);
 

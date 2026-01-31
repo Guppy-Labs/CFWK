@@ -1,4 +1,5 @@
 import User from '../models/User';
+import BannedIP from '../models/BannedIP';
 import { InstanceManager } from '../managers/InstanceManager';
 
 export class CommandProcessor {
@@ -66,14 +67,30 @@ export class CommandProcessor {
         if (!user) return `User '${targetName}' not found.`;
         if (user.permissions.includes('game.admin')) return "Cannot ban an admin.";
 
-        // Ban forever (well, 100 years)
-        user.bannedUntil = new Date(Date.now() + 1000 * 365 * 24 * 60 * 60 * 1000); 
+        // Ban forever (well, 1000 years)
+        const banUntil = new Date(Date.now() + 1000 * 365 * 24 * 60 * 60 * 1000); 
+        user.bannedUntil = banUntil;
         await user.save();
+
+        // Also ban their IP if known
+        if (user.lastKnownIP) {
+            await BannedIP.findOneAndUpdate(
+                { ip: user.lastKnownIP },
+                { 
+                    ip: user.lastKnownIP,
+                    bannedUntil: banUntil,
+                    reason: 'Associated with banned user',
+                    originalUserId: user._id.toString(),
+                    originalUsername: user.username
+                },
+                { upsert: true }
+            );
+        }
 
         // Kick online players via InstanceManager event
         InstanceManager.getInstance().events.emit('ban', user._id.toString());
 
-        return `User ${user.username} has been permanently banned.`;
+        return `User ${user.username} has been permanently banned${user.lastKnownIP ? ' (IP also banned)' : ''}.`;
     }
 
     private static async handleTempBan(args: string[], issuer: string): Promise<string> {
@@ -88,12 +105,28 @@ export class CommandProcessor {
         if (!user) return `User '${targetName}' not found.`;
         if (user.permissions.includes('game.admin')) return "Cannot ban an admin.";
 
-        user.bannedUntil = new Date(Date.now() + ms);
+        const banUntil = new Date(Date.now() + ms);
+        user.bannedUntil = banUntil;
         await user.save();
+
+        // Also ban their IP if known
+        if (user.lastKnownIP) {
+            await BannedIP.findOneAndUpdate(
+                { ip: user.lastKnownIP },
+                { 
+                    ip: user.lastKnownIP,
+                    bannedUntil: banUntil,
+                    reason: 'Associated with temp-banned user',
+                    originalUserId: user._id.toString(),
+                    originalUsername: user.username
+                },
+                { upsert: true }
+            );
+        }
 
         InstanceManager.getInstance().events.emit('ban', user._id.toString());
 
-        return `User ${user.username} banned for ${durationStr}.`;
+        return `User ${user.username} banned for ${durationStr}${user.lastKnownIP ? ' (IP also banned)' : ''}.`;
     }
 
     private static async handleMute(args: string[], issuer: string): Promise<string> {
@@ -138,7 +171,13 @@ export class CommandProcessor {
 
         user.bannedUntil = undefined;
         await user.save();
-        return `User ${user.username} unbanned.`;
+        
+        // Also remove IP ban if they had one
+        if (user.lastKnownIP) {
+            await BannedIP.deleteOne({ ip: user.lastKnownIP });
+        }
+        
+        return `User ${user.username} unbanned${user.lastKnownIP ? ' (IP also unbanned)' : ''}.`;
     }
 
     private static async handleUnmute(args: string[], issuer: string): Promise<string> {

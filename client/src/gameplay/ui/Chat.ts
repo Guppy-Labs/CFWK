@@ -47,6 +47,7 @@ export class Chat {
     private currentInput: string = '';
     private cursorVisible: boolean = true;
     private cursorTimer?: Phaser.Time.TimerEvent;
+    private mobileHintSuppressed: boolean = false;
     
     private onSendMessage?: (message: string) => void;
     private onFocusChange?: (focused: boolean) => void;
@@ -160,6 +161,16 @@ export class Chat {
     setOnFocusChange(callback: (focused: boolean) => void) {
         this.onFocusChange = callback;
     }
+
+    setMobileHintSuppressed(suppressed: boolean) {
+        this.mobileHintSuppressed = suppressed;
+
+        if (this.isFocused) {
+            this.mobileHint.setVisible(false);
+        } else {
+            this.mobileHint.setVisible(this.isMobile && !this.mobileHintSuppressed);
+        }
+    }
     
     isChatFocused(): boolean {
         return this.isFocused;
@@ -210,7 +221,7 @@ export class Chat {
         this.inputBackground.setVisible(false);
         this.inputText.setVisible(false);
         this.inputCursor.setVisible(false);
-        this.mobileHint.setVisible(this.isMobile);
+        this.mobileHint.setVisible(this.isMobile && !this.mobileHintSuppressed);
         
         // Re-render messages (unfocused mode)
         this.renderMessages();

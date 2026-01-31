@@ -160,7 +160,13 @@
             position: relative;
             width: 140px;
             height: 80px;
-            animation: fish-drift 4s ease-in-out infinite;
+            will-change: transform;
+        }
+
+        .loader-fish-drift {
+            position: absolute;
+            inset: 0;
+            will-change: transform;
         }
 
         .loader-fish {
@@ -170,9 +176,9 @@
             width: 64px;
             height: 64px;
             background-image: url('/assets/fish_tilesheet.png');
-            /* Random fish from top 4 rows (0-indexed), 2x scale */
+            /* Random fish from top 4 rows, 2x scale (18 cols × 17 rows of 32px = 1152×1088 at 2x) */
             background-position: 0 0;
-            background-size: 2304px 2176px;
+            background-size: 1152px 1088px;
             image-rendering: pixelated;
             animation: fish-wiggle 0.9s ease-in-out infinite;
             filter: drop-shadow(0 0 16px rgba(255, 102, 170, 0.4));
@@ -243,10 +249,10 @@
 
         @keyframes fish-wiggle {
             0%, 100% { 
-                transform: translate(-50%, -50%) rotate(45deg) scaleX(1); 
+                transform: translate(-50%, -50%) rotate(45deg) scale(1.06); 
             }
             50% { 
-                transform: translate(-50%, -50%) rotate(43deg) scaleX(0.98); 
+                transform: translate(-50%, -50%) rotate(43deg) scale(0.92); 
             }
         }
 
@@ -288,12 +294,162 @@
             letter-spacing: 4px;
             color: var(--mm-text-muted);
             font-family: 'Minecraft', monospace;
-            animation: text-pulse 2s ease-in-out infinite;
         }
 
         @keyframes text-pulse {
             0%, 100% { opacity: 0.5; }
             50% { opacity: 1; }
+        }
+
+        /* === ENTER ANIMATIONS === */
+        
+        /* Fish swims in from the left */
+        @keyframes fish-swim-in {
+            0% {
+                transform: translateX(calc(-50vw - 100px)) translateY(0);
+                opacity: 0;
+            }
+            20% {
+                opacity: 1;
+                transform: translateX(-200px) translateY(-6px);
+            }
+            40% {
+                transform: translateX(-80px) translateY(4px);
+            }
+            60% {
+                transform: translateX(-30px) translateY(-4px);
+            }
+            80% {
+                transform: translateX(-8px) translateY(2px);
+            }
+            100% {
+                transform: translateX(0) translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        /* Text fades up on entry */
+        @keyframes text-fade-up {
+            0% { 
+                opacity: 0; 
+                transform: translateY(20px);
+            }
+            100% { 
+                opacity: 0.7; 
+                transform: translateY(0);
+            }
+        }
+        
+        /* Bubbles appear after fish arrives */
+        @keyframes bubbles-appear {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+        
+        /* Initial entry state */
+        .game-loader .loader-fish-container {
+            animation: fish-swim-in 0.8s cubic-bezier(0.2, 0, 0.4, 1) forwards;
+        }
+
+        .game-loader .loader-fish-drift {
+            animation: fish-drift 4s ease-in-out 0.8s infinite;
+        }
+        
+        .game-loader .loader-bubbles {
+            opacity: 0;
+            animation: bubbles-appear 0.3s ease-out 0.6s forwards;
+        }
+        
+        .game-loader .loader-text {
+            opacity: 0;
+            animation: text-fade-up 0.4s ease-out 0.5s forwards,
+                       text-pulse 2s ease-in-out 0.9s infinite;
+        }
+
+        /* === EXIT ANIMATIONS === */
+        
+        /* Fish swims off to the right */
+        @keyframes fish-swim-away {
+            0% {
+                transform: translateX(0) translateY(0);
+                opacity: 1;
+            }
+            20% {
+                transform: translateX(20px) translateY(-8px);
+            }
+            40% {
+                transform: translateX(60px) translateY(4px);
+            }
+            60% {
+                transform: translateX(150px) translateY(-6px);
+            }
+            80% {
+                transform: translateX(350px) translateY(2px);
+                opacity: 1;
+            }
+            100% {
+                transform: translateX(calc(50vw + 100px)) translateY(0);
+                opacity: 0;
+            }
+        }
+        
+        /* Fish wiggle becomes faster during exit */
+        @keyframes fish-wiggle-fast {
+            0%, 100% { 
+                transform: translate(-50%, -50%) rotate(45deg) scale(1.06); 
+            }
+            50% { 
+                transform: translate(-50%, -50%) rotate(40deg) scale(0.88); 
+            }
+        }
+        
+        /* Bubbles fade out */
+        @keyframes bubbles-fade {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        
+        /* Text fades down */
+        @keyframes text-fade-down {
+            0% { 
+                opacity: 0.7; 
+                transform: translateY(0);
+            }
+            100% { 
+                opacity: 0; 
+                transform: translateY(20px);
+            }
+        }
+        
+        /* Loader background fades out */
+        @keyframes loader-fade-out {
+            0% { 
+                background: rgba(18, 18, 18, 0.98);
+            }
+            100% { 
+                background: rgba(18, 18, 18, 0);
+            }
+        }
+        
+        /* Exit state classes */
+        .game-loader.exiting {
+            animation: loader-fade-out 0.6s ease-out 0.5s forwards;
+        }
+        
+        .game-loader.exiting .loader-fish-container {
+            animation: fish-swim-away 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        
+        .game-loader.exiting .loader-fish {
+            animation: fish-wiggle-fast 0.15s ease-in-out infinite;
+        }
+        
+        .game-loader.exiting .loader-bubbles {
+            animation: bubbles-fade 0.3s ease-out forwards;
+        }
+        
+        .game-loader.exiting .loader-text {
+            animation: text-fade-down 0.4s ease-out forwards;
         }
 
         /* Mobile Adjustments */
@@ -403,12 +559,14 @@
     <div id="game-container">
         <div id="game-loader" class="game-loader" aria-live="polite">
             <div class="loader-fish-container">
-                <div class="loader-bubbles">
-                    <div class="loader-bubble"></div>
-                    <div class="loader-bubble"></div>
-                    <div class="loader-bubble"></div>
+                <div class="loader-fish-drift">
+                    <div class="loader-bubbles">
+                        <div class="loader-bubble"></div>
+                        <div class="loader-bubble"></div>
+                        <div class="loader-bubble"></div>
+                    </div>
+                    <div class="loader-fish"></div>
                 </div>
-                <div class="loader-fish"></div>
             </div>
             <div id="loader-text" class="loader-text">Loading world...</div>
         </div>
