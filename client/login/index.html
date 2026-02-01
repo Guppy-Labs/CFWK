@@ -133,6 +133,30 @@
         margin-bottom: 0.5rem;
       }
 
+      .server-offline-banner {
+        position: fixed;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 100;
+        display: none;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.8rem 1rem;
+        width: min(520px, 90vw);
+        background: #2a1719;
+        border: 2px solid #5b2a30;
+        border-left: 4px solid #d14b5a;
+        box-shadow: var(--mm-shadow);
+        color: #f6d6d9;
+        font-size: 0.85rem;
+        letter-spacing: 0.3px;
+      }
+
+      .server-offline-banner i {
+        color: #d14b5a;
+      }
+
       .login-box {
         flex: 0 0 350px;
         background-color: var(--mm-bg-panel);

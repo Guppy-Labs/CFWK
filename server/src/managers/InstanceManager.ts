@@ -113,11 +113,36 @@ export class InstanceManager {
             return null;
         }
 
-        // Find an existing instance with space
-        for (const [, instance] of this.activeInstances) {
-            if (instance.locationId === locationId && instance.currentPlayers < instance.maxPlayers) {
-                return this.toInstanceInfo(instance);
+        const instances = Array.from(this.activeInstances.values())
+            .filter((instance) => instance.locationId === locationId);
+
+        // Always keep at least one lobby open
+        if (locationId === "lobby" && instances.length === 0) {
+            return this.createInstance(locationId);
+        }
+
+        // Find the least-loaded instance with space
+        const available = instances
+            .filter((instance) => instance.currentPlayers < instance.maxPlayers)
+            .sort((a, b) => a.currentPlayers - b.currentPlayers);
+
+        if (locationId === "lobby") {
+            const threshold = Math.ceil(config.maxPlayers * 0.75);
+
+            if (available.length > 0) {
+                const leastLoaded = available[0];
+                if (leastLoaded.currentPlayers >= threshold) {
+                    return this.createInstance(locationId);
+                }
+                return this.toInstanceInfo(leastLoaded);
             }
+
+            // No available lobby instance with space, create a new one
+            return this.createInstance(locationId);
+        }
+
+        if (available.length > 0) {
+            return this.toInstanceInfo(available[0]);
         }
 
         // No available instance, create a new one

@@ -11,18 +11,72 @@ const loginPassInput = document.getElementById('login-password') as HTMLInputEle
 const regEmailInput = document.getElementById('reg-email') as HTMLInputElement;
 const regPassInput = document.getElementById('reg-password') as HTMLInputElement;
 
+const urlParams = new URLSearchParams(window.location.search);
+const oauthProvider = urlParams.get('oauth');
+
+const offlineBannerId = 'server-offline-banner';
+
+function ensureOfflineBanner() {
+    let banner = document.getElementById(offlineBannerId) as HTMLDivElement | null;
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = offlineBannerId;
+        banner.className = 'server-offline-banner';
+        banner.innerHTML = `
+            <i class="fa-solid fa-plug-circle-xmark"></i>
+            <span>Server offline. Please try again in a moment.</span>
+        `;
+        document.body.appendChild(banner);
+    }
+    return banner;
+}
+
+function showOfflineBanner() {
+    const banner = ensureOfflineBanner();
+    banner.style.display = 'flex';
+}
+
+function hideOfflineBanner() {
+    const banner = document.getElementById(offlineBannerId) as HTMLDivElement | null;
+    if (banner) banner.style.display = 'none';
+}
+
+function runWelcomeAndRedirect() {
+    Toast.success('Welcome back!');
+    triggerSuccess();
+    const container = document.getElementById('split-container');
+    if (container) container.classList.add('exit-down');
+    setTimeout(() => window.location.href = '/account', 2500);
+}
+
 fetch('/api/auth/me', { method: 'GET', headers: { 'Content-Type': 'application/json' } })
     .then(res => {
-        if (res.ok) return res.json();
+        if (res.ok) {
+            hideOfflineBanner();
+            return res.json();
+        }
+
+        if (res.status >= 500) {
+            showOfflineBanner();
+        } else {
+            hideOfflineBanner();
+        }
+
         throw new Error('Not logged in');
     })
     .then(data => {
         if (data && data.user) {
-            window.location.href = '/account';
+            if (oauthProvider) {
+                runWelcomeAndRedirect();
+            } else {
+                window.location.href = '/account';
+            }
         }
     })
-    .catch(() => {
-        // tna
+    .catch((err) => {
+        if (!(err instanceof Error) || err.message !== 'Not logged in') {
+            showOfflineBanner();
+        }
     });
 
 initBg();
@@ -141,12 +195,7 @@ async function manualLogin(email: string, pass: string) {
         }
 
         if (response.ok) {
-            Toast.success('Welcome back!');
-            triggerSuccess();
-            const container = document.getElementById('split-container');
-            if (container) container.classList.add('exit-down');
-            
-            setTimeout(() => window.location.href = '/account', 2500);
+            runWelcomeAndRedirect();
         } else {
             Toast.error(data.message || 'Login failed');
         }
@@ -182,7 +231,6 @@ if(discordLogin) discordLogin.addEventListener('click', () => socialAuth('discor
 if(googleRegister) googleRegister.addEventListener('click', () => socialAuth('google'));
 if(discordRegister) discordRegister.addEventListener('click', () => socialAuth('discord'));
 
-const urlParams = new URLSearchParams(window.location.search);
 const error = urlParams.get('error');
 if (error) {
     if (error === 'google_failed') Toast.error('Google Login Failed.');

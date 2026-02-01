@@ -59,6 +59,7 @@ export class Chat {
     private readonly maxVisibleMessages = 8;
     private readonly unfocusedMessageDuration = 10000; // 10 seconds
     private readonly maxMessages = 50;
+    private readonly mobileLandscapeReservedBottom = 140;
     
     private isMobile: boolean = false;
     private mobileInput: HTMLInputElement | null = null;
@@ -111,7 +112,14 @@ export class Chat {
             fontFamily: 'Minecraft, monospace',
             fontSize: '12px',
             color: '#888888',
-            padding: { x: 10, y: 8 }
+            padding: { x: 10, y: 8 },
+            shadow: {
+                offsetX: 1,
+                offsetY: 1,
+                color: '#000000',
+                blur: 2,
+                fill: true
+            }
         });
         this.mobileHint.setVisible(this.isMobile);
         this.mobileHint.setInteractive({ useHandCursor: true });
@@ -146,12 +154,50 @@ export class Chat {
             callback: () => this.cleanupOldMessages(),
             loop: true
         });
+
+        // Apply initial mobile layout constraints
+        if (this.isMobile) {
+            this.applyMobileLayout();
+        }
+    }
+
+    private applyMobileLayout() {
+        const maxMessageAreaHeight = this.getMaxMessageAreaHeight();
+        const inputY = Math.min(
+            this.maxVisibleMessages * this.messageHeight + this.padding * 2,
+            maxMessageAreaHeight + this.padding * 2
+        );
+        this.inputBackground.y = inputY;
+        this.inputText.y = inputY + 6;
+        this.inputCursor.y = inputY + 6;
+        this.mobileHint.y = inputY + 6;
     }
     
     private detectMobile(): boolean {
         const ua = navigator.userAgent.toLowerCase();
-        const mobileKeywords = ['android', 'webos', 'iphone', 'ipad', 'ipod', 'blackberry', 'windows phone', 'mobile'];
-        return mobileKeywords.some(keyword => ua.includes(keyword));
+        const mobileKeywords = ['android', 'webos', 'iphone', 'ipad', 'ipod', 'blackberry', 'windows phone', 'mobile', 'tablet'];
+        const isMobileUA = mobileKeywords.some(keyword => ua.includes(keyword));
+        const isSmallScreen = window.innerWidth <= 1024 && window.innerHeight <= 1366;
+        const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        return hasTouch && (isMobileUA || isSmallScreen);
+    }
+
+    private getMaxChatHeight(): number {
+        const screenHeight = this.scene.scale.height || window.innerHeight;
+        if (!this.isMobile) return Math.max(120, screenHeight - this.padding * 2);
+
+        const screenWidth = this.scene.scale.width || window.innerWidth;
+        const isLandscape = screenWidth > screenHeight;
+        const reservedBottom = isLandscape ? this.mobileLandscapeReservedBottom : 0;
+
+        return Math.max(120, screenHeight - reservedBottom - this.padding * 2);
+    }
+
+    private getMaxMessageAreaHeight(): number {
+        const defaultMax = this.maxVisibleMessages * this.messageHeight;
+        const maxChatHeight = this.getMaxChatHeight();
+        const maxMessageArea = maxChatHeight - this.inputHeight - this.padding * 3;
+        return Math.max(this.messageHeight * 2, Math.min(defaultMax, maxMessageArea));
     }
     
     setOnSendMessage(callback: (message: string) => void) {
@@ -174,6 +220,13 @@ export class Chat {
     
     isChatFocused(): boolean {
         return this.isFocused;
+    }
+
+    refreshLayout() {
+        if (this.isMobile) {
+            this.applyMobileLayout();
+        }
+        this.renderMessages();
     }
     
     focus() {
@@ -415,7 +468,7 @@ export class Chat {
         const now = Date.now();
         // Calculate max area for messages (based on total height - input area)
         // Default message area height roughly
-        const maxMessageAreaHeight = this.maxVisibleMessages * this.messageHeight;
+        const maxMessageAreaHeight = this.getMaxMessageAreaHeight();
         
         // Filter messages first by time if needed
         const candidateMessages = this.isFocused 
@@ -474,23 +527,29 @@ export class Chat {
     private updateInputLayout(messageAreaHeight: number) {
         // Position input below messages, but ensure minimum height conforms to design
         // Default was around maxVisibleMessages * messageHeight
-        const defaultHeight = this.maxVisibleMessages * this.messageHeight;
-        const startY = Math.max(defaultHeight, messageAreaHeight) + this.padding * 2;
+        const maxMessageAreaHeight = this.getMaxMessageAreaHeight();
+        const clampedMessageAreaHeight = Math.min(messageAreaHeight, maxMessageAreaHeight);
+        const defaultHeight = Math.min(this.maxVisibleMessages * this.messageHeight, maxMessageAreaHeight);
+        const desiredStartY = Math.max(defaultHeight, clampedMessageAreaHeight) + this.padding * 2;
         
         // Move input elements
-        this.inputBackground.y = startY;
-        this.inputText.y = startY + 6;
-        this.mobileHint.y = startY + 6;
-        
         // Update background height based on INPUT TEXT height (which grows)
         // Ensure minimum input height
         const currentInputHeight = Math.max(this.inputHeight, this.inputText.height + 12); // +12 for padding top/bottom
+
+        const maxChatHeight = this.getMaxChatHeight();
+        const maxStartY = Math.max(this.padding, maxChatHeight - currentInputHeight - this.padding);
+        const startY = Math.min(desiredStartY, maxStartY);
+
+        this.inputBackground.y = startY;
+        this.inputText.y = startY + 6;
+        this.mobileHint.y = startY + 6;
         
         // Update input background height
         this.inputBackground.height = currentInputHeight;
         
         const totalHeight = startY + currentInputHeight + this.padding;
-        this.background.height = totalHeight;
+        this.background.height = Math.min(totalHeight, maxChatHeight);
     }
     
     private createMessageDisplay(msg: ChatMessage, y: number): Phaser.GameObjects.Container {

@@ -86,37 +86,12 @@
             background: rgba(255,255,255,0.05);
         }
         
-        .fullscreen-btn {
-            width: 36px;
-            height: 36px;
-            background: transparent;
-            border: 1px solid var(--mm-border);
-            color: var(--mm-text-muted);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-            padding: 0;
-        }
-        
-        .fullscreen-btn:hover {
-            color: var(--mm-text-main);
-            border-color: var(--mm-primary);
-            background: rgba(255, 102, 170, 0.1);
-        }
-        
-        .fullscreen-btn svg {
-            width: 18px;
-            height: 18px;
-        }
-
         #game-container {
             flex: 1;
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 2rem;
+            padding: 0;
             min-height: 0; /* allows flex container to shrink below content size */
             overflow: hidden; /* ensures no scrolling */
             width: 100%;
@@ -126,8 +101,10 @@
 
         #app {
             box-shadow: 0 0 0 4px var(--mm-border), 0 10px 20px rgba(0,0,0,0.5);
-            max-width: 100%;
-            max-height: 100%;
+            max-width: none;
+            max-height: none;
+            width: 100%;
+            height: 100%;
             position: relative;
             display: block;
             /* Ensure visible size before Phaser creates canvas */
@@ -455,7 +432,7 @@
         /* Mobile Adjustments */
         @media (max-width: 768px) {
             #game-container {
-                padding: 0.5rem;
+                padding: 0;
             }
             
             .nav-brand {
@@ -549,11 +526,6 @@
     <nav class="game-navbar">
         <a href="/account" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back</a>
         <div class="nav-brand"><i class="fa-solid fa-gamepad"></i> CUTE FISH</div>
-        <button id="navbar-fullscreen-btn" class="fullscreen-btn" title="Toggle Fullscreen">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-            </svg>
-        </button>
     </nav>
 
     <div id="game-container">
@@ -602,105 +574,6 @@
 
     <script type="module" src="/src/main.ts"></script>
     <script>
-        // Navbar fullscreen button - Cross-browser support with iOS Safari fallback
-        (function() {
-            const btn = document.getElementById('navbar-fullscreen-btn');
-            if (!btn) return;
-            
-            const enterIcon = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>';
-            const exitIcon = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>';
-            
-            // Detect iOS
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-            
-            function getFullscreenElement() {
-                return document.fullscreenElement 
-                    || document.webkitFullscreenElement 
-                    || document.mozFullScreenElement 
-                    || document.msFullscreenElement
-                    || null;
-            }
-            
-            function isPseudoFullscreen() {
-                return document.body.classList.contains('pseudo-fullscreen');
-            }
-            
-            function isAnyFullscreen() {
-                return !!getFullscreenElement() || isPseudoFullscreen();
-            }
-            
-            function updateIcon() {
-                const isFs = isAnyFullscreen();
-                btn.innerHTML = isFs ? exitIcon : enterIcon;
-                btn.title = isFs ? 'Exit Fullscreen' : 'Enter Fullscreen';
-            }
-            
-            function canUseNativeFullscreen() {
-                const el = document.documentElement;
-                return !!(el.requestFullscreen || el.webkitRequestFullscreen || 
-                    el.mozRequestFullScreen || el.msRequestFullscreen) && !isIOS;
-            }
-            
-            function enterFullscreen(el) {
-                if (el.requestFullscreen) return el.requestFullscreen();
-                if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
-                if (el.mozRequestFullScreen) return el.mozRequestFullScreen();
-                if (el.msRequestFullscreen) return el.msRequestFullscreen();
-                return Promise.reject('Fullscreen not supported');
-            }
-            
-            function exitFullscreen() {
-                if (document.exitFullscreen) return document.exitFullscreen();
-                if (document.webkitExitFullscreen) return document.webkitExitFullscreen();
-                if (document.mozCancelFullScreen) return document.mozCancelFullScreen();
-                if (document.msExitFullscreen) return document.msExitFullscreen();
-                return Promise.reject('Exit fullscreen not supported');
-            }
-            
-            function enterPseudoFullscreen() {
-                document.body.classList.add('pseudo-fullscreen');
-                // Trigger resize for game to adapt
-                window.dispatchEvent(new Event('resize'));
-                updateIcon();
-            }
-            
-            function exitPseudoFullscreen() {
-                document.body.classList.remove('pseudo-fullscreen');
-                window.dispatchEvent(new Event('resize'));
-                updateIcon();
-            }
-            
-            btn.addEventListener('click', function(e) {
-                e.preventDefault();
-                const gameEl = document.getElementById('app');
-                
-                if (isPseudoFullscreen()) {
-                    exitPseudoFullscreen();
-                } else if (getFullscreenElement()) {
-                    exitFullscreen().catch(function(err) {
-                        console.warn('Exit fullscreen failed:', err);
-                    });
-                } else if (gameEl) {
-                    if (canUseNativeFullscreen()) {
-                        enterFullscreen(gameEl).catch(function() {
-                            // Fallback to pseudo-fullscreen if native fails
-                            enterPseudoFullscreen();
-                        });
-                    } else {
-                        // iOS Safari - use pseudo-fullscreen
-                        enterPseudoFullscreen();
-                    }
-                }
-            });
-            
-            // Listen to all fullscreen change events
-            document.addEventListener('fullscreenchange', updateIcon);
-            document.addEventListener('webkitfullscreenchange', updateIcon);
-            document.addEventListener('mozfullscreenchange', updateIcon);
-            document.addEventListener('MSFullscreenChange', updateIcon);
-        })();
-
         // Disable context menu (right-click) on the game page
         document.addEventListener('contextmenu', function(e) {
             e.preventDefault();

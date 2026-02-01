@@ -23,6 +23,8 @@ import { WorldTimeManager } from '../time/WorldTimeManager';
 import { AudioManager } from '../audio/AudioManager';
 import { Toast } from '../../ui/Toast';
 import { DisconnectModal } from '../../ui/DisconnectModal';
+import { AfkModal } from '../../ui/AfkModal';
+import { LimboModal } from '../../ui/LimboModal';
 import { IInstanceInfo } from '@cfwk/shared';
 import { NetworkManager } from '../network/NetworkManager';
 import { hideLoader, currentUser } from '../index';
@@ -99,6 +101,9 @@ export class GameScene extends Phaser.Scene {
 
     create() {
         this.cameras.main.setBackgroundColor('#121212');
+
+        // Allow other systems to stop audio (e.g., disconnect/AFK)
+        this.events.on('stop-audio', this.stopAllAudio, this);
 
         // Initialize managers
         this.collisionManager = new CollisionManager(this);
@@ -217,6 +222,47 @@ export class GameScene extends Phaser.Scene {
         // Map is fully loaded - hide the loader and show mobile controls
         hideLoader();
         this.playerController?.getMobileControls()?.show();
+
+        // If AFK flag is set and we're in limbo, show AFK modal
+        if (this.instanceInfo?.locationId === 'limbo' && localStorage.getItem('cfwk_afk') === 'true') {
+            localStorage.removeItem('cfwk_afk');
+            AfkModal.show(
+                () => {
+                    // Close only
+                },
+                () => {
+                    DisconnectModal.clearDisconnectedFlag();
+                    this.scene.stop('UIScene');
+                    this.scene.start('BootScene');
+                }
+            );
+        }
+
+        if (this.instanceInfo?.locationId === 'limbo') {
+            const reason = localStorage.getItem('cfwk_limbo_reason');
+            const message = localStorage.getItem('cfwk_limbo_message') || '';
+            if (reason) {
+                localStorage.removeItem('cfwk_limbo_reason');
+                localStorage.removeItem('cfwk_limbo_message');
+
+                const isBan = reason === 'ban';
+                const title = isBan ? 'BANNED' : 'Server Offline';
+                const displayMessage = message || (isBan
+                    ? 'You have been banned from Cute Fish With Knives.'
+                    : 'The connection to the game server was lost.<br>Please try again later.');
+
+                LimboModal.show(title, displayMessage, {
+                    showRejoin: !isBan,
+                    onClose: () => {
+                        // Close only
+                    },
+                    onRejoin: () => {
+                        this.scene.stop('UIScene');
+                        this.scene.start('BootScene');
+                    }
+                });
+            }
+        }
     }
 
     private setupFireEffects(map: Phaser.Tilemaps.Tilemap) {
@@ -240,25 +286,48 @@ export class GameScene extends Phaser.Scene {
         });
         this.remotePlayerManager.initialize();
 
+        // Connect remote player manager to player controller for interaction detection
+        if (this.playerController && this.remotePlayerManager) {
+            this.playerController.setRemotePlayerManager(this.remotePlayerManager);
+        }
+
         // Listen for chat messages (relayed from UIScene) for chat bubbles
         this.game.events.on('chat-message', this.handleChatMessage, this);
+        
+        // Listen for shove events from server
+        this.setupShoveListener();
+        this.setupShoveAttemptListener();
         
         // Listen for server disconnection
         this.unsubscribeDisconnect = this.networkManager.onDisconnect((code) => {
             console.log(`[GameScene] Server disconnected with code: ${code}`);
-            if (code === 4003) {
-                // Show ban message immediately
-                DisconnectModal.show(0, "You have been banned from Cute Fish With Knives.", "BANNED");
-            } else {
-                // Show generic disconnect modal after 5 seconds
-                DisconnectModal.show(5000);
+            this.stopAllAudio();
+            const afkFlag = localStorage.getItem('cfwk_afk') === 'true';
+            if (!afkFlag) {
+                const error = this.networkManager.getConnectionError();
+                if (code === 4003) {
+                    localStorage.setItem('cfwk_limbo_reason', 'ban');
+                    localStorage.setItem('cfwk_limbo_message', 'You have been banned from Cute Fish With Knives.');
+                } else {
+                    const detail = error ? ` (${error})` : ` (code ${code})`;
+                    localStorage.setItem('cfwk_limbo_reason', 'offline');
+                    localStorage.setItem('cfwk_limbo_message', `The connection to the game server was lost${detail}.<br>Please try again later.`);
+                }
             }
+
+            this.scene.stop('UIScene');
+            this.scene.start('BootScene');
         });
         
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
              this.game.events.off('chat-message', this.handleChatMessage, this);
              this.unsubscribeDisconnect?.();
+             this.events.off('stop-audio', this.stopAllAudio, this);
         });
+    }
+
+    private stopAllAudio() {
+        this.audioManager?.destroy();
     }
 
     private handleChatMessage(data: { sessionId: string; message: string }) {
@@ -268,6 +337,87 @@ export class GameScene extends Phaser.Scene {
         } else {
             this.remotePlayerManager?.showChat(data.sessionId, data.message);
         }
+    }
+
+    /**
+     * Setup listener for shove events from server
+     */
+    private setupShoveListener() {
+        const room = this.networkManager.getRoom();
+        if (!room) return;
+
+        room.onMessage("shove", (data: {
+            attackerSessionId: string;
+            targetSessionId: string;
+            targetForceX: number;
+            targetForceY: number;
+            attackerForceX: number;
+            attackerForceY: number;
+        }) => {
+            const mySessionId = this.networkManager.getSessionId();
+            const player = this.playerController?.getPlayer();
+            
+            if (!player) return;
+
+            // Apply force if we're the target
+            if (data.targetSessionId === mySessionId) {
+                this.applyShoveForce(player, data.targetForceX, data.targetForceY);
+                this.playerController?.playInteractAnimation();
+                console.log('[GameScene] We got shoved!');
+            } else {
+                const remoteTarget = this.remotePlayerManager?.getPlayers().get(data.targetSessionId);
+                remoteTarget?.playInteractAnimation();
+            }
+            
+            // Apply counter-force if we're the attacker
+            if (data.attackerSessionId === mySessionId) {
+                this.applyShoveForce(player, data.attackerForceX, data.attackerForceY);
+                console.log('[GameScene] We shoved someone!');
+            }
+        });
+    }
+
+    /**
+     * Setup listener for shove attempts (play animation even on miss)
+     */
+    private setupShoveAttemptListener() {
+        const room = this.networkManager.getRoom();
+        if (!room) return;
+
+        room.onMessage("shoveAttempt", (data: {
+            attackerSessionId: string;
+            targetSessionId: string;
+        }) => {
+            const mySessionId = this.networkManager.getSessionId();
+
+            if (data.attackerSessionId === mySessionId) {
+                // Local player already plays animation on input
+                return;
+            }
+
+            const remoteAttacker = this.remotePlayerManager?.getPlayers().get(data.attackerSessionId);
+            remoteAttacker?.playInteractAnimation();
+        });
+    }
+
+    /**
+     * Apply a shove force to a physics sprite
+     */
+    private applyShoveForce(sprite: Phaser.Physics.Matter.Sprite, forceX: number, forceY: number) {
+        // Matter.js uses setVelocity for impulse-like behavior
+        // We add to existing velocity for more natural feel
+        const body = sprite.body as MatterJS.BodyType;
+        if (!body) return;
+        
+        const currentVx = body.velocity.x || 0;
+        const currentVy = body.velocity.y || 0;
+        
+        // Apply as a velocity impulse (scaled down since force values are in pixels)
+        const impulseScale = 0.05; // Tune this for feel
+        sprite.setVelocity(
+            currentVx + forceX * impulseScale,
+            currentVy + forceY * impulseScale
+        );
     }
 
     update(_time: number, delta: number) {

@@ -205,11 +205,47 @@ export class NetworkManager {
     }
 
     /**
+     * Send GUI open state to the server
+     */
+    sendGuiOpen(isOpen: boolean) {
+        if (this.currentRoom) {
+            this.currentRoom.send("gui", { isOpen });
+        }
+    }
+
+    /**
+     * Send chat focus/open state to the server
+     */
+    sendChatFocus(isOpen: boolean) {
+        if (this.currentRoom) {
+            this.currentRoom.send("chatFocus", { isOpen });
+        }
+    }
+
+    /**
      * Send a chat message to the server
      */
     sendChatMessage(message: string) {
         if (this.currentRoom) {
             this.currentRoom.send("chat", { message });
+        }
+    }
+
+    /**
+     * Send a shove request to the server
+     */
+    sendShove(targetSessionId: string) {
+        if (this.currentRoom) {
+            this.currentRoom.send("shove", { targetSessionId });
+        }
+    }
+
+    /**
+     * Send a shove attempt to the server (for animation sync)
+     */
+    sendShoveAttempt(targetSessionId: string) {
+        if (this.currentRoom) {
+            this.currentRoom.send("shoveAttempt", { targetSessionId });
         }
     }
 

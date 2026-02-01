@@ -24,6 +24,12 @@
     overflow: visible;
 }
 
+/* Ensure standard navbars sit above toasts */
+.navbar {
+    position: relative;
+    z-index: 1000;
+}
+
 .toast-wrapper {
     position: relative;
     display: flex;
@@ -171,6 +177,18 @@
     50% { opacity: 0.5; }
 }
 
+
+.afk-modal-actions {
+    display: flex;
+    gap: 0.8rem;
+    justify-content: center;
+}
+
+.afk-modal-btn-secondary {
+    background: transparent;
+    border: 2px solid var(--mm-border, #333333);
+    color: var(--mm-text-main, #e0e0e0);
+}
 .disconnect-modal-title {
     font-family: 'Minecraft', monospace;
     font-size: 1.5rem;

@@ -8,6 +8,8 @@
  * - Auto-hides on desktop, shows on touch devices
  */
 
+import { InteractionType, AvailableInteraction } from '../interaction/InteractionManager';
+
 export interface MobileInputState {
     up: boolean;
     down: boolean;
@@ -22,7 +24,11 @@ export class MobileControls {
     private joystickBase: HTMLElement;
     private joystickKnob: HTMLElement;
     private sprintButton: HTMLElement;
+    private inventoryButton: HTMLElement;
+    private interactButton: HTMLElement;
     private fullscreenButton: HTMLElement;
+    private menuButton: HTMLElement;
+    private guiOpenListener?: (event: Event) => void;
     
     private inputState: MobileInputState = {
         up: false,
@@ -39,6 +45,9 @@ export class MobileControls {
     private readonly joystickRadius = 50;
     private readonly deadzone = 0.2;
     
+    // UI styling
+    private readonly borderRadius = '16px';
+    
     // Sprint button state
     private sprintTouchId: number | null = null;
     
@@ -46,6 +55,11 @@ export class MobileControls {
     private isVisible = false;
     private keyboardUsed = false; // Once keyboard is used, hide controls permanently
     private keyboardListener?: (e: KeyboardEvent) => void;
+    private resizeListener?: () => void;
+    
+    // Interact button state
+    private currentInteraction: AvailableInteraction | null = null;
+    private guiCurrentlyOpen = false;
     
     constructor() {
         this.container = this.createContainer();
@@ -53,16 +67,24 @@ export class MobileControls {
         this.joystickBase = this.createJoystickBase();
         this.joystickKnob = this.createJoystickKnob();
         this.sprintButton = this.createSprintButton();
+        this.inventoryButton = this.createInventoryButton();
+        this.interactButton = this.createInteractButton();
         this.fullscreenButton = this.createFullscreenButton();
+        this.menuButton = this.createMenuButton();
         
         this.joystickBase.appendChild(this.joystickKnob);
         this.joystickZone.appendChild(this.joystickBase);
         this.container.appendChild(this.joystickZone);
         this.container.appendChild(this.sprintButton);
+        this.container.appendChild(this.inventoryButton);
+        this.container.appendChild(this.interactButton);
         this.container.appendChild(this.fullscreenButton);
+        this.container.appendChild(this.menuButton);
         
         this.setupEventListeners();
         this.setupKeyboardDetection();
+        this.setupGuiOpenListener();
+        this.setupResizeListener();
         
         // Don't auto-show - GameScene will show controls when the game is ready
     }
@@ -139,7 +161,7 @@ export class MobileControls {
             
             if (gameKeys.includes(e.key)) {
                 this.keyboardUsed = true;
-                this.hide();
+                this.updateDeviceVisibility();
                 // Remove listener - decision is permanent until page reload
                 if (this.keyboardListener) {
                     window.removeEventListener('keydown', this.keyboardListener);
@@ -148,6 +170,20 @@ export class MobileControls {
         };
         
         window.addEventListener('keydown', this.keyboardListener);
+    }
+
+    private updateDeviceVisibility() {
+        const isMobile = MobileControls.isMobileDevice();
+        const showTouchControls = isMobile && !this.keyboardUsed && !this.guiCurrentlyOpen;
+
+        this.joystickZone.style.display = showTouchControls ? 'block' : 'none';
+        this.setButtonVisible(this.sprintButton, showTouchControls);
+        this.setButtonVisible(this.inventoryButton, showTouchControls);
+        this.updateInteractButtonVisibility();
+
+        // Always show top-right buttons (menu + fullscreen)
+        this.setButtonVisible(this.fullscreenButton, true);
+        this.setButtonVisible(this.menuButton, true);
     }
     
     /**
@@ -165,14 +201,9 @@ export class MobileControls {
     }
     
     /**
-     * Show controls (only on mobile devices, and only if keyboard hasn't been used)
+     * Show controls (top-right buttons on all devices; touch controls on mobile)
      */
     show() {
-        // Don't show if keyboard was used or not a mobile device
-        if (this.keyboardUsed || !MobileControls.isMobileDevice()) {
-            return;
-        }
-        
         // Append to #app so controls work in fullscreen mode
         const gameContainer = document.getElementById('app') || document.body;
         if (!gameContainer.contains(this.container)) {
@@ -180,6 +211,8 @@ export class MobileControls {
         }
         this.container.style.display = 'block';
         this.isVisible = true;
+        this.updateDeviceVisibility();
+        this.updateTopButtonPositions();
     }
     
     /**
@@ -197,6 +230,12 @@ export class MobileControls {
     destroy() {
         if (this.keyboardListener) {
             window.removeEventListener('keydown', this.keyboardListener);
+        }
+        if (this.guiOpenListener) {
+            window.removeEventListener('gui-open-changed', this.guiOpenListener as EventListener);
+        }
+        if (this.resizeListener) {
+            window.removeEventListener('resize', this.resizeListener);
         }
         this.container.remove();
         this.isVisible = false;
@@ -217,6 +256,112 @@ export class MobileControls {
         // Reset joystick visual
         this.joystickKnob.style.transform = 'translate(-50%, -50%)';
         this.joystickBase.classList.remove('active');
+    }
+
+    private setupGuiOpenListener() {
+        this.guiOpenListener = (event: Event) => {
+            const customEvent = event as CustomEvent<{ isOpen: boolean }>;
+            this.setGuiOpen(customEvent.detail?.isOpen === true);
+        };
+        window.addEventListener('gui-open-changed', this.guiOpenListener as EventListener);
+    }
+
+    private setGuiOpen(isOpen: boolean) {
+        this.guiCurrentlyOpen = isOpen;
+        this.updateDeviceVisibility();
+
+        if (isOpen) {
+            this.sprintButton.classList.remove('active');
+            this.interactButton.classList.remove('active');
+            this.fullscreenButton.classList.remove('active');
+        }
+    }
+
+    /**
+     * Update available interaction - called by InteractionManager
+     */
+    setAvailableInteraction(interaction: AvailableInteraction | null) {
+        this.currentInteraction = interaction;
+        this.updateInteractButtonVisibility();
+        this.updateInteractButtonIcon();
+    }
+
+    /**
+     * Update interact button visibility based on interaction availability and GUI state
+     */
+    private updateInteractButtonVisibility() {
+        // Only show if: not in GUI AND there's an available interaction
+        const isMobile = MobileControls.isMobileDevice();
+        const shouldShow = !this.guiCurrentlyOpen && this.currentInteraction !== null && isMobile && !this.keyboardUsed;
+        this.setButtonVisible(this.interactButton, shouldShow);
+    }
+
+    /**
+     * Update interact button icon based on interaction type
+     */
+    private updateInteractButtonIcon() {
+        if (!this.currentInteraction) return;
+
+        const iconContainer = this.interactButton.querySelector('.action-icon');
+        if (!iconContainer) return;
+
+        switch (this.currentInteraction.type) {
+            case InteractionType.Shove:
+                // Lucide "hand" icon for shoving
+                iconContainer.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-hand">
+                        <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/>
+                        <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/>
+                        <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/>
+                        <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
+                    </svg>
+                `;
+                break;
+            default:
+                // Default pointer icon
+                iconContainer.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pointer-icon lucide-pointer">
+                        <path d="M22 14a8 8 0 0 1-8 8"/>
+                        <path d="M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/>
+                        <path d="M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1"/>
+                        <path d="M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10"/>
+                        <path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
+                    </svg>
+                `;
+        }
+    }
+
+    private setButtonVisible(button: HTMLElement, visible: boolean) {
+        button.style.display = visible ? 'flex' : 'none';
+    }
+
+    private setupResizeListener() {
+        this.resizeListener = () => {
+            if (this.isVisible) {
+                this.updateTopButtonPositions();
+            }
+        };
+        window.addEventListener('resize', this.resizeListener);
+    }
+
+    private getNavbarHeight(): number {
+        const navbar = document.querySelector('.game-navbar, .navbar, nav, header') as HTMLElement | null;
+        if (navbar) {
+            const rect = navbar.getBoundingClientRect();
+            // Only count navbar if it's visible
+            const isVisible = rect.height > 0 && rect.width > 0;
+            if (isVisible) {
+                return rect.height;
+            }
+        }
+        return 0;
+    }
+
+    private updateTopButtonPositions() {
+        const navbarHeight = this.getNavbarHeight();
+        const topOffset = navbarHeight + 16;
+        this.fullscreenButton.style.top = `${topOffset}px`;
+        this.menuButton.style.top = `${topOffset}px`;
     }
     
     // ==================== UI Creation ====================
@@ -264,7 +409,7 @@ export class MobileControls {
             bottom: 50px;
             width: 120px;
             height: 120px;
-            border-radius: 50%;
+            border-radius: ${this.borderRadius};
             background: rgba(40, 40, 40, 0.7);
             border: 3px solid rgba(255, 255, 255, 0.3);
             box-shadow: 
@@ -335,7 +480,7 @@ export class MobileControls {
             transform: translate(-50%, -50%);
             width: 50px;
             height: 50px;
-            border-radius: 50%;
+            border-radius: ${this.borderRadius};
             background: linear-gradient(145deg, #555555, #3a3a3a);
             border: 2px solid rgba(255, 255, 255, 0.4);
             box-shadow: 
@@ -349,13 +494,11 @@ export class MobileControls {
     private createSprintButton(): HTMLElement {
         const button = document.createElement('div');
         button.id = 'sprint-button';
+        // Using Lucide's "chrevrons-up" icon
         button.innerHTML = `
             <div class="sprint-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7"/>
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevrons-up-icon lucide-chevrons-up"><path d="m17 11-5-5-5 5"/><path d="m17 18-5-5-5 5"/></svg>
             </div>
-            <span class="sprint-label">SPRINT</span>
         `;
         button.style.cssText = `
             position: absolute;
@@ -363,7 +506,7 @@ export class MobileControls {
             bottom: 50px;
             width: 80px;
             height: 80px;
-            border-radius: 50%;
+            border-radius: ${this.borderRadius};
             background: rgba(40, 40, 40, 0.7);
             border: 3px solid rgba(255, 255, 255, 0.3);
             box-shadow: 
@@ -388,13 +531,6 @@ export class MobileControls {
                 color: rgba(255, 255, 255, 0.7);
                 margin-bottom: 2px;
             }
-            #sprint-button .sprint-label {
-                font-family: 'Minecraft', sans-serif;
-                font-size: 9px;
-                color: rgba(255, 255, 255, 0.6);
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }
             #sprint-button.active {
                 background: rgba(255, 102, 170, 0.5) !important;
                 border-color: rgba(255, 102, 170, 0.8) !important;
@@ -403,7 +539,41 @@ export class MobileControls {
             #sprint-button.active .sprint-icon {
                 color: #fff;
             }
-            #sprint-button.active .sprint-label {
+            #inventory-button, #interact-button {
+                position: absolute;
+                right: 50px;
+                width: 64px;
+                height: 64px;
+                border-radius: 16px;
+                background: rgba(40, 40, 40, 0.7);
+                border: 2px solid rgba(255, 255, 255, 0.25);
+                box-shadow:
+                    inset 0 0 12px rgba(0, 0, 0, 0.35),
+                    0 0 8px rgba(0, 0, 0, 0.25);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                pointer-events: auto;
+                touch-action: none;
+                transition: background 0.15s, transform 0.1s, border-color 0.15s;
+                opacity: 0.8;
+            }
+            #inventory-button { bottom: 150px; }
+            #interact-button { bottom: 230px; }
+            #inventory-button .action-icon,
+            #interact-button .action-icon {
+                width: 26px;
+                height: 26px;
+                color: rgba(255, 255, 255, 0.75);
+            }
+            #inventory-button.active,
+            #interact-button.active {
+                background: rgba(255, 102, 170, 0.45) !important;
+                border-color: rgba(255, 102, 170, 0.8) !important;
+                transform: scale(0.95);
+            }
+            #inventory-button.active .action-icon,
+            #interact-button.active .action-icon {
                 color: #fff;
             }
             #joystick-base.active {
@@ -413,9 +583,14 @@ export class MobileControls {
             #fullscreen-button {
                 opacity: 0.6;
             }
-            #fullscreen-button:active {
+            #fullscreen-button.active {
                 opacity: 1;
+                background: rgba(255, 102, 170, 0.45) !important;
+                border-color: rgba(255, 102, 170, 0.8) !important;
                 transform: scale(0.95);
+                box-shadow:
+                    inset 0 0 10px rgba(0, 0, 0, 0.3),
+                    0 0 8px rgba(255, 102, 170, 0.35);
             }
             #fullscreen-button .fs-icon {
                 width: 20px;
@@ -431,22 +606,26 @@ export class MobileControls {
     private createFullscreenButton(): HTMLElement {
         const button = document.createElement('div');
         button.id = 'fullscreen-button';
+        // Using Lucide's "maximize" icon (will be updated dynamically)
         button.innerHTML = `
             <div class="fs-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3"/>
+                    <path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+                    <path d="M3 16v3a2 2 0 0 0 2 2h3"/>
+                    <path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
                 </svg>
             </div>
         `;
         button.style.cssText = `
             position: absolute;
-            left: 50px;
-            bottom: 180px;
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
+            right: 66px;
+            top: 16px;
+            width: 36px;
+            height: 36px;
+            border-radius: ${parseFloat(this.borderRadius) * 0.5}px;
             background: rgba(40, 40, 40, 0.7);
-            border: 2px solid rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.25);
             box-shadow: 
                 inset 0 0 10px rgba(0, 0, 0, 0.3),
                 0 0 8px rgba(0, 0, 0, 0.2);
@@ -455,15 +634,21 @@ export class MobileControls {
             justify-content: center;
             pointer-events: auto;
             touch-action: none;
-            transition: opacity 0.15s, transform 0.1s;
+            transition: opacity 0.15s, transform 0.1s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
         `;
         
-        // Handle fullscreen toggle
-        button.addEventListener('click', () => this.toggleFullscreen());
-        button.addEventListener('touchend', (e) => {
+        // Handle fullscreen toggle (trigger on release)
+        button.addEventListener('pointerdown', (e) => {
             e.preventDefault();
+            button.classList.add('active');
+        });
+        button.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            button.classList.remove('active');
             this.toggleFullscreen();
         });
+        button.addEventListener('pointerleave', () => button.classList.remove('active'));
+        button.addEventListener('pointercancel', () => button.classList.remove('active'));
         
         // Update icon when fullscreen changes
         document.addEventListener('fullscreenchange', () => this.updateFullscreenIcon(button));
@@ -471,6 +656,134 @@ export class MobileControls {
         document.addEventListener('mozfullscreenchange', () => this.updateFullscreenIcon(button));
         document.addEventListener('MSFullscreenChange', () => this.updateFullscreenIcon(button));
         
+        return button;
+    }
+
+    private createMenuButton(): HTMLElement {
+        const button = document.createElement('div');
+        button.id = 'menu-button';
+        // Using Lucide's "menu" icon (hamburger)
+        button.innerHTML = `
+            <div class="menu-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="4" x2="20" y1="12" y2="12"/>
+                    <line x1="4" x2="20" y1="6" y2="6"/>
+                    <line x1="4" x2="20" y1="18" y2="18"/>
+                </svg>
+            </div>
+        `;
+        button.style.cssText = `
+            position: absolute;
+            right: 16px;
+            top: 16px;
+            width: 36px;
+            height: 36px;
+            border-radius: ${parseFloat(this.borderRadius) * 0.5}px;
+            background: rgba(40, 40, 40, 0.7);
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 
+                inset 0 0 10px rgba(0, 0, 0, 0.3),
+                0 0 8px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            touch-action: none;
+            transition: opacity 0.15s, transform 0.1s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+        `;
+
+        // Style the icon
+        const style = document.createElement('style');
+        style.textContent = `
+            #menu-button {
+                opacity: 0.6;
+            }
+            #menu-button .menu-icon {
+                width: 16px;
+                height: 16px;
+                color: rgba(255, 255, 255, 0.8);
+            }
+            #menu-button.active {
+                opacity: 1;
+                background: rgba(255, 102, 170, 0.45) !important;
+                border-color: rgba(255, 102, 170, 0.8) !important;
+                transform: scale(0.95);
+                box-shadow:
+                    inset 0 0 10px rgba(0, 0, 0, 0.3),
+                    0 0 8px rgba(255, 102, 170, 0.35);
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Handle menu toggle (trigger on release)
+        button.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            button.classList.add('active');
+        });
+        button.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            button.classList.remove('active');
+            window.dispatchEvent(new CustomEvent('mobile:menu'));
+        });
+        button.addEventListener('pointerleave', () => button.classList.remove('active'));
+        button.addEventListener('pointercancel', () => button.classList.remove('active'));
+
+        return button;
+    }
+
+    private createInventoryButton(): HTMLElement {
+        const button = document.createElement('div');
+        button.id = 'inventory-button';
+        // Using Lucide's "backpack" icon
+        button.innerHTML = `
+            <div class="action-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-backpack-icon lucide-backpack"><path d="M4 10a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 10h8"/><path d="M8 18h8"/><path d="M8 22v-6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+            </div>
+        `;
+
+        const fire = () => window.dispatchEvent(new CustomEvent('mobile:inventory'));
+        button.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            button.classList.add('active');
+        });
+        button.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            button.classList.remove('active');
+            fire();
+        });
+        button.addEventListener('pointerleave', () => button.classList.remove('active'));
+        button.addEventListener('pointercancel', () => button.classList.remove('active'));
+
+        return button;
+    }
+
+    private createInteractButton(): HTMLElement {
+        const button = document.createElement('div');
+        button.id = 'interact-button';
+        // Using Lucide's "pointer" icon (hand with pointing finger) - default icon
+        button.innerHTML = `
+            <div class="action-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pointer-icon lucide-pointer"><path d="M22 14a8 8 0 0 1-8 8"/><path d="M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1"/><path d="M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10"/><path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+            </div>
+        `;
+
+        // Start hidden - will be shown when interaction is available
+        button.style.display = 'none';
+
+        // Interact fires on press (not release) for faster response
+        const fire = () => window.dispatchEvent(new CustomEvent('mobile:interact'));
+        button.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            button.classList.add('active');
+            fire(); // Fire immediately on press
+        });
+        button.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            button.classList.remove('active');
+        });
+        button.addEventListener('pointerleave', () => button.classList.remove('active'));
+        button.addEventListener('pointercancel', () => button.classList.remove('active'));
+
         return button;
     }
     
@@ -545,20 +858,26 @@ export class MobileControls {
         const isFullscreen = this.isAnyFullscreen();
         
         if (isFullscreen) {
-            // Show exit fullscreen icon
+            // Show exit fullscreen icon (Lucide "minimize")
             button.innerHTML = `
                 <div class="fs-icon">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M8 3v3a2 2 0 0 1-2 2H3"/>
+                        <path d="M21 8h-3a2 2 0 0 1-2-2V3"/>
+                        <path d="M3 16h3a2 2 0 0 1 2 2v3"/>
+                        <path d="M16 21v-3a2 2 0 0 1 2-2h3"/>
                     </svg>
                 </div>
             `;
         } else {
-            // Show enter fullscreen icon
+            // Show enter fullscreen icon (Lucide "maximize")
             button.innerHTML = `
                 <div class="fs-icon">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3"/>
+                        <path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+                        <path d="M3 16v3a2 2 0 0 0 2 2h3"/>
+                        <path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
                     </svg>
                 </div>
             `;

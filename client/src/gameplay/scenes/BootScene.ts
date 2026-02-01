@@ -45,7 +45,6 @@ export class BootScene extends Phaser.Scene {
     }
 
     private async requestInstance() {
-        const TIMEOUT_MS = 5000;
         const limboFallback: IInstanceInfo = { 
             instanceId: 'local',
             locationId: 'limbo',
@@ -55,16 +54,30 @@ export class BootScene extends Phaser.Scene {
             maxPlayers: 50
         };
 
-        // Check if user was previously disconnected - send them to limbo
-        if (DisconnectModal.wasDisconnected()) {
-            DisconnectModal.clearDisconnectedFlag();
-            console.log('[BootScene] User was previously disconnected, sending to limbo');
+        // If AFK flag is set, send to limbo
+        if (localStorage.getItem('cfwk_afk') === 'true') {
+            console.warn('[BootScene] Limbo route: AFK flag detected');
             this.startGame(limboFallback);
             return;
         }
 
-        // Race between instance request and timeout
-        const instancePromise = (async () => {
+        // If limbo reason is set (disconnect/ban), send to limbo
+        const limboReason = localStorage.getItem('cfwk_limbo_reason');
+        if (limboReason) {
+            console.warn(`[BootScene] Limbo route: reason=${limboReason}`);
+            this.startGame(limboFallback);
+            return;
+        }
+
+        // Check if user was previously disconnected - send them to limbo
+        if (DisconnectModal.wasDisconnected()) {
+            DisconnectModal.clearDisconnectedFlag();
+            console.warn('[BootScene] Limbo route: previously disconnected flag');
+            this.startGame(limboFallback);
+            return;
+        }
+
+        const attemptJoin = async () => {
             const instance = await this.networkManager.requestInstance('lobby');
             if (!instance) return null;
             
@@ -89,13 +102,17 @@ export class BootScene extends Phaser.Scene {
             }
             
             return instance;
-        })();
+        };
 
-        const timeoutPromise = new Promise<null>((resolve) => {
-            setTimeout(() => resolve(null), TIMEOUT_MS);
-        });
+        let result: IInstanceInfo | "DUPLICATE_CONNECTION" | string | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            result = await attemptJoin();
 
-        const result = await Promise.race([instancePromise, timeoutPromise]);
+            if (result) break;
+
+            // Small delay before retry
+            await new Promise((resolve) => setTimeout(resolve, 500));
+        }
         
         // Handle duplicate connection error
         if (result === "DUPLICATE_CONNECTION") {
@@ -114,8 +131,10 @@ export class BootScene extends Phaser.Scene {
             const banMessage = isPermanent 
                 ? "You are permanently banned."
                 : `You are banned until ${date.toLocaleString()}`;
-            
-            DisconnectModal.show(0, banMessage, "BANNED");
+
+            localStorage.setItem('cfwk_limbo_reason', 'ban');
+            localStorage.setItem('cfwk_limbo_message', banMessage);
+            console.warn('[BootScene] Limbo route: IP banned');
             this.startGame(limboFallback);
             return;
         }
@@ -131,8 +150,10 @@ export class BootScene extends Phaser.Scene {
             const banMessage = isPermanent 
                 ? "Your account is permanently banned."
                 : `Your account is banned until ${date.toLocaleString()}`;
-            
-            DisconnectModal.show(0, banMessage, "ACCOUNT BANNED");
+
+            localStorage.setItem('cfwk_limbo_reason', 'ban');
+            localStorage.setItem('cfwk_limbo_message', banMessage);
+            console.warn('[BootScene] Limbo route: account banned');
             this.startGame(limboFallback);
             return;
         }
@@ -140,7 +161,9 @@ export class BootScene extends Phaser.Scene {
         if (result && typeof result !== 'string') {
             this.startGame(result);
         } else {
-            // Timeout or failure - go to limbo silently
+            // Timeout or failure - go to limbo
+            const error = this.networkManager.getConnectionError();
+            console.warn(`[BootScene] Limbo route: instance request/connect failed${error ? ` (${error})` : ''}`);
             this.startGame(limboFallback);
         }
     }

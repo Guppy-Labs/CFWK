@@ -30,6 +30,9 @@ export interface IPlayer {
     odcid?: string;      // MongoDB ObjectId for consistent color tinting
     direction?: number;   // 0-7 for 8-way direction
     isAfk?: boolean;     // AFK status for transparency
+    afkSince?: number;   // Server timestamp (ms) when AFK started
+    isGuiOpen?: boolean; // Whether main GUI is open
+    isChatOpen?: boolean; // Whether chat is open/focused
 }
 
 // --- Map System Types ---

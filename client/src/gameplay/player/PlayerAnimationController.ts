@@ -16,7 +16,7 @@ export enum Direction {
     DownLeft = 7   // mirrors DownRight
 }
 
-export type AnimationSet = 'idle' | 'walk' | 'run' | 'turn';
+export type AnimationSet = 'idle' | 'walk' | 'run' | 'turn' | 'interact';
 
 export type PlayerAnimationConfig = {
     frameWidth?: number;
@@ -24,9 +24,11 @@ export type PlayerAnimationConfig = {
     idleFrames?: number;
     walkFrames?: number;
     runFrames?: number;
+    interactFrames?: number;
     idleFrameRate?: number;
     walkFrameRate?: number;
     runFrameRate?: number;
+    interactFrameRate?: number;
 };
 
 /**
@@ -56,7 +58,9 @@ export class PlayerAnimationController {
             runFrames: config.runFrames ?? 6,
             idleFrameRate: config.idleFrameRate ?? 6,
             walkFrameRate: config.walkFrameRate ?? 8,
-            runFrameRate: config.runFrameRate ?? 10
+            runFrameRate: config.runFrameRate ?? 10,
+            interactFrames: config.interactFrames ?? 4,
+            interactFrameRate: config.interactFrameRate ?? 16
         };
     }
 
@@ -85,6 +89,11 @@ export class PlayerAnimationController {
             frameWidth,
             frameHeight
         });
+
+        this.scene.load.spritesheet('player-interact', '/assets/char/test/interact.png', {
+            frameWidth,
+            frameHeight
+        });
     }
 
     /**
@@ -93,7 +102,7 @@ export class PlayerAnimationController {
     createAnimations() {
         if (this.animationsCreated) return;
 
-        const { idleFrames, walkFrames, runFrames, idleFrameRate, walkFrameRate, runFrameRate } = this.config;
+        const { idleFrames, walkFrames, runFrames, idleFrameRate, walkFrameRate, runFrameRate, interactFrames, interactFrameRate } = this.config;
 
         // Create animations for each direction (5 rows in sheet)
         // Rows: 0=Down, 1=DownRight, 2=Right, 3=UpRight, 4=Up
@@ -147,6 +156,21 @@ export class PlayerAnimationController {
                 frames,
                 frameRate: runFrameRate,
                 repeat: -1
+            });
+        });
+
+        // Interact animations (one-shot)
+        directions.forEach(({ name, row }) => {
+            const frames = this.scene.anims.generateFrameNumbers('player-interact', {
+                start: row * interactFrames,
+                end: row * interactFrames + interactFrames - 1
+            });
+
+            this.scene.anims.create({
+                key: `player-interact-${name}`,
+                frames,
+                frameRate: interactFrameRate,
+                repeat: 0
             });
         });
 
@@ -265,6 +289,41 @@ export class PlayerAnimationController {
      */
     getInitialTextureKey(): string {
         return 'player-idle';
+    }
+
+    /**
+     * Play interact animation and return its duration in ms
+     */
+    playInteract(player: Phaser.Physics.Matter.Sprite, facingAngle: number): number {
+        if (!player || typeof (player as any).play !== 'function') {
+            const { interactFrames, interactFrameRate } = this.config;
+            return (interactFrames / interactFrameRate) * 1000;
+        }
+
+        const direction = this.getDirectionFromAngle(facingAngle);
+        const { animKey, flipX } = this.getAnimationKey('interact', direction);
+
+        player.setFlipX(flipX);
+        if (this.scene.anims.exists(animKey)) {
+            this.currentAnimation = 'interact';
+            player.play(animKey, true);
+        }
+
+        const anim = this.scene.anims.get(animKey);
+        if (anim) {
+            return anim.duration;
+        }
+
+        const { interactFrames, interactFrameRate } = this.config;
+        return (interactFrames / interactFrameRate) * 1000;
+    }
+
+    /**
+     * Get the duration of a single interact animation frame in ms
+     */
+    getInteractFrameDurationMs(): number {
+        const { interactFrameRate } = this.config;
+        return (1 / interactFrameRate) * 1000;
     }
 
     /**

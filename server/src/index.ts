@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import path from "path";
 import session from "express-session";
+import MongoStore from "connect-mongo";
 import passport from "passport";
 import cookieParser from "cookie-parser";
 
@@ -32,10 +33,21 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
+const mongoURI = process.env.MONGO_URI;
+if (!mongoURI) {
+    console.error("MONGO_URI not set in environment variables");
+    process.exit(1);
+}
+
 app.use(session({
     secret: process.env.SESSION_SECRET || "super_secret_key_cfwk",
     resave: false,
     saveUninitialized: false,
+    store: MongoStore.create({
+        mongoUrl: mongoURI,
+        collectionName: "sessions",
+        ttl: 60 * 60 * 24 * 7 // 1 week
+    }),
     cookie: {
         secure: process.env.NODE_ENV === "production",
         maxAge: 1000 * 60 * 60 * 24 * 7 // 1 week
@@ -51,11 +63,6 @@ app.use("/api/auth", authRoutes);
 app.use("/api/account", accountRoutes);
 
 // MongoDB connection
-const mongoURI = process.env.MONGO_URI;
-if (!mongoURI) {
-    console.error("MONGO_URI not set in environment variables");
-    process.exit(1);
-}
 mongoose.connect(mongoURI)
     .then(() => console.log("MongoDB Connected"))
     .catch(err => console.error("MongoDB Connection Error:", err));

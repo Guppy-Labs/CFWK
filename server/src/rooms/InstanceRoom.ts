@@ -18,6 +18,9 @@ export class InstancePlayerSchema extends Schema implements IPlayer {
     @type("string") odcid: string = ""; // MongoDB ObjectId for consistent color
     @type("number") direction: number = 0; // 0-7 for 8-way direction
     @type("boolean") isAfk: boolean = false; // AFK status for transparency
+    @type("number") afkSince: number = 0; // Timestamp (ms) when AFK started
+    @type("boolean") isGuiOpen: boolean = false; // Main GUI open state
+    @type("boolean") isChatOpen: boolean = false; // Chat open/focused state
 }
 
 /**
@@ -160,8 +163,85 @@ export class InstanceRoom extends Room<InstanceState> {
             const player = this.state.players.get(client.sessionId);
             if (player) {
                 player.isAfk = data.isAfk;
+                player.afkSince = data.isAfk ? Date.now() : 0;
                 console.log(`[InstanceRoom] Player ${client.sessionId} AFK: ${data.isAfk}`);
             }
+        });
+
+        // Handle GUI open state
+        this.onMessage("gui", (client, data: { isOpen: boolean }) => {
+            const player = this.state.players.get(client.sessionId);
+            if (player) {
+                player.isGuiOpen = data.isOpen;
+            }
+        });
+
+        // Handle chat focus state
+        this.onMessage("chatFocus", (client, data: { isOpen: boolean }) => {
+            const player = this.state.players.get(client.sessionId);
+            if (player) {
+                player.isChatOpen = data.isOpen;
+            }
+        });
+
+        // Handle shove interactions
+        this.onMessage("shove", (client, data: { targetSessionId: string }) => {
+            const attacker = this.state.players.get(client.sessionId);
+            const target = this.state.players.get(data.targetSessionId);
+            
+            if (!attacker || !target) {
+                console.log(`[InstanceRoom] Shove failed: invalid players`);
+                return;
+            }
+
+            // Prevent shoving AFK-ghosted players (AFK for >= 1 minute)
+            if (target.isAfk && target.afkSince && Date.now() - target.afkSince >= 60000) {
+                console.log(`[InstanceRoom] Shove rejected: target is AFK-ghosted`);
+                return;
+            }
+            
+            // Calculate distance between players
+            const dx = target.x - attacker.x;
+            const dy = target.y - attacker.y;
+            const distance = Math.hypot(dx, dy);
+            
+            // Server-side validation: max 60px for shove to work
+            const maxShoveDistance = 60;
+            if (distance > maxShoveDistance) {
+                console.log(`[InstanceRoom] Shove rejected: too far (${distance}px)`);
+                return;
+            }
+            
+            // Calculate shove direction (normalized)
+            const length = Math.max(distance, 1); // Avoid division by zero
+            const dirX = dx / length;
+            const dirY = dy / length;
+            
+            // Shove force (impulse velocity)
+            const shoveForce = 360; // pixels to move target (2x for impact)
+            const knockbackForce = 30; // counter-force on attacker
+            
+            // Broadcast shove event to all clients
+            this.broadcast("shove", {
+                attackerSessionId: client.sessionId,
+                targetSessionId: data.targetSessionId,
+                // Force applied to target (pushed away from attacker)
+                targetForceX: dirX * shoveForce,
+                targetForceY: dirY * shoveForce,
+                // Small counter-force on attacker (pushed back slightly)
+                attackerForceX: -dirX * knockbackForce,
+                attackerForceY: -dirY * knockbackForce
+            });
+            
+            console.log(`[InstanceRoom] ${attacker.username} shoved ${target.username}`);
+        });
+
+        // Handle shove attempts (animation sync even on miss)
+        this.onMessage("shoveAttempt", (client, data: { targetSessionId: string }) => {
+            this.broadcast("shoveAttempt", {
+                attackerSessionId: client.sessionId,
+                targetSessionId: data.targetSessionId
+            });
         });
 
         // Handle chat messages

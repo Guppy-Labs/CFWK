@@ -363,6 +363,11 @@ export class BookUI {
         this.container.setVisible(true);
     }
 
+    openToTab(tabLabel: string) {
+        this.setActiveTab(tabLabel);
+        this.open();
+    }
+
     close() {
         this.openState = false;
         this.container.setVisible(false);

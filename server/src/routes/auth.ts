@@ -219,11 +219,11 @@ router.get('/google/callback', (req, res, next) => {
         req.login(user, (err) => {
             if (err) return next(err);
             
-            if (!user.username) {
-                 return res.redirect(`${process.env.CLIENT_URL || ''}/onboarding`);
-            }
-             
-            res.redirect(`${process.env.CLIENT_URL || ''}/account`);
+              if (!user.username) {
+                  return res.redirect(`${process.env.CLIENT_URL || ''}/onboarding`);
+              }
+            
+              res.redirect(`${process.env.CLIENT_URL || ''}/login?oauth=google`);
         });
     })(req, res, next);
 });
@@ -249,11 +249,11 @@ router.get('/discord/callback', (req, res, next) => {
         req.login(user, (err) => {
             if (err) return next(err);
 
-            if (!user.username) {
-                 return res.redirect(`${process.env.CLIENT_URL || ''}/onboarding`);
-            }
+              if (!user.username) {
+                  return res.redirect(`${process.env.CLIENT_URL || ''}/onboarding`);
+              }
 
-            res.redirect(`${process.env.CLIENT_URL || ''}/account`);
+              res.redirect(`${process.env.CLIENT_URL || ''}/login?oauth=discord`);
         });
     })(req, res, next);
 });

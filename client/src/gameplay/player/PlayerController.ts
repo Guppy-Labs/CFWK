@@ -6,6 +6,9 @@ import { MobileControls } from '../ui/MobileControls';
 import { NetworkManager } from '../network/NetworkManager';
 import { currentUser } from '../index';
 import { EmojiMap } from '../ui/EmojiMap';
+import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
+import { InteractionManager } from '../interaction/InteractionManager';
+import { RemotePlayerManager } from './RemotePlayerManager';
 
 /**
  * Generates a consistent color from a string (user ID)
@@ -90,6 +93,15 @@ export class PlayerController {
     private readonly afkThreshold = 60000; // 1 minute until AFK
     private readonly afkKickThreshold = 300000; // 5 minutes until kick
     private afkAlpha = 1; // Current transparency (1 = fully visible)
+    private afkKicked = false;
+    private readonly afkOverlayId = 'cfwk-afk-overlay';
+    private guiEffect?: GuiSwirlEffect;
+
+    // Interaction system
+    private interactionManager: InteractionManager;
+    private interactKey?: Phaser.Input.Keyboard.Key;
+    private mobileInteractListener?: () => void;
+    private interactionLockUntil = 0;
 
     constructor(scene: Phaser.Scene, config: PlayerControllerConfig = {}) {
         this.scene = scene;
@@ -117,8 +129,13 @@ export class PlayerController {
             walkFrameRate: 8
         });
 
+        // Initialize interaction system
+        this.interactionManager = new InteractionManager();
+
         this.setupInput();
         this.setupCollisionTracking();
+
+        this.guiEffect = new GuiSwirlEffect(this.scene);
         
         // Initialize activity time
         this.lastActivityTime = Date.now();
@@ -236,7 +253,8 @@ export class PlayerController {
         // Check if chat or GUI is open - disable game inputs
         const chatFocused = this.scene.registry.get('chatFocused') === true;
         const guiOpen = this.scene.registry.get('guiOpen') === true;
-        const inputBlocked = chatFocused || guiOpen;
+        const isInteractionLocked = this.scene.time.now < this.interactionLockUntil;
+        const inputBlocked = chatFocused || guiOpen || isInteractionLocked;
 
         // Get mobile input state
         const mobileInput = this.mobileControls?.getInputState();
@@ -331,7 +349,9 @@ export class PlayerController {
         if (inputUp) inputY -= 1;
         if (inputDown) inputY += 1;
         
-        this.animationController.update(this.player, inputX, inputY, this.currentRotation);
+        if (!isInteractionLocked) {
+            this.animationController.update(this.player, inputX, inputY, this.currentRotation);
+        }
 
         // Update shadow
         this.shadow?.update();
@@ -357,6 +377,22 @@ export class PlayerController {
         // Update AFK state
         this.updateAfkState(isMoving || inputSprint);
 
+        // GUI/chat open effect
+        const shouldShowSwirl = guiOpen || chatFocused;
+        this.guiEffect?.setActive(shouldShowSwirl);
+        if (shouldShowSwirl) {
+            this.guiEffect?.update(this.player.x, this.player.y - 25);
+        }
+
+        // Update interaction detection
+        this.interactionManager.updateLocalPlayer(this.player.x, this.player.y, this.currentRotation);
+        this.interactionManager.update();
+        
+        // Handle E key for interaction
+        if (!inputBlocked && Phaser.Input.Keyboard.JustDown(this.interactKey!)) {
+            this.tryInteract();
+        }
+
         // Sync state to server
         this.syncToServer(delta);
     }
@@ -369,6 +405,20 @@ export class PlayerController {
 
         const now = Date.now();
 
+        const activitySignal = this.scene.registry.get('afkActivity');
+        if (typeof activitySignal === 'number' && activitySignal > this.lastActivityTime) {
+            this.lastActivityTime = activitySignal;
+
+            if (this.isAfk) {
+                this.isAfk = false;
+                this.networkManager.sendAfk(false);
+                this.afkAlpha = 1;
+                this.player.setAlpha(1);
+                this.shadow?.setAlpha(1);
+                this.hideAfkOverlay();
+            }
+        }
+
         // Any input resets the activity timer
         if (hasInput) {
             this.lastActivityTime = now;
@@ -380,6 +430,7 @@ export class PlayerController {
                 this.afkAlpha = 1;
                 this.player.setAlpha(1);
                 this.shadow?.setAlpha(1);
+                this.hideAfkOverlay();
             }
             return;
         }
@@ -387,11 +438,14 @@ export class PlayerController {
         const idleTime = now - this.lastActivityTime;
 
         // 5 minute kick
-        if (idleTime >= this.afkKickThreshold) {
-            console.log('[PlayerController] AFK timeout - disconnecting');
+        if (idleTime >= this.afkKickThreshold && !this.afkKicked) {
+            this.afkKicked = true;
+            console.log('[PlayerController] AFK timeout - sending to limbo');
+            localStorage.setItem('cfwk_afk', 'true');
+            this.scene.events.emit('stop-audio');
             this.networkManager.disconnect();
-            // Redirect to login or show message
-            window.location.href = '/login?reason=afk';
+            this.scene.scene.stop('UIScene');
+            this.scene.scene.start('BootScene');
             return;
         }
 
@@ -408,7 +462,51 @@ export class PlayerController {
             this.afkAlpha += (targetAlpha - this.afkAlpha) * 0.05;
             this.player.setAlpha(this.afkAlpha);
             this.shadow?.setAlpha(this.afkAlpha);
+
+            const remainingMs = Math.max(0, this.afkKickThreshold - idleTime);
+            this.showAfkOverlay(remainingMs);
+        } else {
+            this.hideAfkOverlay();
         }
+    }
+
+    private showAfkOverlay(remainingMs: number) {
+        let overlay = document.getElementById(this.afkOverlayId);
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = this.afkOverlayId;
+            overlay.style.position = 'fixed';
+            overlay.style.top = '0';
+            overlay.style.left = '0';
+            overlay.style.width = '100%';
+            overlay.style.height = '100%';
+            overlay.style.display = 'flex';
+            overlay.style.alignItems = 'center';
+            overlay.style.justifyContent = 'center';
+            overlay.style.background = 'rgba(0, 0, 0, 0.55)';
+            overlay.style.zIndex = '9998';
+            overlay.style.pointerEvents = 'none';
+            overlay.style.fontFamily = 'Minecraft, monospace';
+            overlay.style.color = '#ffffff';
+            overlay.style.fontSize = '64px';
+            overlay.style.textShadow = '4px 4px 0 #000';
+            document.body.appendChild(overlay);
+        }
+
+        const totalSeconds = Math.ceil(remainingMs / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        overlay.innerHTML = `
+            <div style="text-align:center;">
+                <div style="font-size:18px; letter-spacing:2px; margin-bottom:8px; text-transform:uppercase;">AFK Disconnect</div>
+                <div>${minutes}:${seconds.toString().padStart(2, '0')}</div>
+            </div>
+        `;
+    }
+
+    private hideAfkOverlay() {
+        const overlay = document.getElementById(this.afkOverlayId);
+        if (overlay) overlay.remove();
     }
 
     showChat(message: string) {
@@ -432,7 +530,7 @@ export class PlayerController {
         const text = this.scene.add.text(0, 0, parsedMessage, {
             fontSize: '8px',
             fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
-            color: '#000000',
+            color: '#f0f0f0',
             wordWrap: { width: maxWidth, useAdvancedWrap: true },
             align: 'center',
             resolution: 2
@@ -443,7 +541,7 @@ export class PlayerController {
 
         // Create background
         const bg = this.scene.add.graphics();
-        bg.fillStyle(0xffffff, 0.95);
+        bg.fillStyle(0x000000, 0.6);
         bg.fillRoundedRect(-width/2, -height/2, width, height, 4);
         
         // Arrow
@@ -563,8 +661,66 @@ export class PlayerController {
         }) as typeof this.wasd;
         this.shiftKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
         
+        // Interact key (E)
+        this.interactKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+        
         // Initialize mobile controls (auto-detects touch devices)
         this.mobileControls = new MobileControls();
+        
+        // Connect mobile controls to interaction system
+        this.interactionManager.onInteractionChange((interaction) => {
+            this.mobileControls?.setAvailableInteraction(interaction);
+        });
+        
+        // Listen for mobile interact button press
+        this.mobileInteractListener = () => {
+            this.tryInteract();
+        };
+        window.addEventListener('mobile:interact', this.mobileInteractListener);
+    }
+    
+    /**
+     * Set the remote player manager for interaction detection
+     */
+    setRemotePlayerManager(manager: RemotePlayerManager) {
+        this.interactionManager.setRemotePlayerManager(manager);
+    }
+    
+    /**
+     * Attempt to execute the current interaction
+     */
+    private tryInteract() {
+        // Ignore if chat or GUI is open
+        const chatFocused = this.scene.registry.get('chatFocused') === true;
+        const guiOpen = this.scene.registry.get('guiOpen') === true;
+        if (chatFocused || guiOpen) return;
+
+        // Prevent re-trigger while locked
+        if (this.scene.time.now < this.interactionLockUntil) return;
+
+        const interaction = this.interactionManager.getCurrentInteraction();
+        if (!interaction) return;
+
+        // Play animation immediately, even if shove misses
+        this.playInteractAnimation();
+
+        // Notify server of shove attempt for animation sync
+        this.networkManager.sendShoveAttempt(interaction.targetSessionId);
+
+        // Delay actual shove by 1 animation frame for visual sync
+        const frameDelayMs = this.animationController.getInteractFrameDurationMs();
+        this.scene.time.delayedCall(frameDelayMs, () => {
+            this.interactionManager.executeInteraction();
+        });
+    }
+
+    /**
+     * Play the interact animation and lock movement while it plays
+     */
+    playInteractAnimation() {
+        if (!this.player) return;
+        const durationMs = this.animationController.playInteract(this.player, this.currentRotation);
+        this.interactionLockUntil = this.scene.time.now + durationMs;
     }
     
     /**
@@ -629,7 +785,12 @@ export class PlayerController {
         if (this.chatTimer) {
             this.chatTimer.remove(false);
         }
+        if (this.mobileInteractListener) {
+            window.removeEventListener('mobile:interact', this.mobileInteractListener);
+        }
         this.mobileControls?.destroy();
         this.shadow?.destroy();
+        this.guiEffect?.destroy();
+        this.interactionManager?.destroy();
     }
 }

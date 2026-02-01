@@ -14,6 +14,8 @@ export class UIScene extends Phaser.Scene {
     private tabKeyUpHandler?: (event: KeyboardEvent) => void;
     private chatKeyHandler?: (event: KeyboardEvent) => void;
     private bookKeyHandler?: (event: KeyboardEvent) => void;
+    private mobileInventoryHandler?: () => void;
+    private mobileMenuHandler?: () => void;
     private networkManager = NetworkManager.getInstance();
     private nextTabListSync = 0;
 
@@ -38,14 +40,19 @@ export class UIScene extends Phaser.Scene {
 
         this.registry.set('guiOpen', false);
 
+        const markActivity = () => this.registry.set('afkActivity', Date.now());
+
         // Setup chat callbacks
         this.chat.setOnSendMessage((message) => {
+            markActivity();
             this.networkManager.sendChatMessage(message);
         });
 
         this.chat.setOnFocusChange((focused) => {
+            if (focused) markActivity();
             // Notify GameScene that chat is focused/unfocused
             this.registry.set('chatFocused', focused);
+            this.networkManager.sendChatFocus(focused);
         });
 
         // Setup chat message listener
@@ -114,6 +121,7 @@ export class UIScene extends Phaser.Scene {
             if (this.registry.get('guiOpen') === true) return;
             // Let the chat handle all keys when focused, or open keys when not
             if (this.chat?.handleKeyDown(event)) {
+                markActivity();
                 event.preventDefault();
                 event.stopPropagation();
             }
@@ -131,11 +139,57 @@ export class UIScene extends Phaser.Scene {
             const isOpen = this.bookUI?.isOpen() === true;
             this.registry.set('guiOpen', isOpen);
             this.chat?.setMobileHintSuppressed(isOpen);
+            window.dispatchEvent(new CustomEvent('gui-open-changed', { detail: { isOpen } }));
             if (isOpen && this.chat?.isChatFocused()) {
                 this.chat.blur();
             }
+            this.networkManager.sendGuiOpen(isOpen);
+            markActivity();
         };
         window.addEventListener('keydown', this.bookKeyHandler, { capture: true });
+
+        this.mobileInventoryHandler = () => {
+            if (this.chat?.isChatFocused()) return;
+            // If already open, just close it
+            if (this.bookUI?.isOpen()) {
+                this.bookUI.close();
+            } else {
+                this.bookUI?.openToTab('Inventory');
+            }
+            const isOpen = this.bookUI?.isOpen() === true;
+            this.registry.set('guiOpen', isOpen);
+            this.chat?.setMobileHintSuppressed(isOpen);
+            window.dispatchEvent(new CustomEvent('gui-open-changed', { detail: { isOpen } }));
+            if (isOpen && this.chat?.isChatFocused()) {
+                this.chat.blur();
+            }
+            this.networkManager.sendGuiOpen(isOpen);
+            markActivity();
+        };
+        window.addEventListener('mobile:inventory', this.mobileInventoryHandler as EventListener);
+
+        this.mobileMenuHandler = () => {
+            if (this.chat?.isChatFocused()) return;
+            // If already open, just close it
+            if (this.bookUI?.isOpen()) {
+                this.bookUI.close();
+            } else {
+                this.bookUI?.openToTab('Settings');
+            }
+            const isOpen = this.bookUI?.isOpen() === true;
+            this.registry.set('guiOpen', isOpen);
+            this.chat?.setMobileHintSuppressed(isOpen);
+            window.dispatchEvent(new CustomEvent('gui-open-changed', { detail: { isOpen } }));
+            if (isOpen && this.chat?.isChatFocused()) {
+                this.chat.blur();
+            }
+            this.networkManager.sendGuiOpen(isOpen);
+            markActivity();
+        };
+        window.addEventListener('mobile:menu', this.mobileMenuHandler as EventListener);
+
+        window.addEventListener('mousedown', markActivity, { capture: true });
+        window.addEventListener('touchstart', markActivity, { capture: true });
 
         this.scale.on('resize', this.onResize, this);
 
@@ -152,6 +206,14 @@ export class UIScene extends Phaser.Scene {
             if (this.bookKeyHandler) {
                 window.removeEventListener('keydown', this.bookKeyHandler, { capture: true } as any);
             }
+            if (this.mobileInventoryHandler) {
+                window.removeEventListener('mobile:inventory', this.mobileInventoryHandler as EventListener);
+            }
+            if (this.mobileMenuHandler) {
+                window.removeEventListener('mobile:menu', this.mobileMenuHandler as EventListener);
+            }
+            window.removeEventListener('mousedown', markActivity, { capture: true } as any);
+            window.removeEventListener('touchstart', markActivity, { capture: true } as any);
             this.scale.off('resize', this.onResize, this);
             this.chat?.destroy();
             this.bookUI?.destroy();
@@ -160,6 +222,7 @@ export class UIScene extends Phaser.Scene {
 
     private onResize() {
         this.bookUI?.layout();
+        this.chat?.refreshLayout();
     }
 
     private setupChatListener() {

@@ -57,7 +57,10 @@ export class RemotePlayerManager {
                 depth: this.config.playerFrontDepth,
                 occlusionManager: this.config.occlusionManager,
                 skipSpawnEffect: !this.initialSyncComplete, // Skip effect for existing players
-                isAfk: player.isAfk || false
+                isAfk: player.isAfk || false,
+                afkSince: player.afkSince || 0,
+                isGuiOpen: player.isGuiOpen || false,
+                isChatOpen: player.isChatOpen || false
             });
 
             // Enable lighting on remote player sprite
@@ -68,8 +71,10 @@ export class RemotePlayerManager {
             
             // Set initial AFK state
             if (player.isAfk) {
-                remotePlayer.setAfk(true);
+                remotePlayer.setAfk(true, player.afkSince || 0);
             }
+
+            remotePlayer.setGuiOpen(player.isGuiOpen || false);
             
             this.remotePlayers.set(sessionId, remotePlayer);
 
@@ -79,7 +84,9 @@ export class RemotePlayerManager {
                 if (remote) {
                     remote.setPosition(player.x, player.y);
                     remote.setAnimation(player.anim || 'idle', player.direction || 0);
-                    remote.setAfk(player.isAfk || false);
+                    remote.setAfk(player.isAfk || false, player.afkSince || 0);
+                    remote.setGuiOpen(player.isGuiOpen || false);
+                    remote.setChatOpen(player.isChatOpen || false);
                 }
             });
         });

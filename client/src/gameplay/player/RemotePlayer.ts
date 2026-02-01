@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { OcclusionManager } from '../map/OcclusionManager';
 import { EmojiMap } from '../ui/EmojiMap';
+import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 
 /**
  * Direction enum matching PlayerAnimationController
@@ -60,6 +61,9 @@ export type RemotePlayerConfig = {
     occlusionManager?: OcclusionManager;
     skipSpawnEffect?: boolean; // True for players already in room on initial sync
     isAfk?: boolean; // Initial AFK state
+    afkSince?: number; // Server timestamp (ms) when AFK started
+    isGuiOpen?: boolean; // Initial GUI open state
+    isChatOpen?: boolean; // Initial chat open/focused state
 };
 
 /**
@@ -76,6 +80,7 @@ export class RemotePlayer {
     private nameplate!: Phaser.GameObjects.Container;
     private nameText!: Phaser.GameObjects.Text;
     private nameBg!: Phaser.GameObjects.Graphics;
+    private afkTimerText?: Phaser.GameObjects.Text;
     
     private targetX: number;
     private targetY: number;
@@ -104,6 +109,11 @@ export class RemotePlayer {
     private isAfk: boolean = false;
     private afkAlpha: number = 1;
     private readonly afkTargetAlpha = 0.4;
+    private readonly afkCountdownMs = 240000; // 4 minutes
+    private afkStartTime: number | null = null;
+    private isGuiOpen: boolean = false;
+    private isChatOpen: boolean = false;
+    private guiEffect?: GuiSwirlEffect;
     private nameplateYOffset: number = -36;
 
     constructor(scene: Phaser.Scene, config: RemotePlayerConfig) {
@@ -131,6 +141,22 @@ export class RemotePlayer {
         this.createSprite(config.x, config.y, config.skipSpawnEffect);
         this.createNameplate(config.skipSpawnEffect, fontSize);
         this.updateAnimation('idle', this.currentDirection);
+
+        this.guiEffect = new GuiSwirlEffect(this.scene);
+        this.isChatOpen = !!config.isChatOpen;
+        this.guiEffect.setActive(!!config.isGuiOpen || !!config.isChatOpen);
+
+        if (config.isGuiOpen) {
+            this.isGuiOpen = true;
+        }
+
+        if (config.isChatOpen) {
+            this.isChatOpen = true;
+        }
+
+        if (config.isAfk) {
+            this.setAfk(true, config.afkSince || 0);
+        }
     }
 
     private createSprite(x: number, y: number, skipSpawnEffect?: boolean) {
@@ -301,7 +327,16 @@ export class RemotePlayer {
         this.nameBg.fillRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight);
 
         // Container for nameplate (above the sprite, accounting for origin)
+        this.afkTimerText = this.scene.add.text(0, -10, '', {
+            fontSize: '6px',
+            fontFamily: 'Minecraft, monospace',
+            color: '#ffffff',
+            resolution: 2
+        }).setOrigin(0.5);
+        this.afkTimerText.setVisible(false);
+
         this.nameplate = this.scene.add.container(this.sprite.x, this.sprite.y + this.nameplateYOffset, [
+            this.afkTimerText,
             this.nameBg,
             this.nameText
         ]);
@@ -348,8 +383,34 @@ export class RemotePlayer {
     /**
      * Set AFK state from server
      */
-    setAfk(isAfk: boolean) {
-        this.isAfk = isAfk;
+    setAfk(isAfk: boolean, afkSince?: number) {
+        const shouldUpdateAfkSince = isAfk && afkSince && afkSince > 0 && this.afkStartTime !== afkSince;
+
+        if (this.isAfk !== isAfk) {
+            this.isAfk = isAfk;
+        } else if (!shouldUpdateAfkSince) {
+            return;
+        }
+
+        if (isAfk) {
+            this.afkStartTime = afkSince && afkSince > 0 ? afkSince : (this.afkStartTime ?? Date.now());
+        } else {
+            this.afkStartTime = null;
+        }
+
+        if (this.afkTimerText) {
+            this.afkTimerText.setVisible(isAfk);
+        }
+    }
+
+    setGuiOpen(isOpen: boolean) {
+        this.isGuiOpen = isOpen;
+        this.guiEffect?.setActive(isOpen || this.isChatOpen);
+    }
+
+    setChatOpen(isOpen: boolean) {
+        this.isChatOpen = isOpen;
+        this.guiEffect?.setActive(this.isGuiOpen || isOpen);
     }
 
     private updateAnimation(anim: string, direction: Direction) {
@@ -436,6 +497,11 @@ export class RemotePlayer {
 
         // Update AFK transparency
         this.updateAfkAlpha();
+        this.updateAfkTimer();
+
+        if (this.isGuiOpen || this.isChatOpen) {
+            this.guiEffect?.update(this.sprite.x, this.sprite.y - 25);
+        }
     }
 
     /**
@@ -451,7 +517,21 @@ export class RemotePlayer {
         if (!this.isSpawning && this.particles.length === 0) {
             this.sprite.setAlpha(this.afkAlpha);
             this.nameplate.setAlpha(this.afkAlpha);
+            if (this.afkTimerText) {
+                this.afkTimerText.setAlpha(this.isAfk ? 0.95 : this.afkAlpha);
+            }
         }
+    }
+
+    private updateAfkTimer() {
+        if (!this.isAfk || !this.afkTimerText || this.afkStartTime === null) return;
+
+        const elapsed = Date.now() - this.afkStartTime;
+        const remaining = Math.max(0, this.afkCountdownMs - elapsed);
+        const totalSeconds = Math.ceil(remaining / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        this.afkTimerText.setText(`${minutes}:${seconds.toString().padStart(2, '0')}`);
     }
 
     /**
@@ -541,9 +621,44 @@ export class RemotePlayer {
     }
 
     /**
+     * Returns true if the player has been AFK long enough to be ghosted
+     */
+    isAfkGhosted(): boolean {
+        if (!this.isAfk || !this.afkStartTime) return false;
+        return Date.now() - this.afkStartTime >= 60000;
+    }
+
+    /**
+     * Play interact animation for this remote player
+     */
+    playInteractAnimation() {
+        if (!this.sprite || typeof (this.sprite as any).play !== 'function') return;
+
+        const directionMap: { [key in Direction]: { name: string; flip: boolean } } = {
+            [Direction.Down]: { name: 'down', flip: false },
+            [Direction.DownRight]: { name: 'down-right', flip: false },
+            [Direction.Right]: { name: 'right', flip: false },
+            [Direction.UpRight]: { name: 'up-right', flip: false },
+            [Direction.Up]: { name: 'up', flip: false },
+            [Direction.UpLeft]: { name: 'up-right', flip: true },
+            [Direction.Left]: { name: 'right', flip: true },
+            [Direction.DownLeft]: { name: 'down-right', flip: true }
+        };
+
+        const { name, flip } = directionMap[this.currentDirection];
+        const animKey = `player-interact-${name}`;
+
+        this.sprite.setFlipX(flip);
+        if (this.scene.anims.exists(animKey)) {
+            this.sprite.play(animKey, true);
+        }
+    }
+
+    /**
      * Destroy and clean up
      */
     destroy() {
+        this.guiEffect?.destroy();
         // Clean up any remaining particles
         for (const particle of this.particles) {
             particle.graphics.destroy();
@@ -582,7 +697,7 @@ export class RemotePlayer {
         const text = this.scene.add.text(0, 0, parsedMessage, {
             fontSize: '8px',
             fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
-            color: '#000000',
+            color: '#f0f0f0',
             wordWrap: { width: maxWidth, useAdvancedWrap: true },
             align: 'center',
             resolution: 2
@@ -593,7 +708,7 @@ export class RemotePlayer {
 
         // Create background
         const bg = this.scene.add.graphics();
-        bg.fillStyle(0xffffff, 0.95);
+        bg.fillStyle(0x000000, 0.6);
         bg.fillRoundedRect(-width/2, -height/2, width, height, 4);
         
         // Arrow
@@ -639,4 +754,5 @@ export class RemotePlayer {
     isDespawning(): boolean {
         return !this.isSpawning && this.particles.length > 0;
     }
+
 }
