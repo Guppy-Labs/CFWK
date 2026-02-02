@@ -63,14 +63,21 @@ export class MapLoader {
         const tilesetKeys: TilesetEntry[] = [];
         const toLoad: string[] = [];
 
+        const tilesetPadding = 2;
+
         tilesets.forEach((tileset: TiledTilesetData) => {
             const key = `tileset-${tileset.name}`;
             if (!this.scene.textures.exists(key) && tileset.image) {
-                const url = encodeURI(`/maps/${tileset.image}`);
+                const paddedImage = tileset.image.startsWith('Tilesets/')
+                    ? tileset.image.replace('Tilesets/', 'Tilesets_padded/')
+                    : tileset.image;
+                const url = encodeURI(`/maps/${paddedImage}`);
                 this.scene.load.image(key, url);
                 toLoad.push(key);
             }
-            tilesetKeys.push({ tileset, key });
+
+            const usePadding = tileset.image?.startsWith('Tilesets/');
+            tilesetKeys.push({ tileset, key, padding: usePadding ? tilesetPadding : 0 });
         });
 
         if (toLoad.length > 0) {
@@ -95,15 +102,32 @@ export class MapLoader {
     ) {
         if (!this.map) return;
 
+        // Ensure tileset textures use nearest filtering to reduce seams
+        tilesetKeys.forEach(({ key }) => {
+            if (this.scene.textures.exists(key)) {
+                this.scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+            }
+        });
+
         // Initialize lighting manager first
         this.lightingManager = new LightingManager(this.scene);
         this.lightingManager.setupFromMap(this.map);
 
         // Add tilesets to map
         const phaserTilesets = tilesetKeys
-            .map(({ tileset, key }) =>
-                this.map!.addTilesetImage(tileset.name, key, tileset.tilewidth, tileset.tileheight, tileset.margin, tileset.spacing)
-            )
+            .map(({ tileset, key, padding }) => {
+                const pad = padding ?? 0;
+                const margin = (tileset.margin ?? 0) + pad;
+                const spacing = (tileset.spacing ?? 0) + pad * 2;
+                return this.map!.addTilesetImage(
+                    tileset.name,
+                    key,
+                    tileset.tilewidth,
+                    tileset.tileheight,
+                    margin,
+                    spacing
+                );
+            })
             .filter((ts): ts is Phaser.Tilemaps.Tileset => ts !== null);
 
         let groundDepthIndex = 0;

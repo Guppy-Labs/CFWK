@@ -80,6 +80,10 @@ router.post('/username', async (req, res) => {
     try {
         const { username } = req.body;
         if (!username || typeof username !== 'string') return res.status(400).json({ message: 'Invalid username' });
+
+        if (username.trim().toLowerCase() === 'system') {
+            return res.status(400).json({ message: 'Username taken' });
+        }
         
         const user = await User.findById((req.user as any).id);
         if (!user) return res.status(404).json({ message: 'User not found' });

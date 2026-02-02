@@ -487,8 +487,11 @@ export class Chat {
             // Create temporary display to measure
             // Note: We don't know Y yet, so use 0. We'll set it later.
             const msgContainer = this.createMessageDisplay(msg, 0);
-            const messageText = msgContainer.getAt(1) as Phaser.GameObjects.Text;
-            const messageHeight = Math.max(this.messageHeight, messageText.height);
+            const textItems = msgContainer.list.filter((child) => child instanceof Phaser.GameObjects.Text) as Phaser.GameObjects.Text[];
+            const messageHeight = Math.max(
+                this.messageHeight,
+                ...textItems.map((text) => text.height)
+            );
             const entryHeight = messageHeight + 2; // + padding
             
             if (totalHeight + entryHeight > maxMessageAreaHeight + 20) { // Slight buffer
@@ -573,6 +576,18 @@ export class Chat {
             wordWrap: { width: this.width - this.padding * 2 - nameText.width, useAdvancedWrap: true }
         });
         container.add(messageText);
+
+        if (msg.isSystem) {
+            const bgPaddingX = 4;
+            const bgPaddingY = 1;
+            const nameBounds = nameText.getBounds();
+            const messageBounds = messageText.getBounds();
+            const bgWidth = nameBounds.width + messageBounds.width + bgPaddingX * 2;
+            const bgHeight = Math.max(nameBounds.height, messageBounds.height) + bgPaddingY * 2;
+            const bg = this.scene.add.rectangle(-bgPaddingX, -bgPaddingY, bgWidth, bgHeight, 0xff4444, 0.25);
+            bg.setOrigin(0, 0);
+            container.addAt(bg, 0);
+        }
         
         return container;
     }

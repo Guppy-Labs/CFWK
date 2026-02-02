@@ -173,6 +173,22 @@ export class OcclusionManager {
     }
 
     /**
+     * Get the maximum depth of currently elevated layers
+     */
+    getMaxElevatedLayerDepth(): number | null {
+        if (this.layers.length === 0) return null;
+        let max = -Infinity;
+        let found = false;
+        this.layers.forEach((entry) => {
+            if (entry.layer.depth > entry.baseDepth) {
+                found = true;
+                if (entry.layer.depth > max) max = entry.layer.depth;
+            }
+        });
+        return found ? max : null;
+    }
+
+    /**
      * Get the base depth for a layer by tag
      */
     getBaseDepthForTag(tag: string): number {

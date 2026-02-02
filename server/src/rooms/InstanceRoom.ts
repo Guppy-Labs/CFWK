@@ -58,6 +58,7 @@ export class InstanceRoom extends Room<InstanceState> {
     private instanceId: string = "";
     private instanceManager = InstanceManager.getInstance();
     private timeUpdateInterval?: ReturnType<typeof setInterval>;
+    private afkCheckInterval?: ReturnType<typeof setInterval>;
 
     onCreate(options: { instanceId: string; locationId: string; mapFile: string; maxPlayers: number }) {
         console.log(`[InstanceRoom] Creating room for instance: ${options.instanceId}`);
@@ -102,6 +103,21 @@ export class InstanceRoom extends Room<InstanceState> {
             });
         });
 
+        // Handle send to limbo command
+        this.instanceManager.events.on('send_to_limbo', (data: { userId: string, reason: string }) => {
+            try {
+                this.clients.forEach(client => {
+                    const player = this.state.players.get(client.sessionId);
+                    if (player && player.odcid === data.userId) {
+                        // Send the reason as the leave message (code 4004 = sent to limbo)
+                        client.leave(4004, data.reason);
+                    }
+                });
+            } catch (e) {
+                console.error("Error processing send_to_limbo:", e);
+            }
+        });
+
         this.instanceId = options.instanceId;
         this.maxClients = options.maxPlayers;
         
@@ -118,6 +134,20 @@ export class InstanceRoom extends Room<InstanceState> {
         // Update world time every second (client can interpolate for smoother updates)
         this.timeUpdateInterval = setInterval(() => {
             this.updateWorldTime();
+        }, 1000);
+
+        // Server-side AFK kick enforcement (authoritative)
+        const afkKickThresholdMs = 300000; // 5 minutes
+        this.afkCheckInterval = setInterval(() => {
+            const now = Date.now();
+            this.clients.forEach(client => {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || !player.isAfk || !player.afkSince) return;
+                if (now - player.afkSince >= afkKickThresholdMs) {
+                    console.log(`[InstanceRoom] AFK kick (server) for ${client.sessionId}`);
+                    client.leave(4000, "AFK timeout");
+                }
+            });
         }, 1000);
 
         // Handle player input
@@ -375,9 +405,10 @@ export class InstanceRoom extends Room<InstanceState> {
         (client as any).odcid = odcid;
         
         // Create player state
+        // Position starts at (0, 0) - client will send actual spawn position immediately
+        // Other clients wait for valid (non-zero) position before showing spawn effect
         const player = new InstancePlayerSchema();
-        player.x = 400; // TODO: Get spawn point from map
-        player.y = 300;
+        // player.x and player.y default to 0 in schema - client sends actual spawn position
         player.username = options.username || "Guest";
         player.odcid = odcid; // Use odcid for consistent coloring
         player.direction = 0; // Facing down
@@ -433,6 +464,9 @@ export class InstanceRoom extends Room<InstanceState> {
         console.log(`[InstanceRoom] Instance ${this.instanceId} disposed`);
         if (this.timeUpdateInterval) {
             clearInterval(this.timeUpdateInterval);
+        }
+        if (this.afkCheckInterval) {
+            clearInterval(this.afkCheckInterval);
         }
     }
 

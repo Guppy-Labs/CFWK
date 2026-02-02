@@ -40,6 +40,7 @@ export type TiledTilesetData = {
 export type TilesetEntry = {
     tileset: TiledTilesetData;
     key: string;
+    padding?: number;
 };
 
 export type OccludableLayer = {

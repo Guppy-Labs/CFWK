@@ -471,10 +471,9 @@ export class RemotePlayer {
                 depth = (minBase - 10) + (feetY * 0.01);
             } else {
                 // If local player occlusion elevated layers, keep remote player in front of those layers
-                const activeTags = this.occlusionManager.getActiveTags();
-                if (activeTags.size > 0) {
-                    const maxOccludedDepth = this.occlusionManager.getMaxOccludedDepthForTags(activeTags);
-                    const frontDepth = (maxOccludedDepth + 1) + (feetY * 0.01);
+                const maxElevatedDepth = this.occlusionManager.getMaxElevatedLayerDepth();
+                if (maxElevatedDepth !== null) {
+                    const frontDepth = (maxElevatedDepth + 1) + (feetY * 0.01);
                     if (frontDepth > depth) depth = frontDepth;
                 }
             }

@@ -62,6 +62,13 @@ export class PlayerShadow {
     }
 
     /**
+     * Set shadow visibility (hide when player is in water)
+     */
+    setVisible(visible: boolean) {
+        this.shadow.setVisible(visible);
+    }
+
+    /**
      * Clean up resources
      */
     destroy() {

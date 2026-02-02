@@ -253,7 +253,7 @@ const cdHours = document.getElementById('cd-hours') as HTMLElement;
 const cdMinutes = document.getElementById('cd-minutes') as HTMLElement;
 const cdSeconds = document.getElementById('cd-seconds') as HTMLElement;
 
-const releaseDate = new Date('2026-04-09T06:00:00').getTime();
+const releaseDate = new Date('2026-05-02T06:00:00').getTime();
 
 if (countdownContainer) {
     startCountdown();

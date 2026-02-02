@@ -4,15 +4,13 @@ import { WorldTimeState, formatFullDateTime } from '@cfwk/shared';
 import { ZoomRegion } from '../camera/CameraController';
 
 /**
- * Water debug info from WaterEffectsManager
+ * Water debug info from WaterSystem
  */
 export interface WaterDebugInfo {
-    blueRatio: number;
-    waterPercent: number;
-    totalPixels: number;
-    waterPixels: number;
     inWater: boolean;
     isWet: boolean;
+    depth: number;
+    speedMult: number;
 }
 
 /**
@@ -195,9 +193,10 @@ export class DebugOverlay {
         
         // Water debug
         if (waterDebug) {
-            const waterStr = `Water: ${(waterDebug.waterPercent * 100).toFixed(0)}%`;
+            const depthStr = `Depth: ${waterDebug.depth.toFixed(2)}`;
+            const speedStr = `Speed: ${(waterDebug.speedMult * 100).toFixed(0)}%`;
             const stateStr = waterDebug.inWater ? 'IN WATER' : (waterDebug.isWet ? 'WET' : 'DRY');
-            lines.push(`${waterStr} | ${stateStr}`);
+            lines.push(`Water ${depthStr} | ${speedStr} | ${stateStr}`);
         }
         
         // Network status

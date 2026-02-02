@@ -9,6 +9,7 @@ import { EmojiMap } from '../ui/EmojiMap';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 import { InteractionManager } from '../interaction/InteractionManager';
 import { RemotePlayerManager } from './RemotePlayerManager';
+import { OcclusionManager } from '../map/OcclusionManager';
 
 /**
  * Generates a consistent color from a string (user ID)
@@ -36,6 +37,7 @@ export type PlayerControllerConfig = {
     width?: number;
     height?: number;
     depth?: number;
+    occlusionManager?: OcclusionManager | undefined;
     // Stamina config
     maxStamina?: number;
     staminaDrainRate?: number;
@@ -65,7 +67,7 @@ export class PlayerController {
     private chatBubble?: Phaser.GameObjects.Container;
     private chatTimer?: Phaser.Time.TimerEvent;
 
-    private config: Required<PlayerControllerConfig>;
+    private config: Required<Omit<PlayerControllerConfig, 'occlusionManager'>> & { occlusionManager?: OcclusionManager };
 
     // Track last movement direction for animations
     private lastVx = 0;
@@ -103,6 +105,10 @@ export class PlayerController {
     private mobileInteractListener?: () => void;
     private interactionLockUntil = 0;
 
+    // External speed modifier (e.g., from water depth)
+    private speedMultiplier = 1.0;
+    private occlusionManager?: OcclusionManager;
+
     constructor(scene: Phaser.Scene, config: PlayerControllerConfig = {}) {
         this.scene = scene;
         this.config = {
@@ -113,11 +119,14 @@ export class PlayerController {
             width: config.width ?? 16,
             height: config.height ?? 32,
             depth: config.depth ?? 260,
+            occlusionManager: config.occlusionManager,
             maxStamina: config.maxStamina ?? 1,
             staminaDrainRate: config.staminaDrainRate ?? 0.3, // Per second
             staminaRegenRate: config.staminaRegenRate ?? 0.25, // Per second
             staminaRegenDelay: config.staminaRegenDelay ?? 1.0 // Seconds before regen starts
         };
+
+        this.occlusionManager = config.occlusionManager;
 
         this.animationController = new PlayerAnimationController(scene, {
             frameWidth: 16,
@@ -160,6 +169,21 @@ export class PlayerController {
      */
     getSpawnPoint(): Phaser.Math.Vector2 | undefined {
         return this.spawnPoint;
+    }
+
+    /**
+     * Set external speed multiplier (e.g., water depth slowdown)
+     * @param multiplier 0-1 where 1 is full speed
+     */
+    setSpeedMultiplier(multiplier: number) {
+        this.speedMultiplier = Phaser.Math.Clamp(multiplier, 0.1, 1.0);
+    }
+
+    /**
+     * Set shadow visibility (hide when player is in water)
+     */
+    setShadowVisible(visible: boolean) {
+        this.shadow?.setVisible(visible);
     }
 
     /**
@@ -229,6 +253,16 @@ export class PlayerController {
         // Initialize shadow
         this.shadow = new PlayerShadow(this.scene, player);
 
+        // Immediately send spawn position to server so other clients see correct location
+        const x = Math.round(spawnX);
+        const y = Math.round(spawnY - collidableHeight / 2);
+        this.networkManager.sendPosition(x, y);
+        this.networkManager.sendAnimation('idle', this.animationController.getDirection());
+        this.lastSyncedX = x;
+        this.lastSyncedY = y;
+        this.lastSyncedAnim = 'idle';
+        this.lastSyncedDirection = this.animationController.getDirection();
+
         return player;
     }
 
@@ -271,9 +305,10 @@ export class PlayerController {
         // Update stamina and sprint state
         this.updateStamina(deltaSeconds, isMoving, inputSprint);
 
-        // Determine current speed based on sprint state
+        // Determine current speed based on sprint state and external modifiers
         const { speed, sprintSpeed, accel, drag } = this.config;
-        const currentSpeed = this.isSprinting ? sprintSpeed : speed;
+        const baseSpeed = this.isSprinting ? sprintSpeed : speed;
+        const currentSpeed = baseSpeed * this.speedMultiplier;
 
         let vx = 0;
         let vy = 0;
@@ -370,9 +405,18 @@ export class PlayerController {
         // Higher Y (lower on screen) = higher depth (drawn in front)
         // Use small multiplier (0.01) to keep depth within safe range for occlusion system
         // Player depth range: ~260-270 (occluded layers start at 280)
-        const feetY = this.player.y + 3;
-        const yDepth = this.config.depth + (feetY * 0.01);
-        this.player.setDepth(yDepth);
+            const feetY = this.player.y + 3;
+            let yDepth = this.config.depth + (feetY * 0.01);
+
+            if (this.occlusionManager) {
+                const occlusionTags = this.occlusionManager.getOcclusionTagsAt(this.player.x, this.player.y, 4);
+                if (occlusionTags.size > 0) {
+                    const minBase = this.occlusionManager.getMinBaseDepthForTags(occlusionTags);
+                    yDepth = (minBase - 10) + (feetY * 0.01);
+                }
+            }
+
+            this.player.setDepth(yDepth);
 
         // Update AFK state
         this.updateAfkState(isMoving || inputSprint);
@@ -684,6 +728,13 @@ export class PlayerController {
      */
     setRemotePlayerManager(manager: RemotePlayerManager) {
         this.interactionManager.setRemotePlayerManager(manager);
+    }
+
+    /**
+     * Set occlusion manager for depth sorting in occlusion zones
+     */
+    setOcclusionManager(manager: OcclusionManager) {
+        this.occlusionManager = manager;
     }
     
     /**

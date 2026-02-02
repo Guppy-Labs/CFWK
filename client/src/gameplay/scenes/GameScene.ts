@@ -15,7 +15,7 @@ import { RemotePlayerManager } from '../player/RemotePlayerManager';
 import { DebugOverlay, ExtendedDebugInfo } from '../debug/DebugOverlay';
 import { DustParticleSystem } from '../fx/DustParticleSystem';
 import { FireParticleSystem } from '../fx/FireParticleSystem';
-import { WaterEffectsManager } from '../fx/WaterEffectsManager';
+import { WaterSystem } from '../fx/water/WaterSystem';
 import { LightingManager } from '../fx/LightingManager';
 import { VisualEffectsManager } from '../fx/VisualEffectsManager';
 import { SeasonalEffectsManager } from '../fx/SeasonalEffectsManager';
@@ -48,7 +48,7 @@ export class GameScene extends Phaser.Scene {
     private remotePlayerManager?: RemotePlayerManager;
     private debugOverlay?: DebugOverlay;
     private dustParticles?: DustParticleSystem;
-    private waterEffects?: WaterEffectsManager;
+    private waterSystem?: WaterSystem;
     private lightingManager?: LightingManager;
     private visualEffectsManager?: VisualEffectsManager;
     private seasonalEffectsManager?: SeasonalEffectsManager;
@@ -108,6 +108,7 @@ export class GameScene extends Phaser.Scene {
         // Initialize managers
         this.collisionManager = new CollisionManager(this);
         this.occlusionManager = new OcclusionManager(this.playerFrontDepth, this.playerOccludedDepthOffset);
+        this.playerController?.setOcclusionManager(this.occlusionManager);
         
         // Initialize visual effects (Post-processing)
         this.visualEffectsManager = new VisualEffectsManager(this);
@@ -194,8 +195,8 @@ export class GameScene extends Phaser.Scene {
             // Initialize dust particle system for player
             this.dustParticles = new DustParticleSystem(this, player, map);
 
-            // Initialize water effects (splash + wet footprints)
-            this.waterEffects = new WaterEffectsManager(this, player, groundLayers);
+            // Initialize water system (splash, footprints, depth effects)
+            this.waterSystem = new WaterSystem(this, player, groundLayers);
         }
 
         // Create fire effects from POI points in the map
@@ -246,13 +247,28 @@ export class GameScene extends Phaser.Scene {
                 localStorage.removeItem('cfwk_limbo_message');
 
                 const isBan = reason === 'ban';
-                const title = isBan ? 'BANNED' : 'Server Offline';
-                const displayMessage = message || (isBan
-                    ? 'You have been banned from Cute Fish With Knives.'
-                    : 'The connection to the game server was lost.<br>Please try again later.');
+                const isAdmin = reason === 'admin';
+                
+                let title: string;
+                let displayMessage: string;
+                let showRejoin: boolean;
+                
+                if (isBan) {
+                    title = 'BANNED';
+                    displayMessage = message || 'You have been banned from Cute Fish With Knives.';
+                    showRejoin = false;
+                } else if (isAdmin) {
+                    title = 'Sent to Limbo';
+                    displayMessage = message || 'You were sent to limbo by an admin.';
+                    showRejoin = true;
+                } else {
+                    title = 'Server Offline';
+                    displayMessage = message || 'The connection to the game server was lost.<br>Please try again later.';
+                    showRejoin = true;
+                }
 
                 LimboModal.show(title, displayMessage, {
-                    showRejoin: !isBan,
+                    showRejoin,
                     onClose: () => {
                         // Close only
                     },
@@ -308,6 +324,9 @@ export class GameScene extends Phaser.Scene {
                 if (code === 4003) {
                     localStorage.setItem('cfwk_limbo_reason', 'ban');
                     localStorage.setItem('cfwk_limbo_message', 'You have been banned from Cute Fish With Knives.');
+                } else if (code === 4004) {
+                    localStorage.setItem('cfwk_limbo_reason', 'admin');
+                    localStorage.setItem('cfwk_limbo_message', 'You were sent to limbo by an admin.');
                 } else {
                     const detail = error ? ` (${error})` : ` (code ${code})`;
                     localStorage.setItem('cfwk_limbo_reason', 'offline');
@@ -443,16 +462,24 @@ export class GameScene extends Phaser.Scene {
         // Update dust particles
         this.dustParticles?.update();
 
-        // Update water effects (splash + wet footprints)
-        this.waterEffects?.update(delta);
+        // Update water system (splash, footprints, depth effects)
+        this.waterSystem?.update(delta);
+        
+        // Apply water effects to player
+        if (this.playerController && this.waterSystem) {
+            this.playerController.setSpeedMultiplier(this.waterSystem.getSpeedMultiplier());
+            // Hide shadow when player is in water
+            this.playerController.setShadowVisible(!this.waterSystem.getIsInWater());
+        }
 
         // Update footstep sounds based on player movement and water state
         if (this.playerController) {
             const isMoving = this.playerController.getIsMoving();
             const isSprinting = this.playerController.getIsSprinting();
-            const inWater = this.waterEffects?.getIsInWater() ?? false;
-            const isWet = this.waterEffects?.getIsWet() ?? false;
-            this.audioManager?.updateFootsteps(isMoving, isSprinting, inWater, isWet);
+            const inWater = this.waterSystem?.getIsInWater() ?? false;
+            const isWet = this.waterSystem?.getIsWet() ?? false;
+            const waterDepth = this.waterSystem?.getDepth() ?? 0;
+            this.audioManager?.updateFootsteps(isMoving, isSprinting, inWater, isWet, waterDepth);
         }
         
         // Update fire volume based on player distance to nearest fire
@@ -528,7 +555,7 @@ export class GameScene extends Phaser.Scene {
                 this.playerController?.getSpawnPoint(),
                 player,
                 worldTime,
-                this.waterEffects?.getDebugInfo(),
+                this.waterSystem?.getDebugInfo(),
                 extendedDebug
             );
         }
@@ -557,7 +584,7 @@ export class GameScene extends Phaser.Scene {
         this.remotePlayerManager?.destroy();
         this.fires.forEach(fire => fire.destroy());
         this.fires = [];
-        this.waterEffects?.destroy();
+        this.waterSystem?.destroy();
         this.seasonalEffectsManager?.destroy();
         this.mapLoader?.destroy();
         this.playerController?.destroy();

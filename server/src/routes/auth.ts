@@ -16,8 +16,17 @@ router.post('/register', async (req, res) => {
         const { email, password, username } = req.body;
         if (!email || !password) return res.status(400).json({ message: 'Missing fields' });
 
+        if (typeof username === 'string' && username.trim().toLowerCase() === 'system') {
+            return res.status(400).json({ message: 'Username taken' });
+        }
+
         const existing = await User.findOne({ email });
         if (existing) return res.status(400).json({ message: 'User already exists' });
+
+        if (typeof username === 'string' && username.trim().length > 0) {
+            const existingUsername = await User.findOne({ username });
+            if (existingUsername) return res.status(400).json({ message: 'Username taken' });
+        }
 
         // Determine permissions
         const perms = ['meta.preregister'];
@@ -273,6 +282,10 @@ router.post('/set-username', async (req, res) => {
     const { username } = req.body;
 
     if (!username) return res.status(400).json({ message: 'Username required' });
+
+    if (typeof username === 'string' && username.trim().toLowerCase() === 'system') {
+        return res.status(400).json({ message: 'Username taken' });
+    }
     
     // Check constraints
     // 1. Unique

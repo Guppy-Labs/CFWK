@@ -45,41 +45,65 @@ export class RemotePlayerManager {
             // Skip local player
             if (sessionId === mySessionId) return;
 
-            console.log(`[RemotePlayerManager] Remote player joined: ${sessionId} (${player.username}) - initial: ${!this.initialSyncComplete}`);
-            
-            const remotePlayer = new RemotePlayer(this.scene, {
-                sessionId,
-                username: player.username || 'Guest',
-                odcid: player.odcid || sessionId,
-                x: player.x,
-                y: player.y,
-                direction: player.direction || 0,
-                depth: this.config.playerFrontDepth,
-                occlusionManager: this.config.occlusionManager,
-                skipSpawnEffect: !this.initialSyncComplete, // Skip effect for existing players
-                isAfk: player.isAfk || false,
-                afkSince: player.afkSince || 0,
-                isGuiOpen: player.isGuiOpen || false,
-                isChatOpen: player.isChatOpen || false
-            });
+            console.log(`[RemotePlayerManager] Player joined: ${sessionId} (${player.username})`);
 
-            // Enable lighting on remote player sprite
-            const remoteSprite = remotePlayer.getSprite();
-            if (remoteSprite && this.config.lightingManager) {
-                this.config.lightingManager.enableLightingOn(remoteSprite);
-            }
-            
-            // Set initial AFK state
-            if (player.isAfk) {
-                remotePlayer.setAfk(true, player.afkSince || 0);
-            }
+            let remotePlayer: RemotePlayer | undefined;
 
-            remotePlayer.setGuiOpen(player.isGuiOpen || false);
-            
-            this.remotePlayers.set(sessionId, remotePlayer);
+            const createRemotePlayer = () => {
+                if (remotePlayer) return;
+
+                remotePlayer = new RemotePlayer(this.scene, {
+                    sessionId,
+                    username: player.username || 'Guest',
+                    odcid: player.odcid || sessionId,
+                    x: player.x,
+                    y: player.y,
+                    direction: player.direction || 0,
+                    depth: this.config.playerFrontDepth,
+                    occlusionManager: this.config.occlusionManager,
+                    skipSpawnEffect: !this.initialSyncComplete, // Skip effect for existing players
+                    isAfk: player.isAfk || false,
+                    afkSince: player.afkSince || 0,
+                    isGuiOpen: player.isGuiOpen || false,
+                    isChatOpen: player.isChatOpen || false
+                });
+
+                // Enable lighting on remote player sprite
+                const remoteSprite = remotePlayer.getSprite();
+                if (remoteSprite && this.config.lightingManager) {
+                    this.config.lightingManager.enableLightingOn(remoteSprite);
+                }
+                
+                // Set initial AFK state
+                if (player.isAfk) {
+                    remotePlayer.setAfk(true, player.afkSince || 0);
+                }
+
+                remotePlayer.setGuiOpen(player.isGuiOpen || false);
+                remotePlayer.setChatOpen(player.isChatOpen || false);
+
+                this.remotePlayers.set(sessionId, remotePlayer);
+            };
+
+            if (!this.initialSyncComplete) {
+                // Existing players (initial sync) - spawn immediately without effect
+                // But if position is at default (0,0), wait for valid position via onChange
+                if (player.x !== 0 || player.y !== 0) {
+                    createRemotePlayer();
+                }
+                // If position is (0,0), onChange will create the player when valid position arrives
+            }
 
             // Listen for position changes
             player.onChange(() => {
+                if (!remotePlayer) {
+                    // Wait for valid (non-zero) position before creating the remote player
+                    // Server sends (0,0) initially, client sends actual position immediately after spawn
+                    if (player.x === 0 && player.y === 0) {
+                        return;
+                    }
+                    createRemotePlayer();
+                }
                 const remote = this.remotePlayers.get(sessionId);
                 if (remote) {
                     remote.setPosition(player.x, player.y);

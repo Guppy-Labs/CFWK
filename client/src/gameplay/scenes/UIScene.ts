@@ -229,12 +229,13 @@ export class UIScene extends Phaser.Scene {
         const room = this.networkManager.getRoom();
         if (!room) return;
 
-        room.onMessage('chat', (data: { sessionId: string; username: string; odcid: string; message: string; timestamp: number }) => {
+        room.onMessage('chat', (data: { sessionId: string; username: string; odcid: string; message: string; timestamp: number; isSystem?: boolean }) => {
             const msg: ChatMessage = {
                 username: data.username,
                 odcid: data.odcid,
                 message: data.message,
-                timestamp: data.timestamp
+                timestamp: data.timestamp,
+                isSystem: data.isSystem
             };
             this.chat?.addMessage(msg);
 

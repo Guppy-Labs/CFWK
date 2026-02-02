@@ -30,6 +30,10 @@ export const AUDIO_CONFIG = {
         pitchMax: 1.15,           // Maximum pitch multiplier
         sprintPitchBoost: 1.1,    // Additional pitch boost when sprinting
         wetPitchMultiplier: 0.75, // Pitch multiplier when feet are wet (damp sound)
+        // Water depth effects
+        waterDepthRateMin: 0.6,   // Playback rate at max depth (slower)
+        waterDepthDetuneMax: -400, // Detune in cents at max depth (deeper pitch)
+        waterDepthFilterMin: 800, // Low-pass filter frequency at max depth (muffled)
     },
 };
 // ============================================================
@@ -80,6 +84,9 @@ export class AudioManager {
     
     // Footstep timing
     private lastFootstepTime = 0;
+    
+    // Web Audio filter for water muffle effect
+    private lowPassFilter?: BiquadFilterNode;
     
     // Fire POI positions for distance-based volume
     private firePositions: { x: number; y: number }[] = [];
@@ -263,8 +270,9 @@ export class AudioManager {
      * @param isSprinting - Is the player sprinting
      * @param inWater - Is the player currently in water
      * @param isWet - Does the player have wet feet (recently left water)
+     * @param waterDepth - How deep in water (0-3 tiles)
      */
-    updateFootsteps(isMoving: boolean, isSprinting: boolean, inWater: boolean = false, isWet: boolean = false) {
+    updateFootsteps(isMoving: boolean, isSprinting: boolean, inWater: boolean = false, isWet: boolean = false, waterDepth: number = 0) {
         if (!isMoving) {
             return;
         }
@@ -279,7 +287,7 @@ export class AudioManager {
         }
         
         this.lastFootstepTime = now;
-        this.playFootstep(isSprinting, inWater, isWet);
+        this.playFootstep(isSprinting, inWater, isWet, waterDepth);
     }
     
     /**
@@ -287,8 +295,9 @@ export class AudioManager {
      * @param isSprinting - Is the player sprinting
      * @param inWater - Is the player in water (plays water sound)
      * @param isWet - Are the player's feet wet (plays damper sand sound)
+     * @param waterDepth - How deep in water (0-3 tiles)
      */
-    private playFootstep(isSprinting: boolean, inWater: boolean, isWet: boolean) {
+    private playFootstep(isSprinting: boolean, inWater: boolean, isWet: boolean, waterDepth: number = 0) {
         // Determine which sound to play
         const soundKey = inWater ? 'footstep-water' : 'footstep-sand';
         
@@ -309,17 +318,33 @@ export class AudioManager {
         // Apply wet pitch reduction if feet are wet but not in water
         const wetMultiplier = (isWet && !inWater) ? cfg.wetPitchMultiplier : 1.0;
         
-        const rate = baseRate * pitchVariation * wetMultiplier;
+        // Calculate water depth effect (0 = surface, 1 = max depth effect at ~3 tiles)
+        const depthRatio = inWater ? Math.min(1, waterDepth / 3) : 0;
+        
+        // Apply depth-based rate slowdown
+        const depthRateMultiplier = inWater ? (1 - depthRatio * (1 - cfg.waterDepthRateMin)) : 1;
+        
+        const rate = baseRate * pitchVariation * wetMultiplier * depthRateMultiplier;
         
         // Random volume variation
         const volume = cfg.baseVolume + (Math.random() - 0.5) * 2 * cfg.volumeVariation;
+        
+        // Calculate detune with depth effect (deeper = lower pitch)
+        const baseDetune = (pitchVariation * wetMultiplier - 1) * 200;
+        const depthDetune = inWater ? depthRatio * cfg.waterDepthDetuneMax : 0;
+        const detune = baseDetune + depthDetune;
         
         // Create and play the sound with variations
         const footstep = this.scene.sound.add(soundKey, {
             volume: volume,
             rate: rate,
-            detune: (pitchVariation * wetMultiplier - 1) * 200 // Detune in cents for additional variation
-        });
+            detune: detune
+        }) as Phaser.Sound.WebAudioSound;
+        
+        // Apply low-pass filter for muffle effect when in deep water
+        if (inWater && depthRatio > 0 && footstep.source) {
+            this.applyWaterFilter(footstep, depthRatio);
+        }
         
         footstep.play();
         
@@ -327,6 +352,43 @@ export class AudioManager {
         footstep.once('complete', () => {
             footstep.destroy();
         });
+    }
+    
+    /**
+     * Apply low-pass filter to muffle sound based on water depth
+     */
+    private applyWaterFilter(sound: Phaser.Sound.WebAudioSound, depthRatio: number) {
+        try {
+            const webAudio = this.scene.sound as Phaser.Sound.WebAudioSoundManager;
+            const context = webAudio.context;
+            
+            if (!context || !sound.source) return;
+            
+            // Create filter if not exists
+            if (!this.lowPassFilter) {
+                this.lowPassFilter = context.createBiquadFilter();
+                this.lowPassFilter.type = 'lowpass';
+            }
+            
+            // Calculate filter frequency (higher = less muffled)
+            // At depth 0: 20000Hz (no filter), at max depth: waterDepthFilterMin Hz
+            const cfg = AUDIO_CONFIG.footsteps;
+            const filterFreq = 20000 - depthRatio * (20000 - cfg.waterDepthFilterMin);
+            this.lowPassFilter.frequency.value = filterFreq;
+            this.lowPassFilter.Q.value = 1; // Gentle rolloff
+            
+            // Route audio through filter
+            // Note: Phaser's WebAudioSound connects source -> gain -> destination
+            // We need to insert filter between gain and destination
+            const gainNode = (sound as any).volumeNode as GainNode;
+            if (gainNode && webAudio.destination) {
+                gainNode.disconnect();
+                gainNode.connect(this.lowPassFilter);
+                this.lowPassFilter.connect(webAudio.destination);
+            }
+        } catch (e) {
+            // Silently fail if Web Audio API not available
+        }
     }
     
     /**
