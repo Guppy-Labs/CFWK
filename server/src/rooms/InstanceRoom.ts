@@ -248,8 +248,8 @@ export class InstanceRoom extends Room<InstanceState> {
             const dirY = dy / length;
             
             // Shove force (impulse velocity)
-            const shoveForce = 360; // pixels to move target (2x for impact)
-            const knockbackForce = 30; // counter-force on attacker
+            const shoveForce = 60; // pixels to move target
+            const knockbackForce = 8; // counter-force on attacker
             
             // Broadcast shove event to all clients
             this.broadcast("shove", {

@@ -1,15 +1,17 @@
 import Phaser from 'phaser';
 import { StaminaBar } from '../ui/StaminaBar';
-import { TabList, TabListEntry } from '../ui/TabList';
+import { TabListEntry } from '../ui/HeadbarTabList';
 import { Chat, ChatMessage } from '../ui/Chat';
 import { BookUI } from '../ui/BookUI';
+import { HeadbarUI } from '../ui/HeadbarUI';
 import { NetworkManager } from '../network/NetworkManager';
+import { ITEM_DEFINITIONS } from '@cfwk/shared';
 
 export class UIScene extends Phaser.Scene {
     private staminaBar?: StaminaBar;
-    private tabList?: TabList;
     private chat?: Chat;
     private bookUI?: BookUI;
+    private headbarUI?: HeadbarUI;
     private tabKeyDownHandler?: (event: KeyboardEvent) => void;
     private tabKeyUpHandler?: (event: KeyboardEvent) => void;
     private chatKeyHandler?: (event: KeyboardEvent) => void;
@@ -17,7 +19,9 @@ export class UIScene extends Phaser.Scene {
     private mobileInventoryHandler?: () => void;
     private mobileMenuHandler?: () => void;
     private networkManager = NetworkManager.getInstance();
-    private nextTabListSync = 0;
+    private cursorDefaultUrl?: string;
+    private cursorHoverUrl?: string;
+    private hoverCount = 0;
 
     constructor() {
         super({ key: 'UIScene' });
@@ -29,14 +33,49 @@ export class UIScene extends Phaser.Scene {
         this.load.image('ui-book-page-right', '/ui/BookPageR01a.png');
         this.load.image('ui-tab-active', '/ui/Marker01a.png');
         this.load.image('ui-tab-inactive', '/ui/Marker01b.png');
+        this.load.image('ui-group-button-selected', '/ui/Button08a.png');
+        this.load.image('ui-group-button-unselected', '/ui/Button08b.png');
+        this.load.image('ui-section-icon-all', '/ui/sections/IconAll.png');
+        this.load.image('ui-section-icon-all-sel', '/ui/sections/IconAllSel.png');
+        this.load.image('ui-section-icon-gear', '/ui/sections/IconGear.png');
+        this.load.image('ui-section-icon-gear-sel', '/ui/sections/IconGearSel.png');
+        this.load.image('ui-section-icon-tools', '/ui/sections/IconTools.png');
+        this.load.image('ui-section-icon-tools-sel', '/ui/sections/IconToolsSel.png');
+        this.load.image('ui-section-icon-fishing', '/ui/sections/IconFishing.png');
+        this.load.image('ui-section-icon-fishing-sel', '/ui/sections/IconFishingSel.png');
+        this.load.image('ui-section-icon-food', '/ui/sections/IconFood.png');
+        this.load.image('ui-section-icon-food-sel', '/ui/sections/IconFoodSel.png');
+        this.load.image('ui-group-icon-loot-active', '/ui/IconLoot01b.png');
+        this.load.image('ui-group-icon-loot-inactive', '/ui/IconLoot01a.png');
+        this.load.image('ui-item-info-frame', '/ui/Frame07a.png');
+        this.load.image('ui-item-info-divider', '/ui/Line03a.png');
+        this.load.image('ui-slot-base', '/ui/Slot01a.png');
+        this.load.image('ui-slot-extended', '/ui/Slot01e.png');
+        this.load.image('ui-scrollbar-track', '/ui/Bar07a.png');
+        this.load.image('ui-scrollbar-thumb', '/ui/IconHandle03a.png');
         this.load.image('ui-font', '/assets/font/game-font.png');
+        this.load.image('ui-cursor-default', '/ui/Cursor03b.png');
+        this.load.image('ui-cursor-hover', '/ui/Cursor03c.png');
+
+        // Headbar textures
+        this.load.image('ui-headbar-banner', '/ui/Banner01b.png');
+        this.load.image('ui-season-winter', '/ui/seasons/winter.png');
+        this.load.image('ui-season-spring', '/ui/seasons/spring.png');
+        this.load.image('ui-season-summer', '/ui/seasons/summer.png');
+        this.load.image('ui-season-autumn', '/ui/seasons/autumn.png');
+
+        ITEM_DEFINITIONS.forEach((item) => {
+            this.load.image(`item-${item.id}`, `/items/${item.category.toLowerCase()}/${item.id}.png`);
+        });
     }
 
     create() {
+        this.preloadItemIconTextures();
+        this.setupCustomCursor();
         this.staminaBar = new StaminaBar(this);
-        this.tabList = new TabList(this);
         this.chat = new Chat(this);
         this.bookUI = new BookUI(this);
+        this.headbarUI = new HeadbarUI(this);
 
         this.registry.set('guiOpen', false);
 
@@ -72,13 +111,13 @@ export class UIScene extends Phaser.Scene {
         }
 
         const currentPlayers = this.registry.get('tablistPlayers') as TabListEntry[] | undefined;
-        if (this.tabList && Array.isArray(currentPlayers)) {
-            this.tabList.setPlayers(currentPlayers);
+        if (this.headbarUI && Array.isArray(currentPlayers)) {
+            this.headbarUI.setPlayers(currentPlayers);
         }
 
         this.registry.events.on('changedata-tablistPlayers', (_parent: any, value: TabListEntry[]) => {
-            if (this.tabList && Array.isArray(value)) {
-                this.tabList.setPlayers(value);
+            if (this.headbarUI && Array.isArray(value)) {
+                this.headbarUI.setPlayers(value);
             }
         });
 
@@ -89,12 +128,12 @@ export class UIScene extends Phaser.Scene {
                 if (this.chat?.isChatFocused()) return;
                 if (this.registry.get('guiOpen') === true) return;
                 event.preventDefault();
-                this.tabList?.show();
+                this.headbarUI?.showTabList();
             });
             tabKey.on('up', (event: KeyboardEvent) => {
                 if (this.registry.get('guiOpen') === true) return;
                 event.preventDefault();
-                this.tabList?.hide();
+                this.headbarUI?.hideTabList();
             });
         }
 
@@ -105,13 +144,13 @@ export class UIScene extends Phaser.Scene {
             if (this.chat?.isChatFocused()) return;
             if (this.registry.get('guiOpen') === true) return;
             event.preventDefault();
-            this.tabList?.show();
+            this.headbarUI?.showTabList();
         };
         this.tabKeyUpHandler = (event: KeyboardEvent) => {
             if (event.key !== 'Tab') return;
             if (this.registry.get('guiOpen') === true) return;
             event.preventDefault();
-            this.tabList?.hide();
+            this.headbarUI?.hideTabList();
         };
         window.addEventListener('keydown', this.tabKeyDownHandler, { capture: true });
         window.addEventListener('keyup', this.tabKeyUpHandler, { capture: true });
@@ -135,11 +174,15 @@ export class UIScene extends Phaser.Scene {
             if (this.chat?.isChatFocused()) return;
             event.preventDefault();
             event.stopPropagation();
-            this.bookUI?.toggle();
+            if (this.bookUI?.isOpen()) {
+                this.bookUI.close();
+            } else {
+                this.bookUI?.openToTab('Inventory');
+            }
             const isOpen = this.bookUI?.isOpen() === true;
             this.registry.set('guiOpen', isOpen);
             this.chat?.setMobileHintSuppressed(isOpen);
-            window.dispatchEvent(new CustomEvent('gui-open-changed', { detail: { isOpen } }));
+            window.dispatchEvent(new CustomEvent('gui-open-changed', { detail: { isOpen, source: 'inventory' } }));
             if (isOpen && this.chat?.isChatFocused()) {
                 this.chat.blur();
             }
@@ -159,7 +202,7 @@ export class UIScene extends Phaser.Scene {
             const isOpen = this.bookUI?.isOpen() === true;
             this.registry.set('guiOpen', isOpen);
             this.chat?.setMobileHintSuppressed(isOpen);
-            window.dispatchEvent(new CustomEvent('gui-open-changed', { detail: { isOpen } }));
+            window.dispatchEvent(new CustomEvent('gui-open-changed', { detail: { isOpen, source: 'inventory' } }));
             if (isOpen && this.chat?.isChatFocused()) {
                 this.chat.blur();
             }
@@ -179,7 +222,7 @@ export class UIScene extends Phaser.Scene {
             const isOpen = this.bookUI?.isOpen() === true;
             this.registry.set('guiOpen', isOpen);
             this.chat?.setMobileHintSuppressed(isOpen);
-            window.dispatchEvent(new CustomEvent('gui-open-changed', { detail: { isOpen } }));
+            window.dispatchEvent(new CustomEvent('gui-open-changed', { detail: { isOpen, source: 'menu' } }));
             if (isOpen && this.chat?.isChatFocused()) {
                 this.chat.blur();
             }
@@ -217,12 +260,86 @@ export class UIScene extends Phaser.Scene {
             this.scale.off('resize', this.onResize, this);
             this.chat?.destroy();
             this.bookUI?.destroy();
+            this.headbarUI?.destroy();
+        });
+    }
+
+    private setupCustomCursor() {
+        this.cursorDefaultUrl = this.createScaledCursorDataUrl('ui-cursor-default', 2);
+        this.cursorHoverUrl = this.createScaledCursorDataUrl('ui-cursor-hover', 2);
+
+        if (this.cursorDefaultUrl) {
+            this.input.setDefaultCursor(`url(${this.cursorDefaultUrl}) 0 0, auto`);
+        }
+
+        this.input.on(Phaser.Input.Events.GAMEOBJECT_OVER, (_pointer: Phaser.Input.Pointer, _gameObject: Phaser.GameObjects.GameObject) => {
+            this.hoverCount += 1;
+            if (this.cursorHoverUrl) {
+                this.input.setDefaultCursor(`url(${this.cursorHoverUrl}) 0 0, auto`);
+            }
+        });
+
+        this.input.on(Phaser.Input.Events.GAMEOBJECT_OUT, (_pointer: Phaser.Input.Pointer, _gameObject: Phaser.GameObjects.GameObject) => {
+            this.hoverCount = Math.max(0, this.hoverCount - 1);
+            if (this.hoverCount === 0 && this.cursorDefaultUrl) {
+                this.input.setDefaultCursor(`url(${this.cursorDefaultUrl}) 0 0, auto`);
+            }
+        });
+    }
+
+    private createScaledCursorDataUrl(textureKey: string, scale: number) {
+        if (!this.textures.exists(textureKey)) return undefined;
+        const texture = this.textures.get(textureKey);
+        const source = texture.getSourceImage() as HTMLImageElement;
+        if (!source) return undefined;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = source.width * scale;
+        canvas.height = source.height * scale;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return undefined;
+
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+
+        return canvas.toDataURL('image/png');
+    }
+
+    private preloadItemIconTextures() {
+        const targetSize = 18;
+        ITEM_DEFINITIONS.forEach((item) => {
+            const baseKey = `item-${item.id}`;
+            const scaledKey = `${baseKey}-18`;
+
+            if (this.textures.exists(scaledKey)) {
+                return;
+            }
+
+            if (!this.textures.exists(baseKey)) {
+                console.warn(`[UIScene] Missing base texture for item ${item.id}`);
+                return;
+            }
+
+            const texture = this.textures.get(baseKey);
+            const source = texture.getSourceImage() as HTMLImageElement;
+            if (!source) return;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = targetSize;
+            canvas.height = targetSize;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(source, 0, 0, targetSize, targetSize);
+
+            this.textures.addCanvas(scaledKey, canvas);
         });
     }
 
     private onResize() {
         this.bookUI?.layout();
         this.chat?.refreshLayout();
+        this.headbarUI?.layout();
     }
 
     private setupChatListener() {
@@ -249,16 +366,8 @@ export class UIScene extends Phaser.Scene {
             this.staminaBar.update(delta);
         }
 
-        // Failsafe: Sync tablist if it appears empty but we have data
-        // This handles cases where the initial registry sync was missed
-        if (time > this.nextTabListSync) {
-            this.nextTabListSync = time + 1000;
-            if (this.tabList && this.tabList.getPlayerCount() === 0) {
-                const current = this.registry.get('tablistPlayers') as TabListEntry[] | undefined;
-                if (Array.isArray(current) && current.length > 0) {
-                    this.tabList.setPlayers(current);
-                }
-            }
+        if (this.headbarUI) {
+            this.headbarUI.update();
         }
     }
 }

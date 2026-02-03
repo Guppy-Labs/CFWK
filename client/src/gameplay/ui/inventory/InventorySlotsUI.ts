@@ -1,0 +1,536 @@
+import Phaser from 'phaser';
+
+export type InventorySlotsConfig = {
+    columns?: number;
+    rows?: number;
+    baseRows?: number;
+    slotSize?: number;
+    slotSpacing?: number;
+    gridOffsetX?: number;
+    gridOffsetY?: number;
+    gridBottomPadding?: number;
+    bottomReservedHeight?: number;
+    scrollbarOffsetX?: number;
+    scrollbarThumbOffsetX?: number;
+    scrollbarThumbOffsetY?: number;
+    itemScale?: number;
+    countOffsetX?: number;
+    countOffsetY?: number;
+    countColor?: number;
+};
+
+export type InventoryDisplayItem = {
+    id: string;
+    name: string;
+    description: string;
+    count: number;
+    stackSize: number;
+    iconKey: string;
+    category: string;
+};
+
+export class InventorySlotsUI {
+    private scene: Phaser.Scene;
+    private container: Phaser.GameObjects.Container;
+    private slotsContainer: Phaser.GameObjects.Container;
+    private slotsContent: Phaser.GameObjects.Container;
+    private itemsContent: Phaser.GameObjects.Container;
+    private maskGraphics: Phaser.GameObjects.Graphics;
+    private mask?: Phaser.Display.Masks.GeometryMask;
+    private scrollbarContainer: Phaser.GameObjects.Container;
+    private scrollbarTrack: Phaser.GameObjects.Image;
+    private scrollbarThumb: Phaser.GameObjects.Image;
+    private scrollOffset = 0;
+    private maxScroll = 0;
+    private trackHeight = 0;
+    private currentRows = 0;
+    private activeMode: 'all' | 'category' = 'all';
+    private items: InventoryDisplayItem[] = [];
+    private selectedItemId?: string;
+    private onItemSelect?: (item: InventoryDisplayItem | null) => void;
+    private lastLayout?: { leftPageLeftEdgeX: number; leftPageTopEdgeY: number; pageHeight: number; scale: number };
+    private lastViewportHeight?: number;
+    private slotsBounds?: Phaser.Geom.Rectangle;
+    private wheelHandler?: (pointer: Phaser.Input.Pointer, _gameObjects: unknown[], _deltaX: number, deltaY: number) => void;
+
+    private countTextureCounter = 0;
+    private countTextureCache = new Map<string, string>();
+    private readonly fontCharSize = 8;
+    private readonly fontCharGap = 1;
+    private readonly fontMap = [
+        '                ',
+        '                ',
+        ' !"#$%&\'()*+,-./',
+        '0123456789:;<=>?',
+        '@ABCDEFGHIJKLMNO',
+        'PQRSTUVWXYZ[\\]^_',
+        '`abcdefghijklmno',
+        'pqrstuvwxyz{|}~ '
+    ];
+    private fontGlyphWidths = new Map<string, number>();
+
+    private trackTextureCounter = 0;
+    private currentTrackTextureKey?: string;
+    private readonly trackSourceWidth = 44;
+    private readonly trackSourceHeight = 5;
+    private readonly trackBorder = 2;
+    private readonly trackThickness = 5;
+
+    private config: Required<InventorySlotsConfig>;
+
+    constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container, config: InventorySlotsConfig = {}) {
+        this.scene = scene;
+        this.config = {
+            columns: config.columns ?? 5,
+            rows: config.rows ?? 20,
+            baseRows: config.baseRows ?? 3,
+            slotSize: config.slotSize ?? 24,
+            slotSpacing: config.slotSpacing ?? 1,
+            gridOffsetX: config.gridOffsetX ?? 9,
+            gridOffsetY: config.gridOffsetY ?? 37,
+            gridBottomPadding: config.gridBottomPadding ?? 14,
+            bottomReservedHeight: config.bottomReservedHeight ?? 0,
+            scrollbarOffsetX: config.scrollbarOffsetX ?? 5,
+            scrollbarThumbOffsetX: config.scrollbarThumbOffsetX ?? -2,
+            scrollbarThumbOffsetY: config.scrollbarThumbOffsetY ?? 0,
+            itemScale: config.itemScale ?? 1,
+            countOffsetX: config.countOffsetX ?? 2,
+            countOffsetY: config.countOffsetY ?? 2,
+            countColor: config.countColor ?? 0xffffff
+        };
+
+        this.container = this.scene.add.container(0, 0);
+        parent.add(this.container);
+
+        this.slotsContainer = this.scene.add.container(0, 0);
+        this.slotsContent = this.scene.add.container(0, 0);
+        this.itemsContent = this.scene.add.container(0, 0);
+        this.slotsContainer.add([this.slotsContent, this.itemsContent]);
+
+        this.maskGraphics = this.scene.add.graphics();
+        this.maskGraphics.setVisible(false);
+
+        this.scrollbarContainer = this.scene.add.container(0, 0);
+        this.scrollbarTrack = this.scene.add.image(0, 0, 'ui-scrollbar-track').setOrigin(0, 0);
+        this.scrollbarThumb = this.scene.add.image(0, 0, 'ui-scrollbar-thumb').setOrigin(0, 0);
+        this.scrollbarThumb.setInteractive({ useHandCursor: true, draggable: true });
+        this.scene.input.setDraggable(this.scrollbarThumb);
+
+        this.scrollbarContainer.add([this.scrollbarTrack, this.scrollbarThumb]);
+        this.container.add([this.slotsContainer, this.scrollbarContainer]);
+
+        this.container.setVisible(false);
+
+        this.currentRows = this.config.rows;
+        this.buildSlots(this.currentRows, this.config.baseRows);
+        this.registerDragHandlers();
+        this.registerWheelHandlers();
+    }
+
+    setVisible(visible: boolean) {
+        this.container.setVisible(visible);
+    }
+
+    setItems(items: InventoryDisplayItem[], mode: 'all' | 'category') {
+        this.items = items;
+        this.activeMode = mode;
+        this.clearSelection();
+        this.refreshSlotsAndItems();
+    }
+
+    setBottomReservedHeight(height: number) {
+        if (this.config.bottomReservedHeight === height) return;
+        this.config.bottomReservedHeight = height;
+        if (this.lastLayout) {
+            this.layout(
+                this.lastLayout.leftPageLeftEdgeX,
+                this.lastLayout.leftPageTopEdgeY,
+                this.lastLayout.pageHeight,
+                this.lastLayout.scale
+            );
+        }
+    }
+
+    setOnItemSelect(callback?: (item: InventoryDisplayItem | null) => void) {
+        this.onItemSelect = callback;
+    }
+
+    clearSelection() {
+        this.selectedItemId = undefined;
+        this.onItemSelect?.(null);
+    }
+
+    layout(leftPageLeftEdgeX: number, leftPageTopEdgeY: number, pageHeight: number, scale: number) {
+        this.lastLayout = { leftPageLeftEdgeX, leftPageTopEdgeY, pageHeight, scale };
+        const gridWidth = this.getGridWidth();
+        const gridHeight = this.getViewportHeight(pageHeight);
+        this.lastViewportHeight = gridHeight;
+
+        const startX = leftPageLeftEdgeX + this.config.gridOffsetX * scale;
+        const startY = leftPageTopEdgeY + this.config.gridOffsetY * scale;
+
+        this.slotsBounds = new Phaser.Geom.Rectangle(startX, startY, gridWidth * scale, gridHeight * scale);
+
+        this.slotsContainer.setPosition(startX, startY);
+        this.slotsContainer.setScale(scale);
+
+        this.scrollbarContainer.setPosition(startX + (gridWidth + this.config.scrollbarOffsetX) * scale, startY);
+        this.scrollbarContainer.setScale(scale);
+
+        this.updateMask(startX, startY, gridWidth * scale, gridHeight * scale);
+        this.updateScrollBounds(gridHeight);
+        this.updateScrollbar(gridHeight);
+        this.applyScroll();
+    }
+
+    private buildSlots(rows: number, baseRows: number, _itemCount?: number) {
+        const { columns, slotSize, slotSpacing } = this.config;
+        this.slotsContent.removeAll(true);
+        this.itemsContent.removeAll(true);
+
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < columns; col++) {
+                const isBaseRow = row < baseRows;
+                const textureKey = isBaseRow ? 'ui-slot-base' : 'ui-slot-extended';
+                const slot = this.scene.add.image(0, 0, textureKey).setOrigin(0, 0);
+                const x = col * (slotSize + slotSpacing);
+                const y = row * (slotSize + slotSpacing);
+                slot.setPosition(x, y);
+                this.slotsContent.add(slot);
+            }
+        }
+    }
+
+    private buildSlotsForCategory(slotCount: number) {
+        const { columns, slotSize, slotSpacing } = this.config;
+        this.slotsContent.removeAll(true);
+        this.itemsContent.removeAll(true);
+
+        for (let i = 0; i < slotCount; i++) {
+            const row = Math.floor(i / columns);
+            const col = i % columns;
+            const slot = this.scene.add.image(0, 0, 'ui-slot-base').setOrigin(0, 0);
+            const x = col * (slotSize + slotSpacing);
+            const y = row * (slotSize + slotSpacing);
+            slot.setPosition(x, y);
+            this.slotsContent.add(slot);
+        }
+    }
+
+    private registerDragHandlers() {
+        this.scrollbarThumb.on('drag', (_pointer: Phaser.Input.Pointer, _dragX: number, dragY: number) => {
+            const gridHeight = this.trackHeight;
+            const thumbHeight = this.scrollbarThumb.displayHeight;
+            const minY = 0;
+            const maxY = Math.max(0, gridHeight - thumbHeight);
+            const clampedY = Phaser.Math.Clamp(dragY, minY, maxY);
+            this.scrollbarThumb.y = clampedY + this.config.scrollbarThumbOffsetY;
+
+            const scrollFraction = maxY > 0 ? clampedY / maxY : 0;
+            this.scrollOffset = scrollFraction * this.maxScroll;
+            this.applyScroll();
+        });
+    }
+
+    private registerWheelHandlers() {
+        this.wheelHandler = (pointer: Phaser.Input.Pointer, _gameObjects: unknown[], _deltaX: number, deltaY: number) => {
+            if (!this.container.visible || this.maxScroll <= 0) return;
+            if (!this.slotsBounds || !this.lastViewportHeight) return;
+            if (!this.slotsBounds.contains(pointer.x, pointer.y)) return;
+
+            const rowStep = this.config.slotSize + this.config.slotSpacing;
+            const direction = deltaY > 0 ? 1 : -1;
+            const scrollStep = rowStep * direction;
+            this.scrollOffset = Phaser.Math.Clamp(this.scrollOffset + scrollStep, 0, this.maxScroll);
+            this.applyScroll();
+            this.updateScrollbar(this.lastViewportHeight);
+        };
+
+        this.scene.input.on('wheel', this.wheelHandler);
+    }
+
+    private applyScroll() {
+        this.slotsContent.y = -this.scrollOffset;
+        this.itemsContent.y = -this.scrollOffset;
+    }
+
+    private updateMask(x: number, y: number, width: number, height: number) {
+        this.maskGraphics.clear();
+        this.maskGraphics.fillStyle(0xffffff, 1);
+        this.maskGraphics.fillRect(x, y, width, height);
+
+        this.mask?.destroy();
+        this.mask = this.maskGraphics.createGeometryMask();
+        this.slotsContainer.setMask(this.mask);
+    }
+
+    private updateScrollBounds(viewportHeight: number) {
+        const contentHeight = this.getContentHeight();
+        this.maxScroll = Math.max(0, contentHeight - viewportHeight);
+        this.scrollOffset = Phaser.Math.Clamp(this.scrollOffset, 0, this.maxScroll);
+    }
+
+    private updateScrollbar(viewportHeight: number) {
+        const contentHeight = this.getContentHeight();
+        const trackHeight = viewportHeight;
+        this.trackHeight = trackHeight;
+
+        const trackTextureKey = this.createTrackTexture(trackHeight);
+        this.scrollbarTrack.setTexture(trackTextureKey);
+        this.scrollbarTrack.setOrigin(0, 0);
+        this.scrollbarTrack.setRotation(Math.PI / 2);
+        this.scrollbarTrack.setPosition(this.trackThickness, 0);
+
+        if (this.currentTrackTextureKey && this.currentTrackTextureKey !== trackTextureKey) {
+            if (this.scene.textures.exists(this.currentTrackTextureKey)) {
+                this.scene.textures.remove(this.currentTrackTextureKey);
+            }
+        }
+        this.currentTrackTextureKey = trackTextureKey;
+
+        if (contentHeight <= viewportHeight) {
+            this.scrollbarThumb.setVisible(false);
+            return;
+        }
+
+        this.scrollbarThumb.setVisible(true);
+        const thumbHeight = this.scrollbarThumb.displayHeight;
+
+        const maxY = Math.max(0, trackHeight - thumbHeight);
+        const scrollFraction = this.maxScroll > 0 ? this.scrollOffset / this.maxScroll : 0;
+        this.scrollbarThumb.setPosition(this.config.scrollbarThumbOffsetX, this.config.scrollbarThumbOffsetY + maxY * scrollFraction);
+    }
+
+    private getGridWidth() {
+        const { columns, slotSize, slotSpacing } = this.config;
+        return columns * slotSize + (columns - 1) * slotSpacing;
+    }
+
+    private getViewportHeight(pageHeight: number) {
+        return Math.max(
+            1,
+            pageHeight - this.config.gridOffsetY - this.config.gridBottomPadding - this.config.bottomReservedHeight
+        );
+    }
+
+    private getContentHeight() {
+        const { slotSize, slotSpacing } = this.config;
+        return this.currentRows * slotSize + (this.currentRows - 1) * slotSpacing;
+    }
+
+    private refreshSlotsAndItems() {
+        const stacks = this.buildStacks(this.items);
+
+        if (this.activeMode === 'all') {
+            this.currentRows = this.config.rows;
+            this.buildSlots(this.currentRows, this.config.baseRows, stacks.length);
+        } else {
+            // For category mode, only create as many slots as there are items
+            const neededSlots = stacks.length;
+            const neededRows = Math.max(1, Math.ceil(neededSlots / this.config.columns));
+            this.currentRows = neededRows;
+            this.buildSlotsForCategory(neededSlots);
+        }
+
+        this.renderStacks(stacks);
+
+        if (this.lastLayout) {
+            this.layout(
+                this.lastLayout.leftPageLeftEdgeX,
+                this.lastLayout.leftPageTopEdgeY,
+                this.lastLayout.pageHeight,
+                this.lastLayout.scale
+            );
+        }
+    }
+
+    private buildStacks(items: InventoryDisplayItem[]) {
+        const stacks: Array<{ item: InventoryDisplayItem; iconKey: string; count: number }> = [];
+        items.forEach((item) => {
+            let remaining = item.count;
+            while (remaining > 0) {
+                const stackCount = Math.min(item.stackSize, remaining);
+                stacks.push({ item, iconKey: item.iconKey, count: stackCount });
+                remaining -= stackCount;
+            }
+        });
+        return stacks;
+    }
+
+    private renderStacks(stacks: Array<{ item: InventoryDisplayItem; iconKey: string; count: number }>) {
+        const { columns, slotSize, slotSpacing, itemScale, countOffsetX, countOffsetY } = this.config;
+        this.itemsContent.removeAll(true);
+
+        stacks.forEach((stack, index) => {
+            const row = Math.floor(index / columns);
+            const col = index % columns;
+            const x = col * (slotSize + slotSpacing);
+            const y = row * (slotSize + slotSpacing);
+
+            const icon = this.scene.add.image(x + slotSize / 2, y + slotSize / 2, stack.iconKey).setOrigin(0.5, 0.5);
+            icon.setScale(itemScale);
+            icon.setInteractive({ useHandCursor: true });
+            icon.on('pointerdown', () => {
+                this.selectedItemId = stack.item.id;
+                this.onItemSelect?.(stack.item);
+            });
+            this.itemsContent.add(icon);
+
+            const countText = String(stack.count);
+            const countTextureKey = this.getCountTexture(countText);
+            const countImage = this.scene.add.image(0, 0, countTextureKey).setOrigin(0, 0);
+            const countWidth = (this.scene.textures.get(countTextureKey).getSourceImage() as HTMLImageElement).width;
+            const countX = x + slotSize - countWidth - countOffsetX;
+            const countY = y + slotSize - this.fontCharSize - countOffsetY;
+            countImage.setPosition(Math.round(countX), Math.round(countY));
+            this.itemsContent.add(countImage);
+        });
+    }
+
+    private getCountTexture(text: string) {
+        if (this.countTextureCache.has(text)) {
+            return this.countTextureCache.get(text)!;
+        }
+
+        const fontTexture = this.scene.textures.get('ui-font');
+        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
+        const width = this.measureBitmapTextWidth(text);
+        const height = this.fontCharSize;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, width);
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+
+        let cursorX = 0;
+        for (const ch of text) {
+            const pos = this.findGlyph(ch);
+            if (pos) {
+                const sx = pos.col * this.fontCharSize;
+                const sy = pos.row * this.fontCharSize;
+                ctx.drawImage(fontImage, sx, sy, this.fontCharSize, this.fontCharSize, cursorX, 0, this.fontCharSize, this.fontCharSize);
+
+                const glyphWidth = this.getGlyphWidth(fontImage, ch);
+                cursorX += glyphWidth + this.fontCharGap;
+            } else {
+                cursorX += this.fontCharSize + this.fontCharGap;
+            }
+        }
+
+        ctx.globalCompositeOperation = 'source-in';
+        ctx.fillStyle = `#${this.config.countColor.toString(16).padStart(6, '0')}`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const key = `__inv_count_${this.countTextureCounter++}`;
+        this.scene.textures.addCanvas(key, canvas);
+        this.countTextureCache.set(text, key);
+        return key;
+    }
+
+    private findGlyph(ch: string) {
+        for (let row = 0; row < this.fontMap.length; row++) {
+            const col = this.fontMap[row].indexOf(ch);
+            if (col !== -1) return { row, col };
+        }
+        return null;
+    }
+
+    private measureBitmapTextWidth(text: string): number {
+        if (!text.length) return 0;
+
+        const fontTexture = this.scene.textures.get('ui-font');
+        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
+
+        let width = 0;
+        for (let i = 0; i < text.length; i++) {
+            const ch = text[i];
+            const glyphWidth = this.getGlyphWidth(fontImage, ch);
+            width += glyphWidth;
+            if (i < text.length - 1) width += this.fontCharGap;
+        }
+        return width;
+    }
+
+    private getGlyphWidth(fontImage: HTMLImageElement, ch: string): number {
+        if (this.fontGlyphWidths.has(ch)) {
+            return this.fontGlyphWidths.get(ch)!;
+        }
+
+        const pos = this.findGlyph(ch);
+        if (!pos) {
+            this.fontGlyphWidths.set(ch, this.fontCharSize);
+            return this.fontCharSize;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = this.fontCharSize;
+        canvas.height = this.fontCharSize;
+        const ctx = canvas.getContext('2d')!;
+
+        const sx = pos.col * this.fontCharSize;
+        const sy = pos.row * this.fontCharSize;
+        ctx.drawImage(fontImage, sx, sy, this.fontCharSize, this.fontCharSize, 0, 0, this.fontCharSize, this.fontCharSize);
+
+        const data = ctx.getImageData(0, 0, this.fontCharSize, this.fontCharSize).data;
+        let rightmost = -1;
+        for (let x = this.fontCharSize - 1; x >= 0; x--) {
+            let hasPixel = false;
+            for (let y = 0; y < this.fontCharSize; y++) {
+                const idx = (y * this.fontCharSize + x) * 4 + 3;
+                if (data[idx] > 0) {
+                    hasPixel = true;
+                    break;
+                }
+            }
+            if (hasPixel) {
+                rightmost = x;
+                break;
+            }
+        }
+
+        const width = Math.max(1, rightmost + 1);
+        this.fontGlyphWidths.set(ch, width);
+        return width;
+    }
+
+    private createTrackTexture(trackHeight: number) {
+        const targetWidth = Math.max(1, Math.round(trackHeight));
+        const targetHeight = this.trackSourceHeight;
+
+        const rtKey = `__inv_scroll_track_${this.trackTextureCounter++}`;
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d')!;
+
+        const srcTexture = this.scene.textures.get('ui-scrollbar-track');
+        const srcImage = srcTexture.getSourceImage() as HTMLImageElement;
+
+        const border = this.trackBorder;
+        const srcW = this.trackSourceWidth;
+        const srcH = this.trackSourceHeight;
+        const centerSrcW = srcW - border * 2;
+        const centerSrcH = srcH - border * 2;
+
+        const centerW = Math.max(1, targetWidth - border * 2);
+        const centerH = Math.max(1, targetHeight - border * 2);
+
+        // Top row
+        ctx.drawImage(srcImage, 0, 0, border, border, 0, 0, border, border);
+        ctx.drawImage(srcImage, border, 0, centerSrcW, border, border, 0, centerW, border);
+        ctx.drawImage(srcImage, srcW - border, 0, border, border, border + centerW, 0, border, border);
+
+        // Middle row
+        ctx.drawImage(srcImage, 0, border, border, centerSrcH, 0, border, border, centerH);
+        ctx.drawImage(srcImage, border, border, centerSrcW, centerSrcH, border, border, centerW, centerH);
+        ctx.drawImage(srcImage, srcW - border, border, border, centerSrcH, border + centerW, border, border, centerH);
+
+        // Bottom row
+        ctx.drawImage(srcImage, 0, srcH - border, border, border, 0, border + centerH, border, border);
+        ctx.drawImage(srcImage, border, srcH - border, centerSrcW, border, border, border + centerH, centerW, border);
+        ctx.drawImage(srcImage, srcW - border, srcH - border, border, border, border + centerW, border + centerH, border, border);
+
+        this.scene.textures.addCanvas(rtKey, canvas);
+        return rtKey;
+    }
+}

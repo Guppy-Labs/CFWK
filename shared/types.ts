@@ -163,6 +163,97 @@ export interface IJoinInstanceResponse {
     error?: string;
 }
 
+// --- Inventory System Types ---
+
+export interface InventoryEntry {
+    itemId: string;
+    count: number;
+}
+
+export interface IInventoryResponse {
+    items: InventoryEntry[];
+}
+
 // Re-export WorldTime module
 export * from './WorldTime';
+export * from './items';
+
+// --- Character Appearance Types ---
+
+/**
+ * Character appearance customization
+ * Each layer can be tinted with primary/secondary colors
+ */
+export interface ICharacterAppearance {
+  body: {
+    primaryColor: string;    // Hex color for main body
+    secondaryColor: string;  // Hex color for accents
+  };
+  accessories: {
+    cape: {
+      equipped: boolean;
+      primaryColor: string;
+      secondaryColor: string;
+    };
+    scarf: {
+      equipped: boolean;
+      primaryColor: string;
+      secondaryColor: string;
+    };
+  };
+}
+
+/**
+ * Default character appearance (cat with default colors, cape and scarf equipped)
+ */
+export const DEFAULT_CHARACTER_APPEARANCE: ICharacterAppearance = {
+  body: {
+    primaryColor: '#FFFFFF',
+    secondaryColor: '#CCCCCC'
+  },
+  accessories: {
+    cape: {
+      equipped: true,
+      primaryColor: '#FF6B6B',
+      secondaryColor: '#CC5555'
+    },
+    scarf: {
+      equipped: true,
+      primaryColor: '#4ECDC4',
+      secondaryColor: '#3BA99C'
+    }
+  }
+};
+
+/**
+ * Animation types available for MC character
+ */
+export type MCAnimationType = 'idle' | 'walk' | 'run';
+
+/**
+ * Direction identifiers for MC animations
+ * N = North (up), S = South (down), E = East (right), W = West (left)
+ * Diagonals: NE, SE, SW, NW
+ */
+export type MCDirection = 'N' | 'S' | 'E' | 'W' | 'NE' | 'SE' | 'SW' | 'NW';
+
+/**
+ * Frame dimensions for MC animations by direction
+ * N/S directions are 16x27, E/W are 19x27 (cape extends)
+ */
+export const MC_FRAME_DIMENSIONS: Record<MCDirection, { width: number; height: number }> = {
+  N: { width: 16, height: 27 },
+  S: { width: 16, height: 27 },
+  E: { width: 19, height: 27 },
+  W: { width: 19, height: 27 },
+  NE: { width: 19, height: 27 }, // Uses E for now
+  SE: { width: 19, height: 27 }, // Uses E for now
+  NW: { width: 19, height: 27 }, // Uses E mirrored
+  SW: { width: 19, height: 27 }  // Uses E mirrored
+};
+
+/**
+ * Number of frames per animation strip
+ */
+export const MC_FRAMES_PER_ANIMATION = 8;
 

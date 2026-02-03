@@ -1,4 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
+
+// Re-export for convenience
+export { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE };
 
 export interface IUser extends Document {
   username?: string;
@@ -19,6 +23,8 @@ export interface IUser extends Document {
   bannedUntil?: Date;
   mutedUntil?: Date;
   lastKnownIP?: string;
+  inventory?: { itemId: string; count: number }[];
+  characterAppearance?: ICharacterAppearance;
 }
 
 const UserSchema: Schema = new Schema({
@@ -38,7 +44,37 @@ const UserSchema: Schema = new Schema({
   lastPasswordResetRequest: { type: Date },
   bannedUntil: { type: Date, default: null },
   mutedUntil: { type: Date, default: null },
-  lastKnownIP: { type: String }
+  lastKnownIP: { type: String },
+  inventory: {
+    type: [
+      {
+        itemId: { type: String, required: true },
+        count: { type: Number, required: true, default: 0 }
+      }
+    ],
+    default: []
+  },
+  characterAppearance: {
+    type: {
+      body: {
+        primaryColor: { type: String, default: '#FFFFFF' },
+        secondaryColor: { type: String, default: '#CCCCCC' }
+      },
+      accessories: {
+        cape: {
+          equipped: { type: Boolean, default: true },
+          primaryColor: { type: String, default: '#FF6B6B' },
+          secondaryColor: { type: String, default: '#CC5555' }
+        },
+        scarf: {
+          equipped: { type: Boolean, default: true },
+          primaryColor: { type: String, default: '#4ECDC4' },
+          secondaryColor: { type: String, default: '#3BA99C' }
+        }
+      }
+    },
+    default: () => ({ ...DEFAULT_CHARACTER_APPEARANCE })
+  }
 }, {
   timestamps: true
 });

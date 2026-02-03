@@ -3,6 +3,7 @@ import { TiledObjectLayer } from '../map/TiledTypes';
 import { PlayerAnimationController } from './PlayerAnimationController';
 import { PlayerShadow } from './PlayerShadow';
 import { MobileControls } from '../ui/MobileControls';
+import { DesktopInteractButton } from '../ui/DesktopInteractButton';
 import { NetworkManager } from '../network/NetworkManager';
 import { currentUser } from '../index';
 import { EmojiMap } from '../ui/EmojiMap';
@@ -104,6 +105,7 @@ export class PlayerController {
     private interactKey?: Phaser.Input.Keyboard.Key;
     private mobileInteractListener?: () => void;
     private interactionLockUntil = 0;
+    private desktopInteractButton?: DesktopInteractButton;
 
     // External speed modifier (e.g., from water depth)
     private speedMultiplier = 1.0;
@@ -114,8 +116,8 @@ export class PlayerController {
         this.config = {
             speed: config.speed ?? 1.6,
             sprintSpeed: config.sprintSpeed ?? 3.2,
-            accel: config.accel ?? 0.18,
-            drag: config.drag ?? 0.7,
+            accel: config.accel ?? 0.35,
+            drag: config.drag ?? 0.5,
             width: config.width ?? 16,
             height: config.height ?? 32,
             depth: config.depth ?? 260,
@@ -705,15 +707,19 @@ export class PlayerController {
         }) as typeof this.wasd;
         this.shiftKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
         
-        // Interact key (E)
-        this.interactKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+        // Interact key (F)
+        this.interactKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F);
         
         // Initialize mobile controls (auto-detects touch devices)
         this.mobileControls = new MobileControls();
         
-        // Connect mobile controls to interaction system
+        // Initialize desktop interact button (auto-hides on mobile)
+        this.desktopInteractButton = new DesktopInteractButton();
+        
+        // Connect controls to interaction system
         this.interactionManager.onInteractionChange((interaction) => {
             this.mobileControls?.setAvailableInteraction(interaction);
+            this.desktopInteractButton?.setAvailableInteraction(interaction);
         });
         
         // Listen for mobile interact button press
@@ -782,6 +788,13 @@ export class PlayerController {
     }
 
     /**
+     * Get desktop interact button instance
+     */
+    getDesktopInteractButton(): DesktopInteractButton | undefined {
+        return this.desktopInteractButton;
+    }
+
+    /**
      * Check if player is currently moving
      */
     getIsMoving(): boolean {
@@ -840,6 +853,7 @@ export class PlayerController {
             window.removeEventListener('mobile:interact', this.mobileInteractListener);
         }
         this.mobileControls?.destroy();
+        this.desktopInteractButton?.destroy();
         this.shadow?.destroy();
         this.guiEffect?.destroy();
         this.interactionManager?.destroy();

@@ -1,0 +1,35 @@
+# Robots.txt for Cute Fish With Knives
+# https://cutefishwithknives.com
+
+User-agent: *
+Allow: /
+
+# Allow crawling of main pages
+Allow: /login/
+Allow: /maps/
+
+# Disallow private/authenticated pages
+Disallow: /account/
+Disallow: /game/
+Disallow: /onboarding/
+Disallow: /verify/
+Disallow: /reset/
+Disallow: /forgot/
+Disallow: /sent/
+Disallow: /soon.html
+
+# Disallow API endpoints
+Disallow: /api/
+
+# Disallow assets that shouldn't be indexed
+Disallow: /src/
+Disallow: /public/assets/
+Disallow: /public/audio/
+Disallow: /public/maps/
+Disallow: /public/items/
+
+# Crawl-delay for polite crawling
+Crawl-delay: 1
+
+# Sitemap location
+Sitemap: https://cutefishwithknives.com/sitemap.xml

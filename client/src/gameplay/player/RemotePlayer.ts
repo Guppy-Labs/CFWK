@@ -2,6 +2,12 @@ import Phaser from 'phaser';
 import { OcclusionManager } from '../map/OcclusionManager';
 import { EmojiMap } from '../ui/EmojiMap';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
+import { SharedMCTextures } from './SharedMCTextures';
+
+/**
+ * MCDirection type for MC character system
+ */
+type MCDirection = 'N' | 'S' | 'E' | 'W' | 'NE' | 'SE' | 'NW' | 'SW';
 
 /**
  * Direction enum matching PlayerAnimationController
@@ -16,6 +22,20 @@ enum Direction {
     Left = 6,
     DownLeft = 7
 }
+
+/**
+ * Map direction index to MC direction
+ */
+const DIRECTION_TO_MC: Record<Direction, MCDirection> = {
+    [Direction.Down]: 'S',
+    [Direction.DownRight]: 'SE',
+    [Direction.Right]: 'E',
+    [Direction.UpRight]: 'NE',
+    [Direction.Up]: 'N',
+    [Direction.UpLeft]: 'NW',
+    [Direction.Left]: 'W',
+    [Direction.DownLeft]: 'SW'
+};
 
 /**
  * Generates a consistent color from a string (user ID)
@@ -160,27 +180,44 @@ export class RemotePlayer {
     }
 
     private createSprite(x: number, y: number, skipSpawnEffect?: boolean) {
-        this.sprite = this.scene.add.sprite(x, y, 'player-idle');
+        // Try to use MC texture if available, otherwise create a colored placeholder
+        const sharedMC = SharedMCTextures.getInstance();
+        const defaultTextureKey = sharedMC.getTextureKey('S'); // Default south-facing
         
-        // Match local player scale and origin settings
-        const width = 16;
-        const height = 32;
-        const scale = 1.2;
-        const scaledWidth = width * scale;
-        const scaledHeight = height * scale;
-        const collidableHeight = scaledHeight / 6;
+        if (defaultTextureKey && this.scene.textures.exists(defaultTextureKey)) {
+            this.sprite = this.scene.add.sprite(x, y, defaultTextureKey, 0);
+        } else {
+            // Fallback: create colored rectangle texture
+            const fallbackKey = `remote-player-${this.sessionId}`;
+            if (!this.scene.textures.exists(fallbackKey)) {
+                const graphics = this.scene.make.graphics({}, false);
+                graphics.fillStyle(this.playerColor);
+                graphics.fillRect(0, 0, 16, 27);
+                graphics.generateTexture(fallbackKey, 16, 27);
+                graphics.destroy();
+            }
+            this.sprite = this.scene.add.sprite(x, y, fallbackKey);
+            // Only tint the fallback placeholder
+            this.sprite.setTint(this.playerColor);
+        }
         
-        // Scale up to match local player
-        this.sprite.setDisplaySize(scaledWidth, scaledHeight);
+        // Match MCPlayerController dimensions exactly:
+        // - Base dimensions: 16x27 (MC_FRAME_DIMENSIONS['S'])
+        // - Scale: 1.5
+        // - Collidable height: 6 * 1.5 = 9
+        const baseHeight = 27;
+        const scale = 1.5;
+        const scaledHeight = baseHeight * scale;
+        const collidableHeight = 6 * scale;
         
-        // Match origin so feet align with position
+        // Use setScale instead of setDisplaySize to preserve texture proportions
+        this.sprite.setScale(scale);
+        
+        // Match origin so feet align with position (same formula as MCPlayerController)
         const originY = 1 - collidableHeight / (2 * scaledHeight);
         this.sprite.setOrigin(0.5, originY);
         
         this.sprite.setDepth(this.baseDepth);
-        
-        // Apply color tint
-        this.sprite.setTint(this.playerColor);
 
         // Start with sprite hidden for spawn effect (unless skipped)
         if (skipSpawnEffect) {
@@ -200,9 +237,9 @@ export class RemotePlayer {
         this.spawnStartTime = this.scene.time.now;
         this.particles = [];
 
-        // Get player dimensions
-        const width = 16;
-        const height = 32;
+        // Get player dimensions (match MCPlayerController: 16x27 base, 1.5 scale)
+        const width = 16 * 1.5;
+        const height = 27 * 1.5;
         const pixelSize = 2;
         const numParticles = 40; // Number of particles to use
 
@@ -260,9 +297,9 @@ export class RemotePlayer {
         this.sprite.setAlpha(0);
         this.nameplate.setAlpha(0);
 
-        // Get player dimensions
-        const width = 16;
-        const height = 32;
+        // Get player dimensions (match MCPlayerController: 16x27 base, 1.5 scale)
+        const width = 16 * 1.5;
+        const height = 27 * 1.5;
         const pixelSize = 2;
         const numParticles = 40;
 
@@ -414,16 +451,14 @@ export class RemotePlayer {
     }
 
     private updateAnimation(anim: string, direction: Direction) {
-        const directionNames = ['down', 'down-right', 'right', 'up-right', 'up', 'up-right', 'right', 'down-right'];
-        const dirName = directionNames[direction] || 'down';
+        // Convert to MC direction
+        const mcDir = DIRECTION_TO_MC[direction];
         
-        // Mirror for left-facing directions
-        const shouldFlip = direction === Direction.UpLeft || 
-                          direction === Direction.Left || 
-                          direction === Direction.DownLeft;
-        this.sprite.setFlipX(shouldFlip);
+        // MC textures are pre-flipped, so no need for setFlipX
+        this.sprite.setFlipX(false);
         
-        const animKey = `player-${anim}-${dirName}`;
+        // Use MC animation key format (mc-walk-S, mc-walk-N, etc.)
+        const animKey = `mc-${anim}-${mcDir}`;
         
         if (this.scene.anims.exists(animKey) && this.sprite.anims.currentAnim?.key !== animKey) {
             this.sprite.play(animKey);

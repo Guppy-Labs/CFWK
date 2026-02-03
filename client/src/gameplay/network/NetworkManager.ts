@@ -1,6 +1,6 @@
 import * as Colyseus from "colyseus.js";
 import { Config } from "../../config";
-import { IInstanceInfo, IJoinInstanceResponse } from "@cfwk/shared";
+import { IInstanceInfo, IJoinInstanceResponse, IInventoryResponse } from "@cfwk/shared";
 
 /**
  * NetworkManager - Handles all server communication for multiplayer.
@@ -71,6 +71,26 @@ export class NetworkManager {
         } catch (error) {
             console.error("[NetworkManager] Error requesting instance:", error);
             this.connectionError = error instanceof Error ? error.message : "Unknown error";
+            return null;
+        }
+    }
+
+    async getInventory(): Promise<IInventoryResponse | null> {
+        try {
+            // Use relative URL to go through same-origin proxy (for session cookies)
+            const response = await fetch('/api/inventory', {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch inventory: ${response.statusText}`);
+            }
+
+            const data: IInventoryResponse = await response.json();
+            return data;
+        } catch (error) {
+            console.error('[NetworkManager] Error fetching inventory:', error);
             return null;
         }
     }

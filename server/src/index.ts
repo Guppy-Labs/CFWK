@@ -15,6 +15,7 @@ import { GameRoom } from "./rooms/GameRoom";
 import { InstanceRoom } from "./rooms/InstanceRoom";
 import authRoutes from "./routes/auth";
 import accountRoutes from "./routes/account";
+import inventoryRoutes from "./routes/inventory";
 import apiRoutes from "./routes";
 import initPassport from "./config/passport";
 import { InstanceManager } from "./managers/InstanceManager";
@@ -26,8 +27,18 @@ initPassport();
 const port = Number(process.env.PORT || 3019);
 const app = express();
 
+const clientUrlEnv = process.env.CLIENT_URL || "http://localhost:5173";
+const allowedOrigins = (process.env.CLIENT_URLS || clientUrlEnv)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
 app.use(cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true
 }));
 app.use(express.json());
@@ -50,6 +61,7 @@ app.use(session({
     }),
     cookie: {
         secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? 'none' : 'lax',
         maxAge: 1000 * 60 * 60 * 24 * 7 // 1 week
     }
 }));
@@ -61,6 +73,7 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 app.use("/api", apiRoutes); 
 app.use("/api/auth", authRoutes);
 app.use("/api/account", accountRoutes);
+app.use("/api/inventory", inventoryRoutes);
 
 // MongoDB connection
 mongoose.connect(mongoURI)

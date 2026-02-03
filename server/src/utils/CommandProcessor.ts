@@ -1,6 +1,7 @@
 import User from '../models/User';
 import BannedIP from '../models/BannedIP';
 import { InstanceManager } from '../managers/InstanceManager';
+import { getItemDefinition } from '@cfwk/shared';
 
 export class CommandProcessor {
     // Basic duration parser (1d, 2h, 30m, 10s)
@@ -52,6 +53,8 @@ export class CommandProcessor {
                 return this.handleReboot(issuerName);
             case 'limbo':
                 return await this.handleLimbo(args, issuerName);
+            case 'give':
+                return await this.handleGive(args, issuerName);
             default:
                 return "Unknown command.";
         }
@@ -229,5 +232,36 @@ export class CommandProcessor {
         });
 
         return `User ${user.username} has been sent to limbo.`;
+    }
+
+    private static async handleGive(args: string[], issuer: string): Promise<string> {
+        if (args.length < 3) return "Usage: /give [item id] [amount] [username]";
+        const itemId = args[0];
+        const amount = parseInt(args[1], 10);
+        const targetName = args.slice(2).join(' ');
+
+        if (!Number.isFinite(amount) || amount <= 0) return "Amount must be a positive number.";
+
+        const itemDef = getItemDefinition(itemId);
+        if (!itemDef) return `Unknown item '${itemId}'.`;
+
+        const user = await this.getUserByUsername(targetName);
+        if (!user) return `User '${targetName}' not found.`;
+
+        if (!user.inventory) user.inventory = [];
+        const entry = user.inventory.find((inv) => inv.itemId === itemId);
+        if (entry) {
+            entry.count += amount;
+        } else {
+            user.inventory.push({ itemId, count: amount });
+        }
+        await user.save();
+
+        InstanceManager.getInstance().events.emit('msg_user', {
+            userId: user._id.toString(),
+            message: `You received ${amount} ${itemDef.name}.`
+        });
+
+        return `Gave ${amount} ${itemDef.name} to ${user.username}.`;
     }
 }

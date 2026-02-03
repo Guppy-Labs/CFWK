@@ -1,4 +1,9 @@
 import Phaser from 'phaser';
+import { InventoryGroupsUI, GroupKey } from './inventory/InventoryGroupsUI';
+import { InventorySlotsUI, InventoryDisplayItem } from './inventory/InventorySlotsUI';
+import { InventoryItemDetailsUI, DEFAULT_ITEM_DETAILS_CONFIG } from './inventory/InventoryItemDetailsUI';
+import { NetworkManager } from '../network/NetworkManager';
+import { InventoryEntry, getItemDefinition, ItemDefinition, ItemCategory } from '@cfwk/shared';
 
 type TabItem = {
     label: string;
@@ -18,6 +23,13 @@ export class BookUI {
     private tabsContainer: Phaser.GameObjects.Container;
     private tabs: TabItem[] = [];
     private openState = false;
+    private inventoryGroups: InventoryGroupsUI;
+    private inventorySlots: InventorySlotsUI;
+    private inventoryDetails: InventoryItemDetailsUI;
+    private activeTabLabel = 'Inventory';
+    private inventoryEntries: InventoryEntry[] = [];
+    private inventoryItems: Array<{ entry: InventoryEntry; def: ItemDefinition; display: InventoryDisplayItem }> = [];
+    private networkManager = NetworkManager.getInstance();
 
     private readonly coverWidth = 320;
     private readonly coverHeight = 219;
@@ -66,6 +78,34 @@ export class BookUI {
         this.container.setDepth(12000);
         this.container.setVisible(false);
 
+        this.inventoryGroups = new InventoryGroupsUI(this.scene, this.container);
+        this.inventoryDetails = new InventoryItemDetailsUI(this.scene, this.container, {
+            width: DEFAULT_ITEM_DETAILS_CONFIG.width,
+            height: DEFAULT_ITEM_DETAILS_CONFIG.height,
+            offsetX: DEFAULT_ITEM_DETAILS_CONFIG.offsetX,
+            offsetY: DEFAULT_ITEM_DETAILS_CONFIG.offsetY,
+            frameTextureKey: DEFAULT_ITEM_DETAILS_CONFIG.frameTextureKey,
+            dividerTextureKey: DEFAULT_ITEM_DETAILS_CONFIG.dividerTextureKey
+        });
+        this.inventorySlots = new InventorySlotsUI(this.scene, this.container, {
+            bottomReservedHeight: 0
+        });
+        this.inventoryGroups.setOnGroupChange((group) => {
+            if (this.activeTabLabel !== 'Inventory') return;
+            this.applyInventoryFilter(group);
+            this.inventorySlots.clearSelection();
+            this.inventorySlots.setBottomReservedHeight(0);
+        });
+        this.inventorySlots.setOnItemSelect((item) => {
+            if (!item) {
+                this.inventoryDetails.setItem(null);
+                this.inventorySlots.setBottomReservedHeight(0);
+                return;
+            }
+            this.inventorySlots.setBottomReservedHeight(this.inventoryDetails.getReservedHeight());
+            this.inventoryDetails.setItem({ name: item.name, description: item.description });
+        });
+
         this.createTabs();
         this.layout();
     }
@@ -104,6 +144,13 @@ export class BookUI {
         this.rightPage.setPosition(bookCenterX + pageW / 2, cy);
 
         this.layoutTabs(scale, bookCenterX, cy, pageW);
+
+        const pageH = this.pageHeight * scale;
+        const leftPageLeftEdgeX = bookCenterX - pageW / 2 - (this.pageWidth / 2) * scale;
+        const leftPageTopEdgeY = cy - pageH / 2;
+        this.inventoryGroups.layout(leftPageLeftEdgeX, leftPageTopEdgeY, scale);
+        this.inventoryDetails.layout(leftPageLeftEdgeX, leftPageTopEdgeY, this.pageHeight, scale);
+        this.inventorySlots.layout(leftPageLeftEdgeX, leftPageTopEdgeY, this.pageHeight, scale);
     }
 
     private createTabs() {
@@ -214,7 +261,7 @@ export class BookUI {
             const textWidth = this.measureBitmapTextWidth(label);
             const textX = Math.max(this.tabPaddingLeft, width - this.tabPaddingRight - textWidth);
             const textY = Math.floor((height - this.fontCharSize) / 2);
-            const textColor = active ? '#cfd8e5' : '#4b3435';
+            const textColor = active ? '#a17f74' : '#4b3435';
             this.drawBitmapText(ctx, fontImage, label, textX, textY, textColor);
         }
 
@@ -225,12 +272,25 @@ export class BookUI {
     }
 
     private setActiveTab(label: string) {
+        this.activeTabLabel = label;
         this.tabs.forEach((tab) => {
             const shouldBeActive = tab.label === label;
             if (tab.active === shouldBeActive) return;
             tab.active = shouldBeActive;
             this.updateTabTexture(tab);
         });
+        const isInventory = label === 'Inventory';
+        this.inventoryGroups.setVisible(isInventory);
+        if (isInventory) {
+            this.inventoryGroups.setActiveGroup('All', true);
+            this.refreshInventory();
+            this.inventorySlots.setBottomReservedHeight(0);
+        } else {
+            this.inventorySlots.setVisible(false);
+            this.inventoryDetails.setVisible(false);
+            this.inventorySlots.clearSelection();
+            this.inventorySlots.setBottomReservedHeight(0);
+        }
     }
 
     private updateTabTexture(tab: TabItem) {
@@ -250,6 +310,74 @@ export class BookUI {
 
         if (this.scene.textures.exists(oldKey)) {
             this.scene.textures.remove(oldKey);
+        }
+    }
+
+    private async refreshInventory() {
+        const response = await this.networkManager.getInventory();
+        if (!response) return;
+
+        this.inventoryEntries = response.items || [];
+        this.inventoryItems = this.inventoryEntries
+            .map((entry) => {
+                const def = getItemDefinition(entry.itemId);
+                if (!def) return null;
+                const display: InventoryDisplayItem = {
+                    id: def.id,
+                    name: def.name,
+                    description: def.description,
+                    count: entry.count,
+                    stackSize: def.stackSize,
+                    iconKey: `item-${def.id}-18`,
+                    category: def.category
+                };
+                return { entry, def, display };
+            })
+            .filter((value): value is { entry: InventoryEntry; def: ItemDefinition; display: InventoryDisplayItem } => Boolean(value));
+
+        this.applyInventoryFilter(this.inventoryGroups.getActiveGroup());
+    }
+
+    private applyInventoryFilter(group: GroupKey) {
+        const isInventory = this.activeTabLabel === 'Inventory';
+        if (!isInventory) {
+            this.inventorySlots.setVisible(false);
+            this.inventoryDetails.setVisible(false);
+            this.inventorySlots.clearSelection();
+            this.inventorySlots.setBottomReservedHeight(0);
+            return;
+        }
+
+        const showAll = group === 'All';
+        const category = this.getGroupCategory(group);
+        const filtered = showAll
+            ? this.inventoryItems.map((item) => item.display)
+            : category
+                ? this.inventoryItems
+                    .filter((item) => item.def.category === category)
+                    .map((item) => item.display)
+                : [];
+
+        this.inventorySlots.setVisible(showAll || category === 'Food');
+        this.inventorySlots.setItems(filtered, showAll ? 'all' : 'category');
+        if (!showAll && category !== 'Food') {
+            this.inventoryDetails.setItem(null);
+            this.inventorySlots.setBottomReservedHeight(0);
+        }
+    }
+
+    private getGroupCategory(group: GroupKey): ItemCategory | null {
+        switch (group) {
+            case 'Tools':
+                return 'Tools';
+            case 'Food':
+                return 'Food';
+            case 'Gear':
+            case 'Fishing':
+                return null;
+            case 'All':
+            default:
+                return null;
         }
     }
 
@@ -371,6 +499,9 @@ export class BookUI {
     close() {
         this.openState = false;
         this.container.setVisible(false);
+        this.inventorySlots.clearSelection();
+        this.inventoryDetails.setVisible(false);
+        this.inventorySlots.setBottomReservedHeight(0);
     }
 
     toggle() {

@@ -30,7 +30,7 @@ export class WaterDepthEffect {
     
     private config: WaterDepthConfig = {
         maxDepthTiles: 3,           // Max depth tracking (3 tiles deep)
-        maxSinkAmount: 10,          // Sink 10 pixels at max depth
+        maxSinkAmount: 6,          // Sink 10 pixels at max depth
         minSpeedMultiplier: 0.4,    // 40% speed at max depth
         slowdownStartTiles: 1.0     // Start slowing after 1 tile in (first tile is just waves)
     };

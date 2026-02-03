@@ -61,7 +61,7 @@ export function startGame(userData: { _id: string; username: string }) {
         },
         scene: [BootScene, GameScene, UIScene],
         pixelArt: true,
-        roundPixels: false,
+        roundPixels: true,
         scale: {
             mode: Phaser.Scale.RESIZE,
             autoCenter: Phaser.Scale.CENTER_BOTH

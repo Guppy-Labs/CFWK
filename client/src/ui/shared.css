@@ -18,7 +18,7 @@
     z-index: 900; /* Below navbar (typically 1000+) so toasts slide from behind */
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 0;
     pointer-events: none;
     align-items: center;
     overflow: visible;
@@ -37,6 +37,7 @@
     align-items: center;
     animation: toast-drop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
     pointer-events: auto;
+    margin-bottom: 10px;
 }
 
 .toast-chain {
@@ -82,8 +83,8 @@
 @keyframes toast-drop {
     0% { transform: translateY(-100px); opacity: 0; }
     50% { opacity: 1; }
-    70% { transform: translateY(8px); }
-    85% { transform: translateY(-4px); }
+    70% { transform: translateY(4px); }
+    85% { transform: translateY(0); }
     100% { transform: translateY(0); }
 }
 
@@ -100,6 +101,8 @@
 .toast-wrapper.bottom {
     flex-direction: column-reverse;
     animation: toast-rise 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    margin-bottom: 0;
+    margin-top: 10px;
 }
 
 .toast-wrapper.bottom .mm-toast {
@@ -115,8 +118,8 @@
 @keyframes toast-rise {
     0% { transform: translateY(100px); opacity: 0; }
     50% { opacity: 1; }
-    70% { transform: translateY(-8px); }
-    85% { transform: translateY(4px); }
+    70% { transform: translateY(-4px); }
+    85% { transform: translateY(0); }
     100% { transform: translateY(0); }
 }
 

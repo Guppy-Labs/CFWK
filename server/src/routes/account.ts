@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import User from '../models/User';
+import User, { DEFAULT_CHARACTER_APPEARANCE, ICharacterAppearance } from '../models/User';
 
 const router = express.Router();
 
@@ -159,6 +159,83 @@ router.post('/password', async (req, res) => {
         await user.save();
 
         res.json({ message: 'Password updated' });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// --- Get Character Appearance ---
+router.get('/character', async (req, res) => {
+    try {
+        const user = await User.findById((req.user as any).id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        // Return appearance or default if not set
+        const appearance = user.characterAppearance || DEFAULT_CHARACTER_APPEARANCE;
+        res.json({ appearance });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// --- Update Character Appearance ---
+router.post('/character', async (req, res) => {
+    try {
+        const { appearance } = req.body;
+        if (!appearance || typeof appearance !== 'object') {
+            return res.status(400).json({ message: 'Invalid appearance data' });
+        }
+
+        const user = await User.findById((req.user as any).id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        // Validate and merge with defaults
+        const validAppearance: ICharacterAppearance = {
+            body: {
+                primaryColor: appearance.body?.primaryColor || DEFAULT_CHARACTER_APPEARANCE.body.primaryColor,
+                secondaryColor: appearance.body?.secondaryColor || DEFAULT_CHARACTER_APPEARANCE.body.secondaryColor
+            },
+            accessories: {
+                cape: {
+                    equipped: typeof appearance.accessories?.cape?.equipped === 'boolean' 
+                        ? appearance.accessories.cape.equipped 
+                        : DEFAULT_CHARACTER_APPEARANCE.accessories.cape.equipped,
+                    primaryColor: appearance.accessories?.cape?.primaryColor || DEFAULT_CHARACTER_APPEARANCE.accessories.cape.primaryColor,
+                    secondaryColor: appearance.accessories?.cape?.secondaryColor || DEFAULT_CHARACTER_APPEARANCE.accessories.cape.secondaryColor
+                },
+                scarf: {
+                    equipped: typeof appearance.accessories?.scarf?.equipped === 'boolean'
+                        ? appearance.accessories.scarf.equipped
+                        : DEFAULT_CHARACTER_APPEARANCE.accessories.scarf.equipped,
+                    primaryColor: appearance.accessories?.scarf?.primaryColor || DEFAULT_CHARACTER_APPEARANCE.accessories.scarf.primaryColor,
+                    secondaryColor: appearance.accessories?.scarf?.secondaryColor || DEFAULT_CHARACTER_APPEARANCE.accessories.scarf.secondaryColor
+                }
+            }
+        };
+
+        // Validate hex colors
+        const hexColorRegex = /^#[0-9A-Fa-f]{6}$/;
+        const colors = [
+            validAppearance.body.primaryColor,
+            validAppearance.body.secondaryColor,
+            validAppearance.accessories.cape.primaryColor,
+            validAppearance.accessories.cape.secondaryColor,
+            validAppearance.accessories.scarf.primaryColor,
+            validAppearance.accessories.scarf.secondaryColor
+        ];
+
+        for (const color of colors) {
+            if (!hexColorRegex.test(color)) {
+                return res.status(400).json({ message: `Invalid color format: ${color}. Use hex format like #FFFFFF` });
+            }
+        }
+
+        user.characterAppearance = validAppearance;
+        await user.save();
+
+        res.json({ message: 'Character appearance updated', appearance: validAppearance });
     } catch (e) {
         console.error(e);
         res.status(500).json({ message: 'Server error' });

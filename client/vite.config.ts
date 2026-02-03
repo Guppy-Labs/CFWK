@@ -134,9 +134,13 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const target = env.VITE_API_PROXY_TARGET || 'http://localhost:3019';
   const host = env.VITE_SERVER_HOST || 'localhost';
+  const allowedHosts = (env.VITE_SERVER_HOSTS || host)
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
 
   const hmrConfig = host !== 'localhost' ? {
-      host: host,
+      host: allowedHosts[0] || host,
       clientPort: 443,
       overlay: false
   } : undefined;
@@ -146,7 +150,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0',
       port: 81,
-      allowedHosts: [host],
+      allowedHosts: allowedHosts,
       hmr: hmrConfig,
       proxy: {
         '/api': {

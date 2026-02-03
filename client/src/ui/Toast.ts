@@ -1,6 +1,6 @@
 export class Toast {
     private static container: HTMLElement | null = null;
-    private static isBottomMode = false;
+    private static readonly MAX_VISIBLE_TOASTS = 4;
 
     private static init() {
         if (!this.container) {
@@ -12,36 +12,21 @@ export class Toast {
             }
         }
         
-        // Position container based on navbar presence
+        // Position container at bottom-right
         this.updatePosition();
     }
 
     private static updatePosition() {
         if (!this.container) return;
         
-        // Find navbar - try common selectors
-        const navbar = document.querySelector('.game-navbar, .navbar, nav, header') as HTMLElement | null;
-        if (navbar) {
-            // Has navbar: position below it, top-center
-            const navbarRect = navbar.getBoundingClientRect();
-            this.container.style.top = `${navbarRect.bottom}px`;
-            this.container.style.bottom = '';
-            this.container.style.right = '';
-            this.container.style.left = '0';
-            this.container.style.alignItems = 'center';
-            this.container.classList.remove('bottom-mode');
-            this.isBottomMode = false;
-        } else {
-            // No navbar: position bottom-right
-            this.container.style.top = '';
-            this.container.style.bottom = '0';
-            this.container.style.right = '20px';
-            this.container.style.left = '';
-            this.container.style.width = 'auto';
-            this.container.style.alignItems = 'flex-end';
-            this.container.classList.add('bottom-mode');
-            this.isBottomMode = true;
-        }
+        // Always position bottom-right
+        this.container.style.top = '';
+        this.container.style.bottom = '0';
+        this.container.style.right = '20px';
+        this.container.style.left = '';
+        this.container.style.width = 'auto';
+        this.container.style.alignItems = 'flex-end';
+        this.container.classList.add('bottom-mode');
     }
 
     static show(message: string, type: 'error' | 'success' | 'info' = 'info', duration = 5000) {
@@ -49,7 +34,7 @@ export class Toast {
         
         // Create wrapper for chains + toast
         const wrapper = document.createElement('div');
-        wrapper.className = this.isBottomMode ? 'toast-wrapper bottom' : 'toast-wrapper';
+        wrapper.className = 'toast-wrapper bottom';
         
         // Left chain
         const leftChain = document.createElement('img');
@@ -76,15 +61,32 @@ export class Toast {
         wrapper.appendChild(toast);
 
         this.container?.appendChild(wrapper);
+        if (this.container) {
+            // Limit visible toasts - hide oldest if exceeding max
+            this.enforceMaxToasts();
+            // Recalculate z-indices for all visible toasts
+            this.updateZIndices();
+        }
 
-        const isBottom = this.isBottomMode;
         setTimeout(() => {
-            wrapper.style.animation = isBottom 
-                ? 'toast-outer-bottom 0.5s forwards' 
-                : 'toast-outer 0.5s forwards';
-            wrapper.addEventListener('animationend', () => {
-                wrapper.remove();
+            const currentHeight = wrapper.offsetHeight;
+            const slideDistance = currentHeight + 40;
+            wrapper.style.height = `${currentHeight}px`;
+            wrapper.style.transition = 'height 0.5s ease, margin 0.5s ease, transform 0.5s ease';
+
+            requestAnimationFrame(() => {
+                wrapper.style.height = '0px';
+                wrapper.style.marginBottom = '0px';
+                wrapper.style.marginTop = '0px';
+                // Always slide down (bottom mode)
+                wrapper.style.transform = `translateY(${slideDistance}px)`;
             });
+
+            const onDone = () => {
+                wrapper.removeEventListener('transitionend', onDone);
+                wrapper.remove();
+            };
+            wrapper.addEventListener('transitionend', onDone);
         }, duration);
     }
     
@@ -98,5 +100,54 @@ export class Toast {
     
     static info(message: string, duration = 5000) { 
         this.show(message, 'info', duration); 
+    }
+
+    private static updateZIndices() {
+        if (!this.container) return;
+        
+        const toasts = Array.from(this.container.children) as HTMLElement[];
+        // Only consider visible (non-hiding) toasts for z-index
+        const visibleToasts = toasts.filter(t => !t.style.transform);
+        
+        visibleToasts.forEach((wrapper, index) => {
+            wrapper.style.zIndex = String(1000 - index);
+        });
+    }
+
+    private static enforceMaxToasts() {
+        if (!this.container) return;
+        
+        const toasts = Array.from(this.container.children) as HTMLElement[];
+        // Find toasts that aren't already hiding (no transform applied yet)
+        const visibleToasts = toasts.filter(t => !t.style.transform);
+        
+        while (visibleToasts.length > this.MAX_VISIBLE_TOASTS) {
+            const oldest = visibleToasts.shift();
+            if (oldest) {
+                this.hideToast(oldest);
+            }
+        }
+    }
+
+    private static hideToast(wrapper: HTMLElement) {
+        const currentHeight = wrapper.offsetHeight;
+        const slideDistance = currentHeight + 40;
+        
+        wrapper.style.height = `${currentHeight}px`;
+        wrapper.style.transition = 'height 0.5s ease, margin 0.5s ease, transform 0.5s ease';
+
+        requestAnimationFrame(() => {
+            wrapper.style.height = '0px';
+            wrapper.style.marginBottom = '0px';
+            wrapper.style.marginTop = '0px';
+            // Always slide down (bottom mode)
+            wrapper.style.transform = `translateY(${slideDistance}px)`;
+        });
+
+        const onDone = () => {
+            wrapper.removeEventListener('transitionend', onDone);
+            wrapper.remove();
+        };
+        wrapper.addEventListener('transitionend', onDone);
     }
 }

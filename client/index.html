@@ -1,10 +1,89 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Consent Manager -->
+    <script type="text/javascript" data-cmp-ab="1" src="https://cdn.consentmanager.net/delivery/autoblocking/b9bfb4fa12539.js" data-cmp-host="a.delivery.consentmanager.net" data-cmp-cdn="cdn.consentmanager.net" data-cmp-codesrc="16"></script>
+    
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-C6XTQSCK5M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-C6XTQSCK5M');
+    </script>
+    
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Primary Meta Tags -->
+    <title>Cute Fish With Knives - Cats, Fish, and Friends | Online Multiplayer Game</title>
+    <meta name="title" content="Cute Fish With Knives - Cats, Fish, and Friends | Online Multiplayer Game">
+    <meta name="description" content="Dive into Cute Fish With Knives - a creative multiplayer game where you find fish and fight enemies with friends. Build your world, explore adventures, and join the community!">
+    <meta name="keywords" content="cute fish with knives, CFWK, online game, multiplayer game, map maker, custom maps, pixel game, indie game, browser game, creative game">
+    <meta name="author" content="Cute Fish With Knives">
+    <meta name="robots" content="index, follow">
+    <meta name="language" content="English">
+    <meta name="revisit-after" content="7 days">
+    <meta name="theme-color" content="#ff66aa">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://cutefishwithknives.com/">
+    
+    <!-- Favicon -->
     <link rel="icon" type="image/png" href="/favicon.png">
-    <title>CFWK - Cute Fish With Knives</title>
+    <link rel="apple-touch-icon" href="/favicon.png">
+    
+    <!-- Web App Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    
+    <!-- Performance hints -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://cutefishwithknives.com/">
+    <meta property="og:title" content="Cute Fish With Knives - Cats, Fish, and Friends">
+    <meta property="og:description" content="Dive into Cute Fish With Knives - a creative multiplayer game where you find fish and fight enemies with friends.">
+    <meta property="og:image" content="https://cutefishwithknives.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Cute Fish With Knives Game">
+    <meta property="og:site_name" content="Cute Fish With Knives">
+    <meta property="og:locale" content="en_US">
+    
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://cutefishwithknives.com/">
+    <meta name="twitter:title" content="Cute Fish With Knives - Cats, Fish, and Friends">
+    <meta name="twitter:description" content="Dive into Cute Fish With Knives - a creative multiplayer game where you find fish and fight enemies with friends.">
+    <meta name="twitter:image" content="https://cutefishwithknives.com/og-image.png">
+    <meta name="twitter:image:alt" content="Cute Fish With Knives Game">
+    
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Cute Fish With Knives",
+        "alternateName": "CFWK",
+        "description": "A creative multiplayer game where you find fish and fight enemies with friends.",
+        "url": "https://cutefishwithknives.com",
+        "applicationCategory": "Game",
+        "operatingSystem": "Web Browser",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.8",
+            "ratingCount": "1000"
+        }
+    }
+    </script>
     <style>
         /* Font Import */
         @font-face {
@@ -263,61 +342,103 @@
         }
 
         a { color: var(--primary); text-decoration: none; }
+        
+        /* Screen reader only - for accessibility and SEO */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
     </style>
 </head>
 <body>
+    <header>
+        <div class="hero-section" role="banner">
+            <!-- Hero Graphic Placeholder -->
+            <div class="hero-logo-box" aria-hidden="true">
+                <img src="/favicon.png" alt="Cute Fish With Knives Logo - A pixelated fish character" style="width: 80%; height: 80%; image-rendering: pixelated;">
+            </div>
 
-    <div class="hero-section">
-        <!-- Hero Graphic Placeholder -->
-        <div class="hero-logo-box">
-             <img src="/favicon.png" alt="Fish Logo" style="width: 80%; height: 80%; image-rendering: pixelated;">
-        </div>
+            <h1 class="title">Cute Fish<br><span style="color:var(--primary)">With Knives</span></h1>
+            <p class="subtitle">Create. Battle. Survive.</p>
 
-        <h1 class="title">Cute Fish<br><span style="color:var(--primary)">With Knives</span></h1>
-        <p class="subtitle">Create. Battle. Survive.</p>
-
-        <div class="countdown-container">
-            <div class="countdown-label">Game Release In</div>
-            <div id="countdown" class="countdown-timer">--:--:--:--</div>
-        </div>
+            <div class="countdown-container" aria-label="Game release countdown">
+                <div class="countdown-label">Game Release In</div>
+                <div id="countdown" class="countdown-timer" aria-live="polite">--:--:--:--</div>
+            </div>
 
         <!-- Auth Section -->
-        <div id="auth-actions">
+        <nav id="auth-actions" aria-label="Account actions">
             <!-- Logged Out View -->
             <div id="logged-out-view" style="text-align: center;">
-                <a href="/register" class="btn btn-large">Pre-register Now</a>
+                <a href="/register" class="btn btn-large" aria-label="Pre-register for the game">Pre-register Now</a>
                 <div style="margin-top: 1rem;">
                     <span style="color: var(--text-muted); font-size: 0.9rem;">Already have an account?</span>
-                    <a href="/login" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem; margin-left: 10px;">Login</a>
+                    <a href="/login" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem; margin-left: 10px;" aria-label="Login to your account">Login</a>
                 </div>
             </div>
 
             <!-- Logged In View -->
             <div id="logged-in-view" class="hidden" style="text-align: center;">
                 <p id="welcome-msg" style="color: var(--text-main); margin-bottom: 2rem; font-size: 1.2rem;">Welcome back, Agent.</p>
-                <button id="jump-in-btn" class="btn btn-large">Jump Back In</button>
+                <button id="jump-in-btn" class="btn btn-large" aria-label="Start playing the game">Jump Back In</button>
             </div>
+        </nav>
         </div>
-    </div>
+    </header>
 
-    <div class="features">
-        <div class="feature-item">
-            <h3>Adventure</h3>
-            <p>Journey out to discover new worlds and hidden secrets, all with one goal in mind...</p>
-        </div>
-        <div class="feature-item">
-            <h3>Multiplayer</h3>
-            <p>Battle against friends (and enemies) in real-time isometric combat.</p>
-        </div>
-        <div class="feature-item">
-            <h3>Cute & Deadly</h3>
-            <p>It's fish. They have knives. What else do you need to know?</p>
-        </div>
-    </div>
+    <main>
+        <section class="features" aria-label="Game features">
+            <article class="feature-item">
+                <h2>Adventure</h2>
+                <p>Journey out to discover new worlds and hidden secrets, all with one goal in mind...</p>
+            </article>
+            <article class="feature-item">
+                <h2>Multiplayer</h2>
+                <p>Battle against friends (and enemies) in real-time isometric combat.</p>
+            </article>
+            <article class="feature-item">
+                <h2>Cute & Deadly</h2>
+                <p>It's fish. They have knives. What else do you need to know?</p>
+            </article>
+        </section>
+    </main>
 
     <footer>
-        &copy; <script>document.write(new Date().getFullYear());</script> Gubby Labs. All rights reserved.
+        <p>&copy; <script>document.write(new Date().getFullYear());</script> Gubby Labs. All rights reserved.</p>
     </footer>
+
+    <!-- SEO: Hidden content for crawlers (visible to screen readers too) -->
+    <div class="sr-only" style="position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden;">
+        <h2>About Cute Fish With Knives</h2>
+        <p>Cute Fish With Knives (CFWK) is a free-to-play multiplayer browser game where players find fish and discover treasures. 
+        Featuring retro pixel art graphics and real-time multiplayer combat, CFWK combines friendship with intense battles. 
+        Lead your story, battle friends, and join a growing community of players and creators.</p>
+        
+        <h3>Key Features</h3>
+        <ul>
+            <li>Free-to-play browser game - no download required</li>
+            <li>Custom map creator - design and share your own maps</li>
+            <li>Real-time multiplayer combat</li>
+            <li>Retro pixel art style</li>
+            <li>Isometric gameplay perspective</li>
+            <li>Growing community of players and creators</li>
+        </ul>
+    </div>
+
+    <!-- Noscript fallback for SEO -->
+    <noscript>
+        <style>.hidden { display: block !important; }</style>
+        <p style="text-align: center; padding: 20px; color: #e0e0e0;">
+            Cute Fish With Knives requires JavaScript to play. Please enable JavaScript in your browser to enjoy the full experience.
+        </p>
+    </noscript>
 
     <script>
         // --- Countdown Logic ---

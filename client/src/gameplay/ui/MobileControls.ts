@@ -60,6 +60,7 @@ export class MobileControls {
     // Interact button state
     private currentInteraction: AvailableInteraction | null = null;
     private guiCurrentlyOpen = false;
+    private guiOpenSource: 'inventory' | 'menu' | null = null;
     
     constructor() {
         this.container = this.createContainer();
@@ -178,12 +179,15 @@ export class MobileControls {
 
         this.joystickZone.style.display = showTouchControls ? 'block' : 'none';
         this.setButtonVisible(this.sprintButton, showTouchControls);
-        this.setButtonVisible(this.inventoryButton, showTouchControls);
+        const showInventory = showTouchControls
+            || (isMobile && !this.keyboardUsed && this.guiCurrentlyOpen && this.guiOpenSource === 'inventory');
+        this.setButtonVisible(this.inventoryButton, showInventory);
         this.updateInteractButtonVisibility();
 
-        // Always show top-right buttons (menu + fullscreen)
-        this.setButtonVisible(this.fullscreenButton, true);
-        this.setButtonVisible(this.menuButton, true);
+        const showMenu = !this.guiCurrentlyOpen || this.guiOpenSource === 'menu';
+        const showFullscreen = !this.guiCurrentlyOpen;
+        this.setButtonVisible(this.fullscreenButton, showFullscreen);
+        this.setButtonVisible(this.menuButton, showMenu);
     }
     
     /**
@@ -260,14 +264,15 @@ export class MobileControls {
 
     private setupGuiOpenListener() {
         this.guiOpenListener = (event: Event) => {
-            const customEvent = event as CustomEvent<{ isOpen: boolean }>;
-            this.setGuiOpen(customEvent.detail?.isOpen === true);
+            const customEvent = event as CustomEvent<{ isOpen: boolean; source?: 'inventory' | 'menu' }>;
+            this.setGuiOpen(customEvent.detail?.isOpen === true, customEvent.detail?.source ?? null);
         };
         window.addEventListener('gui-open-changed', this.guiOpenListener as EventListener);
     }
 
-    private setGuiOpen(isOpen: boolean) {
+    private setGuiOpen(isOpen: boolean, source: 'inventory' | 'menu' | null) {
         this.guiCurrentlyOpen = isOpen;
+        this.guiOpenSource = isOpen ? source : null;
         this.updateDeviceVisibility();
 
         if (isOpen) {

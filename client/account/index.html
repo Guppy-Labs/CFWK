@@ -1,15 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Consent Manager -->
+    <script type="text/javascript" data-cmp-ab="1" src="https://cdn.consentmanager.net/delivery/autoblocking/b9bfb4fa12539.js" data-cmp-host="a.delivery.consentmanager.net" data-cmp-cdn="cdn.consentmanager.net" data-cmp-codesrc="16"></script>
+    
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-C6XTQSCK5M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-C6XTQSCK5M');
+    </script>
+    
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Primary Meta Tags -->
+    <title>My Account - Cute Fish With Knives | Manage Your Profile</title>
+    <meta name="title" content="My Account - Cute Fish With Knives | Manage Your Profile">
+    <meta name="description" content="Manage your Cute Fish With Knives account settings, customize your profile, update preferences, and view your gaming stats.">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="theme-color" content="#ff66aa">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://cutefishwithknives.com/account/">
+    
+    <!-- Favicon -->
     <link rel="icon" type="image/png" href="/favicon.png">
-    <meta name="description" content="CFWK - Create, Play, and Share Custom Maps.">
-    <meta property="og:title" content="CFWK">
-    <meta property="og:description" content="CFWK - Create, Play, and Share Custom Maps.">
-    <meta property="og:image" content="/favicon.png">
+    <link rel="apple-touch-icon" href="/favicon.png">
+    
+    <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
-    <title>CFWK - Account</title>
+    <meta property="og:url" content="https://cutefishwithknives.com/account/">
+    <meta property="og:title" content="My Account - Cute Fish With Knives">
+    <meta property="og:description" content="Manage your Cute Fish With Knives account settings and profile.">
+    <meta property="og:image" content="https://cutefishwithknives.com/og-image.png">
+    <meta property="og:site_name" content="Cute Fish With Knives">
+    
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="My Account - Cute Fish With Knives">
+    <meta name="twitter:description" content="Manage your Cute Fish With Knives account settings and profile.">
     <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
     <link rel="stylesheet" href="/src/ui/shared.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -562,6 +594,34 @@
         }
         .navbar .release-countdown:hover {
              filter: brightness(1.1);
+        }
+
+        /* Narrow mobile portrait: collapse user dropdown to icon only when play button is visible */
+        @media (max-width: 500px) {
+            .navbar .nav-username {
+                display: none;
+            }
+            
+            .user-card {
+                padding: 6px 8px;
+                gap: 6px;
+            }
+            
+            /* Give play button more room */
+            #nav-play-btn {
+                padding: 0.4rem 0.8rem;
+                font-size: 0.9rem;
+            }
+            
+            /* Status message: put Set button on new line */
+            .status-row {
+                flex-direction: column;
+            }
+            
+            .status-row .mm-btn {
+                width: 100% !important;
+                margin-top: 0.5rem;
+            }
         }
 
     </style>

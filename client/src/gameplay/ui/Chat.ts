@@ -325,11 +325,16 @@ export class Chat {
             // Check for chat open keys
             if (event.key === 't' || event.key === 'T' || event.key === '/') {
                 event.preventDefault();
-                this.focus();
                 if (event.key === '/') {
                     this.currentInput = '/';
+                }
+                this.focus();
+                if (event.key === '/') {
                     this.inputText.setText('/');
                     this.updateCursorPosition();
+                    if (this.mobileInput) {
+                        this.mobileInput.value = '/';
+                    }
                 }
                 return true;
             }
