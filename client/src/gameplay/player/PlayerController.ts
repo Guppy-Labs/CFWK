@@ -94,11 +94,12 @@ export class PlayerController {
     private lastActivityTime = 0;
     private isAfk = false;
     private readonly afkThreshold = 60000; // 1 minute until AFK
-    private readonly afkKickThreshold = 300000; // 5 minutes until kick
+    private afkKickThreshold = 300000; // 5 minutes until kick (default)
     private afkAlpha = 1; // Current transparency (1 = fully visible)
     private afkKicked = false;
     private readonly afkOverlayId = 'cfwk-afk-overlay';
     private guiEffect?: GuiSwirlEffect;
+    private isPageHidden = false;
 
     // Interaction system
     private interactionManager: InteractionManager;
@@ -106,6 +107,12 @@ export class PlayerController {
     private mobileInteractListener?: () => void;
     private interactionLockUntil = 0;
     private desktopInteractButton?: DesktopInteractButton;
+
+    // Local nameplate
+    private localNameplate?: Phaser.GameObjects.Container;
+    private localNameText?: Phaser.GameObjects.Text;
+    private localNameBg?: Phaser.GameObjects.Graphics;
+    private nameplateYOffset = -36;
 
     // External speed modifier (e.g., from water depth)
     private speedMultiplier = 1.0;
@@ -150,6 +157,41 @@ export class PlayerController {
         
         // Initialize activity time
         this.lastActivityTime = Date.now();
+
+        // Premium AFK timer (20 minutes)
+        if (currentUser?.isPremium) {
+            this.afkKickThreshold = 1200000;
+        }
+
+        // Visibility handling (ensure AFK starts even when unfocused)
+        document.addEventListener('visibilitychange', this.handleVisibilityChange);
+        window.addEventListener('blur', this.handleWindowBlur);
+        window.addEventListener('focus', this.handleWindowFocus);
+    }
+
+    private handleVisibilityChange = () => {
+        if (document.visibilityState === 'hidden') {
+            this.isPageHidden = true;
+            this.forceAfkState();
+        } else {
+            this.isPageHidden = false;
+        }
+    };
+
+    private handleWindowBlur = () => {
+        this.isPageHidden = true;
+        this.forceAfkState();
+    };
+
+    private handleWindowFocus = () => {
+        this.isPageHidden = false;
+    };
+
+    private forceAfkState() {
+        if (!this.player || this.isAfk) return;
+        this.isAfk = true;
+        this.networkManager.sendAfk(true);
+        console.log('[PlayerController] AFK forced due to focus loss');
     }
 
     /**
@@ -254,6 +296,9 @@ export class PlayerController {
         
         // Initialize shadow
         this.shadow = new PlayerShadow(this.scene, player);
+
+        // Local nameplate
+        this.createLocalNameplate();
 
         // Immediately send spawn position to server so other clients see correct location
         const x = Math.round(spawnX);
@@ -433,6 +478,11 @@ export class PlayerController {
         // Update interaction detection
         this.interactionManager.updateLocalPlayer(this.player.x, this.player.y, this.currentRotation);
         this.interactionManager.update();
+
+        // Update local nameplate position
+        if (this.localNameplate) {
+            this.localNameplate.setPosition(this.player.x, this.player.y + this.nameplateYOffset);
+        }
         
         // Handle E key for interaction
         if (!inputBlocked && Phaser.Input.Keyboard.JustDown(this.interactKey!)) {
@@ -553,6 +603,41 @@ export class PlayerController {
     private hideAfkOverlay() {
         const overlay = document.getElementById(this.afkOverlayId);
         if (overlay) overlay.remove();
+    }
+
+    private createLocalNameplate() {
+        if (!this.player) return;
+
+        const os = this.scene.sys.game.device.os;
+        const isMobile = os.android || os.iOS || os.iPad || os.iPhone || os.windowsPhone;
+        const fontSize = isMobile ? '10px' : '6px';
+        this.nameplateYOffset = isMobile ? -42 : -36;
+
+        const namePrefix = currentUser?.isPremium ? '🦈 ' : '';
+        const displayName = `${namePrefix}${currentUser?.username || 'You'}`;
+
+        const padding = { x: 2, y: 1 };
+        this.localNameText = this.scene.add.text(0, 0, displayName, {
+            fontSize,
+            fontFamily: 'Minecraft, monospace',
+            color: '#ffffff',
+            resolution: 2
+        }).setOrigin(0.5);
+
+        const textWidth = this.localNameText.width;
+        const textHeight = this.localNameText.height;
+        const bgWidth = textWidth + padding.x * 2;
+        const bgHeight = textHeight + padding.y * 2;
+
+        this.localNameBg = this.scene.add.graphics();
+        this.localNameBg.fillStyle(0x000000, 0.6);
+        this.localNameBg.fillRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight);
+
+        this.localNameplate = this.scene.add.container(this.player.x, this.player.y + this.nameplateYOffset, [
+            this.localNameBg,
+            this.localNameText
+        ]);
+        this.localNameplate.setDepth((this.config.depth ?? 260) + 1000);
     }
 
     showChat(message: string) {
@@ -849,6 +934,7 @@ export class PlayerController {
         if (this.chatTimer) {
             this.chatTimer.remove(false);
         }
+        this.localNameplate?.destroy();
         if (this.mobileInteractListener) {
             window.removeEventListener('mobile:interact', this.mobileInteractListener);
         }

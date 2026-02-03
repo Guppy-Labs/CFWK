@@ -13,6 +13,10 @@ const mapsRewritePlugin = () => ({
         req.url = '/onboarding/index.html';
       } else if (shouldRewriteToAccount(req?.url)) {
         req.url = '/account/index.html';
+      } else if (shouldRewriteToUpgrade(req?.url)) {
+        req.url = '/upgrade/index.html';
+      } else if (shouldRewriteToUpgradeThanks(req?.url)) {
+        req.url = '/upgrade/thanks.html';
       } else if (shouldRewriteToSoon(req?.url)) {
         req.url = '/soon.html';
       } else if (shouldRewriteToVerify(req?.url)) {
@@ -39,6 +43,10 @@ const mapsRewritePlugin = () => ({
         req.url = '/onboarding/index.html';
       } else if (shouldRewriteToAccount(req?.url)) {
         req.url = '/account/index.html';
+      } else if (shouldRewriteToUpgrade(req?.url)) {
+        req.url = '/upgrade/index.html';
+      } else if (shouldRewriteToUpgradeThanks(req?.url)) {
+        req.url = '/upgrade/thanks.html';
       } else if (shouldRewriteToSoon(req?.url)) {
         req.url = '/soon.html';
       } else if (shouldRewriteToVerify(req?.url)) {
@@ -83,6 +91,20 @@ function shouldRewriteToAccount(url?: string) {
   if (!url) return false;
   const pathname = url.split('?')[0];
   if (pathname === '/account' || pathname === '/account/') return true;
+  return false;
+}
+
+function shouldRewriteToUpgrade(url?: string) {
+  if (!url) return false;
+  const pathname = url.split('?')[0];
+  if (pathname === '/upgrade' || pathname === '/upgrade/') return true;
+  return false;
+}
+
+function shouldRewriteToUpgradeThanks(url?: string) {
+  if (!url) return false;
+  const pathname = url.split('?')[0];
+  if (pathname === '/upgrade/thanks' || pathname === '/upgrade/thanks/') return true;
   return false;
 }
 
@@ -172,6 +194,8 @@ export default defineConfig(({ mode }) => {
           maps: resolve(__dirname, 'maps/index.html'),
           onboarding: resolve(__dirname, 'onboarding/index.html'),
           account: resolve(__dirname, 'account/index.html'),
+          upgrade: resolve(__dirname, 'upgrade/index.html'),
+          upgradeThanks: resolve(__dirname, 'upgrade/thanks.html'),
           login: resolve(__dirname, 'login/index.html'),
           verify: resolve(__dirname, 'verify/index.html'),
           reset: resolve(__dirname, 'reset/index.html'),

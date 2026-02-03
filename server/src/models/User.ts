@@ -25,6 +25,11 @@ export interface IUser extends Document {
   lastKnownIP?: string;
   inventory?: { itemId: string; count: number }[];
   characterAppearance?: ICharacterAppearance;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  premiumStatus?: string; // active, past_due, canceled, etc
+  premiumTier?: 'shark' | null;
+  premiumCurrentPeriodEnd?: Date;
 }
 
 const UserSchema: Schema = new Schema({
@@ -74,7 +79,12 @@ const UserSchema: Schema = new Schema({
       }
     },
     default: () => ({ ...DEFAULT_CHARACTER_APPEARANCE })
-  }
+  },
+  stripeCustomerId: { type: String },
+  stripeSubscriptionId: { type: String },
+  premiumStatus: { type: String },
+  premiumTier: { type: String, default: null },
+  premiumCurrentPeriodEnd: { type: Date }
 }, {
   timestamps: true
 });

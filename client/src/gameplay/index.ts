@@ -40,9 +40,9 @@ export function setLoaderText(text: string) {
 let gameInstance: Phaser.Game | undefined;
 
 // Store user data globally for scenes to access
-export let currentUser: { _id: string; username: string } | null = null;
+export let currentUser: { _id: string; username: string; isPremium?: boolean; permissions?: string[] } | null = null;
 
-export function startGame(userData: { _id: string; username: string }) {
+export function startGame(userData: { _id: string; username: string; isPremium?: boolean; permissions?: string[] }) {
     currentUser = userData;
     // Loader is already visible from HTML, just ensure #app is sized correctly
     const { width, height } = updateAppSize();

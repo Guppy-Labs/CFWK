@@ -63,12 +63,53 @@ async function checkAuth() {
 
         setLoaderText('Initializing game...');
         
+        // Update the upgrade button based on premium status
+        updateUpgradeButton(data.user);
+        
         startGame({
             _id: data.user._id,
-            username: data.user.username
+            username: data.user.username,
+            permissions: perms,
+            isPremium: perms.includes('premium.shark')
         });
     } catch (e) {
         window.location.href = '/login';
+    }
+}
+
+function updateUpgradeButton(user: any) {
+    const navUpgradeBtn = document.getElementById('nav-upgrade-btn') as HTMLAnchorElement | null;
+    if (!navUpgradeBtn) return;
+    
+    const perms = user.permissions || [];
+    const isPremium = perms.includes('premium.shark');
+    const premiumStatus = user.premiumStatus as string | undefined;
+    const periodEnd = user.premiumCurrentPeriodEnd ? new Date(user.premiumCurrentPeriodEnd) : null;
+    
+    if (isPremium && premiumStatus === 'canceled' && periodEnd) {
+        // Canceled but still has benefits - show days remaining
+        const now = new Date();
+        const diff = periodEnd.getTime() - now.getTime();
+        const daysLeft = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+        navUpgradeBtn.innerHTML = `🦈 ${daysLeft}d`;
+        navUpgradeBtn.title = `Shark expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`;
+        navUpgradeBtn.style.color = '#ff9800';
+        navUpgradeBtn.style.borderColor = 'rgba(255, 152, 0, 0.5)';
+        navUpgradeBtn.style.background = 'rgba(255, 152, 0, 0.12)';
+    } else if (isPremium) {
+        // Active premium - show shark
+        navUpgradeBtn.innerHTML = '🦈';
+        navUpgradeBtn.title = 'Shark Active';
+        navUpgradeBtn.style.color = '#ffd54f';
+        navUpgradeBtn.style.borderColor = 'rgba(255, 215, 0, 0.5)';
+        navUpgradeBtn.style.background = 'rgba(255, 215, 0, 0.12)';
+    } else {
+        // Not premium - show star upgrade button
+        navUpgradeBtn.innerHTML = '★';
+        navUpgradeBtn.title = 'Upgrade to Shark';
+        navUpgradeBtn.style.color = '#ffd54f';
+        navUpgradeBtn.style.borderColor = 'rgba(255, 215, 0, 0.5)';
+        navUpgradeBtn.style.background = 'rgba(255, 215, 0, 0.12)';
     }
 }
 

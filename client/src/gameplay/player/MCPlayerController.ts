@@ -16,6 +16,7 @@ import { MobileControls } from '../ui/MobileControls';
 import { DesktopInteractButton } from '../ui/DesktopInteractButton';
 import { NetworkManager } from '../network/NetworkManager';
 import { EmojiMap } from '../ui/EmojiMap';
+import { currentUser } from '../index';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 import { InteractionManager } from '../interaction/InteractionManager';
 import { RemotePlayerManager } from './RemotePlayerManager';
@@ -57,6 +58,7 @@ export class MCPlayerController {
     private animationController: MCAnimationController;
     private shadow?: PlayerShadow;
     private chatBubble?: Phaser.GameObjects.Container;
+    private chatBubbleYOffset: number = 0;
     private chatTimer?: Phaser.Time.TimerEvent;
 
     private config: Required<Omit<MCPlayerControllerConfig, 'occlusionManager'>> & { occlusionManager?: OcclusionManager };
@@ -87,17 +89,24 @@ export class MCPlayerController {
     private lastActivityTime = 0;
     private isAfk = false;
     private readonly afkThreshold = 60000;
-    private readonly afkKickThreshold = 300000;
+    private afkKickThreshold = 300000;
     private afkAlpha = 1;
     private afkKicked = false;
     private readonly afkOverlayId = 'cfwk-afk-overlay';
     private guiEffect?: GuiSwirlEffect;
+    private isPageHidden = false;
 
     // Interaction system
     private interactionManager: InteractionManager;
     private interactKey?: Phaser.Input.Keyboard.Key;
     private mobileInteractListener?: () => void;
     private interactionLockUntil = 0;
+
+    // Local nameplate
+    private localNameplate?: Phaser.GameObjects.Container;
+    private localNameText?: Phaser.GameObjects.Text;
+    private localNameBg?: Phaser.GameObjects.Graphics;
+    private nameplateYOffset = -36;
 
     // External speed modifier
     private speedMultiplier = 1.0;
@@ -118,7 +127,7 @@ export class MCPlayerController {
             accel: config.accel ?? 0.35,
             drag: config.drag ?? 0.5,
             depth: config.depth ?? 260,
-            scale: config.scale ?? 1.5,
+            scale: config.scale ?? 1.2,
             occlusionManager: config.occlusionManager,
             maxStamina: config.maxStamina ?? 1,
             staminaDrainRate: config.staminaDrainRate ?? 0.3,
@@ -137,6 +146,41 @@ export class MCPlayerController {
 
         this.guiEffect = new GuiSwirlEffect(this.scene);
         this.lastActivityTime = Date.now();
+
+        // Premium AFK timer (20 minutes)
+        if (currentUser?.isPremium) {
+            this.afkKickThreshold = 1200000;
+        }
+
+        // Visibility handling (ensure AFK starts even when unfocused)
+        document.addEventListener('visibilitychange', this.handleVisibilityChange);
+        window.addEventListener('blur', this.handleWindowBlur);
+        window.addEventListener('focus', this.handleWindowFocus);
+    }
+
+    private handleVisibilityChange = () => {
+        if (document.visibilityState === 'hidden') {
+            this.isPageHidden = true;
+            this.forceAfkState();
+        } else {
+            this.isPageHidden = false;
+        }
+    };
+
+    private handleWindowBlur = () => {
+        this.isPageHidden = true;
+        this.forceAfkState();
+    };
+
+    private handleWindowFocus = () => {
+        this.isPageHidden = false;
+    };
+
+    private forceAfkState() {
+        if (!this.player || this.isAfk) return;
+        this.isAfk = true;
+        this.networkManager.sendAfk(true);
+        console.log('[MCPlayerController] AFK forced due to focus loss');
     }
 
     /**
@@ -261,6 +305,9 @@ export class MCPlayerController {
         // Initialize shadow
         this.shadow = new PlayerShadow(this.scene, player);
 
+        // Local nameplate
+        this.createLocalNameplate();
+
         // Send initial position to server
         const x = Math.round(spawnX);
         const y = Math.round(spawnY - scaledCollidableHeight / 2);
@@ -294,6 +341,11 @@ export class MCPlayerController {
             this.currentRotation
         );
         this.interactionManager.update();
+
+        // Update local nameplate position
+        if (this.localNameplate) {
+            this.localNameplate.setPosition(this.player.x, this.player.y + this.nameplateYOffset);
+        }
 
         // Check for interact key press
         if (this.interactKey && Phaser.Input.Keyboard.JustDown(this.interactKey)) {
@@ -384,6 +436,11 @@ export class MCPlayerController {
 
         // Update shadow
         this.shadow?.update();
+
+        // Update chat bubble position to follow player
+        if (this.chatBubble && this.player) {
+            this.chatBubble.setPosition(this.player.x, this.player.y - this.chatBubbleYOffset);
+        }
 
         // Update GUI swirl effect
         this.guiEffect?.update(this.player.x, this.player.y);
@@ -697,6 +754,7 @@ export class MCPlayerController {
         );
 
         const yOffset = 36 + 10 + (height / 2);
+        this.chatBubbleYOffset = yOffset;
         this.chatBubble = this.scene.add.container(this.player.x, this.player.y - yOffset, [bg, text]);
         this.chatBubble.setDepth(99999);
 
@@ -783,6 +841,41 @@ export class MCPlayerController {
         if (overlay) overlay.remove();
     }
 
+    private createLocalNameplate() {
+        if (!this.player) return;
+
+        const os = this.scene.sys.game.device.os;
+        const isMobile = os.android || os.iOS || os.iPad || os.iPhone || os.windowsPhone;
+        const fontSize = isMobile ? '10px' : '6px';
+        this.nameplateYOffset = isMobile ? -42 : -36;
+
+        const namePrefix = currentUser?.isPremium ? '🦈 ' : '';
+        const displayName = `${namePrefix}${currentUser?.username || 'You'}`;
+
+        const padding = { x: 2, y: 1 };
+        this.localNameText = this.scene.add.text(0, 0, displayName, {
+            fontSize,
+            fontFamily: 'Minecraft, monospace',
+            color: '#ffffff',
+            resolution: 2
+        }).setOrigin(0.5);
+
+        const textWidth = this.localNameText.width;
+        const textHeight = this.localNameText.height;
+        const bgWidth = textWidth + padding.x * 2;
+        const bgHeight = textHeight + padding.y * 2;
+
+        this.localNameBg = this.scene.add.graphics();
+        this.localNameBg.fillStyle(0x000000, 0.6);
+        this.localNameBg.fillRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight);
+
+        this.localNameplate = this.scene.add.container(this.player.x, this.player.y + this.nameplateYOffset, [
+            this.localNameBg,
+            this.localNameText
+        ]);
+        this.localNameplate.setDepth((this.config.depth ?? 260) + 1000);
+    }
+
     private enterAfkState() {
         this.isAfk = true;
         this.networkManager.sendAfk(true);
@@ -820,6 +913,7 @@ export class MCPlayerController {
         if (this.chatTimer) {
             this.chatTimer.remove(false);
         }
+        this.localNameplate?.destroy();
         if (this.mobileInteractListener) {
             window.removeEventListener('mobile:interact', this.mobileInteractListener);
         }

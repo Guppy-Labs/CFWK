@@ -117,6 +117,37 @@
             font-weight: bold;
         }
 
+        .nav-upgrade-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            background: rgba(255, 215, 0, 0.12);
+            border: 1px solid rgba(255, 215, 0, 0.5);
+            color: #ffd54f;
+            text-decoration: none;
+            font-size: 1.4rem;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+            height: 54px;
+            min-width: 54px;
+            padding: 0 0.75rem;
+            box-sizing: border-box;
+        }
+
+        .nav-upgrade-btn:hover {
+            background: rgba(255, 215, 0, 0.2);
+            border-color: #ffd54f;
+            color: #fff3b0;
+        }
+
+        .navbar-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-left: auto;
+        }
+
         /* Main Content */
         .container {
             flex: 1;
@@ -239,17 +270,21 @@
 
         /* Countdown Styles */
         .release-countdown {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
             display: flex;
             align-items: center;
+            justify-content: center;
             gap: 15px;
             background: rgba(0, 0, 0, 0.3);
-            padding: 5px 15px;
+            padding: 10px 20px;
             border: 1px solid rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(2px);
+            margin-bottom: 2rem;
+            transition: all 0.2s;
+        }
+
+        .release-countdown:hover {
+            background: rgba(0, 0, 0, 0.5);
+            border-color: var(--mm-primary);
         }
 
         .countdown-digits {
@@ -331,15 +366,6 @@
             .navbar {
                 flex-wrap: wrap;
                 gap: 1rem;
-            }
-
-            .release-countdown {
-                position: static;
-                transform: none;
-                order: 3;
-                width: 100%;
-                justify-content: center;
-                margin-top: 0.5rem;
             }
         }
 
@@ -587,14 +613,6 @@
                 margin-top: 0;
             }
         }
-        
-        .navbar .release-countdown {
-             cursor: pointer;
-             transition: color 0.2s;
-        }
-        .navbar .release-countdown:hover {
-             filter: brightness(1.1);
-        }
 
         /* Narrow mobile portrait: collapse user dropdown to icon only when play button is visible */
         @media (max-width: 500px) {
@@ -636,9 +654,39 @@
                 <i class="fa-solid fa-gamepad"></i> PLAY
             </a>
         </div>
+
+        <div class="navbar-right">
+            <a href="/upgrade" id="nav-upgrade-btn" class="nav-upgrade-btn" title="Upgrade to Shark" aria-label="Upgrade to Shark">
+                ★
+            </a>
+
+            <div class="user-menu-container">
+            <div id="user-menu-trigger" class="user-card">
+                <span id="nav-username" class="nav-username">Loading...</span>
+                <img id="nav-avatar" class="user-avatar" src="" alt="User">
+                <i class="fa-solid fa-chevron-down user-chevron"></i>
+            </div>
+            
+            <div id="user-dropdown" class="user-dropdown">
+                <a href="/account" class="dropdown-item">
+                    <i class="fa-solid fa-user"></i> Account
+                </a>
+                <a href="#" class="dropdown-item">
+                    <i class="fa-solid fa-gear"></i> Settings
+                </a>
+                <div class="dropdown-divider"></div>
+                <button id="logout-btn" class="dropdown-item item-danger">
+                    <i class="fa-solid fa-right-from-bracket"></i> Log Out
+                </button>
+            </div>
+        </div>
+        </div>
+    </nav>
+
+    <div class="container">
         
         <!-- Countdown Container -->
-        <div id="countdown-container" class="release-countdown" style="display: none;">
+        <div id="countdown-container" class="release-countdown" style="display: none; cursor: pointer;">
             <div class="countdown-prefix">RELEASE IN</div>
             <div class="countdown-digits">
                 <div class="countdown-item">
@@ -662,30 +710,6 @@
                 </div>
             </div>
         </div>
-
-        <div class="user-menu-container">
-            <div id="user-menu-trigger" class="user-card">
-                <span id="nav-username" class="nav-username">Loading...</span>
-                <img id="nav-avatar" class="user-avatar" src="" alt="User">
-                <i class="fa-solid fa-chevron-down user-chevron"></i>
-            </div>
-            
-            <div id="user-dropdown" class="user-dropdown">
-                <a href="/account" class="dropdown-item">
-                    <i class="fa-solid fa-user"></i> Account
-                </a>
-                <a href="#" class="dropdown-item">
-                    <i class="fa-solid fa-gear"></i> Settings
-                </a>
-                <div class="dropdown-divider"></div>
-                <button id="logout-btn" class="dropdown-item item-danger">
-                    <i class="fa-solid fa-right-from-bracket"></i> Log Out
-                </button>
-            </div>
-        </div>
-    </nav>
-
-    <div class="container">
         
         <!-- MapMaker Card -->
         <div id="mapmaker-card" class="info-card" style="display: none;">

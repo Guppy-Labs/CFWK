@@ -1,6 +1,6 @@
 import express from 'express';
-import User from '../models/User';
 import { IInventoryResponse } from '@cfwk/shared';
+import { InventoryCache } from '../managers/InventoryCache';
 
 const router = express.Router();
 
@@ -14,15 +14,17 @@ router.use(isAuthenticated);
 router.get('/', async (req, res) => {
     try {
         const userId = (req.user as any).id;
-        const user = await User.findById(userId).select('inventory');
-        if (!user) return res.status(404).json({ message: 'User not found' });
+        const items = await InventoryCache.getInstance().getInventory(userId);
 
         const response: IInventoryResponse = {
-            items: user.inventory || []
+            items
         };
         res.json(response);
     } catch (err) {
         console.error('[Inventory] Error fetching inventory:', err);
+        if ((err as Error).message === 'User not found') {
+            return res.status(404).json({ message: 'User not found' });
+        }
         res.status(500).json({ message: 'Server error' });
     }
 });

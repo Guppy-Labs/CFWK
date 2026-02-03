@@ -84,6 +84,7 @@ export type RemotePlayerConfig = {
     afkSince?: number; // Server timestamp (ms) when AFK started
     isGuiOpen?: boolean; // Initial GUI open state
     isChatOpen?: boolean; // Initial chat open/focused state
+    isPremium?: boolean; // Shark tier badge
 };
 
 /**
@@ -95,6 +96,7 @@ export class RemotePlayer {
     private sessionId: string;
     private username: string;
     private odcid: string;
+    private isPremium: boolean = false;
     
     private sprite!: Phaser.GameObjects.Sprite;
     private nameplate!: Phaser.GameObjects.Container;
@@ -141,6 +143,7 @@ export class RemotePlayer {
         this.sessionId = config.sessionId;
         this.username = config.username;
         this.odcid = config.odcid;
+        this.isPremium = !!config.isPremium;
         this.targetX = config.x;
         this.targetY = config.y;
         this.currentDirection = config.direction as Direction;
@@ -203,10 +206,10 @@ export class RemotePlayer {
         
         // Match MCPlayerController dimensions exactly:
         // - Base dimensions: 16x27 (MC_FRAME_DIMENSIONS['S'])
-        // - Scale: 1.5
+        // - Scale: 1.2
         // - Collidable height: 6 * 1.5 = 9
         const baseHeight = 27;
-        const scale = 1.5;
+        const scale = 1.2;
         const scaledHeight = baseHeight * scale;
         const collidableHeight = 6 * scale;
         
@@ -237,9 +240,9 @@ export class RemotePlayer {
         this.spawnStartTime = this.scene.time.now;
         this.particles = [];
 
-        // Get player dimensions (match MCPlayerController: 16x27 base, 1.5 scale)
-        const width = 16 * 1.5;
-        const height = 27 * 1.5;
+        // Get player dimensions (match MCPlayerController: 16x27 base, 1.2 scale)
+        const width = 16 * 1.2;
+        const height = 27 * 1.2;
         const pixelSize = 2;
         const numParticles = 40; // Number of particles to use
 
@@ -297,9 +300,9 @@ export class RemotePlayer {
         this.sprite.setAlpha(0);
         this.nameplate.setAlpha(0);
 
-        // Get player dimensions (match MCPlayerController: 16x27 base, 1.5 scale)
-        const width = 16 * 1.5;
-        const height = 27 * 1.5;
+        // Get player dimensions (match MCPlayerController: 16x27 base, 1.2 scale)
+        const width = 16 * 1.2;
+        const height = 27 * 1.2;
         const pixelSize = 2;
         const numParticles = 40;
 
@@ -346,7 +349,8 @@ export class RemotePlayer {
         const padding = { x: 2, y: 1 };
         
         // Create text - render at higher resolution for crisp display
-        this.nameText = this.scene.add.text(0, 0, this.username, {
+        const namePrefix = this.isPremium ? '🦈 ' : '';
+        this.nameText = this.scene.add.text(0, 0, `${namePrefix}${this.username}`, {
             fontSize: fontSize,
             fontFamily: 'Minecraft, monospace',
             color: '#ffffff',

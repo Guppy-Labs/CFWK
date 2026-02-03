@@ -2,6 +2,7 @@ import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
 import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
+import { InventoryCache } from "../managers/InventoryCache";
 import { CommandProcessor } from "../utils/CommandProcessor";
 import User from "../models/User";
 import BannedIP from "../models/BannedIP";
@@ -15,6 +16,7 @@ export class InstancePlayerSchema extends Schema implements IPlayer {
     @type("string") anim: PlayerAnim = 'idle';
     @type("boolean") isFishing: boolean = false;
     @type("string") username: string = "";
+    @type("boolean") isPremium: boolean = false; // Shark tier badge
     @type("string") odcid: string = ""; // MongoDB ObjectId for consistent color
     @type("number") direction: number = 0; // 0-7 for 8-way direction
     @type("boolean") isAfk: boolean = false; // AFK status for transparency
@@ -103,6 +105,17 @@ export class InstanceRoom extends Room<InstanceState> {
             });
         });
 
+        this.instanceManager.events.on('inventory_update', (data: { userId: string; items: { itemId: string; count: number }[] }) => {
+            this.clients.forEach(client => {
+                const player = this.state.players.get(client.sessionId);
+                if (player && player.odcid === data.userId) {
+                    client.send('inventory', {
+                        items: data.items
+                    });
+                }
+            });
+        });
+
         // Handle send to limbo command
         this.instanceManager.events.on('send_to_limbo', (data: { userId: string, reason: string }) => {
             try {
@@ -137,13 +150,15 @@ export class InstanceRoom extends Room<InstanceState> {
         }, 1000);
 
         // Server-side AFK kick enforcement (authoritative)
-        const afkKickThresholdMs = 300000; // 5 minutes
+        const afkKickThresholdMs = 300000; // 5 minutes base
+        const premiumAfkKickThresholdMs = 1200000; // 20 minutes for Shark tier
         this.afkCheckInterval = setInterval(() => {
             const now = Date.now();
             this.clients.forEach(client => {
                 const player = this.state.players.get(client.sessionId);
                 if (!player || !player.isAfk || !player.afkSince) return;
-                if (now - player.afkSince >= afkKickThresholdMs) {
+                const threshold = player.isPremium ? premiumAfkKickThresholdMs : afkKickThresholdMs;
+                if (now - player.afkSince >= threshold) {
                     console.log(`[InstanceRoom] AFK kick (server) for ${client.sessionId}`);
                     client.leave(4000, "AFK timeout");
                 }
@@ -336,7 +351,8 @@ export class InstanceRoom extends Room<InstanceState> {
                     username: player.username,
                     odcid: player.odcid,
                     message: data.message.slice(0, 100), // Basic length limit
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    isPremium: player.isPremium
                 });
                 
                 console.log(`[InstanceRoom] Chat from ${player.username}: ${data.message}`);
@@ -366,6 +382,7 @@ export class InstanceRoom extends Room<InstanceState> {
         }
         
         // --- Account Ban Check ---
+        let isPremium = false;
         if (odcid !== client.sessionId) {
             try {
                 const user = await User.findById(odcid);
@@ -374,6 +391,10 @@ export class InstanceRoom extends Room<InstanceState> {
                     // Throw special error format for client to parse
                     // Format: ACCOUNT_BANNED|ISO_DATE_STRING
                     throw new Error(`ACCOUNT_BANNED|${user.bannedUntil.toISOString()}`);
+                }
+
+                if (user && Array.isArray(user.permissions)) {
+                    isPremium = user.permissions.includes('premium.shark');
                 }
                 
                 // Track user's IP for future ban enforcement
@@ -410,10 +431,19 @@ export class InstanceRoom extends Room<InstanceState> {
         const player = new InstancePlayerSchema();
         // player.x and player.y default to 0 in schema - client sends actual spawn position
         player.username = options.username || "Guest";
+        player.isPremium = isPremium;
         player.odcid = odcid; // Use odcid for consistent coloring
         player.direction = 0; // Facing down
         
         this.state.players.set(client.sessionId, player);
+
+        // Send initial inventory to the client on join
+        try {
+            const items = await InventoryCache.getInstance().getInventory(odcid);
+            client.send('inventory', { items });
+        } catch (err) {
+            console.error('[InstanceRoom] Error sending initial inventory:', err);
+        }
         
         // Notify instance manager
         this.instanceManager.playerJoined(this.instanceId);

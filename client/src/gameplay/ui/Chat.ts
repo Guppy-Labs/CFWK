@@ -28,6 +28,7 @@ export interface ChatMessage {
     message: string;
     timestamp: number;
     isSystem?: boolean;
+    isPremium?: boolean;
 }
 
 export class Chat {
@@ -565,7 +566,8 @@ export class Chat {
         
         const nameColor = colorToHex(hashToColor(msg.odcid));
         
-        const nameText = this.scene.add.text(0, 0, msg.username + ': ', {
+        const namePrefix = msg.isPremium && !msg.isSystem ? '🦈 ' : '';
+        const nameText = this.scene.add.text(0, 0, `${namePrefix}${msg.username}: `, {
             fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
             fontSize: '14px',
             color: msg.isSystem ? '#ff0000' : nameColor

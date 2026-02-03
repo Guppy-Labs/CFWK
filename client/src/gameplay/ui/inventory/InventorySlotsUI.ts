@@ -4,6 +4,7 @@ export type InventorySlotsConfig = {
     columns?: number;
     rows?: number;
     baseRows?: number;
+    unlockedSlots?: number;
     slotSize?: number;
     slotSpacing?: number;
     gridOffsetX?: number;
@@ -35,6 +36,9 @@ export class InventorySlotsUI {
     private slotsContainer: Phaser.GameObjects.Container;
     private slotsContent: Phaser.GameObjects.Container;
     private itemsContent: Phaser.GameObjects.Container;
+    private indicatorsContent: Phaser.GameObjects.Container;
+    private indicatorsBaseX = 0;
+    private indicatorsBaseY = 0;
     private maskGraphics: Phaser.GameObjects.Graphics;
     private mask?: Phaser.Display.Masks.GeometryMask;
     private scrollbarContainer: Phaser.GameObjects.Container;
@@ -46,12 +50,21 @@ export class InventorySlotsUI {
     private currentRows = 0;
     private activeMode: 'all' | 'category' = 'all';
     private items: InventoryDisplayItem[] = [];
-    private selectedItemId?: string;
     private onItemSelect?: (item: InventoryDisplayItem | null) => void;
     private lastLayout?: { leftPageLeftEdgeX: number; leftPageTopEdgeY: number; pageHeight: number; scale: number };
     private lastViewportHeight?: number;
     private slotsBounds?: Phaser.Geom.Rectangle;
     private wheelHandler?: (pointer: Phaser.Input.Pointer, _gameObjects: unknown[], _deltaX: number, deltaY: number) => void;
+    private pointerMoveHandler?: (pointer: Phaser.Input.Pointer) => void;
+    private pointerDownHandler?: (pointer: Phaser.Input.Pointer) => void;
+
+    private hoverIndicator?: Phaser.GameObjects.Image;
+    private selectedIndicator?: Phaser.GameObjects.Sprite;
+    private hoverSlotIndex?: number;
+    private selectedSlotIndex?: number;
+    private hoverTween?: Phaser.Tweens.Tween;
+    private currentSlotCount = 0;
+    private slotIndexToItem = new Map<number, InventoryDisplayItem>();
 
     private countTextureCounter = 0;
     private countTextureCache = new Map<string, string>();
@@ -84,6 +97,7 @@ export class InventorySlotsUI {
             columns: config.columns ?? 5,
             rows: config.rows ?? 20,
             baseRows: config.baseRows ?? 3,
+            unlockedSlots: config.unlockedSlots ?? 15,
             slotSize: config.slotSize ?? 24,
             slotSpacing: config.slotSpacing ?? 1,
             gridOffsetX: config.gridOffsetX ?? 9,
@@ -105,6 +119,7 @@ export class InventorySlotsUI {
         this.slotsContainer = this.scene.add.container(0, 0);
         this.slotsContent = this.scene.add.container(0, 0);
         this.itemsContent = this.scene.add.container(0, 0);
+        this.indicatorsContent = this.scene.add.container(0, 0);
         this.slotsContainer.add([this.slotsContent, this.itemsContent]);
 
         this.maskGraphics = this.scene.add.graphics();
@@ -117,12 +132,14 @@ export class InventorySlotsUI {
         this.scene.input.setDraggable(this.scrollbarThumb);
 
         this.scrollbarContainer.add([this.scrollbarTrack, this.scrollbarThumb]);
-        this.container.add([this.slotsContainer, this.scrollbarContainer]);
+        this.container.add([this.slotsContainer, this.indicatorsContent, this.scrollbarContainer]);
 
         this.container.setVisible(false);
 
         this.currentRows = this.config.rows;
-        this.buildSlots(this.currentRows, this.config.baseRows);
+        this.buildSlots(this.currentRows, this.config.unlockedSlots);
+        this.createSelectionIndicators();
+        this.registerPointerHandlers();
         this.registerDragHandlers();
         this.registerWheelHandlers();
     }
@@ -156,8 +173,12 @@ export class InventorySlotsUI {
     }
 
     clearSelection() {
-        this.selectedItemId = undefined;
         this.onItemSelect?.(null);
+        if (this.selectedIndicator) {
+            this.selectedIndicator.setVisible(false);
+            this.selectedIndicator.stop();
+        }
+        this.selectedSlotIndex = undefined;
     }
 
     layout(leftPageLeftEdgeX: number, leftPageTopEdgeY: number, pageHeight: number, scale: number) {
@@ -174,6 +195,11 @@ export class InventorySlotsUI {
         this.slotsContainer.setPosition(startX, startY);
         this.slotsContainer.setScale(scale);
 
+        this.indicatorsBaseX = startX;
+        this.indicatorsBaseY = startY;
+        this.indicatorsContent.setPosition(startX, startY);
+        this.indicatorsContent.setScale(scale);
+
         this.scrollbarContainer.setPosition(startX + (gridWidth + this.config.scrollbarOffsetX) * scale, startY);
         this.scrollbarContainer.setScale(scale);
 
@@ -183,15 +209,16 @@ export class InventorySlotsUI {
         this.applyScroll();
     }
 
-    private buildSlots(rows: number, baseRows: number, _itemCount?: number) {
+    private buildSlots(rows: number, unlockedSlots: number, _itemCount?: number) {
         const { columns, slotSize, slotSpacing } = this.config;
         this.slotsContent.removeAll(true);
         this.itemsContent.removeAll(true);
 
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < columns; col++) {
-                const isBaseRow = row < baseRows;
-                const textureKey = isBaseRow ? 'ui-slot-base' : 'ui-slot-extended';
+                const index = row * columns + col;
+                const isUnlocked = index < unlockedSlots;
+                const textureKey = isUnlocked ? 'ui-slot-base' : 'ui-slot-extended';
                 const slot = this.scene.add.image(0, 0, textureKey).setOrigin(0, 0);
                 const x = col * (slotSize + slotSpacing);
                 const y = row * (slotSize + slotSpacing);
@@ -252,6 +279,9 @@ export class InventorySlotsUI {
     private applyScroll() {
         this.slotsContent.y = -this.scrollOffset;
         this.itemsContent.y = -this.scrollOffset;
+        const scale = this.lastLayout?.scale ?? 1;
+        this.indicatorsContent.y = this.indicatorsBaseY - this.scrollOffset * scale;
+        this.indicatorsContent.x = this.indicatorsBaseX;
     }
 
     private updateMask(x: number, y: number, width: number, height: number) {
@@ -320,19 +350,23 @@ export class InventorySlotsUI {
 
     private refreshSlotsAndItems() {
         const stacks = this.buildStacks(this.items);
+        const availableSlots = this.config.unlockedSlots;
+        const cappedStacks = stacks.slice(0, availableSlots);
+
+        this.currentSlotCount = this.activeMode === 'all' ? availableSlots : cappedStacks.length;
 
         if (this.activeMode === 'all') {
             this.currentRows = this.config.rows;
-            this.buildSlots(this.currentRows, this.config.baseRows, stacks.length);
+            this.buildSlots(this.currentRows, availableSlots, cappedStacks.length);
         } else {
             // For category mode, only create as many slots as there are items
-            const neededSlots = stacks.length;
+            const neededSlots = cappedStacks.length;
             const neededRows = Math.max(1, Math.ceil(neededSlots / this.config.columns));
             this.currentRows = neededRows;
             this.buildSlotsForCategory(neededSlots);
         }
 
-        this.renderStacks(stacks);
+        this.renderStacks(cappedStacks);
 
         if (this.lastLayout) {
             this.layout(
@@ -360,6 +394,7 @@ export class InventorySlotsUI {
     private renderStacks(stacks: Array<{ item: InventoryDisplayItem; iconKey: string; count: number }>) {
         const { columns, slotSize, slotSpacing, itemScale, countOffsetX, countOffsetY } = this.config;
         this.itemsContent.removeAll(true);
+        this.slotIndexToItem.clear();
 
         stacks.forEach((stack, index) => {
             const row = Math.floor(index / columns);
@@ -370,11 +405,14 @@ export class InventorySlotsUI {
             const icon = this.scene.add.image(x + slotSize / 2, y + slotSize / 2, stack.iconKey).setOrigin(0.5, 0.5);
             icon.setScale(itemScale);
             icon.setInteractive({ useHandCursor: true });
+            icon.setData('ignoreCursor', true);
             icon.on('pointerdown', () => {
-                this.selectedItemId = stack.item.id;
                 this.onItemSelect?.(stack.item);
+                this.setSelectedSlotIndex(index);
             });
             this.itemsContent.add(icon);
+
+            this.slotIndexToItem.set(index, stack.item);
 
             const countText = String(stack.count);
             const countTextureKey = this.getCountTexture(countText);
@@ -385,6 +423,156 @@ export class InventorySlotsUI {
             countImage.setPosition(Math.round(countX), Math.round(countY));
             this.itemsContent.add(countImage);
         });
+    }
+
+    private createSelectionIndicators() {
+        if (!this.scene.textures.exists('ui-slot-select-1')) return;
+
+        if (!this.scene.anims.exists('ui-slot-select')) {
+            this.scene.anims.create({
+                key: 'ui-slot-select',
+                frames: [
+                    { key: 'ui-slot-select-3' },
+                    { key: 'ui-slot-select-4' },
+                    { key: 'ui-slot-select-1' },
+                    { key: 'ui-slot-select-2' }
+                ],
+                frameRate: 8,
+                repeat: -1
+            });
+        }
+
+        this.hoverIndicator = this.scene.add.image(0, 0, 'ui-slot-select-3').setOrigin(0.5, 0.5);
+        this.hoverIndicator.setAlpha(0.6);
+        this.hoverIndicator.setVisible(false);
+        this.hoverIndicator.setData('ignoreCursor', true);
+
+        this.selectedIndicator = this.scene.add.sprite(0, 0, 'ui-slot-select-1').setOrigin(0.5, 0.5);
+        this.selectedIndicator.setAlpha(1);
+        this.selectedIndicator.setVisible(false);
+        this.selectedIndicator.setData('ignoreCursor', true);
+
+        this.indicatorsContent.add([this.hoverIndicator, this.selectedIndicator]);
+    }
+
+    private registerPointerHandlers() {
+        this.pointerMoveHandler = (pointer: Phaser.Input.Pointer) => {
+            if (!this.container.visible) return;
+            if (!this.slotsBounds || !this.lastLayout) return;
+
+            if (!this.slotsBounds.contains(pointer.x, pointer.y)) {
+                this.setHoverSlotIndex(undefined);
+                return;
+            }
+
+            const slotIndex = this.getNearestSlotIndex(pointer);
+            this.setHoverSlotIndex(slotIndex);
+        };
+
+        this.pointerDownHandler = (pointer: Phaser.Input.Pointer) => {
+            if (!this.container.visible) return;
+            if (!this.slotsBounds || !this.lastLayout) return;
+            if (!this.slotsBounds.contains(pointer.x, pointer.y)) return;
+
+            const slotIndex = this.getNearestSlotIndex(pointer);
+            if (slotIndex === undefined) return;
+
+            this.setSelectedSlotIndex(slotIndex);
+            const item = this.slotIndexToItem.get(slotIndex);
+            if (item) {
+                this.onItemSelect?.(item);
+            } else {
+                this.onItemSelect?.(null);
+            }
+        };
+
+        this.scene.input.on('pointermove', this.pointerMoveHandler);
+        this.scene.input.on('pointerdown', this.pointerDownHandler);
+    }
+
+    private getNearestSlotIndex(pointer: Phaser.Input.Pointer): number | undefined {
+        if (!this.slotsBounds) return undefined;
+        const scale = this.slotsContainer.scaleX || 1;
+        const localX = (pointer.x - this.slotsBounds.x) / scale;
+        const localY = (pointer.y - this.slotsBounds.y) / scale + this.scrollOffset;
+
+        const { slotSize, slotSpacing, columns } = this.config;
+        const step = slotSize + slotSpacing;
+        const col = Math.round((localX - slotSize / 2) / step);
+        const row = Math.round((localY - slotSize / 2) / step);
+
+        if (col < 0 || row < 0) return undefined;
+        if (col >= columns) return undefined;
+        const index = row * columns + col;
+        if (index < 0 || index >= this.currentSlotCount) return undefined;
+
+        const centerX = col * step + slotSize / 2;
+        const centerY = row * step + slotSize / 2;
+        const dx = localX - centerX;
+        const dy = localY - centerY;
+        const distance = Math.hypot(dx, dy);
+        if (distance > step * 0.7) return undefined;
+
+        return index;
+    }
+
+    private setHoverSlotIndex(index?: number) {
+        if (!this.hoverIndicator) return;
+        if (index === undefined) {
+            this.hoverSlotIndex = undefined;
+            this.hoverIndicator.setVisible(false);
+            return;
+        }
+
+        if (this.selectedIndicator?.visible && this.selectedSlotIndex === index) {
+            this.hoverSlotIndex = index;
+            this.hoverIndicator.setVisible(false);
+            return;
+        }
+
+        if (this.hoverSlotIndex === index && this.hoverIndicator.visible) return;
+        this.hoverSlotIndex = index;
+
+        const pos = this.getSlotCenterPosition(index);
+        if (!pos) return;
+
+        this.hoverIndicator.setVisible(true);
+        if (this.hoverTween) {
+            this.hoverTween.stop();
+            this.hoverTween = undefined;
+        }
+
+        if (this.hoverIndicator.x === 0 && this.hoverIndicator.y === 0) {
+            this.hoverIndicator.setPosition(pos.x, pos.y);
+        } else {
+            this.hoverTween = this.scene.tweens.add({
+                targets: this.hoverIndicator,
+                x: pos.x,
+                y: pos.y,
+                duration: 100,
+                ease: 'Sine.out'
+            });
+        }
+    }
+
+    private setSelectedSlotIndex(index: number) {
+        if (!this.selectedIndicator) return;
+        this.selectedSlotIndex = index;
+        const pos = this.getSlotCenterPosition(index);
+        if (!pos) return;
+        this.selectedIndicator.setPosition(pos.x, pos.y);
+        this.selectedIndicator.setVisible(true);
+        this.selectedIndicator.play('ui-slot-select', true);
+    }
+
+    private getSlotCenterPosition(index: number): { x: number; y: number } | undefined {
+        const { slotSize, slotSpacing, columns } = this.config;
+        const step = slotSize + slotSpacing;
+        const row = Math.floor(index / columns);
+        const col = index % columns;
+        const x = col * step + slotSize / 2;
+        const y = row * step + slotSize / 2;
+        return { x, y };
     }
 
     private getCountTexture(text: string) {

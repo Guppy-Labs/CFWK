@@ -17,10 +17,14 @@ import authRoutes from "./routes/auth";
 import accountRoutes from "./routes/account";
 import inventoryRoutes from "./routes/inventory";
 import apiRoutes from "./routes";
+import stripeRoutes, { stripeWebhookHandler } from "./routes/stripe";
 import initPassport from "./config/passport";
 import { InstanceManager } from "./managers/InstanceManager";
+import { InventoryCache } from "./managers/InventoryCache";
 
-dotenv.config();
+// Load environment variables from common locations
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 initPassport();
 
@@ -41,6 +45,9 @@ app.use(cors({
     },
     credentials: true
 }));
+// Stripe webhook needs raw body
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), stripeWebhookHandler);
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -74,11 +81,16 @@ app.use("/api", apiRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/account", accountRoutes);
 app.use("/api/inventory", inventoryRoutes);
+app.use("/api/stripe", stripeRoutes);
 
 // MongoDB connection
 mongoose.connect(mongoURI)
     .then(() => console.log("MongoDB Connected"))
     .catch(err => console.error("MongoDB Connection Error:", err));
+
+// Inventory cache: periodic flush every 5 minutes
+const inventoryCache = InventoryCache.getInstance();
+inventoryCache.startAutoFlush(5 * 60 * 1000);
 
 
 const gameServer = new Server({
@@ -133,3 +145,22 @@ const publicDomain = process.env.PUBLIC_DOMAIN || 'localhost';
 
 gameServer.listen(port);
 console.log(`Listening on ws://${publicDomain}:${port}`);
+
+let isShuttingDown = false;
+const shutdown = async (signal: string) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`[Server] Shutdown initiated (${signal}). Flushing inventories...`);
+    inventoryCache.stopAutoFlush();
+    try {
+        await inventoryCache.flushDirty();
+    } catch (err) {
+        console.error('[Server] Error flushing inventories on shutdown:', err);
+    } finally {
+        process.exit(0);
+    }
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('beforeExit', () => shutdown('beforeExit'));

@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Consent Manager -->
+    <script type="text/javascript" data-cmp-ab="1" src="https://cdn.consentmanager.net/delivery/autoblocking/b9bfb4fa12539.js" data-cmp-host="a.delivery.consentmanager.net" data-cmp-cdn="cdn.consentmanager.net" data-cmp-codesrc="16"></script>
+    
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-C6XTQSCK5M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-C6XTQSCK5M');
+    </script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>Upgrade - Cute Fish With Knives</title>
+    <meta name="title" content="Upgrade - Cute Fish With Knives">
+    <meta name="description" content="Upgrade to Shark to support development and unlock premium quality-of-life perks.">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="theme-color" content="#ff66aa">
+
+    <link rel="canonical" href="https://cutefishwithknives.com/upgrade/">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="apple-touch-icon" href="/favicon.png">
+
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body {
+            background-color: var(--mm-bg-dark);
+            color: var(--mm-text-main);
+            font-family: 'Minecraft', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            background-color: var(--mm-bg-panel);
+            border-bottom: 2px solid var(--mm-border);
+        }
+
+        .navbar-brand {
+            font-size: 1.3rem;
+            color: var(--mm-primary);
+            text-decoration: none;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .navbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--mm-bg-input);
+            border: 1px solid var(--mm-border);
+            color: var(--mm-text-main);
+            padding: 8px 14px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .nav-btn:hover {
+            border-color: var(--mm-primary);
+            color: var(--mm-text-main);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .container {
+            max-width: 1000px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+
+        .hero {
+            background: var(--mm-bg-panel);
+            border: 2px solid var(--mm-border);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .hero h1 {
+            margin: 0 0 0.5rem 0;
+            color: var(--mm-primary);
+        }
+
+        .hero p {
+            margin: 0;
+            color: var(--mm-text-muted);
+        }
+
+        .comparison {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1.5rem;
+        }
+
+        .comparison th,
+        .comparison td {
+            border: 1px solid var(--mm-border);
+            padding: 12px;
+            text-align: left;
+        }
+
+        .comparison th {
+            background: var(--mm-bg-input);
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+        }
+
+        .tier-name {
+            font-size: 1.1rem;
+            font-weight: bold;
+        }
+
+        .tier-price {
+            color: var(--mm-primary);
+            font-weight: bold;
+        }
+
+        .check {
+            color: #3ad560;
+            font-weight: bold;
+        }
+
+        .yellow {
+            color: #ffcc00;
+            font-weight: bold;
+        }
+
+        .xmark {
+            color: #d53a3a;
+            font-weight: bold;
+        }
+
+        .upgrade-card {
+            margin-top: 2rem;
+            background: rgba(255, 102, 170, 0.1);
+            border: 1px solid var(--mm-primary);
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .upgrade-card h3 {
+            margin: 0 0 0.3rem 0;
+        }
+
+        .upgrade-card p {
+            margin: 0;
+            color: var(--mm-text-muted);
+        }
+
+        .upgrade-btn {
+            background: var(--mm-primary);
+            color: white;
+            border: none;
+            padding: 12px 22px;
+            cursor: pointer;
+            font-family: inherit;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+
+        .upgrade-btn:hover {
+            background: var(--mm-primary-hover);
+        }
+
+        .upgrade-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .cancel-btn {
+            background: transparent;
+            color: var(--mm-text-muted);
+            border: 1px solid var(--mm-border);
+            padding: 12px 18px;
+            cursor: pointer;
+            font-family: inherit;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+
+        .cancel-btn:hover {
+            border-color: var(--mm-danger);
+            color: var(--mm-danger);
+        }
+
+        .premium-card {
+            margin-top: 2rem;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--mm-border);
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .premium-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #ffd54f;
+            font-weight: bold;
+        }
+
+        .canceled-card {
+            margin-top: 2rem;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid #ff9800;
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .canceled-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #ff9800;
+            font-weight: bold;
+        }
+
+        .resume-btn {
+            background: #ff9800;
+            border: none;
+            color: #000;
+            padding: 0.75rem 1.5rem;
+            font-family: 'Minecraft', sans-serif;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .resume-btn:hover {
+            background: #ffc107;
+        }
+
+        .resume-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .status-banner {
+            margin-top: 1rem;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--mm-border);
+            background: rgba(0,0,0,0.25);
+            color: var(--mm-text-main);
+        }
+
+        .status-banner.success { border-color: #3ad560; color: #3ad560; }
+        .status-banner.error { border-color: #d53a3a; color: #d53a3a; }
+
+        @media (max-width: 768px) {
+            .navbar {
+                flex-direction: column;
+                gap: 0.75rem;
+            }
+            .upgrade-card {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <a class="navbar-brand" href="/">
+            <i class="fa-solid fa-fish"></i> Cute Fish With Knives
+        </a>
+        <div class="navbar-actions">
+            <a class="nav-btn" href="/account"><i class="fa-solid fa-user"></i> Account</a>
+            <a class="nav-btn" href="/game"><i class="fa-solid fa-gamepad"></i> Play</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="hero">
+            <h1>Upgrade to Shark</h1>
+            <p>Support development and unlock premium perks for $4/month.</p>
+        </div>
+
+        <table class="comparison">
+            <thead>
+                <tr>
+                    <th>Perk</th>
+                    <th>Guppy (Free)</th>
+                    <th>Shark ($4/mo)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>AFK Timer</td>
+                    <td>5 minutes</td>
+                    <td class="tier-price">20 minutes</td>
+                </tr>
+                <tr>
+                    <td>Shark badge on nameplate</td>
+                    <td class="xmark">—</td>
+                    <td class="check">🦈</td>
+                </tr>
+                <tr>
+                    <td>Shark badge in chat</td>
+                    <td class="xmark">—</td>
+                    <td class="check">🦈</td>
+                </tr>
+                <tr>
+                    <td>Support development</td>
+                    <td class="yellow">Minimal</td>
+                    <td class="check">Best</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div id="upgrade-card" class="upgrade-card">
+            <div>
+                <h3>Become a Shark</h3>
+                <p>Your support keeps servers online and helps fund new content.</p>
+            </div>
+            <button id="upgrade-btn" class="upgrade-btn">Upgrade for $4/mo</button>
+        </div>
+
+        <div id="premium-card" class="premium-card" style="display:none;">
+            <div>
+                <div class="premium-badge">🦈 Shark Active</div>
+                <p style="margin: 0; color: var(--mm-text-muted);">Thanks for supporting development. You can cancel anytime.</p>
+            </div>
+            <button id="cancel-btn" class="cancel-btn">Cancel Subscription</button>
+        </div>
+
+        <div id="canceled-card" class="canceled-card" style="display:none;">
+            <div>
+                <div class="canceled-badge">🦈 Subscription Canceled</div>
+                <p style="margin: 0; color: var(--mm-text-muted);">Your benefits will expire on <strong id="expires-date"></strong>.</p>
+            </div>
+            <button id="resume-btn" class="resume-btn">Resume Subscription</button>
+        </div>
+
+        <div id="upgrade-status" class="status-banner" style="display:none;"></div>
+    </div>
+
+    <script type="module" src="/src/upgrade.ts"></script>
+</body>
+</html>

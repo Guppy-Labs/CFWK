@@ -65,7 +65,8 @@ export class RemotePlayerManager {
                     isAfk: player.isAfk || false,
                     afkSince: player.afkSince || 0,
                     isGuiOpen: player.isGuiOpen || false,
-                    isChatOpen: player.isChatOpen || false
+                    isChatOpen: player.isChatOpen || false,
+                    isPremium: player.isPremium || false
                 });
 
                 // Enable lighting on remote player sprite

@@ -51,6 +51,10 @@ export class UIScene extends Phaser.Scene {
         this.load.image('ui-item-info-divider', '/ui/Line03a.png');
         this.load.image('ui-slot-base', '/ui/Slot01a.png');
         this.load.image('ui-slot-extended', '/ui/Slot01e.png');
+        this.load.image('ui-slot-select-1', '/ui/select/sel1.png');
+        this.load.image('ui-slot-select-2', '/ui/select/sel2.png');
+        this.load.image('ui-slot-select-3', '/ui/select/sel3.png');
+        this.load.image('ui-slot-select-4', '/ui/select/sel4.png');
         this.load.image('ui-scrollbar-track', '/ui/Bar07a.png');
         this.load.image('ui-scrollbar-thumb', '/ui/IconHandle03a.png');
         this.load.image('ui-font', '/assets/font/game-font.png');
@@ -272,14 +276,18 @@ export class UIScene extends Phaser.Scene {
             this.input.setDefaultCursor(`url(${this.cursorDefaultUrl}) 0 0, auto`);
         }
 
-        this.input.on(Phaser.Input.Events.GAMEOBJECT_OVER, (_pointer: Phaser.Input.Pointer, _gameObject: Phaser.GameObjects.GameObject) => {
+        this.input.on(Phaser.Input.Events.GAMEOBJECT_OVER, (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
+            const ignoreCursor = (gameObject as any).getData?.('ignoreCursor') === true;
+            if (ignoreCursor) return;
             this.hoverCount += 1;
             if (this.cursorHoverUrl) {
                 this.input.setDefaultCursor(`url(${this.cursorHoverUrl}) 0 0, auto`);
             }
         });
 
-        this.input.on(Phaser.Input.Events.GAMEOBJECT_OUT, (_pointer: Phaser.Input.Pointer, _gameObject: Phaser.GameObjects.GameObject) => {
+        this.input.on(Phaser.Input.Events.GAMEOBJECT_OUT, (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
+            const ignoreCursor = (gameObject as any).getData?.('ignoreCursor') === true;
+            if (ignoreCursor) return;
             this.hoverCount = Math.max(0, this.hoverCount - 1);
             if (this.hoverCount === 0 && this.cursorDefaultUrl) {
                 this.input.setDefaultCursor(`url(${this.cursorDefaultUrl}) 0 0, auto`);
@@ -346,13 +354,14 @@ export class UIScene extends Phaser.Scene {
         const room = this.networkManager.getRoom();
         if (!room) return;
 
-        room.onMessage('chat', (data: { sessionId: string; username: string; odcid: string; message: string; timestamp: number; isSystem?: boolean }) => {
+        room.onMessage('chat', (data: { sessionId: string; username: string; odcid: string; message: string; timestamp: number; isSystem?: boolean; isPremium?: boolean }) => {
             const msg: ChatMessage = {
                 username: data.username,
                 odcid: data.odcid,
                 message: data.message,
                 timestamp: data.timestamp,
-                isSystem: data.isSystem
+                isSystem: data.isSystem,
+                isPremium: data.isPremium
             };
             this.chat?.addMessage(msg);
 

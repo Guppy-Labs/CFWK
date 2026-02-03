@@ -121,8 +121,9 @@ const lcSeconds = document.getElementById('lc-seconds') as HTMLElement;
 const mapmakerCard = document.getElementById('mapmaker-card') as HTMLElement;
 const preregCard = document.getElementById('prereg-card') as HTMLElement;
 const navPlayBtn = document.getElementById('nav-play-btn') as HTMLElement;
+const navUpgradeBtn = document.getElementById('nav-upgrade-btn') as HTMLAnchorElement;
 
-const releaseDate = new Date('2026-04-09T06:00:00').getTime();
+const releaseDate = new Date('2026-05-02T06:00:00').getTime();
 let countdownInterval: any;
 
 function openCountdownModal() {
@@ -219,11 +220,15 @@ function renderUser(user: any) {
         if (preregCard) preregCard.style.display = 'flex';
     }
 
-    if (!perms.includes('access.game')) {
-        startCountdown();
-    } else if (!isBanned) {
+    // Always show countdown for all users
+    startCountdown();
+    
+    if (perms.includes('access.game') && !isBanned) {
         if(navPlayBtn) navPlayBtn.style.display = 'inline-flex';
     }
+
+    // Update upgrade button based on premium status
+    updateUpgradeButton(user);
 
     if (user.hasPassword) {
         if(currentPassGroup) currentPassGroup.style.display = 'block';
@@ -294,6 +299,41 @@ function showPasswordEmailReminder(email: string) {
     }
     
     reminder.innerHTML = `<i class="fa-solid fa-circle-info" style="margin-right: 8px;"></i> You are setting a password for <strong>${email}</strong>`;
+}
+
+function updateUpgradeButton(user: any) {
+    if (!navUpgradeBtn) return;
+    
+    const perms = user.permissions || [];
+    const isPremium = perms.includes('premium.shark');
+    const premiumStatus = user.premiumStatus as string | undefined;
+    const periodEnd = user.premiumCurrentPeriodEnd ? new Date(user.premiumCurrentPeriodEnd) : null;
+    
+    if (isPremium && premiumStatus === 'canceled' && periodEnd) {
+        // Canceled but still has benefits - show days remaining
+        const now = new Date();
+        const diff = periodEnd.getTime() - now.getTime();
+        const daysLeft = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+        navUpgradeBtn.innerHTML = `🦈 ${daysLeft}d`;
+        navUpgradeBtn.title = `Shark expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`;
+        navUpgradeBtn.style.color = '#ff9800'; // Orange for canceled
+        navUpgradeBtn.style.borderColor = 'rgba(255, 152, 0, 0.5)';
+        navUpgradeBtn.style.background = 'rgba(255, 152, 0, 0.12)';
+    } else if (isPremium) {
+        // Active premium - show shark
+        navUpgradeBtn.innerHTML = '🦈';
+        navUpgradeBtn.title = 'Shark Active';
+        navUpgradeBtn.style.color = '#ffd54f';
+        navUpgradeBtn.style.borderColor = 'rgba(255, 215, 0, 0.5)';
+        navUpgradeBtn.style.background = 'rgba(255, 215, 0, 0.12)';
+    } else {
+        // Not premium - show star upgrade button
+        navUpgradeBtn.innerHTML = '★';
+        navUpgradeBtn.title = 'Upgrade to Shark';
+        navUpgradeBtn.style.color = '#ffd54f';
+        navUpgradeBtn.style.borderColor = 'rgba(255, 215, 0, 0.5)';
+        navUpgradeBtn.style.background = 'rgba(255, 215, 0, 0.12)';
+    }
 }
 
 function startCountdown() {

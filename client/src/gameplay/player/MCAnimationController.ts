@@ -77,8 +77,7 @@ export class MCAnimationController {
     private currentDirection: MCDirectionIndex = MCDirectionIndex.Down;
     private currentAnimation: MCAnimationType = 'walk';
     private currentRotation: number = Math.PI / 2; // Start facing down (south)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    private _isSprinting = false;
+    private isSprinting = false;
 
     // Movement thresholds
     private readonly moveThreshold = 0.1;
@@ -244,6 +243,28 @@ export class MCAnimationController {
             if (this.scene.anims.exists(animKey)) {
                 player.play(animKey, true);
             }
+        }
+
+        // Adjust animation speed based on actual velocity
+        // This makes walking look slower and sprinting look faster
+        if (player.anims.currentAnim) {
+            const speed = actualSpeed;
+            // Map speed to timeScale: ~1.6 walk speed = 1.0, ~2.4 sprint = 1.5
+            // Minimum 0.5 for very slow movement, max 1.5 for sprinting
+            let timeScale = 1.0;
+            if (speed > 0.1) {
+                // Linear interpolation from walk (1.6) to sprint (2.4)
+                // walk = 1.0 timeScale, sprint = 1.5 timeScale
+                const walkSpeed = 1.6;
+                const sprintSpeed = 2.4;
+                const normalizedSpeed = (speed - walkSpeed) / (sprintSpeed - walkSpeed);
+                timeScale = 1.0 + (normalizedSpeed * 0.5); // 1.0 to 1.5
+                timeScale = Phaser.Math.Clamp(timeScale, 0.6, 1.6);
+            } else {
+                // Very slow/stopped - slow animation
+                timeScale = 0.6;
+            }
+            player.anims.timeScale = timeScale;
         }
     }
 

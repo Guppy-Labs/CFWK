@@ -17,7 +17,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     
     <!-- Primary Meta Tags -->
-    <title>Play Now - Cute Fish With Knives | Online Multiplayer Game</title>
+    <title>Play Cute Fish</title>
     <meta name="title" content="Play Now - Cute Fish With Knives | Online Multiplayer Game">
     <meta name="description" content="Jump into the action! Play Cute Fish With Knives online - explore custom maps, join multiplayer sessions, and create unforgettable gaming moments.">
     <meta name="robots" content="noindex, nofollow">
@@ -131,6 +131,30 @@
             background: rgba(255,255,255,0.05);
         }
         
+        .nav-upgrade-btn {
+            color: #ffd54f;
+            text-decoration: none;
+            font-size: 1.4rem;
+            border: 1px solid rgba(255, 215, 0, 0.5);
+            background: rgba(255, 215, 0, 0.12);
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-left: auto;
+            height: 40px;
+            min-width: 40px;
+            padding: 0 0.5rem;
+            box-sizing: border-box;
+        }
+        
+        .nav-upgrade-btn:hover {
+            color: #fff3b0;
+            border-color: #ffd54f;
+            background: rgba(255, 215, 0, 0.2);
+        }
+        
         #game-container {
             flex: 1;
             display: flex;
@@ -154,12 +178,30 @@
             display: block;
             /* Ensure visible size before Phaser creates canvas */
             background: #121212;
+            /* Prevent text selection on double-click */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            /* Prevent double-tap zoom and other touch gestures */
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         #app canvas {
             display: block;
             width: 100%;
             height: 100%;
+            /* Prevent text selection on canvas */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            /* Prevent touch gestures like pinch-zoom and double-tap zoom */
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         /* Loader is a sibling of #app, not inside it - so sizing is independent */
@@ -571,6 +613,7 @@
     <nav class="game-navbar">
         <a href="/account" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back</a>
         <div class="nav-brand"><i class="fa-solid fa-gamepad"></i> CUTE FISH</div>
+        <a href="/upgrade" id="nav-upgrade-btn" class="nav-upgrade-btn" title="Upgrade to Shark" aria-label="Upgrade to Shark">★</a>
     </nav>
 
     <div id="game-container">
@@ -623,6 +666,34 @@
         document.addEventListener('contextmenu', function(e) {
             e.preventDefault();
             return false;
+        });
+
+        // Prevent double-click text selection on the game container
+        document.getElementById('app').addEventListener('mousedown', function(e) {
+            if (e.detail > 1) {
+                e.preventDefault();
+            }
+        });
+
+        // Prevent double-tap zoom on touch devices
+        var lastTouchEnd = 0;
+        document.getElementById('app').addEventListener('touchend', function(e) {
+            var now = Date.now();
+            if (now - lastTouchEnd <= 300) {
+                e.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, { passive: false });
+
+        // Prevent pinch-to-zoom gesture
+        document.addEventListener('gesturestart', function(e) {
+            e.preventDefault();
+        });
+        document.addEventListener('gesturechange', function(e) {
+            e.preventDefault();
+        });
+        document.addEventListener('gestureend', function(e) {
+            e.preventDefault();
         });
     </script>
   </body>

@@ -9,6 +9,7 @@ export interface ChatMessage {
     username: string;
     text: string;
     isSystem?: boolean; // New field for system messages
+  isPremium?: boolean; // Shark tier badge
 }
 
 export interface PlayerInput {
@@ -99,6 +100,7 @@ export interface ILayer {
     type: 'tile' | 'object';
     visible: boolean;
     locked: boolean;
+  isPremium?: boolean; // Shark tier badge
     data: IMapLayerData;
     properties?: {
         collidable?: boolean;

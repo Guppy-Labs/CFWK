@@ -25,6 +25,8 @@ export class NetworkManager {
     private disconnectCallbacks: Array<(code: number) => void> = [];
     private wasConnected: boolean = false;
 
+    private inventoryCache: IInventoryResponse | null = null;
+
     private constructor() {
         this.client = new Colyseus.Client(Config.WS_URL);
         console.log("[NetworkManager] Initialized with WS URL:", Config.WS_URL);
@@ -77,6 +79,7 @@ export class NetworkManager {
 
     async getInventory(): Promise<IInventoryResponse | null> {
         try {
+            if (this.inventoryCache) return this.inventoryCache;
             // Use relative URL to go through same-origin proxy (for session cookies)
             const response = await fetch('/api/inventory', {
                 method: 'GET',
@@ -88,6 +91,7 @@ export class NetworkManager {
             }
 
             const data: IInventoryResponse = await response.json();
+            this.inventoryCache = data;
             return data;
         } catch (error) {
             console.error('[NetworkManager] Error fetching inventory:', error);
@@ -183,6 +187,11 @@ export class NetworkManager {
             if (hadConnection) {
                 this.disconnectCallbacks.forEach(cb => cb(code));
             }
+        });
+
+        this.currentRoom.onMessage('inventory', (data: IInventoryResponse) => {
+            this.inventoryCache = data;
+            window.dispatchEvent(new CustomEvent('inventory:update', { detail: data }));
         });
         
         // Mark that we have an active connection

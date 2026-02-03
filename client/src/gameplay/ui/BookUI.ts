@@ -30,6 +30,7 @@ export class BookUI {
     private inventoryEntries: InventoryEntry[] = [];
     private inventoryItems: Array<{ entry: InventoryEntry; def: ItemDefinition; display: InventoryDisplayItem }> = [];
     private networkManager = NetworkManager.getInstance();
+    private inventoryUpdateHandler?: (event: Event) => void;
 
     private readonly coverWidth = 320;
     private readonly coverHeight = 219;
@@ -77,6 +78,13 @@ export class BookUI {
         this.container = this.scene.add.container(0, 0, [this.cover, this.leftPage, this.rightPage, this.tabsContainer]);
         this.container.setDepth(12000);
         this.container.setVisible(false);
+
+        this.inventoryUpdateHandler = (event: Event) => {
+            const customEvent = event as CustomEvent<{ items: InventoryEntry[] }>;
+            const items = customEvent.detail?.items || [];
+            this.applyInventoryUpdate(items);
+        };
+        window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
 
         this.inventoryGroups = new InventoryGroupsUI(this.scene, this.container);
         this.inventoryDetails = new InventoryItemDetailsUI(this.scene, this.container, {
@@ -317,7 +325,11 @@ export class BookUI {
         const response = await this.networkManager.getInventory();
         if (!response) return;
 
-        this.inventoryEntries = response.items || [];
+        this.applyInventoryUpdate(response.items || []);
+    }
+
+    private applyInventoryUpdate(items: InventoryEntry[]) {
+        this.inventoryEntries = items;
         this.inventoryItems = this.inventoryEntries
             .map((entry) => {
                 const def = getItemDefinition(entry.itemId);
@@ -517,6 +529,10 @@ export class BookUI {
     }
 
     destroy() {
+        if (this.inventoryUpdateHandler) {
+            window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+            this.inventoryUpdateHandler = undefined;
+        }
         this.container.destroy();
     }
 }

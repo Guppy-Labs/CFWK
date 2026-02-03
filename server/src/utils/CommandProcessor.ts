@@ -1,6 +1,7 @@
 import User from '../models/User';
 import BannedIP from '../models/BannedIP';
 import { InstanceManager } from '../managers/InstanceManager';
+import { InventoryCache } from '../managers/InventoryCache';
 import { getItemDefinition } from '@cfwk/shared';
 
 export class CommandProcessor {
@@ -248,14 +249,12 @@ export class CommandProcessor {
         const user = await this.getUserByUsername(targetName);
         if (!user) return `User '${targetName}' not found.`;
 
-        if (!user.inventory) user.inventory = [];
-        const entry = user.inventory.find((inv) => inv.itemId === itemId);
-        if (entry) {
-            entry.count += amount;
-        } else {
-            user.inventory.push({ itemId, count: amount });
-        }
-        await user.save();
+            const items = await InventoryCache.getInstance().addItem(user._id.toString(), itemId, amount);
+
+            InstanceManager.getInstance().events.emit('inventory_update', {
+                userId: user._id.toString(),
+                items
+            });
 
         InstanceManager.getInstance().events.emit('msg_user', {
             userId: user._id.toString(),

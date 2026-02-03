@@ -20,7 +20,7 @@
     <title>Cute Fish With Knives - Cats, Fish, and Friends | Online Multiplayer Game</title>
     <meta name="title" content="Cute Fish With Knives - Cats, Fish, and Friends | Online Multiplayer Game">
     <meta name="description" content="Dive into Cute Fish With Knives - a creative multiplayer game where you find fish and fight enemies with friends. Build your world, explore adventures, and join the community!">
-    <meta name="keywords" content="cute fish with knives, CFWK, online game, multiplayer game, map maker, custom maps, pixel game, indie game, browser game, creative game">
+    <meta name="keywords" content="cute fish with knives, CFWK, CFWK game, online game, multiplayer game, map maker, custom maps, pixel game, indie game, browser game, creative game">
     <meta name="author" content="Cute Fish With Knives">
     <meta name="robots" content="index, follow">
     <meta name="language" content="English">
@@ -67,7 +67,8 @@
         "@context": "https://schema.org",
         "@type": "WebApplication",
         "name": "Cute Fish With Knives",
-        "alternateName": "CFWK",
+        "alternateName": ["CFWK", "CFWK game", "CFWK online game"],
+        "keywords": "CFWK, CFWK game, Cute Fish With Knives, online multiplayer game, map maker, custom maps, pixel game",
         "description": "A creative multiplayer game where you find fish and fight enemies with friends.",
         "url": "https://cutefishwithknives.com",
         "applicationCategory": "Game",
@@ -271,6 +272,21 @@
                 padding: 0 1rem;
                 grid-template-columns: 1fr;
             }
+
+            #logged-in-view .btn {
+                padding: 0.75rem 1rem;
+                font-size: 1.1rem;
+                min-width: auto;
+            }
+
+            #logged-in-view .btn-text {
+                display: none;
+            }
+
+            #logged-in-view .btn-icon {
+                margin-right: 0;
+                font-size: 1.4rem;
+            }
         }
 
         .feature-item:hover {
@@ -331,6 +347,37 @@
             font-size: 1.5rem;
             padding: 1.5rem 3rem;
         }
+
+        #auth-actions {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+
+        #logged-out-view {
+            text-align: center;
+        }
+
+        #logged-in-view {
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        #logged-in-view:not(.hidden) {
+            display: flex;
+        }
+
+        #logged-in-view .btn-icon {
+            margin-right: 0.5rem;
+            font-size: 1.2rem;
+        }
+
+        #welcome-msg {
+            color: var(--text-main);
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
         
         .hidden { display: none; }
 
@@ -376,7 +423,7 @@
         <!-- Auth Section -->
         <nav id="auth-actions" aria-label="Account actions">
             <!-- Logged Out View -->
-            <div id="logged-out-view" style="text-align: center;">
+            <div id="logged-out-view" class="hidden">
                 <a href="/register" class="btn btn-large" aria-label="Pre-register for the game">Pre-register Now</a>
                 <div style="margin-top: 1rem;">
                     <span style="color: var(--text-muted); font-size: 0.9rem;">Already have an account?</span>
@@ -385,9 +432,12 @@
             </div>
 
             <!-- Logged In View -->
-            <div id="logged-in-view" class="hidden" style="text-align: center;">
-                <p id="welcome-msg" style="color: var(--text-main); margin-bottom: 2rem; font-size: 1.2rem;">Welcome back, Agent.</p>
-                <button id="jump-in-btn" class="btn btn-large" aria-label="Start playing the game">Jump Back In</button>
+            <div id="logged-in-view" class="hidden">
+                <p id="welcome-msg">Welcome back, Agent.</p>
+                <button id="jump-in-btn" class="btn btn-large" aria-label="Start playing the game">
+                    <span class="btn-icon">★</span>
+                    <span class="btn-text">Jump Back In</span>
+                </button>
             </div>
         </nav>
         </div>
@@ -434,7 +484,6 @@
 
     <!-- Noscript fallback for SEO -->
     <noscript>
-        <style>.hidden { display: block !important; }</style>
         <p style="text-align: center; padding: 20px; color: #e0e0e0;">
             Cute Fish With Knives requires JavaScript to play. Please enable JavaScript in your browser to enjoy the full experience.
         </p>
@@ -442,7 +491,7 @@
 
     <script>
         // --- Countdown Logic ---
-        const targetDate = new Date('2026-04-09T06:00:00').getTime();
+        const targetDate = new Date('2026-05-02T06:00:00').getTime();
         
         function updateCountdown() {
             const now = new Date().getTime();
@@ -474,7 +523,6 @@
             })
             .then(data => {
                 if(data.user) {
-                    document.getElementById('logged-out-view').classList.add('hidden');
                     document.getElementById('logged-in-view').classList.remove('hidden');
                     document.getElementById('welcome-msg').textContent = `Welcome back, ${data.user.username}.`;
                     
@@ -482,10 +530,13 @@
                     btn.onclick = () => {
                         window.location.href = '/game/';
                     };
+                } else {
+                    document.getElementById('logged-out-view').classList.remove('hidden');
                 }
             })
             .catch(() => {
-                // Not logged in, default view remains
+                // Not logged in, show default view
+                document.getElementById('logged-out-view').classList.remove('hidden');
             });
     </script>
 </body>
