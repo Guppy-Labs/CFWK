@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { calculateWorldTime, Season } from '@cfwk/shared';
 import { HeadbarTabList, TabListEntry } from './HeadbarTabList';
+import { MobileControls } from './MobileControls';
 
 export type HeadbarConfig = {
     bannerTextureKey?: string;
@@ -30,6 +31,7 @@ export class HeadbarUI {
     private container: Phaser.GameObjects.Container;
     private contentContainer: Phaser.GameObjects.Container; // For time/date/year content
     private banner: Phaser.GameObjects.Image;
+    private hitArea?: Phaser.GameObjects.Rectangle;
     private seasonIcon: Phaser.GameObjects.Image;
     private timeText: Phaser.GameObjects.Image;
     private dateText: Phaser.GameObjects.Image;
@@ -102,6 +104,10 @@ export class HeadbarUI {
         this.bannerTextureKey = this.createBannerTexture(this.currentBannerWidth, this.currentBannerHeight);
         this.banner = this.scene.add.image(0, 0, this.bannerTextureKey).setOrigin(0.5, 0);
 
+        // Invisible hit area for mobile toggling
+        this.hitArea = this.scene.add.rectangle(0, 0, this.currentBannerWidth, this.currentBannerHeight, 0x000000, 0);
+        this.hitArea.setOrigin(0.5, 0);
+
         // Content container for time/date/year (so we can fade it as a group)
         this.contentContainer = this.scene.add.container(0, 0);
 
@@ -120,7 +126,7 @@ export class HeadbarUI {
         this.yearText = this.scene.add.image(0, 0, this.yearTextureKey).setOrigin(1, 0.5);
 
         this.contentContainer.add([this.seasonIcon, this.timeText, this.dateText, this.yearText]);
-        this.container.add([this.banner, this.contentContainer]);
+        this.container.add([this.hitArea, this.banner, this.contentContainer]);
 
         // Create tab list (initially hidden)
         this.tabList = new HeadbarTabList(this.scene, this.container, {
@@ -133,6 +139,11 @@ export class HeadbarUI {
 
         // Listen for GUI open changes
         this.scene.registry.events.on('changedata-guiOpen', this.onGuiOpenChange, this);
+
+        if (MobileControls.isMobileDevice()) {
+            this.hitArea.setInteractive({ useHandCursor: false });
+            this.hitArea.on('pointerdown', this.onHeadbarPointerDown, this);
+        }
 
         this.layout();
     }
@@ -148,6 +159,18 @@ export class HeadbarUI {
             ease: 'Sine.easeOut'
         });
     };
+
+    private onHeadbarPointerDown() {
+        if (this.isAnimating) return;
+        if (this.scene.registry.get('guiOpen') === true) return;
+        if (this.scene.registry.get('chatFocused') === true) return;
+
+        if (this.isTabListVisible) {
+            this.hideTabList();
+        } else {
+            this.showTabList();
+        }
+    }
 
     /**
      * Set players for the tab list
@@ -258,9 +281,15 @@ export class HeadbarUI {
             Math.floor(this.currentBannerHeight)
         );
         this.banner.setTexture(this.bannerTextureKey);
+        this.updateHitArea();
         if (oldKey && oldKey !== this.bannerTextureKey && this.scene.textures.exists(oldKey)) {
             this.scene.textures.remove(oldKey);
         }
+    }
+
+    private updateHitArea() {
+        if (!this.hitArea) return;
+        this.hitArea.setSize(Math.floor(this.currentBannerWidth), Math.floor(this.currentBannerHeight));
     }
 
     private layoutTabList() {
@@ -373,6 +402,8 @@ export class HeadbarUI {
 
         // Position banner centered
         this.banner.setPosition(0, 0);
+        this.hitArea?.setPosition(0, 0);
+        this.updateHitArea();
 
         this.layoutNormalContent();
     }
@@ -540,6 +571,10 @@ export class HeadbarUI {
             this.scene.textures.remove(this.yearTextureKey);
         }
 
+        if (this.hitArea) {
+            this.hitArea.removeAllListeners();
+            this.hitArea.destroy();
+        }
         this.tabList.destroy();
         this.container.destroy();
     }

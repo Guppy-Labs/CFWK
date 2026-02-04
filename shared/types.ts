@@ -241,17 +241,17 @@ export type MCDirection = 'N' | 'S' | 'E' | 'W' | 'NE' | 'SE' | 'SW' | 'NW';
 
 /**
  * Frame dimensions for MC animations by direction
- * N/S directions are 16x27, E/W are 19x27 (cape extends)
+ * N/S directions are 16x27, E/W are 19x27 (cape extends), NE/NW are 16x31, SE/SW are 18x27
  */
 export const MC_FRAME_DIMENSIONS: Record<MCDirection, { width: number; height: number }> = {
   N: { width: 16, height: 27 },
   S: { width: 16, height: 27 },
   E: { width: 19, height: 27 },
   W: { width: 19, height: 27 },
-  NE: { width: 19, height: 27 }, // Uses E for now
-  SE: { width: 19, height: 27 }, // Uses E for now
-  NW: { width: 19, height: 27 }, // Uses E mirrored
-  SW: { width: 19, height: 27 }  // Uses E mirrored
+  NE: { width: 16, height: 31 },
+  SE: { width: 18, height: 27 },
+  NW: { width: 16, height: 31 },
+  SW: { width: 18, height: 27 }
 };
 
 /**

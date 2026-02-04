@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { OcclusionManager } from '../map/OcclusionManager';
-import { EmojiMap } from '../ui/EmojiMap';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 import { SharedMCTextures } from './SharedMCTextures';
+import { WaterSystem } from '../fx/water/WaterSystem';
+import { createChatBubble, createNameplate, getOcclusionAdjustedDepth } from './PlayerVisualUtils';
 
 /**
  * MCDirection type for MC character system
@@ -37,23 +38,6 @@ const DIRECTION_TO_MC: Record<Direction, MCDirection> = {
     [Direction.DownLeft]: 'SW'
 };
 
-/**
- * Generates a consistent color from a string (user ID)
- */
-function hashToColor(str: string): number {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
-        hash = hash & hash;
-    }
-    
-    // Generate HSL values for nice colors
-    const hue = Math.abs(hash) % 360;
-    const saturation = 60 + (Math.abs(hash >> 8) % 30); // 60-90%
-    const lightness = 55 + (Math.abs(hash >> 16) % 20);  // 55-75%
-    
-    return Phaser.Display.Color.HSLToColor(hue / 360, saturation / 100, lightness / 100).color;
-}
 
 /**
  * Pixel particle for spawn/despawn effects
@@ -85,6 +69,7 @@ export type RemotePlayerConfig = {
     isGuiOpen?: boolean; // Initial GUI open state
     isChatOpen?: boolean; // Initial chat open/focused state
     isPremium?: boolean; // Shark tier badge
+    groundLayers?: Phaser.Tilemaps.TilemapLayer[];
 };
 
 /**
@@ -95,24 +80,21 @@ export class RemotePlayer {
     private scene: Phaser.Scene;
     private sessionId: string;
     private username: string;
-    private odcid: string;
     private isPremium: boolean = false;
     
     private sprite!: Phaser.GameObjects.Sprite;
     private nameplate!: Phaser.GameObjects.Container;
-    private nameText!: Phaser.GameObjects.Text;
-    private nameBg!: Phaser.GameObjects.Graphics;
     private afkTimerText?: Phaser.GameObjects.Text;
     
     private targetX: number;
     private targetY: number;
     private currentDirection: Direction = Direction.Down;
-    private currentAnim: string = 'idle';
-    private playerColor: number;
+    private playerColor: number = 0xffffff;
     private baseDepth: number;
     private occlusionManager?: OcclusionManager;
     private chatBubble?: Phaser.GameObjects.Container;
     private chatTimer?: Phaser.Time.TimerEvent;
+    private waterSystem?: WaterSystem;
 
     // Interpolation
     private readonly interpSpeed = 0.25;
@@ -120,7 +102,6 @@ export class RemotePlayer {
     // Spawn effect
     private particles: PixelParticle[] = [];
     private isSpawning: boolean = true;
-    private spawnProgress: number = 0;
     private readonly spawnDuration: number = 800; // ms
     private spawnStartTime: number = 0;
 
@@ -131,7 +112,8 @@ export class RemotePlayer {
     private isAfk: boolean = false;
     private afkAlpha: number = 1;
     private readonly afkTargetAlpha = 0.4;
-    private readonly afkCountdownMs = 240000; // 4 minutes
+    private readonly afkCountdownMs = 240000; // 4 minutes base (exclude 1 min pre)
+    private readonly afkCountdownPremiumMs = 1140000; // 19 minutes for Shark tier (exclude 1 min pre)
     private afkStartTime: number | null = null;
     private isGuiOpen: boolean = false;
     private isChatOpen: boolean = false;
@@ -142,7 +124,6 @@ export class RemotePlayer {
         this.scene = scene;
         this.sessionId = config.sessionId;
         this.username = config.username;
-        this.odcid = config.odcid;
         this.isPremium = !!config.isPremium;
         this.targetX = config.x;
         this.targetY = config.y;
@@ -158,12 +139,15 @@ export class RemotePlayer {
         const fontSize = isMobile ? '10px' : '6px';
         this.nameplateYOffset = isMobile ? -42 : -36;
 
-        // Generate consistent color from user ID
-        this.playerColor = hashToColor(this.odcid);
+        this.playerColor = 0xffffff;
         
         this.createSprite(config.x, config.y, config.skipSpawnEffect);
         this.createNameplate(config.skipSpawnEffect, fontSize);
         this.updateAnimation('idle', this.currentDirection);
+
+        if (config.groundLayers && config.groundLayers.length > 0) {
+            this.waterSystem = new WaterSystem(this.scene, this.sprite, config.groundLayers);
+        }
 
         this.guiEffect = new GuiSwirlEffect(this.scene);
         this.isChatOpen = !!config.isChatOpen;
@@ -200,7 +184,7 @@ export class RemotePlayer {
                 graphics.destroy();
             }
             this.sprite = this.scene.add.sprite(x, y, fallbackKey);
-            // Only tint the fallback placeholder
+            // Only tint the fallback placeholder (white)
             this.sprite.setTint(this.playerColor);
         }
         
@@ -265,20 +249,13 @@ export class RemotePlayer {
             const graphics = this.scene.add.graphics();
             graphics.setDepth(this.baseDepth + 1);
             
-            // Vary color slightly around player color
-            const baseColor = Phaser.Display.Color.IntegerToColor(this.playerColor);
-            const variation = 0.85 + Math.random() * 0.3; // 0.85 to 1.15
-            const r = Math.min(255, Math.floor(baseColor.red * variation));
-            const g = Math.min(255, Math.floor(baseColor.green * variation));
-            const b = Math.min(255, Math.floor(baseColor.blue * variation));
-            
             this.particles.push({
                 graphics,
                 targetX,
                 targetY,
                 startX,
                 startY,
-                color: Phaser.Display.Color.GetColor(r, g, b),
+                color: 0xffffff,
                 size: pixelSize + Math.random() * 2,
                 progress: 0,
                 delay: Math.random() * 0.3 // Stagger arrival
@@ -293,7 +270,6 @@ export class RemotePlayer {
         this.onDespawnComplete = onComplete;
         this.isSpawning = false;
         this.spawnStartTime = this.scene.time.now;
-        this.spawnProgress = 0;
         this.particles = [];
 
         // Hide the sprite
@@ -324,20 +300,13 @@ export class RemotePlayer {
             const graphics = this.scene.add.graphics();
             graphics.setDepth(this.baseDepth + 1);
             
-            // Vary color
-            const baseColor = Phaser.Display.Color.IntegerToColor(this.playerColor);
-            const variation = 0.85 + Math.random() * 0.3;
-            const r = Math.min(255, Math.floor(baseColor.red * variation));
-            const g = Math.min(255, Math.floor(baseColor.green * variation));
-            const b = Math.min(255, Math.floor(baseColor.blue * variation));
-            
             this.particles.push({
                 graphics,
                 targetX,
                 targetY,
                 startX,
                 startY,
-                color: Phaser.Display.Color.GetColor(r, g, b),
+                color: 0xffffff,
                 size: pixelSize + Math.random() * 2,
                 progress: 0,
                 delay: Math.random() * 0.2
@@ -346,44 +315,20 @@ export class RemotePlayer {
     }
 
     private createNameplate(skipSpawnEffect?: boolean, fontSize: string = '6px') {
-        const padding = { x: 2, y: 1 };
-        
-        // Create text - render at higher resolution for crisp display
-        const namePrefix = this.isPremium ? '🦈 ' : '';
-        this.nameText = this.scene.add.text(0, 0, `${namePrefix}${this.username}`, {
-            fontSize: fontSize,
-            fontFamily: 'Minecraft, monospace',
-            color: '#ffffff',
-            resolution: 2  // Render at 2x resolution for crisp text
-        }).setOrigin(0.5);
+        const nameplate = createNameplate({
+            scene: this.scene,
+            text: this.username,
+            isPremium: this.isPremium,
+            fontSize,
+            yOffset: this.nameplateYOffset,
+            depth: this.baseDepth + 1000,
+            includeAfkTimer: true
+        });
 
-        // Create background
-        const textWidth = this.nameText.width;
-        const textHeight = this.nameText.height;
-        const bgWidth = textWidth + padding.x * 2;
-        const bgHeight = textHeight + padding.y * 2;
-        
-        this.nameBg = this.scene.add.graphics();
-        this.nameBg.fillStyle(0x000000, 0.6);
-        this.nameBg.fillRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight);
+        this.nameplate = nameplate.container;
+        this.afkTimerText = nameplate.afkTimerText;
 
-        // Container for nameplate (above the sprite, accounting for origin)
-        this.afkTimerText = this.scene.add.text(0, -10, '', {
-            fontSize: '6px',
-            fontFamily: 'Minecraft, monospace',
-            color: '#ffffff',
-            resolution: 2
-        }).setOrigin(0.5);
-        this.afkTimerText.setVisible(false);
-
-        this.nameplate = this.scene.add.container(this.sprite.x, this.sprite.y + this.nameplateYOffset, [
-            this.afkTimerText,
-            this.nameBg,
-            this.nameText
-        ]);
-        this.nameplate.setDepth(this.baseDepth + 1000); // Always on top
-        
-        // Start hidden during spawn effect (unless skipped)
+        this.nameplate.setPosition(this.sprite.x, this.sprite.y + this.nameplateYOffset);
         this.nameplate.setAlpha(skipSpawnEffect ? 1 : 0);
     }
 
@@ -416,7 +361,6 @@ export class RemotePlayer {
      * Update animation state from server
      */
     setAnimation(anim: string, direction: number) {
-        this.currentAnim = anim;
         this.currentDirection = direction as Direction;
         this.updateAnimation(anim, this.currentDirection);
     }
@@ -472,7 +416,7 @@ export class RemotePlayer {
     /**
      * Update every frame - interpolate position and particle effects
      */
-    update() {
+    update(delta: number) {
         // Update particle effects
         if (this.particles.length > 0) {
             this.updateParticles();
@@ -494,29 +438,14 @@ export class RemotePlayer {
         }
         
         // Calculate depth with Y-sorting and occlusion awareness
-        // Feet position for depth = sprite.y + 3 (same as local player)
-        // Higher Y (lower on screen) = higher depth (drawn in front)
-        // Use small multiplier (0.01) to keep depth within safe range for occlusion system
-        const feetY = this.sprite.y + 3;
-        let depth = this.baseDepth + (feetY * 0.01);
-        
-        if (this.occlusionManager) {
-            // Check occlusion tags at remote player's foot position
-            const occlusionTags = this.occlusionManager.getOcclusionTagsAt(this.sprite.x, this.sprite.y, 4);
-
-            if (occlusionTags.size > 0) {
-                // Put remote player behind only the targeted occludable layers
-                const minBase = this.occlusionManager.getMinBaseDepthForTags(occlusionTags);
-                depth = (minBase - 10) + (feetY * 0.01);
-            } else {
-                // If local player occlusion elevated layers, keep remote player in front of those layers
-                const maxElevatedDepth = this.occlusionManager.getMaxElevatedLayerDepth();
-                if (maxElevatedDepth !== null) {
-                    const frontDepth = (maxElevatedDepth + 1) + (feetY * 0.01);
-                    if (frontDepth > depth) depth = frontDepth;
-                }
-            }
-        }
+        const feetY = this.sprite.getBottomLeft().y;
+        const depth = getOcclusionAdjustedDepth(
+            this.occlusionManager,
+            this.sprite.x,
+            feetY,
+            this.baseDepth,
+            true
+        );
         this.sprite.setDepth(depth);
         
         // Update nameplate position (above the sprite, accounting for origin)
@@ -540,6 +469,8 @@ export class RemotePlayer {
         if (this.isGuiOpen || this.isChatOpen) {
             this.guiEffect?.update(this.sprite.x, this.sprite.y - 25);
         }
+
+        this.waterSystem?.update(delta);
     }
 
     /**
@@ -565,7 +496,8 @@ export class RemotePlayer {
         if (!this.isAfk || !this.afkTimerText || this.afkStartTime === null) return;
 
         const elapsed = Date.now() - this.afkStartTime;
-        const remaining = Math.max(0, this.afkCountdownMs - elapsed);
+        const countdownMs = this.isPremium ? this.afkCountdownPremiumMs : this.afkCountdownMs;
+        const remaining = Math.max(0, countdownMs - elapsed);
         const totalSeconds = Math.ceil(remaining / 1000);
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
@@ -697,6 +629,7 @@ export class RemotePlayer {
      */
     destroy() {
         this.guiEffect?.destroy();
+        this.waterSystem?.destroy();
         // Clean up any remaining particles
         for (const particle of this.particles) {
             particle.graphics.destroy();
@@ -725,41 +658,15 @@ export class RemotePlayer {
             this.chatTimer = undefined;
         }
 
-        const padding = 4;
-        const arrowHeight = 4;
-        const maxWidth = 120;
+        const bubble = createChatBubble({
+            scene: this.scene,
+            message,
+            depth: 99999
+        });
 
-        const parsedMessage = EmojiMap.parse(message);
-
-        // Create text
-        const text = this.scene.add.text(0, 0, parsedMessage, {
-            fontSize: '8px',
-            fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
-            color: '#f0f0f0',
-            wordWrap: { width: maxWidth, useAdvancedWrap: true },
-            align: 'center',
-            resolution: 2
-        }).setOrigin(0.5);
-
-        const width = text.width + padding * 2;
-        const height = text.height + padding * 2;
-
-        // Create background
-        const bg = this.scene.add.graphics();
-        bg.fillStyle(0x000000, 0.6);
-        bg.fillRoundedRect(-width/2, -height/2, width, height, 4);
-        
-        // Arrow
-        bg.fillTriangle(
-            -5, height/2,
-            5, height/2,
-            0, height/2 + arrowHeight
-        );
-
-        // Initial position setup (will be refined in setPosition)
-        const yOffset = -36 - 10 - (height / 2);
-        this.chatBubble = this.scene.add.container(this.sprite.x, this.sprite.y + yOffset, [bg, text]);
-        this.chatBubble.setDepth(99999);
+        const yOffset = -36 - 10 - (bubble.height / 2);
+        this.chatBubble = bubble.container;
+        this.chatBubble.setPosition(this.sprite.x, this.sprite.y + yOffset);
 
         // Auto destroy
         this.chatTimer = this.scene.time.delayedCall(4000, () => {

@@ -15,7 +15,7 @@ import { PlayerShadow } from './PlayerShadow';
 import { MobileControls } from '../ui/MobileControls';
 import { DesktopInteractButton } from '../ui/DesktopInteractButton';
 import { NetworkManager } from '../network/NetworkManager';
-import { EmojiMap } from '../ui/EmojiMap';
+import { createChatBubble, createNameplate, getOcclusionAdjustedDepth } from './PlayerVisualUtils';
 import { currentUser } from '../index';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 import { InteractionManager } from '../interaction/InteractionManager';
@@ -92,9 +92,16 @@ export class MCPlayerController {
     private afkKickThreshold = 300000;
     private afkAlpha = 1;
     private afkKicked = false;
-    private readonly afkOverlayId = 'cfwk-afk-overlay';
+    private afkOverlayContainer?: Phaser.GameObjects.Container;
+    private afkOverlayShadow?: Phaser.GameObjects.Image;
+    private afkOverlayBg?: Phaser.GameObjects.Image;
+    private afkOverlayTitle?: Phaser.GameObjects.Text;
+    private afkOverlayInfo?: Phaser.GameObjects.Text;
+    private afkOverlayCountdown?: Phaser.GameObjects.Text;
+    private afkOverlayNote?: Phaser.GameObjects.Text;
+    private afkOverlayTextureKey?: string;
+    private afkOverlayTextureCounter = 0;
     private guiEffect?: GuiSwirlEffect;
-    private isPageHidden = false;
 
     // Interaction system
     private interactionManager: InteractionManager;
@@ -104,8 +111,6 @@ export class MCPlayerController {
 
     // Local nameplate
     private localNameplate?: Phaser.GameObjects.Container;
-    private localNameText?: Phaser.GameObjects.Text;
-    private localNameBg?: Phaser.GameObjects.Graphics;
     private nameplateYOffset = -36;
 
     // External speed modifier
@@ -115,8 +120,6 @@ export class MCPlayerController {
 
     // MC-specific: hitbox dimensions (consistent regardless of visual size)
     private readonly hitboxWidth = 16;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    private readonly _hitboxHeight = 27;
     private readonly collidableHeight = 6; // Bottom portion for collision
 
     constructor(scene: Phaser.Scene, config: MCPlayerControllerConfig = {}) {
@@ -152,35 +155,6 @@ export class MCPlayerController {
             this.afkKickThreshold = 1200000;
         }
 
-        // Visibility handling (ensure AFK starts even when unfocused)
-        document.addEventListener('visibilitychange', this.handleVisibilityChange);
-        window.addEventListener('blur', this.handleWindowBlur);
-        window.addEventListener('focus', this.handleWindowFocus);
-    }
-
-    private handleVisibilityChange = () => {
-        if (document.visibilityState === 'hidden') {
-            this.isPageHidden = true;
-            this.forceAfkState();
-        } else {
-            this.isPageHidden = false;
-        }
-    };
-
-    private handleWindowBlur = () => {
-        this.isPageHidden = true;
-        this.forceAfkState();
-    };
-
-    private handleWindowFocus = () => {
-        this.isPageHidden = false;
-    };
-
-    private forceAfkState() {
-        if (!this.player || this.isAfk) return;
-        this.isAfk = true;
-        this.networkManager.sendAfk(true);
-        console.log('[MCPlayerController] AFK forced due to focus loss');
     }
 
     /**
@@ -441,6 +415,16 @@ export class MCPlayerController {
         if (this.chatBubble && this.player) {
             this.chatBubble.setPosition(this.player.x, this.player.y - this.chatBubbleYOffset);
         }
+
+        // Update depth sorting with occlusion awareness
+        const feetY = this.player.getBottomLeft().y;
+        const depth = getOcclusionAdjustedDepth(
+            this._occlusionManager,
+            this.player.x,
+            feetY,
+            this.config.depth ?? 260
+        );
+        this.player.setDepth(depth);
 
         // Update GUI swirl effect
         this.guiEffect?.update(this.player.x, this.player.y);
@@ -722,41 +706,16 @@ export class MCPlayerController {
             this.chatTimer = undefined;
         }
 
-        const padding = 4;
-        const arrowHeight = 4;
-        const maxWidth = 120;
+        const bubble = createChatBubble({
+            scene: this.scene,
+            message,
+            depth: 99999
+        });
 
-        const parsedMessage = EmojiMap.parse(message);
-
-        // Create text - match remote player style
-        const text = this.scene.add.text(0, 0, parsedMessage, {
-            fontSize: '8px',
-            fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
-            color: '#f0f0f0',
-            wordWrap: { width: maxWidth, useAdvancedWrap: true },
-            align: 'center',
-            resolution: 2
-        }).setOrigin(0.5);
-
-        const width = text.width + padding * 2;
-        const height = text.height + padding * 2;
-
-        // Create background - dark style matching remote players
-        const bg = this.scene.add.graphics();
-        bg.fillStyle(0x000000, 0.6);
-        bg.fillRoundedRect(-width/2, -height/2, width, height, 4);
-        
-        // Arrow pointing down
-        bg.fillTriangle(
-            -5, height/2,
-            5, height/2,
-            0, height/2 + arrowHeight
-        );
-
-        const yOffset = 36 + 10 + (height / 2);
+        const yOffset = 36 + 10 + (bubble.height / 2);
         this.chatBubbleYOffset = yOffset;
-        this.chatBubble = this.scene.add.container(this.player.x, this.player.y - yOffset, [bg, text]);
-        this.chatBubble.setDepth(99999);
+        this.chatBubble = bubble.container;
+        this.chatBubble.setPosition(this.player.x, this.player.y - yOffset);
 
         // Auto destroy with fade
         this.chatTimer = this.scene.time.delayedCall(4000, () => {
@@ -803,42 +762,130 @@ export class MCPlayerController {
     }
 
     private showAfkOverlay(remainingMs: number) {
-        let overlay = document.getElementById(this.afkOverlayId);
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.id = this.afkOverlayId;
-            overlay.style.position = 'fixed';
-            overlay.style.top = '0';
-            overlay.style.left = '0';
-            overlay.style.width = '100%';
-            overlay.style.height = '100%';
-            overlay.style.display = 'flex';
-            overlay.style.alignItems = 'center';
-            overlay.style.justifyContent = 'center';
-            overlay.style.background = 'rgba(0, 0, 0, 0.55)';
-            overlay.style.zIndex = '9998';
-            overlay.style.pointerEvents = 'none';
-            overlay.style.fontFamily = 'Minecraft, monospace';
-            overlay.style.color = '#ffffff';
-            overlay.style.fontSize = '64px';
-            overlay.style.textShadow = '4px 4px 0 #000';
-            document.body.appendChild(overlay);
+        const uiScene = this.scene.scene.get('UIScene') as Phaser.Scene | undefined;
+        if (!uiScene) return;
+
+        const frameWidth = 320;
+        const frameHeight = 170;
+        const border = 4;
+        const padding = 14;
+
+        if (!this.afkOverlayContainer) {
+            const textureKey = this.createNineSliceTexture(uiScene, 'ui-afk-frame', frameWidth, frameHeight, border, 3);
+            this.afkOverlayTextureKey = textureKey;
+
+            this.afkOverlayShadow = uiScene.add.image(0, 0, textureKey).setOrigin(0.5, 0.5);
+            this.afkOverlayShadow.setTint(0x000000);
+            this.afkOverlayShadow.setAlpha(0.5);
+            this.afkOverlayShadow.setPosition(3, 4);
+
+            this.afkOverlayBg = uiScene.add.image(0, 0, textureKey).setOrigin(0.5, 0.5);
+            this.afkOverlayTitle = uiScene.add.text(0, 0, 'AFK WARNING', {
+                fontFamily: 'Minecraft, monospace',
+                fontSize: '18px',
+                color: '#f2f2f2'
+            }).setOrigin(0, 0);
+
+            this.afkOverlayInfo = uiScene.add.text(0, 0, 'Move or press any key to stay in-game.', {
+                fontFamily: 'Minecraft, monospace',
+                fontSize: '12px',
+                color: '#d8d8d8'
+            }).setOrigin(0, 0);
+
+            this.afkOverlayCountdown = uiScene.add.text(0, 0, 'Disconnect in 0:00', {
+                fontFamily: 'Minecraft, monospace',
+                fontSize: '16px',
+                color: '#ff8b8b'
+            }).setOrigin(0, 0);
+
+            this.afkOverlayNote = uiScene.add.text(0, 0, 'Tip: Shark rank extends AFK time to 20 min.', {
+                fontFamily: 'Minecraft, monospace',
+                fontSize: '11px',
+                color: '#b9b9b9'
+            }).setOrigin(0, 0);
+
+            this.afkOverlayContainer = uiScene.add.container(0, 0, [
+                this.afkOverlayShadow,
+                this.afkOverlayBg,
+                this.afkOverlayTitle,
+                this.afkOverlayInfo,
+                this.afkOverlayCountdown,
+                this.afkOverlayNote
+            ]);
+            this.afkOverlayContainer.setDepth(9998);
+            this.afkOverlayContainer.setScrollFactor(0);
         }
 
         const totalSeconds = Math.ceil(remainingMs / 1000);
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
-        overlay.innerHTML = `
-            <div style="text-align:center;">
-                <div style="font-size:18px; letter-spacing:2px; margin-bottom:8px; text-transform:uppercase;">AFK Disconnect</div>
-                <div>${minutes}:${seconds.toString().padStart(2, '0')}</div>
-            </div>
-        `;
+        this.afkOverlayCountdown?.setText(`Disconnect in ${minutes}:${seconds.toString().padStart(2, '0')}`);
+
+        if (this.afkOverlayContainer && this.afkOverlayBg && this.afkOverlayTitle && this.afkOverlayInfo && this.afkOverlayCountdown && this.afkOverlayNote) {
+            const centerX = uiScene.cameras.main.centerX;
+            const centerY = uiScene.cameras.main.centerY - 40;
+            this.afkOverlayContainer.setPosition(centerX, centerY);
+            this.afkOverlayContainer.setVisible(true);
+
+            const left = -frameWidth / 2 + padding;
+            const top = -frameHeight / 2 + padding;
+            this.afkOverlayTitle.setPosition(left, top);
+            this.afkOverlayInfo.setPosition(left, top + 28);
+            this.afkOverlayCountdown.setPosition(left, top + 62);
+            this.afkOverlayNote.setPosition(left, top + frameHeight - padding - 26);
+        }
     }
 
     private hideAfkOverlay() {
-        const overlay = document.getElementById(this.afkOverlayId);
-        if (overlay) overlay.remove();
+        if (this.afkOverlayContainer) {
+            this.afkOverlayContainer.setVisible(false);
+        }
+    }
+
+    private createNineSliceTexture(scene: Phaser.Scene, key: string, width: number, height: number, border: number, scale: number = 1) {
+        const srcTexture = scene.textures.get(key);
+        const srcImage = srcTexture.getSourceImage() as HTMLImageElement;
+        const srcW = Math.floor(srcImage.width * scale);
+        const srcH = Math.floor(srcImage.height * scale);
+        const scaledBorder = Math.floor(border * scale);
+        const outBorder = scaledBorder;
+
+        const centerSrcW = srcW - scaledBorder * 2;
+        const centerSrcH = srcH - scaledBorder * 2;
+        const centerW = Math.max(1, width - outBorder * 2);
+        const centerH = Math.max(1, height - outBorder * 2);
+
+        const rtKey = `__afk_nineslice_${this.afkOverlayTextureCounter++}`;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.imageSmoothingEnabled = false;
+
+        const srcCanvas = document.createElement('canvas');
+        srcCanvas.width = srcW;
+        srcCanvas.height = srcH;
+        const srcCtx = srcCanvas.getContext('2d')!;
+        srcCtx.imageSmoothingEnabled = false;
+        srcCtx.drawImage(srcImage, 0, 0, srcW, srcH);
+
+        // Top row
+        ctx.drawImage(srcCanvas, 0, 0, scaledBorder, scaledBorder, 0, 0, outBorder, outBorder);
+        ctx.drawImage(srcCanvas, scaledBorder, 0, centerSrcW, scaledBorder, outBorder, 0, centerW, outBorder);
+        ctx.drawImage(srcCanvas, srcW - scaledBorder, 0, scaledBorder, scaledBorder, outBorder + centerW, 0, outBorder, outBorder);
+
+        // Middle row
+        ctx.drawImage(srcCanvas, 0, scaledBorder, scaledBorder, centerSrcH, 0, outBorder, outBorder, centerH);
+        ctx.drawImage(srcCanvas, scaledBorder, scaledBorder, centerSrcW, centerSrcH, outBorder, outBorder, centerW, centerH);
+        ctx.drawImage(srcCanvas, srcW - scaledBorder, scaledBorder, scaledBorder, centerSrcH, outBorder + centerW, outBorder, outBorder, centerH);
+
+        // Bottom row
+        ctx.drawImage(srcCanvas, 0, srcH - scaledBorder, scaledBorder, scaledBorder, 0, outBorder + centerH, outBorder, outBorder);
+        ctx.drawImage(srcCanvas, scaledBorder, srcH - scaledBorder, centerSrcW, scaledBorder, outBorder, outBorder + centerH, centerW, outBorder);
+        ctx.drawImage(srcCanvas, srcW - scaledBorder, srcH - scaledBorder, scaledBorder, scaledBorder, outBorder + centerW, outBorder + centerH, outBorder, outBorder);
+
+        scene.textures.addCanvas(rtKey, canvas);
+        return rtKey;
     }
 
     private createLocalNameplate() {
@@ -849,31 +896,19 @@ export class MCPlayerController {
         const fontSize = isMobile ? '10px' : '6px';
         this.nameplateYOffset = isMobile ? -42 : -36;
 
-        const namePrefix = currentUser?.isPremium ? '🦈 ' : '';
-        const displayName = `${namePrefix}${currentUser?.username || 'You'}`;
+        const displayName = currentUser?.username || 'You';
 
-        const padding = { x: 2, y: 1 };
-        this.localNameText = this.scene.add.text(0, 0, displayName, {
+        const nameplate = createNameplate({
+            scene: this.scene,
+            text: displayName,
+            isPremium: currentUser?.isPremium,
             fontSize,
-            fontFamily: 'Minecraft, monospace',
-            color: '#ffffff',
-            resolution: 2
-        }).setOrigin(0.5);
+            yOffset: this.nameplateYOffset,
+            depth: (this.config.depth ?? 260) + 1000
+        });
 
-        const textWidth = this.localNameText.width;
-        const textHeight = this.localNameText.height;
-        const bgWidth = textWidth + padding.x * 2;
-        const bgHeight = textHeight + padding.y * 2;
-
-        this.localNameBg = this.scene.add.graphics();
-        this.localNameBg.fillStyle(0x000000, 0.6);
-        this.localNameBg.fillRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight);
-
-        this.localNameplate = this.scene.add.container(this.player.x, this.player.y + this.nameplateYOffset, [
-            this.localNameBg,
-            this.localNameText
-        ]);
-        this.localNameplate.setDepth((this.config.depth ?? 260) + 1000);
+        this.localNameplate = nameplate.container;
+        this.localNameplate.setPosition(this.player.x, this.player.y + this.nameplateYOffset);
     }
 
     private enterAfkState() {
@@ -923,5 +958,9 @@ export class MCPlayerController {
         this.guiEffect?.destroy();
         this.interactionManager?.destroy();
         this.animationController?.destroy();
+        this.afkOverlayContainer?.destroy(true);
+        if (this.afkOverlayTextureKey && this.scene.textures.exists(this.afkOverlayTextureKey)) {
+            this.scene.textures.remove(this.afkOverlayTextureKey);
+        }
     }
 }

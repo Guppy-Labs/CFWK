@@ -104,14 +104,19 @@ export class BookUI {
             this.inventorySlots.clearSelection();
             this.inventorySlots.setBottomReservedHeight(0);
         });
-        this.inventorySlots.setOnItemSelect((item) => {
+        this.inventorySlots.setOnItemSelect((item, stackCount) => {
             if (!item) {
                 this.inventoryDetails.setItem(null);
                 this.inventorySlots.setBottomReservedHeight(0);
                 return;
             }
             this.inventorySlots.setBottomReservedHeight(this.inventoryDetails.getReservedHeight());
-            this.inventoryDetails.setItem({ name: item.name, description: item.description });
+            this.inventoryDetails.setItem({
+                name: item.name,
+                description: item.description,
+                amount: stackCount ?? item.count,
+                stackSize: item.stackSize
+            });
         });
 
         this.createTabs();
@@ -143,8 +148,6 @@ export class BookUI {
         const longestTabWidth = Math.max(...this.tabs.map(t => t.width)) * scale;
         const tabOffsetX = this.tabOffsetX * scale;
 
-        // Unit bounds: leftmost tab edge to right edge of cover
-        const unitWidth = coverW / 2 + pageW - tabOffsetX + longestTabWidth;
         const bookCenterX = width / 2 + (pageW - tabOffsetX + longestTabWidth - coverW / 2) / 2;
 
         this.cover.setPosition(bookCenterX, cy);

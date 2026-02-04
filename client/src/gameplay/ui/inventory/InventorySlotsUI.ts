@@ -41,6 +41,8 @@ export class InventorySlotsUI {
     private indicatorsBaseY = 0;
     private maskGraphics: Phaser.GameObjects.Graphics;
     private mask?: Phaser.Display.Masks.GeometryMask;
+    private indicatorMaskGraphics: Phaser.GameObjects.Graphics;
+    private indicatorMask?: Phaser.Display.Masks.GeometryMask;
     private scrollbarContainer: Phaser.GameObjects.Container;
     private scrollbarTrack: Phaser.GameObjects.Image;
     private scrollbarThumb: Phaser.GameObjects.Image;
@@ -50,7 +52,7 @@ export class InventorySlotsUI {
     private currentRows = 0;
     private activeMode: 'all' | 'category' = 'all';
     private items: InventoryDisplayItem[] = [];
-    private onItemSelect?: (item: InventoryDisplayItem | null) => void;
+    private onItemSelect?: (item: InventoryDisplayItem | null, stackCount?: number) => void;
     private lastLayout?: { leftPageLeftEdgeX: number; leftPageTopEdgeY: number; pageHeight: number; scale: number };
     private lastViewportHeight?: number;
     private slotsBounds?: Phaser.Geom.Rectangle;
@@ -65,10 +67,13 @@ export class InventorySlotsUI {
     private hoverTween?: Phaser.Tweens.Tween;
     private currentSlotCount = 0;
     private slotIndexToItem = new Map<number, InventoryDisplayItem>();
+    private slotIndexToStackCount = new Map<number, number>();
 
     private countTextureCounter = 0;
     private countTextureCache = new Map<string, string>();
     private readonly fontCharSize = 8;
+    private readonly indicatorOverflowTop = 12;
+    private readonly indicatorOverflowX = 12;
     private readonly fontCharGap = 1;
     private readonly fontMap = [
         '                ',
@@ -125,6 +130,9 @@ export class InventorySlotsUI {
         this.maskGraphics = this.scene.add.graphics();
         this.maskGraphics.setVisible(false);
 
+        this.indicatorMaskGraphics = this.scene.add.graphics();
+        this.indicatorMaskGraphics.setVisible(false);
+
         this.scrollbarContainer = this.scene.add.container(0, 0);
         this.scrollbarTrack = this.scene.add.image(0, 0, 'ui-scrollbar-track').setOrigin(0, 0);
         this.scrollbarThumb = this.scene.add.image(0, 0, 'ui-scrollbar-thumb').setOrigin(0, 0);
@@ -168,7 +176,7 @@ export class InventorySlotsUI {
         }
     }
 
-    setOnItemSelect(callback?: (item: InventoryDisplayItem | null) => void) {
+    setOnItemSelect(callback?: (item: InventoryDisplayItem | null, stackCount?: number) => void) {
         this.onItemSelect = callback;
     }
 
@@ -292,6 +300,18 @@ export class InventorySlotsUI {
         this.mask?.destroy();
         this.mask = this.maskGraphics.createGeometryMask();
         this.slotsContainer.setMask(this.mask);
+
+        const indicatorLeft = x - this.indicatorOverflowX;
+        const indicatorTop = y - this.indicatorOverflowTop;
+        const indicatorWidth = width + this.indicatorOverflowX * 2;
+        const indicatorHeight = height + this.indicatorOverflowTop;
+        this.indicatorMaskGraphics.clear();
+        this.indicatorMaskGraphics.fillStyle(0xffffff, 1);
+        this.indicatorMaskGraphics.fillRect(indicatorLeft, indicatorTop, indicatorWidth, indicatorHeight);
+
+        this.indicatorMask?.destroy();
+        this.indicatorMask = this.indicatorMaskGraphics.createGeometryMask();
+        this.indicatorsContent.setMask(this.indicatorMask);
     }
 
     private updateScrollBounds(viewportHeight: number) {
@@ -395,6 +415,7 @@ export class InventorySlotsUI {
         const { columns, slotSize, slotSpacing, itemScale, countOffsetX, countOffsetY } = this.config;
         this.itemsContent.removeAll(true);
         this.slotIndexToItem.clear();
+        this.slotIndexToStackCount.clear();
 
         stacks.forEach((stack, index) => {
             const row = Math.floor(index / columns);
@@ -404,15 +425,15 @@ export class InventorySlotsUI {
 
             const icon = this.scene.add.image(x + slotSize / 2, y + slotSize / 2, stack.iconKey).setOrigin(0.5, 0.5);
             icon.setScale(itemScale);
-            icon.setInteractive({ useHandCursor: true });
-            icon.setData('ignoreCursor', true);
+            icon.setInteractive();
             icon.on('pointerdown', () => {
-                this.onItemSelect?.(stack.item);
+                this.onItemSelect?.(stack.item, stack.count);
                 this.setSelectedSlotIndex(index);
             });
             this.itemsContent.add(icon);
 
             this.slotIndexToItem.set(index, stack.item);
+            this.slotIndexToStackCount.set(index, stack.count);
 
             const countText = String(stack.count);
             const countTextureKey = this.getCountTexture(countText);
@@ -480,7 +501,8 @@ export class InventorySlotsUI {
             this.setSelectedSlotIndex(slotIndex);
             const item = this.slotIndexToItem.get(slotIndex);
             if (item) {
-                this.onItemSelect?.(item);
+                const stackCount = this.slotIndexToStackCount.get(slotIndex);
+                this.onItemSelect?.(item, stackCount);
             } else {
                 this.onItemSelect?.(null);
             }

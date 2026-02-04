@@ -25,7 +25,7 @@ interface WaterDepthConfig {
  */
 export class WaterDepthEffect {
     private scene: Phaser.Scene;
-    private player: Phaser.Physics.Matter.Sprite;
+    private player: Phaser.GameObjects.Sprite;
     private waterLayer?: Phaser.Tilemaps.TilemapLayer;
     
     private config: WaterDepthConfig = {
@@ -52,7 +52,7 @@ export class WaterDepthEffect {
     private lastCacheUpdate: number = 0;
     private cacheUpdateInterval: number = 500; // Rebuild cache every 500ms
 
-    constructor(scene: Phaser.Scene, player: Phaser.Physics.Matter.Sprite, waterLayer?: Phaser.Tilemaps.TilemapLayer) {
+    constructor(scene: Phaser.Scene, player: Phaser.GameObjects.Sprite, waterLayer?: Phaser.Tilemaps.TilemapLayer) {
         this.scene = scene;
         this.player = player;
         this.waterLayer = waterLayer;

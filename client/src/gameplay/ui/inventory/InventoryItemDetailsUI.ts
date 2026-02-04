@@ -14,11 +14,14 @@ export type InventoryItemDetailsConfig = {
     descriptionOffsetY?: number;
     textColor?: string;
     descriptionTextColor?: string;
+    amountTextColor?: string;
 };
 
 export type InventoryItemDetailsData = {
     name: string;
     description: string;
+    amount?: number;
+    stackSize?: number;
 };
 
 export const DEFAULT_ITEM_DETAILS_CONFIG: Required<InventoryItemDetailsConfig> = {
@@ -34,7 +37,8 @@ export const DEFAULT_ITEM_DETAILS_CONFIG: Required<InventoryItemDetailsConfig> =
     descriptionOffsetX: 6,
     descriptionOffsetY: 2,
     textColor: '#BABEC7',
-    descriptionTextColor: '#9A9EA7'
+    descriptionTextColor: '#9A9EA7',
+    amountTextColor: '#9A9EA7'
 };
 
 export class InventoryItemDetailsUI {
@@ -43,11 +47,13 @@ export class InventoryItemDetailsUI {
     private frame: Phaser.GameObjects.Image;
     private divider: Phaser.GameObjects.Image;
     private nameImage: Phaser.GameObjects.Image;
+    private amountImage: Phaser.GameObjects.Image;
     private descriptionImage: Phaser.GameObjects.Image;
 
     private labelTextureCounter = 0;
     private dividerTextureCounter = 0;
     private nameTextureKey?: string;
+    private amountTextureKey?: string;
     private descriptionTextureKey?: string;
     private frameTextureKey?: string;
     private dividerTextureKey?: string;
@@ -83,7 +89,8 @@ export class InventoryItemDetailsUI {
             descriptionOffsetX: config.descriptionOffsetX ?? DEFAULT_ITEM_DETAILS_CONFIG.descriptionOffsetX,
             descriptionOffsetY: config.descriptionOffsetY ?? DEFAULT_ITEM_DETAILS_CONFIG.descriptionOffsetY,
             textColor: config.textColor ?? DEFAULT_ITEM_DETAILS_CONFIG.textColor,
-            descriptionTextColor: config.descriptionTextColor ?? DEFAULT_ITEM_DETAILS_CONFIG.descriptionTextColor
+            descriptionTextColor: config.descriptionTextColor ?? DEFAULT_ITEM_DETAILS_CONFIG.descriptionTextColor,
+            amountTextColor: config.amountTextColor ?? DEFAULT_ITEM_DETAILS_CONFIG.amountTextColor
         };
 
         this.container = this.scene.add.container(0, 0);
@@ -98,10 +105,14 @@ export class InventoryItemDetailsUI {
         this.nameTextureKey = this.createTextTexture('', this.config.width - this.config.nameOffsetX * 2);
         this.nameImage = this.scene.add.image(0, 0, this.nameTextureKey).setOrigin(0, 0);
 
+        this.amountTextureKey = this.createTextTexture('', 1, false, this.config.amountTextColor);
+        this.amountImage = this.scene.add.image(0, 0, this.amountTextureKey).setOrigin(1, -0.5);
+        this.amountImage.setScale(0.7);
+
         this.descriptionTextureKey = this.createTextTexture('', this.config.width - this.config.descriptionOffsetX * 2);
         this.descriptionImage = this.scene.add.image(0, 0, this.descriptionTextureKey).setOrigin(0, 0);
 
-        this.container.add([this.frame, this.divider, this.nameImage, this.descriptionImage]);
+        this.container.add([this.frame, this.divider, this.nameImage, this.amountImage, this.descriptionImage]);
         this.container.setVisible(false);
     }
 
@@ -116,17 +127,24 @@ export class InventoryItemDetailsUI {
         }
 
         const nameKey = this.createTextTexture(data.name, this.config.width - this.config.nameOffsetX * 2);
+        const amountText = this.getAmountText(data);
+        const amountWidth = Math.max(1, this.measureBitmapTextWidth(amountText));
+        const amountKey = this.createTextTexture(amountText, amountWidth, false, this.config.amountTextColor);
         const descKey = this.createTextTexture(data.description, this.config.width - this.config.descriptionOffsetX * 2, true, this.config.descriptionTextColor);
 
         const oldName = this.nameTextureKey;
+        const oldAmount = this.amountTextureKey;
         const oldDesc = this.descriptionTextureKey;
 
         this.nameTextureKey = nameKey;
+        this.amountTextureKey = amountKey;
         this.descriptionTextureKey = descKey;
         this.nameImage.setTexture(nameKey);
+        this.amountImage.setTexture(amountKey);
         this.descriptionImage.setTexture(descKey);
 
         if (oldName && this.scene.textures.exists(oldName)) this.scene.textures.remove(oldName);
+        if (oldAmount && this.scene.textures.exists(oldAmount)) this.scene.textures.remove(oldAmount);
         if (oldDesc && this.scene.textures.exists(oldDesc)) this.scene.textures.remove(oldDesc);
 
         this.setVisible(true);
@@ -145,6 +163,9 @@ export class InventoryItemDetailsUI {
         this.divider.setPosition(this.config.dividerPaddingX, dividerY);
 
         this.nameImage.setPosition(this.config.nameOffsetX, this.config.nameOffsetY);
+
+        const amountX = this.config.width - this.config.nameOffsetX;
+        this.amountImage.setPosition(amountX, this.config.nameOffsetY);
 
         const descriptionY = dividerY + this.getDividerHeight() + this.config.descriptionOffsetY;
         this.descriptionImage.setPosition(this.config.descriptionOffsetX, descriptionY);
@@ -218,6 +239,18 @@ export class InventoryItemDetailsUI {
         return image.height;
     }
 
+    private getAmountText(data: InventoryItemDetailsData) {
+        if (data.amount === undefined || data.stackSize === undefined) return '';
+        return `${data.amount}/${data.stackSize}`;
+    }
+
+    private getTextureWidth(textureKey?: string) {
+        if (!textureKey || !this.scene.textures.exists(textureKey)) return 0;
+        const texture = this.scene.textures.get(textureKey);
+        const image = texture.getSourceImage() as HTMLImageElement;
+        return image.width ?? 0;
+    }
+
     private createTextTexture(text: string, maxWidth: number, wrap = false, color?: string) {
         const fontTexture = this.scene.textures.get('ui-font');
         const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
@@ -232,7 +265,6 @@ export class InventoryItemDetailsUI {
 
         let y = 0;
         lines.forEach((line) => {
-            const lineWidth = this.measureBitmapTextWidth(line);
             let x = 0;
             for (const ch of line) {
                 const pos = this.findGlyph(ch);

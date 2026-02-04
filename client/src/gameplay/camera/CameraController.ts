@@ -4,6 +4,8 @@ import { getTiledProperty } from '../map/TiledTypes';
 export interface ZoomRegion {
     polygon: { x: number; y: number }[];
     zoomMultiplier: number;
+    lockPoiName?: string;
+    lockPoiPosition?: { x: number; y: number };
 }
 
 export type CameraControllerOptions = {
@@ -27,6 +29,12 @@ export class CameraController {
     private currentZoom: number;
     private targetZoom: number;
     private zoomLerpSpeed: number;
+    private followEnabled = true;
+    
+    // Lock position lerping
+    private lockTargetPosition: { x: number; y: number } | null = null;
+    private isTransitioningOut = false;
+    private panLerpSpeed = 0.03;
 
     constructor(
         scene: Phaser.Scene,
@@ -72,11 +80,19 @@ export class CameraController {
             return;
         }
 
+        const poiPositions = this.loadPoiPositions();
+
         zoomsLayer.objects.forEach(obj => {
             if (!obj.polygon) return;
             
             const zoomMultiplier = getTiledProperty(obj, 'Zoom') as number | undefined;
             if (zoomMultiplier === undefined) return;
+
+            const lockPoiName = getTiledProperty(obj, 'Lock') as string | undefined;
+            const lockPoiPosition = lockPoiName ? poiPositions.get(lockPoiName) : undefined;
+            if (lockPoiName && !lockPoiPosition) {
+                console.warn(`[CameraController] Zoom region lock POI not found: ${lockPoiName}`);
+            }
             
             // Convert polygon points to world coordinates (add object x,y offset)
             const worldPolygon = obj.polygon.map((point: { x: number; y: number }) => ({
@@ -86,7 +102,9 @@ export class CameraController {
             
             this.zoomRegions.push({
                 polygon: worldPolygon,
-                zoomMultiplier
+                zoomMultiplier,
+                lockPoiName,
+                lockPoiPosition
             });
             
             console.log(`[CameraController] Added zoom region with multiplier ${zoomMultiplier}`);
@@ -102,10 +120,14 @@ export class CameraController {
     update(feetLeftX: number, feetRightX: number, feetY: number) {
         // Check if feet line segment intersects any zoom region
         let newTargetZoom = this.baseZoom;
+        let activeLock: { x: number; y: number } | undefined;
         
         for (const region of this.zoomRegions) {
             if (this.isSegmentIntersectingPolygon(feetLeftX, feetY, feetRightX, feetY, region.polygon)) {
                 newTargetZoom = this.baseZoom * region.zoomMultiplier;
+                if (region.lockPoiPosition) {
+                    activeLock = region.lockPoiPosition;
+                }
                 break; // Use first matching region
             }
         }
@@ -117,6 +139,82 @@ export class CameraController {
             this.currentZoom = Phaser.Math.Linear(this.currentZoom, this.targetZoom, this.zoomLerpSpeed);
             this.camera.setZoom(this.currentZoom);
         }
+
+        if (activeLock) {
+            this.disableFollow();
+            this.isTransitioningOut = false;
+            this.lockTargetPosition = activeLock;
+        } else if (this.lockTargetPosition && !this.followEnabled) {
+            // Start transitioning out - pan back to player
+            this.isTransitioningOut = true;
+        }
+        
+        // Get player position for smooth transitions
+        const playerX = (this.target as unknown as { x: number }).x;
+        const playerY = (this.target as unknown as { y: number }).y;
+        
+        // Smoothly pan camera towards lock position or back to player
+        if (!this.followEnabled) {
+            const currentX = this.camera.scrollX + this.camera.width / 2;
+            const currentY = this.camera.scrollY + this.camera.height / 2;
+            
+            let targetX: number;
+            let targetY: number;
+            
+            if (this.isTransitioningOut) {
+                // Transitioning back to player
+                targetX = playerX;
+                targetY = playerY;
+            } else {
+                // Locked on POI
+                targetX = this.lockTargetPosition!.x;
+                targetY = this.lockTargetPosition!.y;
+            }
+            
+            const newX = Phaser.Math.Linear(currentX, targetX, this.panLerpSpeed);
+            const newY = Phaser.Math.Linear(currentY, targetY, this.panLerpSpeed);
+            this.camera.centerOn(newX, newY);
+            
+            // Check if transition out is complete (close enough to player)
+            if (this.isTransitioningOut) {
+                const dist = Phaser.Math.Distance.Between(newX, newY, playerX, playerY);
+                if (dist < 2) {
+                    this.isTransitioningOut = false;
+                    this.lockTargetPosition = null;
+                    this.enableFollow();
+                }
+            }
+        }
+    }
+
+    private loadPoiPositions(): Map<string, { x: number; y: number }> {
+        const positions = new Map<string, { x: number; y: number }>();
+        const poiLayer = this.map.objects?.find(layer => layer.name === 'POI');
+        if (!poiLayer) return positions;
+
+        poiLayer.objects.forEach(obj => {
+            if (!obj.name) return;
+            const x = (obj.x ?? 0) + ((obj.width ?? 0) / 2);
+            const y = (obj.y ?? 0) + ((obj.height ?? 0) / 2);
+            if (!positions.has(obj.name)) {
+                positions.set(obj.name, { x, y });
+            }
+        });
+
+        return positions;
+    }
+
+    private enableFollow() {
+        if (this.followEnabled) return;
+        this.followEnabled = true;
+        this.camera.startFollow(this.target, false, 1, 1);
+        this.camera.setDeadzone(0, 0);
+    }
+
+    private disableFollow() {
+        if (!this.followEnabled) return;
+        this.followEnabled = false;
+        this.camera.stopFollow();
     }
     
     /**

@@ -10,7 +10,6 @@ import { CameraController } from '../camera/CameraController';
 import { MapLoader } from '../map/MapLoader';
 import { CollisionManager } from '../map/CollisionManager';
 import { OcclusionManager } from '../map/OcclusionManager';
-import { PlayerController } from '../player/PlayerController';
 import { MCPlayerController } from '../player/MCPlayerController';
 import { CharacterService } from '../player/CharacterService';
 import { RemotePlayerManager } from '../player/RemotePlayerManager';
@@ -36,9 +35,6 @@ interface GameSceneData {
     instance: IInstanceInfo;
 }
 
-// Feature flag: Set to true to use the new MC character system
-const USE_MC_CHARACTER = true;
-
 export class GameScene extends Phaser.Scene {
     private instanceInfo?: IInstanceInfo;
     private networkManager = NetworkManager.getInstance();
@@ -50,7 +46,6 @@ export class GameScene extends Phaser.Scene {
     private mapLoader?: MapLoader;
     private collisionManager?: CollisionManager;
     private occlusionManager?: OcclusionManager;
-    private playerController?: PlayerController;
     private mcPlayerController?: MCPlayerController;
     private cameraController?: CameraController;
     private remotePlayerManager?: RemotePlayerManager;
@@ -61,6 +56,7 @@ export class GameScene extends Phaser.Scene {
     private visualEffectsManager?: VisualEffectsManager;
     private seasonalEffectsManager?: SeasonalEffectsManager;
     private audioManager?: AudioManager;
+    private groundLayers?: Phaser.Tilemaps.TilemapLayer[];
     private fires: FireParticleSystem[] = [];
     private lastTablistSnapshot = '';
     
@@ -93,28 +89,14 @@ export class GameScene extends Phaser.Scene {
         });
         this.mapLoader.preloadMap(mapFile);
 
-        if (USE_MC_CHARACTER) {
-            // MC character doesn't need traditional preload - assets are composited at runtime
-            this.mcPlayerController = new MCPlayerController(this, {
-                speed: 1.6,
-                sprintSpeed: 2.4,
-                accel: 0.10,
-                drag: 0.7,
-                depth: this.playerFrontDepth
-            });
-        } else {
-            // Initialize legacy player controller early so it can preload assets
-            this.playerController = new PlayerController(this, {
-                speed: 1.6,
-                sprintSpeed: 2.4,
-                accel: 0.10,
-                drag: 0.7,
-                width: 16,
-                height: 32,
-                depth: this.playerFrontDepth
-            });
-            this.playerController.preload();
-        }
+        // MC character doesn't need traditional preload - assets are composited at runtime
+        this.mcPlayerController = new MCPlayerController(this, {
+            speed: 1.6,
+            sprintSpeed: 2.4,
+            accel: 0.10,
+            drag: 0.7,
+            depth: this.playerFrontDepth
+        });
 
         // Initialize audio manager and preload audio assets
         this.audioManager = new AudioManager(this);
@@ -131,11 +113,7 @@ export class GameScene extends Phaser.Scene {
         this.collisionManager = new CollisionManager(this);
         this.occlusionManager = new OcclusionManager(this.playerFrontDepth, this.playerOccludedDepthOffset);
         
-        if (USE_MC_CHARACTER) {
-            this.mcPlayerController?.setOcclusionManager(this.occlusionManager);
-        } else {
-            this.playerController?.setOcclusionManager(this.occlusionManager);
-        }
+        this.mcPlayerController?.setOcclusionManager(this.occlusionManager);
         
         // Initialize visual effects (Post-processing)
         this.visualEffectsManager = new VisualEffectsManager(this);
@@ -157,11 +135,7 @@ export class GameScene extends Phaser.Scene {
         // 1. Fetch character appearance
         // 2. Initialize MC controller (composites sprites)
         // 3. Then load the map
-        if (USE_MC_CHARACTER) {
-            this.initializeMCCharacterAndLoadMap();
-        } else {
-            this.loadMapLegacy();
-        }
+        this.initializeMCCharacterAndLoadMap();
     }
 
     /**
@@ -265,28 +239,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     /**
-     * Get the active player controller (MC or legacy)
-     */
-    private getActivePlayerController(): PlayerController | MCPlayerController | undefined {
-        return USE_MC_CHARACTER ? this.mcPlayerController : this.playerController;
-    }
-
-    /**
      * Get the active player sprite
      */
     private getActivePlayer(): Phaser.Physics.Matter.Sprite | undefined {
-        return this.getActivePlayerController()?.getPlayer();
+        return this.mcPlayerController?.getPlayer();
     }
 
     private onMapLoaded(map: Phaser.Tilemaps.Tilemap, groundLayers: Phaser.Tilemaps.TilemapLayer[]) {
+        this.groundLayers = groundLayers;
         // Spawn player using active controller
         let player: Phaser.Physics.Matter.Sprite | undefined;
         
-        if (USE_MC_CHARACTER) {
-            player = this.mcPlayerController?.spawn(map);
-        } else {
-            player = this.playerController?.spawn(map);
-        }
+        player = this.mcPlayerController?.spawn(map);
         
         if (player) {
             this.lightingManager?.enableLightingOn(player);
@@ -326,8 +290,8 @@ export class GameScene extends Phaser.Scene {
 
         // Map is fully loaded - hide the loader and show controls
         hideLoader();
-        this.getActivePlayerController()?.getMobileControls()?.show();
-        this.getActivePlayerController()?.getDesktopInteractButton()?.show();
+        this.mcPlayerController?.getMobileControls()?.show();
+        this.mcPlayerController?.getDesktopInteractButton()?.show();
 
         // If AFK flag is set and we're in limbo, show AFK modal
         if (this.instanceInfo?.locationId === 'limbo' && localStorage.getItem('cfwk_afk') === 'true') {
@@ -403,12 +367,13 @@ export class GameScene extends Phaser.Scene {
         this.remotePlayerManager = new RemotePlayerManager(this, {
             playerFrontDepth: this.playerFrontDepth,
             occlusionManager: this.occlusionManager,
-            lightingManager: this.lightingManager
+            lightingManager: this.lightingManager,
+            groundLayers: this.groundLayers
         });
         this.remotePlayerManager.initialize();
 
         // Connect remote player manager to player controller for interaction detection
-        const activeController = this.getActivePlayerController();
+        const activeController = this.mcPlayerController;
         if (activeController && this.remotePlayerManager) {
             activeController.setRemotePlayerManager(this.remotePlayerManager);
         }
@@ -458,7 +423,7 @@ export class GameScene extends Phaser.Scene {
     private handleChatMessage(data: { sessionId: string; message: string }) {
         const mySessionId = this.networkManager.getSessionId();
         if (data.sessionId === mySessionId) {
-            this.getActivePlayerController()?.showChat(data.message);
+            this.mcPlayerController?.showChat(data.message);
         } else {
             this.remotePlayerManager?.showChat(data.sessionId, data.message);
         }
@@ -487,7 +452,7 @@ export class GameScene extends Phaser.Scene {
             // Apply force if we're the target
             if (data.targetSessionId === mySessionId) {
                 this.applyShoveForce(player, data.targetForceX, data.targetForceY);
-                this.getActivePlayerController()?.playInteractAnimation();
+                this.mcPlayerController?.playInteractAnimation();
                 console.log('[GameScene] We got shoved!');
             } else {
                 const remoteTarget = this.remotePlayerManager?.getPlayers().get(data.targetSessionId);
@@ -555,7 +520,7 @@ export class GameScene extends Phaser.Scene {
         this.mapLoader?.update(delta);
 
         // Update player movement using active controller
-        this.getActivePlayerController()?.update(delta);
+        this.mcPlayerController?.update(delta);
 
         // Enforce containment zones
         const player = this.getActivePlayer();
@@ -577,7 +542,7 @@ export class GameScene extends Phaser.Scene {
         this.waterSystem?.update(delta);
         
         // Apply water effects to player
-        const activeController = this.getActivePlayerController();
+        const activeController = this.mcPlayerController;
         if (activeController && this.waterSystem) {
             activeController.setSpeedMultiplier(this.waterSystem.getSpeedMultiplier());
             // Hide shadow when player is in water
@@ -622,14 +587,14 @@ export class GameScene extends Phaser.Scene {
         }
 
         // Update remote players
-        this.remotePlayerManager?.update();
+        this.remotePlayerManager?.update(delta);
 
         // Update tablist registry
         this.updateTablistRegistry();
 
         // Update debug overlay
         if (this.debugOverlay?.isEnabled()) {
-            const activeController = this.getActivePlayerController();
+            const activeController = this.mcPlayerController;
             // Gather extended debug info
             const extendedDebug: ExtendedDebugInfo = {
                 // Camera
@@ -700,6 +665,6 @@ export class GameScene extends Phaser.Scene {
         this.waterSystem?.destroy();
         this.seasonalEffectsManager?.destroy();
         this.mapLoader?.destroy();
-        this.getActivePlayerController()?.destroy();
+        this.mcPlayerController?.destroy();
     }
 }

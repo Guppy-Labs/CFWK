@@ -1,27 +1,6 @@
 import Phaser from 'phaser';
 import { EmojiMap } from './EmojiMap';
 
-/**
- * Generates a consistent color from a string (user ID) - matching RemotePlayer
- */
-function hashToColor(str: string): number {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
-        hash = hash & hash;
-    }
-    
-    const hue = Math.abs(hash) % 360;
-    const saturation = 60 + (Math.abs(hash >> 8) % 30);
-    const lightness = 55 + (Math.abs(hash >> 16) % 20);
-    
-    return Phaser.Display.Color.HSLToColor(hue / 360, saturation / 100, lightness / 100).color;
-}
-
-function colorToHex(color: number): string {
-    return '#' + color.toString(16).padStart(6, '0');
-}
-
 export interface ChatMessage {
     username: string;
     odcid: string;
@@ -563,34 +542,51 @@ export class Chat {
     
     private createMessageDisplay(msg: ChatMessage, y: number): Phaser.GameObjects.Container {
         const container = this.scene.add.container(0, y);
-        
-        const nameColor = colorToHex(hashToColor(msg.odcid));
-        
-        const namePrefix = msg.isPremium && !msg.isSystem ? '🦈 ' : '';
-        const nameText = this.scene.add.text(0, 0, `${namePrefix}${msg.username}: `, {
+
+        const nameColor = msg.isSystem ? '#ff0000' : '#ffffff';
+
+        const nameText = this.scene.add.text(0, 0, `${msg.username}: `, {
             fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
             fontSize: '14px',
-            color: msg.isSystem ? '#ff0000' : nameColor
+            color: nameColor
         });
         container.add(nameText);
+
+        let nameOffsetX = 0;
+        let sharkWidth = 0;
+        let sharkText: Phaser.GameObjects.Text | undefined;
+        if (msg.isPremium && !msg.isSystem) {
+            sharkText = this.scene.add.text(0, 0, '🦈', {
+                fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
+                fontSize: '12px',
+                color: '#ffffff'
+            });
+            sharkText.setOrigin(0, 0.5);
+            sharkText.setScale(0.9);
+            sharkText.setPosition(0, Math.floor(nameText.height / 2));
+            sharkWidth = sharkText.displayWidth;
+            nameOffsetX = sharkWidth + 2;
+            container.add(sharkText);
+            nameText.setX(nameOffsetX);
+        }
         
         const parsedMessage = EmojiMap.parse(msg.message);
 
-        const messageText = this.scene.add.text(nameText.width, 0, parsedMessage, {
+        const nameWidth = nameText.width + sharkWidth + (sharkText ? 2 : 0);
+        const messageText = this.scene.add.text(nameWidth, 0, parsedMessage, {
             fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
             fontSize: '14px',
             color: msg.isSystem ? '#ff0000' : '#ffffff',
-            wordWrap: { width: this.width - this.padding * 2 - nameText.width, useAdvancedWrap: true }
+            wordWrap: { width: this.width - this.padding * 2 - nameWidth, useAdvancedWrap: true }
         });
         container.add(messageText);
 
         if (msg.isSystem) {
             const bgPaddingX = 4;
             const bgPaddingY = 1;
-            const nameBounds = nameText.getBounds();
             const messageBounds = messageText.getBounds();
-            const bgWidth = nameBounds.width + messageBounds.width + bgPaddingX * 2;
-            const bgHeight = Math.max(nameBounds.height, messageBounds.height) + bgPaddingY * 2;
+            const bgWidth = nameWidth + messageBounds.width + bgPaddingX * 2;
+            const bgHeight = Math.max(nameText.height, messageBounds.height) + bgPaddingY * 2;
             const bg = this.scene.add.rectangle(-bgPaddingX, -bgPaddingY, bgWidth, bgHeight, 0xff4444, 0.25);
             bg.setOrigin(0, 0);
             container.addAt(bg, 0);

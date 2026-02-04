@@ -8,6 +8,7 @@ export interface RemotePlayerManagerConfig {
     playerFrontDepth: number;
     occlusionManager?: OcclusionManager;
     lightingManager?: LightingManager;
+    groundLayers?: Phaser.Tilemaps.TilemapLayer[];
 }
 
 /**
@@ -66,7 +67,8 @@ export class RemotePlayerManager {
                     afkSince: player.afkSince || 0,
                     isGuiOpen: player.isGuiOpen || false,
                     isChatOpen: player.isChatOpen || false,
-                    isPremium: player.isPremium || false
+                    isPremium: player.isPremium || false,
+                    groundLayers: this.config.groundLayers
                 });
 
                 // Enable lighting on remote player sprite
@@ -132,8 +134,8 @@ export class RemotePlayerManager {
     /**
      * Update all remote players (position interpolation)
      */
-    update() {
-        this.remotePlayers.forEach(remote => remote.update());
+    update(delta: number) {
+        this.remotePlayers.forEach(remote => remote.update(delta));
     }
 
     /**

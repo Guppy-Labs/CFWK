@@ -73,25 +73,15 @@ export class OcclusionManager {
     update(player: Phaser.Physics.Matter.Sprite) {
         // Clear active tags
         this.activeTags.clear();
-        
-        if (this.regions.length === 0) return;
 
         // Reset layers to base depth
         this.layers.forEach((entry) => entry.layer.setDepth(entry.baseDepth));
 
-        const bottomLeft = player.getBottomLeft();
-        const bottomRight = player.getBottomRight();
-        const y = bottomLeft.y;
+        if (this.regions.length === 0) return;
 
-        this.regions.forEach((region) => {
-            if (!this.isSegmentIntersectingPolygon(bottomLeft.x, y, bottomRight.x, y, region.polygon)) return;
-
-            if (region.targetTags && region.targetTags.length > 0) {
-                region.targetTags.forEach((tag) => this.activeTags.add(tag));
-            } else {
-                this.layers.forEach((entry) => this.activeTags.add(entry.tag));
-            }
-        });
+        const feetY = player.getBottomLeft().y;
+        const occlusionTags = this.getOcclusionTagsAt(player.x, feetY, 4);
+        occlusionTags.forEach((tag) => this.activeTags.add(tag));
 
         if (this.activeTags.size === 0) return;
 

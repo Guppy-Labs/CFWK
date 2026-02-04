@@ -48,6 +48,7 @@ export class UIScene extends Phaser.Scene {
         this.load.image('ui-group-icon-loot-active', '/ui/IconLoot01b.png');
         this.load.image('ui-group-icon-loot-inactive', '/ui/IconLoot01a.png');
         this.load.image('ui-item-info-frame', '/ui/Frame07a.png');
+        this.load.image('ui-afk-frame', '/ui/Frame09a.png');
         this.load.image('ui-item-info-divider', '/ui/Line03a.png');
         this.load.image('ui-slot-base', '/ui/Slot01a.png');
         this.load.image('ui-slot-extended', '/ui/Slot01e.png');
@@ -235,6 +236,7 @@ export class UIScene extends Phaser.Scene {
         };
         window.addEventListener('mobile:menu', this.mobileMenuHandler as EventListener);
 
+        window.addEventListener('pointerdown', markActivity, { capture: true });
         window.addEventListener('mousedown', markActivity, { capture: true });
         window.addEventListener('touchstart', markActivity, { capture: true });
 
@@ -259,6 +261,7 @@ export class UIScene extends Phaser.Scene {
             if (this.mobileMenuHandler) {
                 window.removeEventListener('mobile:menu', this.mobileMenuHandler as EventListener);
             }
+            window.removeEventListener('pointerdown', markActivity, { capture: true } as any);
             window.removeEventListener('mousedown', markActivity, { capture: true } as any);
             window.removeEventListener('touchstart', markActivity, { capture: true } as any);
             this.scale.off('resize', this.onResize, this);

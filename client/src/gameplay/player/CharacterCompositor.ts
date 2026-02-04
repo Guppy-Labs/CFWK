@@ -20,7 +20,7 @@ import {
 /**
  * Layer types that can be composited
  */
-export type MCLayerType = 'body' | 'cape' | 'scarf';
+export type MCLayerType = 'body' | 'cape' | 'scarf' | 'head';
 
 /**
  * Asset paths for MC character
@@ -28,10 +28,10 @@ export type MCLayerType = 'body' | 'cape' | 'scarf';
 const MC_ASSET_BASE = '/assets/char/mc';
 
 /**
- * Source directions available in assets (N, E, S)
+ * Source directions available in assets (N, E, S, NE, SE)
  * Other directions are derived from these
  */
-type SourceDirection = 'N' | 'E' | 'S';
+type SourceDirection = 'N' | 'E' | 'S' | 'NE' | 'SE';
 
 /**
  * Mapping from all directions to their source direction and whether to mirror
@@ -41,10 +41,10 @@ const DIRECTION_SOURCE_MAP: Record<MCDirection, { source: SourceDirection; mirro
     S: { source: 'S', mirror: false },
     E: { source: 'E', mirror: false },
     W: { source: 'E', mirror: true },
-    NE: { source: 'E', mirror: false }, // Use E until NE is ready
-    SE: { source: 'E', mirror: false }, // Use E until SE is ready
-    NW: { source: 'E', mirror: true },  // Mirror of E until NW is ready
-    SW: { source: 'E', mirror: true }   // Mirror of E until SW is ready
+    NE: { source: 'NE', mirror: false },
+    SE: { source: 'SE', mirror: false },
+    NW: { source: 'NE', mirror: true },
+    SW: { source: 'SE', mirror: true }
 };
 
 /**
@@ -82,6 +82,8 @@ export class CharacterCompositor {
     private getAssetPath(animType: MCAnimationType, layerType: MCLayerType, direction: SourceDirection): string {
         if (layerType === 'body') {
             return `${MC_ASSET_BASE}/${animType}/body/${animType}_${direction}_body.png`;
+        } else if (layerType === 'head') {
+            return `${MC_ASSET_BASE}/${animType}/head/${animType}_${direction}_head.png`;
         } else {
             return `${MC_ASSET_BASE}/${animType}/accessories/base/${layerType}/${animType}_${direction}_${layerType}.png`;
         }
@@ -125,10 +127,10 @@ export class CharacterCompositor {
         // Load all required images
         const bodyPath = this.getAssetPath(animType, 'body', source);
         const bodyImg = await this.loadImage(bodyPath);
+        const headPath = this.getAssetPath(animType, 'head', source);
+        const headImg = await this.loadImage(headPath);
 
-        const layers: { img: LoadedImage; type: MCLayerType }[] = [
-            { img: bodyImg, type: 'body' }
-        ];
+        const layers: { img: LoadedImage; type: MCLayerType }[] = [{ img: bodyImg, type: 'body' }];
 
         // Load accessories if equipped
         if (appearance.accessories.cape.equipped) {
@@ -151,6 +153,24 @@ export class CharacterCompositor {
             }
         }
 
+        const isNorth = direction === 'N' || direction === 'NE' || direction === 'NW';
+        const orderedLayers: { img: LoadedImage; type: MCLayerType }[] = [];
+
+        const bodyLayer = layers.find(layer => layer.type === 'body');
+        const capeLayer = layers.find(layer => layer.type === 'cape');
+        const scarfLayer = layers.find(layer => layer.type === 'scarf');
+
+        if (bodyLayer) orderedLayers.push(bodyLayer);
+        if (capeLayer) orderedLayers.push(capeLayer);
+
+        if (isNorth) {
+            orderedLayers.push({ img: headImg, type: 'head' });
+            if (scarfLayer) orderedLayers.push(scarfLayer);
+        } else {
+            if (scarfLayer) orderedLayers.push(scarfLayer);
+            orderedLayers.push({ img: headImg, type: 'head' });
+        }
+
         // Create output canvas
         const canvas = document.createElement('canvas');
         canvas.width = dimensions.width * frameCount;
@@ -163,8 +183,8 @@ export class CharacterCompositor {
             ctx.scale(-1, 1);
         }
 
-        // Draw each layer in order (body first, then accessories)
-        for (const layer of layers) {
+        // Draw each layer in order (bottom to top)
+        for (const layer of orderedLayers) {
             ctx.drawImage(layer.img.img, 0, 0);
         }
 

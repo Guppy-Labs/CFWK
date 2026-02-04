@@ -104,15 +104,15 @@ export class AudioManager {
      */
     preload() {
         // Music tracks
-        this.scene.load.audio('music-beach', 'audio/tracks/beach.m4a');
+        this.scene.load.audio('music-beach', '/audio/tracks/beach.m4a');
         
         // Ambient loops
-        this.scene.load.audio('ambient-fire', 'audio/ambient/scene/fire.mp3');
-        this.scene.load.audio('ambient-ocean', 'audio/ambient/scene/ocean.mp3');
+        this.scene.load.audio('ambient-fire', '/audio/ambient/scene/fire.mp3');
+        this.scene.load.audio('ambient-ocean', '/audio/ambient/scene/ocean.mp3');
         
         // Player sounds
-        this.scene.load.audio('footstep-sand', 'audio/ambient/player/walk_sand.mp3');
-        this.scene.load.audio('footstep-water', 'audio/ambient/player/walk_shallow_water.mp3');
+        this.scene.load.audio('footstep-sand', '/audio/ambient/player/walk_sand.mp3');
+        this.scene.load.audio('footstep-water', '/audio/ambient/player/walk_shallow_water.mp3');
     }
     
     /**

@@ -34,7 +34,7 @@ interface Footprint {
  */
 export class WaterSystem {
     private scene: Phaser.Scene;
-    private player: Phaser.Physics.Matter.Sprite;
+    private player: Phaser.GameObjects.Sprite;
     private waterLayer?: Phaser.Tilemaps.TilemapLayer;
     
     private config: WaterEffectsConfig = {
@@ -67,7 +67,7 @@ export class WaterSystem {
     private isMoving = false;
     private currentSpeed = 0;
 
-    constructor(scene: Phaser.Scene, player: Phaser.Physics.Matter.Sprite, groundLayers: Phaser.Tilemaps.TilemapLayer[]) {
+    constructor(scene: Phaser.Scene, player: Phaser.GameObjects.Sprite, groundLayers: Phaser.Tilemaps.TilemapLayer[]) {
         this.scene = scene;
         this.player = player;
         
@@ -280,9 +280,7 @@ export class WaterSystem {
      * Main update loop
      */
     update(delta: number) {
-        if (!this.player.body) {
-            return;
-        }
+        if (!this.isPlayerValid()) return;
         // Track movement
         const dx = this.player.x - this.lastPlayerX;
         const dy = this.player.y - this.lastPlayerY;
@@ -335,6 +333,14 @@ export class WaterSystem {
         if (this.splashEmitter) {
             this.splashEmitter.setDepth(this.player.depth + 1);
         }
+    }
+
+    private isPlayerValid(): boolean {
+        if (!this.player || !this.player.active) return false;
+        if (this.player instanceof Phaser.Physics.Matter.Sprite) {
+            return !!this.player.body;
+        }
+        return true;
     }
 
     /**

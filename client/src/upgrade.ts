@@ -32,14 +32,19 @@ async function checkAuth() {
     try {
         const res = await fetch('/api/auth/me');
         if (!res.ok) {
-            showStatus('Please log in to upgrade.', 'error');
-            if (upgradeBtn) upgradeBtn.disabled = true;
+            const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+            window.location.href = `/login?next=${next}`;
             return null;
         }
         const data = await res.json();
         if (!data.user) {
-            showStatus('Please log in to upgrade.', 'error');
-            if (upgradeBtn) upgradeBtn.disabled = true;
+            const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+            window.location.href = `/login?next=${next}`;
+            return null;
+        }
+
+        if (!data.user.username) {
+            window.location.href = '/onboarding';
             return null;
         }
 
@@ -74,8 +79,8 @@ async function checkAuth() {
 
         return data.user;
     } catch {
-        showStatus('Unable to verify account. Please log in again.', 'error');
-        if (upgradeBtn) upgradeBtn.disabled = true;
+        const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+        window.location.href = `/login?next=${next}`;
         return null;
     }
 }
