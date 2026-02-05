@@ -70,6 +70,8 @@ export type RemotePlayerConfig = {
     isChatOpen?: boolean; // Initial chat open/focused state
     isPremium?: boolean; // Shark tier badge
     groundLayers?: Phaser.Tilemaps.TilemapLayer[];
+    /** Custom animation key getter for per-player appearance - returns animation key for direction */
+    customAnimationKeyGetter?: (direction: MCDirection) => string | undefined;
 };
 
 /**
@@ -89,12 +91,16 @@ export class RemotePlayer {
     private targetX: number;
     private targetY: number;
     private currentDirection: Direction = Direction.Down;
+    private currentAnim: string = 'idle';
     private playerColor: number = 0xffffff;
     private baseDepth: number;
     private occlusionManager?: OcclusionManager;
     private chatBubble?: Phaser.GameObjects.Container;
     private chatTimer?: Phaser.Time.TimerEvent;
     private waterSystem?: WaterSystem;
+    
+    /** Custom animation key getter for per-player appearance */
+    private customAnimationKeyGetter?: (direction: MCDirection) => string | undefined;
 
     // Interpolation
     private readonly interpSpeed = 0.25;
@@ -130,6 +136,7 @@ export class RemotePlayer {
         this.currentDirection = config.direction as Direction;
         this.baseDepth = config.depth;
         this.occlusionManager = config.occlusionManager;
+        this.customAnimationKeyGetter = config.customAnimationKeyGetter;
         
         // Check for mobile device (Android, iOS, etc.)
         const os = this.scene.sys.game.device.os;
@@ -143,7 +150,8 @@ export class RemotePlayer {
         
         this.createSprite(config.x, config.y, config.skipSpawnEffect);
         this.createNameplate(config.skipSpawnEffect, fontSize);
-        this.updateAnimation('idle', this.currentDirection);
+        this.currentAnim = 'idle';
+        this.updateAnimation(this.currentAnim, this.currentDirection);
 
         if (config.groundLayers && config.groundLayers.length > 0) {
             this.waterSystem = new WaterSystem(this.scene, this.sprite, config.groundLayers);
@@ -362,7 +370,16 @@ export class RemotePlayer {
      */
     setAnimation(anim: string, direction: number) {
         this.currentDirection = direction as Direction;
-        this.updateAnimation(anim, this.currentDirection);
+        this.currentAnim = anim;
+        this.updateAnimation(this.currentAnim, this.currentDirection);
+    }
+
+    /**
+     * Update the animation key getter after textures are generated
+     */
+    setCustomAnimationKeyGetter(getter?: (direction: MCDirection) => string | undefined) {
+        this.customAnimationKeyGetter = getter;
+        this.updateAnimation(this.currentAnim, this.currentDirection);
     }
 
     /**
@@ -405,8 +422,20 @@ export class RemotePlayer {
         // MC textures are pre-flipped, so no need for setFlipX
         this.sprite.setFlipX(false);
         
-        // Use MC animation key format (mc-walk-S, mc-walk-N, etc.)
-        const animKey = `mc-${anim}-${mcDir}`;
+        // Try custom animation key first (per-player appearance), fallback to shared MC
+        let animKey: string | undefined;
+        
+        if (this.customAnimationKeyGetter) {
+            animKey = this.customAnimationKeyGetter(mcDir);
+            if (!animKey) {
+                console.warn(`[RemotePlayer] customAnimationKeyGetter returned undefined for ${this.sessionId} dir ${mcDir}`);
+            }
+        }
+        
+        // Fallback to shared MC animation
+        if (!animKey) {
+            animKey = `mc-${anim}-${mcDir}`;
+        }
         
         if (this.scene.anims.exists(animKey) && this.sprite.anims.currentAnim?.key !== animKey) {
             this.sprite.play(animKey);
@@ -424,6 +453,9 @@ export class RemotePlayer {
 
         // Don't update position while spawning
         if (this.isSpawning && this.particles.length > 0) return;
+
+        // Guard: skip update if sprite frame is not ready (texture still loading)
+        if (!this.sprite.frame) return;
 
         // Smooth interpolation to target position
         const dx = this.targetX - this.sprite.x;

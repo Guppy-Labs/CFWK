@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skin Editor - Cute Fish With Knives</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <link rel="stylesheet" href="/src/ui/shared.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background-color: var(--mm-bg-dark);
+            color: var(--mm-text-main);
+            font-family: 'Minecraft', sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 2rem;
+            background-color: var(--mm-bg-panel);
+            border-bottom: 2px solid var(--mm-border);
+        }
+
+        .navbar a {
+            color: var(--mm-text-main);
+            text-decoration: none;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: minmax(260px, 320px) 1fr;
+            gap: 2rem;
+            box-sizing: border-box;
+        }
+
+        .panel {
+            background-color: var(--mm-bg-panel);
+            border: 2px solid var(--mm-border);
+            padding: 1.5rem;
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.2) inset;
+        }
+
+        .panel h2 {
+            margin-top: 0;
+            color: var(--mm-primary);
+            letter-spacing: 0.4px;
+        }
+
+        .preview-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .preview-frame {
+            width: 288px;
+            height: 288px;
+            border: 2px solid var(--mm-border);
+            background: var(--mm-bg-dark);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+        }
+
+        .preview-frame canvas {
+            image-rendering: pixelated;
+        }
+
+        .preset-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .preset-btn {
+            border: 1px solid var(--mm-border);
+            background: var(--mm-bg-input);
+            color: var(--mm-text-main);
+            padding: 0.6rem 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-family: inherit;
+            text-align: center;
+        }
+
+        .preset-btn:hover {
+            border-color: var(--mm-primary);
+            background: rgba(255, 102, 170, 0.12);
+        }
+
+        .preset-btn.active {
+            border-color: var(--mm-primary);
+            box-shadow: 0 0 0 2px rgba(255, 102, 170, 0.2);
+        }
+
+        .accessory-slot {
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--mm-border);
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+            background: rgba(0,0,0,0.2);
+            gap: 0;
+        }
+
+        .accessory-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .slider-container {
+            padding: 0.5rem 0;
+        }
+
+        .slider-wrapper {
+            width: 100%;
+            position: relative;
+            height: 24px;
+            border-radius: 4px;
+            border: 2px solid var(--mm-border);
+            background: linear-gradient(to right,
+                hsl(0, 70%, 50%),
+                hsl(60, 70%, 50%),
+                hsl(120, 70%, 50%),
+                hsl(180, 70%, 50%),
+                hsl(240, 70%, 50%),
+                hsl(300, 70%, 50%),
+                hsl(360, 70%, 50%)
+            );
+        }
+
+        .hue-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            outline: none;
+            cursor: pointer;
+            background: transparent;
+        }
+
+        .hue-slider::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 100%;
+            background: transparent;
+        }
+
+        .hue-slider::-moz-range-track {
+            width: 100%;
+            height: 100%;
+            background: transparent;
+        }
+
+        .hue-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 28px;
+            background: var(--mm-text-main);
+            border: 2px solid var(--mm-bg-dark);
+            border-radius: 2px;
+            cursor: pointer;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+        }
+
+        .hue-slider::-moz-range-thumb {
+            width: 12px;
+            height: 28px;
+            background: var(--mm-text-main);
+            border: 2px solid var(--mm-bg-dark);
+            border-radius: 2px;
+            cursor: pointer;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+        }
+
+        .save-row {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: flex-end;
+            margin-top: 1rem;
+        }
+
+        .mm-btn {
+            cursor: pointer;
+        }
+
+        .mm-btn-secondary {
+            background: transparent;
+            border: 1px solid var(--mm-border);
+            color: var(--mm-text-main);
+            padding: 0.5rem 0.75rem;
+        }
+
+        .mm-btn-secondary:hover {
+            border-color: var(--mm-primary);
+            background: rgba(255, 102, 170, 0.12);
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+
+            .preview-frame {
+                width: 160px;
+                height: 160px;
+            }
+
+            .save-row {
+                justify-content: stretch;
+            }
+
+            .save-row .mm-btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="/account"><i class="fa-solid fa-arrow-left"></i> Back to Account</a>
+        <strong>Skin Editor</strong>
+        <span></span>
+    </div>
+
+    <div class="container">
+        <div class="panel preview-card">
+            <h2>Preview</h2>
+            <div class="preview-frame">
+                <canvas id="skin-preview-canvas"></canvas>
+            </div>
+            <p style="color: var(--mm-text-muted); margin: 0;">Cat Preview</p>
+        </div>
+
+        <div class="panel">
+            <h2>Base</h2>
+            <p style="color: var(--mm-text-muted);">Pick a brightness preset for your cat.</p>
+            <div id="body-presets" class="preset-grid"></div>
+
+            <h2 style="margin-top: 2rem;">Eyes</h2>
+            <p style="color: var(--mm-text-muted);">Eye tint (influences the head / eye color).</p>
+            <div id="eye-presets" class="slider-container"></div>
+
+            <h2 style="margin-top: 2rem;">Accessories</h2>
+            <p style="color: var(--mm-text-muted);">Equip or unequip accessories you own.</p>
+            <div id="accessory-slots"></div>
+
+            <div class="save-row">
+                <button id="save-skin-btn" class="mm-btn">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/skin.ts"></script>
+</body>
+</html>

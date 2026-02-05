@@ -54,6 +54,21 @@ export class InventoryCache {
         return items;
     }
 
+    async removeItem(userId: string, itemId: string, amount: number): Promise<InventoryItem[] | null> {
+        const items = await this.getInventory(userId);
+        const entry = items.find((inv) => inv.itemId === itemId);
+        if (!entry || entry.count < amount) return null;
+
+        entry.count -= amount;
+        if (entry.count <= 0) {
+            const index = items.indexOf(entry);
+            if (index >= 0) items.splice(index, 1);
+        }
+
+        this.markDirty(userId, items);
+        return items;
+    }
+
     setInventory(userId: string, items: InventoryItem[]) {
         this.cache.set(userId, {
             items: [...items],

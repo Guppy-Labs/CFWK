@@ -258,6 +258,24 @@ export class NetworkManager {
     }
 
     /**
+     * Send a pickup item request to the server
+     */
+    sendPickupItem(droppedItemId: string) {
+        if (this.currentRoom) {
+            this.currentRoom.send("pickupItem", { droppedItemId });
+        }
+    }
+
+    /**
+     * Send a drop item request to the server
+     */
+    sendDropItem(itemId: string, amount: number) {
+        if (this.currentRoom) {
+            this.currentRoom.send("dropItem", { itemId, amount });
+        }
+    }
+
+    /**
      * Send a chat message to the server
      */
     sendChatMessage(message: string) {

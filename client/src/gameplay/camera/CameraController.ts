@@ -34,7 +34,7 @@ export class CameraController {
     // Lock position lerping
     private lockTargetPosition: { x: number; y: number } | null = null;
     private isTransitioningOut = false;
-    private panLerpSpeed = 0.03;
+    private panLerpSpeed = 0.18;
 
     constructor(
         scene: Phaser.Scene,
@@ -207,7 +207,8 @@ export class CameraController {
     private enableFollow() {
         if (this.followEnabled) return;
         this.followEnabled = true;
-        this.camera.startFollow(this.target, false, 1, 1);
+        // Use lerp values for smooth transition back to following
+        this.camera.startFollow(this.target, false, 0.1, 0.1);
         this.camera.setDeadzone(0, 0);
     }
 

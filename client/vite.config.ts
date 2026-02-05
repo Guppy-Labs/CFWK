@@ -13,6 +13,8 @@ const mapsRewritePlugin = () => ({
         req.url = '/onboarding/index.html';
       } else if (shouldRewriteToAccount(req?.url)) {
         req.url = '/account/index.html';
+      } else if (shouldRewriteToSkin(req?.url)) {
+        req.url = '/skin/index.html';
       } else if (shouldRewriteToUpgrade(req?.url)) {
         req.url = '/upgrade/index.html';
       } else if (shouldRewriteToUpgradeThanks(req?.url)) {
@@ -43,6 +45,8 @@ const mapsRewritePlugin = () => ({
         req.url = '/onboarding/index.html';
       } else if (shouldRewriteToAccount(req?.url)) {
         req.url = '/account/index.html';
+      } else if (shouldRewriteToSkin(req?.url)) {
+        req.url = '/skin/index.html';
       } else if (shouldRewriteToUpgrade(req?.url)) {
         req.url = '/upgrade/index.html';
       } else if (shouldRewriteToUpgradeThanks(req?.url)) {
@@ -91,6 +95,13 @@ function shouldRewriteToAccount(url?: string) {
   if (!url) return false;
   const pathname = url.split('?')[0];
   if (pathname === '/account' || pathname === '/account/') return true;
+  return false;
+}
+
+function shouldRewriteToSkin(url?: string) {
+  if (!url) return false;
+  const pathname = url.split('?')[0];
+  if (pathname === '/skin' || pathname === '/skin/') return true;
   return false;
 }
 
@@ -194,6 +205,7 @@ export default defineConfig(({ mode }) => {
           maps: resolve(__dirname, 'maps/index.html'),
           onboarding: resolve(__dirname, 'onboarding/index.html'),
           account: resolve(__dirname, 'account/index.html'),
+          skin: resolve(__dirname, 'skin/index.html'),
           upgrade: resolve(__dirname, 'upgrade/index.html'),
           upgradeThanks: resolve(__dirname, 'upgrade/thanks.html'),
           login: resolve(__dirname, 'login/index.html'),

@@ -184,23 +184,28 @@ export * from './items';
 
 /**
  * Character appearance customization
- * Each layer can be tinted with primary/secondary colors
+ * Uses hue + brightness shifts instead of hex colors
  */
+export type HueBrightnessShift = {
+  hueShift: number;        // Degrees, e.g. -180 to 180
+  brightnessShift: number; // -1 to 1 (negative = darker, positive = brighter)
+};
+
 export interface ICharacterAppearance {
-  body: {
-    primaryColor: string;    // Hex color for main body
-    secondaryColor: string;  // Hex color for accents
-  };
+  body: HueBrightnessShift;
+  head: HueBrightnessShift;
   accessories: {
-    cape: {
+    neck: {
+      itemId: string; // e.g. "scarf"
       equipped: boolean;
-      primaryColor: string;
-      secondaryColor: string;
+      hueShift: number;
+      brightnessShift: number;
     };
-    scarf: {
+    cape: {
+      itemId: string; // e.g. "cape"
       equipped: boolean;
-      primaryColor: string;
-      secondaryColor: string;
+      hueShift: number;
+      brightnessShift: number;
     };
   };
 }
@@ -209,20 +214,20 @@ export interface ICharacterAppearance {
  * Default character appearance (cat with default colors, cape and scarf equipped)
  */
 export const DEFAULT_CHARACTER_APPEARANCE: ICharacterAppearance = {
-  body: {
-    primaryColor: '#FFFFFF',
-    secondaryColor: '#CCCCCC'
-  },
+  body: { hueShift: 0, brightnessShift: 0 },
+  head: { hueShift: 0, brightnessShift: 0 },
   accessories: {
-    cape: {
+    neck: {
+      itemId: 'scarf',
       equipped: true,
-      primaryColor: '#FF6B6B',
-      secondaryColor: '#CC5555'
+      hueShift: 0,
+      brightnessShift: 0
     },
-    scarf: {
+    cape: {
+      itemId: 'cape',
       equipped: true,
-      primaryColor: '#4ECDC4',
-      secondaryColor: '#3BA99C'
+      hueShift: 0,
+      brightnessShift: 0
     }
   }
 };
@@ -241,16 +246,16 @@ export type MCDirection = 'N' | 'S' | 'E' | 'W' | 'NE' | 'SE' | 'SW' | 'NW';
 
 /**
  * Frame dimensions for MC animations by direction
- * N/S directions are 16x27, E/W are 19x27 (cape extends), NE/NW are 16x31, SE/SW are 18x27
+ * N/S directions are 16x27, E/W are 19x27 (cape extends), NE/NW/SE/SW are 18x27
  */
 export const MC_FRAME_DIMENSIONS: Record<MCDirection, { width: number; height: number }> = {
   N: { width: 16, height: 27 },
   S: { width: 16, height: 27 },
   E: { width: 19, height: 27 },
   W: { width: 19, height: 27 },
-  NE: { width: 16, height: 31 },
+  NE: { width: 18, height: 27 },
   SE: { width: 18, height: 27 },
-  NW: { width: 16, height: 31 },
+  NW: { width: 18, height: 27 },
   SW: { width: 18, height: 27 }
 };
 

@@ -493,6 +493,40 @@
             color: #bbdefb;
             font-size: 0.9rem;
         }
+
+        .skin-card {
+            border-color: rgba(255, 102, 170, 0.6);
+            background: rgba(255, 102, 170, 0.12);
+            color: #ffd0e8;
+        }
+
+        .skin-card h3 {
+            color: #ffc1dd;
+        }
+
+        .skin-card p {
+            color: #ffe6f2;
+        }
+
+        .skin-card-content {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .skin-preview-frame {
+            width: 72px;
+            height: 72px;
+            background: rgba(0,0,0,0.25);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .skin-preview-frame canvas {
+            image-rendering: pixelated;
+        }
         
         .btn-blue {
             background-color: #2196f3;
@@ -728,6 +762,20 @@
                 <!-- Add social links for staying up to date? -->
             </div>
              <!-- Maybe a "Share" button or something later -->
+        </div>
+
+        <!-- Character Customizer Card -->
+        <div class="info-card skin-card">
+            <div class="skin-card-content">
+                <div class="skin-preview-frame">
+                    <canvas id="skin-preview-canvas" width="72" height="72"></canvas>
+                </div>
+                <div>
+                    <h3><i class="fa-solid fa-paintbrush"></i> Character Customizer</h3>
+                    <p>Update your cat’s look and accessories.</p>
+                </div>
+            </div>
+            <a href="/skin" class="btn-blue">Open Customizer</a>
         </div>
         
         <!-- Profile Section -->

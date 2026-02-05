@@ -18,7 +18,8 @@ import { NetworkManager } from '../network/NetworkManager';
 import { createChatBubble, createNameplate, getOcclusionAdjustedDepth } from './PlayerVisualUtils';
 import { currentUser } from '../index';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
-import { InteractionManager } from '../interaction/InteractionManager';
+import { InteractionManager, InteractionType } from '../interaction/InteractionManager';
+import { DroppedItemManager } from '../items/DroppedItemManager';
 import { RemotePlayerManager } from './RemotePlayerManager';
 import { OcclusionManager } from '../map/OcclusionManager';
 import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE, MC_FRAME_DIMENSIONS } from '@cfwk/shared';
@@ -623,12 +624,16 @@ export class MCPlayerController {
         if (!interaction) return;
 
         this.playInteractAnimation();
-        this.networkManager.sendShoveAttempt(interaction.targetSessionId);
+        if (interaction.type === InteractionType.Shove && interaction.targetSessionId) {
+            this.networkManager.sendShoveAttempt(interaction.targetSessionId);
 
-        const frameDelayMs = this.animationController.getInteractFrameDurationMs();
-        this.scene.time.delayedCall(frameDelayMs, () => {
+            const frameDelayMs = this.animationController.getInteractFrameDurationMs();
+            this.scene.time.delayedCall(frameDelayMs, () => {
+                this.interactionManager.executeInteraction();
+            });
+        } else {
             this.interactionManager.executeInteraction();
-        });
+        }
     }
 
     /**
@@ -645,6 +650,13 @@ export class MCPlayerController {
      */
     setRemotePlayerManager(manager: RemotePlayerManager) {
         this.interactionManager.setRemotePlayerManager(manager);
+    }
+
+    /**
+     * Set dropped item manager for pickup interactions
+     */
+    setDroppedItemManager(manager: DroppedItemManager) {
+        this.interactionManager.setDroppedItemManager(manager);
     }
 
     /**

@@ -3,6 +3,7 @@ import { RemotePlayer } from './RemotePlayer';
 import { OcclusionManager } from '../map/OcclusionManager';
 import { LightingManager } from '../fx/LightingManager';
 import { NetworkManager } from '../network/NetworkManager';
+import { RemotePlayerCompositor } from './RemotePlayerCompositor';
 
 export interface RemotePlayerManagerConfig {
     playerFrontDepth: number;
@@ -20,10 +21,13 @@ export class RemotePlayerManager {
     private networkManager = NetworkManager.getInstance();
     private remotePlayers: Map<string, RemotePlayer> = new Map();
     private initialSyncComplete = false;
+    private remoteCompositor: RemotePlayerCompositor;
+    private lastAppearanceBySession: Map<string, string> = new Map();
 
     constructor(scene: Phaser.Scene, config: RemotePlayerManagerConfig) {
         this.scene = scene;
         this.config = config;
+        this.remoteCompositor = new RemotePlayerCompositor(scene);
     }
 
     /**
@@ -46,12 +50,28 @@ export class RemotePlayerManager {
             // Skip local player
             if (sessionId === mySessionId) return;
 
-            console.log(`[RemotePlayerManager] Player joined: ${sessionId} (${player.username})`);
-
             let remotePlayer: RemotePlayer | undefined;
+            let isCreatingPlayer = false; // Prevent duplicate async creation
 
-            const createRemotePlayer = () => {
-                if (remotePlayer) return;
+            const createRemotePlayer = async () => {
+                if (remotePlayer || isCreatingPlayer) return;
+                isCreatingPlayer = true;
+
+                // Composite custom textures for this player
+                const appearance = player.appearance || '';
+                let animationKeyGetter: ((direction: string) => string | undefined) | undefined;
+                
+                if (appearance && appearance.trim() !== '') {
+                    try {
+                        await this.remoteCompositor.compositeForPlayer(sessionId, appearance);
+                        // Create a function to get animation keys for this player
+                        animationKeyGetter = (direction: string) => {
+                            return this.remoteCompositor.getPlayerAnimationKey(sessionId, direction as any);
+                        };
+                    } catch (err) {
+                        console.warn(`[RemotePlayerManager] Failed to composite textures for ${sessionId}, using default:`, err);
+                    }
+                }
 
                 remotePlayer = new RemotePlayer(this.scene, {
                     sessionId,
@@ -68,7 +88,8 @@ export class RemotePlayerManager {
                     isGuiOpen: player.isGuiOpen || false,
                     isChatOpen: player.isChatOpen || false,
                     isPremium: player.isPremium || false,
-                    groundLayers: this.config.groundLayers
+                    groundLayers: this.config.groundLayers,
+                    customAnimationKeyGetter: animationKeyGetter
                 });
 
                 // Enable lighting on remote player sprite
@@ -86,6 +107,7 @@ export class RemotePlayerManager {
                 remotePlayer.setChatOpen(player.isChatOpen || false);
 
                 this.remotePlayers.set(sessionId, remotePlayer);
+                this.lastAppearanceBySession.set(sessionId, appearance);
             };
 
             if (!this.initialSyncComplete) {
@@ -98,7 +120,7 @@ export class RemotePlayerManager {
             }
 
             // Listen for position changes
-            player.onChange(() => {
+            player.onChange((changes: any[]) => {
                 if (!remotePlayer) {
                     // Wait for valid (non-zero) position before creating the remote player
                     // Server sends (0,0) initially, client sends actual position immediately after spawn
@@ -106,6 +128,29 @@ export class RemotePlayerManager {
                         return;
                     }
                     createRemotePlayer();
+                }
+
+                // If appearance changed/arrived, re-composite and update animations
+                const appearanceChanged = changes?.some((change: any) => change.field === 'appearance');
+                if (appearanceChanged && player.appearance) {
+                    const newAppearance = player.appearance || '';
+                    const lastAppearance = this.lastAppearanceBySession.get(sessionId) || '';
+                    if (newAppearance !== lastAppearance) {
+                        this.lastAppearanceBySession.set(sessionId, newAppearance);
+                        this.remoteCompositor
+                            .updateForPlayer(sessionId, newAppearance)
+                            .then(() => {
+                                const remote = this.remotePlayers.get(sessionId);
+                                if (remote) {
+                                    remote.setCustomAnimationKeyGetter((direction: any) =>
+                                        this.remoteCompositor.getPlayerAnimationKey(sessionId, direction)
+                                    );
+                                }
+                            })
+                            .catch(err => {
+                                console.warn(`[RemotePlayerManager] Failed to re-composite textures for ${sessionId}:`, err);
+                            });
+                    }
                 }
                 const remote = this.remotePlayers.get(sessionId);
                 if (remote) {
@@ -126,6 +171,9 @@ export class RemotePlayerManager {
                 remotePlayer.startDespawnEffect(() => {
                     remotePlayer.destroy();
                     this.remotePlayers.delete(sessionId);
+                    this.lastAppearanceBySession.delete(sessionId);
+                    // Clean up compositor textures for this player
+                    this.remoteCompositor.destroyForPlayer(sessionId);
                 });
             }
         });
@@ -158,5 +206,6 @@ export class RemotePlayerManager {
     destroy() {
         this.remotePlayers.forEach(remote => remote.destroy());
         this.remotePlayers.clear();
+        this.remoteCompositor.destroy();
     }
 }

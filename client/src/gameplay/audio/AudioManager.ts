@@ -35,6 +35,14 @@ export const AUDIO_CONFIG = {
         waterDepthDetuneMax: -400, // Detune in cents at max depth (deeper pitch)
         waterDepthFilterMin: 800, // Low-pass filter frequency at max depth (muffled)
     },
+    
+    // Player Sounds
+    player: {
+        meow: {
+            volume: 0.5,          // Meow sound volume (0-1)
+            cooldown: 1300,       // Cooldown between meows (ms)
+        },
+    },
 };
 // ============================================================
 
@@ -85,6 +93,9 @@ export class AudioManager {
     // Footstep timing
     private lastFootstepTime = 0;
     
+    // Meow timing
+    private lastMeowTime = 0;
+    
     // Web Audio filter for water muffle effect
     private lowPassFilter?: BiquadFilterNode;
     
@@ -113,6 +124,12 @@ export class AudioManager {
         // Player sounds
         this.scene.load.audio('footstep-sand', '/audio/ambient/player/walk_sand.mp3');
         this.scene.load.audio('footstep-water', '/audio/ambient/player/walk_shallow_water.mp3');
+        
+        // Meow sounds
+        this.scene.load.audio('meow1', '/audio/ambient/player/meows/meow1.mp3');
+        this.scene.load.audio('meow2', '/audio/ambient/player/meows/meow2.mp3');
+        this.scene.load.audio('meow3', '/audio/ambient/player/meows/meow3.mp3');
+        this.scene.load.audio('meow4', '/audio/ambient/player/meows/meow4.mp3');
     }
     
     /**
@@ -427,6 +444,33 @@ export class AudioManager {
     resume() {
         this.currentMusic?.resume();
         this.ambientSounds.forEach(sound => sound.resume());
+    }
+    
+    /**
+     * Play a random meow sound (with cooldown)
+     * @returns true if meow was played, false if on cooldown
+     */
+    playMeow(): boolean {
+        const now = Date.now();
+        const cooldown = AUDIO_CONFIG.player.meow.cooldown;
+        
+        // Check cooldown
+        if (now - this.lastMeowTime < cooldown) {
+            return false;
+        }
+        
+        this.lastMeowTime = now;
+        
+        // Pick a random meow (1-4)
+        const meowIndex = Phaser.Math.Between(1, 4);
+        const meowKey = `meow${meowIndex}`;
+        
+        // Play the meow
+        this.scene.sound.play(meowKey, {
+            volume: AUDIO_CONFIG.player.meow.volume
+        });
+        
+        return true;
     }
     
     /**

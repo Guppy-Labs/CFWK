@@ -3,10 +3,12 @@
  * 
  * This service handles communication with the server to get/update
  * character customization data for the Main Character.
+ * 
+ * Note: Uses relative URLs (/api/...) to work with the Vite proxy in dev
+ * and server-side proxy in production, ensuring cookies are sent correctly.
  */
 
 import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
-import { Config } from '../../config';
 
 export class CharacterService {
     private static instance: CharacterService;
@@ -27,20 +29,20 @@ export class CharacterService {
      */
     async fetchAppearance(): Promise<ICharacterAppearance> {
         try {
-            const response = await fetch(Config.getApiUrl('/account/character'), {
+            const response = await fetch('/api/account/character', {
                 method: 'GET',
-                credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json'
                 }
             });
 
             if (!response.ok) {
-                console.warn('[CharacterService] Failed to fetch appearance, using default');
+                console.warn('[CharacterService] Failed to fetch appearance, status:', response.status);
                 return DEFAULT_CHARACTER_APPEARANCE;
             }
 
             const data = await response.json();
+            console.log('[CharacterService] Raw API response:', JSON.stringify(data, null, 2));
             this.cachedAppearance = data.appearance;
             return data.appearance;
         } catch (error) {
@@ -56,9 +58,8 @@ export class CharacterService {
      */
     async updateAppearance(appearance: ICharacterAppearance): Promise<boolean> {
         try {
-            const response = await fetch(Config.getApiUrl('/account/character'), {
+            const response = await fetch('/api/account/character', {
                 method: 'POST',
-                credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json'
                 },

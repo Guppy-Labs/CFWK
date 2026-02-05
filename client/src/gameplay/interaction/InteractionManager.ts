@@ -7,13 +7,15 @@
 
 import { RemotePlayerManager } from '../player/RemotePlayerManager';
 import { NetworkManager } from '../network/NetworkManager';
+import { DroppedItemManager } from '../items/DroppedItemManager';
 
 /**
  * Interaction types available in the game
  */
 export enum InteractionType {
     None = 'none',
-    Shove = 'shove'
+    Shove = 'shove',
+    Pickup = 'pickup'
 }
 
 /**
@@ -21,12 +23,17 @@ export enum InteractionType {
  */
 export interface AvailableInteraction {
     type: InteractionType;
-    targetSessionId: string;
-    targetUsername: string;
+    targetSessionId?: string;
+    targetUsername?: string;
+    droppedItemId?: string;
+    itemId?: string;
+    amount?: number;
     /** Distance to target in pixels */
     distance: number;
     /** Whether the interaction can be executed (strict check passed) */
     canExecute: boolean;
+    /** Priority (higher means preferred) */
+    priority: number;
 }
 
 /**
@@ -37,6 +44,10 @@ interface InteractionConfig {
     shoveShowDistance: number;
     /** Distance to actually execute shove (strict proximity check) */
     shoveExecuteDistance: number;
+    /** Distance to show pickup interaction */
+    pickupShowDistance: number;
+    /** Distance to actually execute pickup */
+    pickupExecuteDistance: number;
     /** Angle tolerance for facing check (radians) - how close player must be to facing target */
     showAngleTolerance: number;
     /** Strict angle tolerance for execution */
@@ -46,8 +57,15 @@ interface InteractionConfig {
 const DEFAULT_CONFIG: InteractionConfig = {
     shoveShowDistance: 55,      // Show button when within 55px
     shoveExecuteDistance: 38,   // Execute only when within 38px (stricter)
+    pickupShowDistance: 24,
+    pickupExecuteDistance: 16,
     showAngleTolerance: Math.PI / 2,      // 90 degrees - roughly facing
     executeAngleTolerance: Math.PI / 2,   // 90 degrees - more lenient angle for execution
+};
+
+const INTERACTION_PRIORITY = {
+    [InteractionType.Pickup]: 100,
+    [InteractionType.Shove]: 50
 };
 
 /**
@@ -58,6 +76,7 @@ export type InteractionChangeCallback = (interaction: AvailableInteraction | nul
 export class InteractionManager {
     private config: InteractionConfig;
     private remotePlayerManager?: RemotePlayerManager;
+    private droppedItemManager?: DroppedItemManager;
     private networkManager = NetworkManager.getInstance();
     
     /** Current available interaction (or null if none) */
@@ -87,6 +106,13 @@ export class InteractionManager {
     }
 
     /**
+     * Set the dropped item manager reference
+     */
+    setDroppedItemManager(manager: DroppedItemManager) {
+        this.droppedItemManager = manager;
+    }
+
+    /**
      * Update local player position and facing angle
      * Called each frame from PlayerController
      */
@@ -101,58 +127,89 @@ export class InteractionManager {
      * Should be called each frame
      */
     update(): void {
-        if (!this.remotePlayerManager) {
+        if (!this.remotePlayerManager && !this.droppedItemManager) {
             this.setInteraction(null);
             return;
         }
 
-        const remotePlayers = this.remotePlayerManager.getPlayers();
         let bestInteraction: AvailableInteraction | null = null;
         let bestDistance = Infinity;
+        let bestPriority = -Infinity;
 
-        remotePlayers.forEach((remote, sessionId) => {
-            if (remote.isAfkGhosted()) return;
-            const sprite = remote.getSprite();
-            if (!sprite) return;
+        if (this.droppedItemManager) {
+            this.droppedItemManager.getItems().forEach((item, itemId) => {
+                const dx = item.x - this.localX;
+                const dy = item.y - this.localY;
+                const distance = Math.hypot(dx, dy);
 
-            const targetX = sprite.x;
-            const targetY = sprite.y;
-            
-            // Calculate distance
-            const dx = targetX - this.localX;
-            const dy = targetY - this.localY;
-            const distance = Math.hypot(dx, dy);
+                if (distance > this.config.pickupShowDistance) return;
 
-            // Check if within show distance
-            if (distance > this.config.shoveShowDistance) return;
+                const canExecute = distance <= this.config.pickupExecuteDistance;
+                const priority = INTERACTION_PRIORITY[InteractionType.Pickup];
 
-            // Calculate angle to target
-            const angleToTarget = Math.atan2(dy, dx);
-            
-            // Check if roughly facing the target (loose check for showing button)
-            const angleDiff = this.normalizeAngle(angleToTarget - this.localFacingAngle);
-            if (Math.abs(angleDiff) > this.config.showAngleTolerance) return;
+                if (priority > bestPriority || (priority === bestPriority && distance < bestDistance)) {
+                    bestPriority = priority;
+                    bestDistance = distance;
+                    bestInteraction = {
+                        type: InteractionType.Pickup,
+                        droppedItemId: itemId,
+                        itemId: item.itemId,
+                        amount: item.amount,
+                        distance,
+                        canExecute,
+                        priority
+                    };
+                }
+            });
+        }
 
-            // This player is a valid shove target
-            // Check if this is the closest target
-            if (distance < bestDistance) {
-                bestDistance = distance;
+        if (this.remotePlayerManager) {
+            const remotePlayers = this.remotePlayerManager.getPlayers();
+
+            remotePlayers.forEach((remote, sessionId) => {
+                if (remote.isAfkGhosted()) return;
+                const sprite = remote.getSprite();
+                if (!sprite) return;
+
+                const targetX = sprite.x;
+                const targetY = sprite.y;
                 
-                // Check strict conditions for execution
+                // Calculate distance
+                const dx = targetX - this.localX;
+                const dy = targetY - this.localY;
+                const distance = Math.hypot(dx, dy);
+
+                // Check if within show distance
+                if (distance > this.config.shoveShowDistance) return;
+
+                // Calculate angle to target
+                const angleToTarget = Math.atan2(dy, dx);
+                
+                // Check if roughly facing the target (loose check for showing button)
+                const angleDiff = this.normalizeAngle(angleToTarget - this.localFacingAngle);
+                if (Math.abs(angleDiff) > this.config.showAngleTolerance) return;
+
                 const canExecute = 
                     distance <= this.config.shoveExecuteDistance &&
                     Math.abs(angleDiff) <= this.config.executeAngleTolerance &&
                     Date.now() >= this.shoveCooldownEnd;
 
-                bestInteraction = {
-                    type: InteractionType.Shove,
-                    targetSessionId: sessionId,
-                    targetUsername: remote.getUsername(),
-                    distance,
-                    canExecute
-                };
-            }
-        });
+                const priority = INTERACTION_PRIORITY[InteractionType.Shove];
+
+                if (priority > bestPriority || (priority === bestPriority && distance < bestDistance)) {
+                    bestPriority = priority;
+                    bestDistance = distance;
+                    bestInteraction = {
+                        type: InteractionType.Shove,
+                        targetSessionId: sessionId,
+                        targetUsername: remote.getUsername(),
+                        distance,
+                        canExecute,
+                        priority
+                    };
+                }
+            });
+        }
 
         this.setInteraction(bestInteraction);
     }
@@ -178,7 +235,12 @@ export class InteractionManager {
         }
 
         if (this.currentInteraction.type === InteractionType.Shove) {
+            if (!this.currentInteraction.targetSessionId) return false;
             return this.executeShove(this.currentInteraction.targetSessionId);
+        }
+
+        if (this.currentInteraction.type === InteractionType.Pickup) {
+            return this.executePickup(this.currentInteraction.droppedItemId);
         }
 
         return false;
@@ -195,6 +257,16 @@ export class InteractionManager {
         this.networkManager.sendShove(targetSessionId);
         
         console.log(`[InteractionManager] Shoved player: ${targetSessionId}`);
+        return true;
+    }
+
+    /**
+     * Execute a pickup for a dropped item
+     */
+    private executePickup(droppedItemId?: string): boolean {
+        if (!droppedItemId) return false;
+        this.networkManager.sendPickupItem(droppedItemId);
+        console.log(`[InteractionManager] Picked up item: ${droppedItemId}`);
         return true;
     }
 
@@ -237,9 +309,11 @@ export class InteractionManager {
         if (a === null && b === null) return true;
         if (a === null || b === null) return false;
         
-        return a.type === b.type && 
-               a.targetSessionId === b.targetSessionId &&
-               a.canExecute === b.canExecute;
+         return a.type === b.type && 
+             a.targetSessionId === b.targetSessionId &&
+             a.droppedItemId === b.droppedItemId &&
+             a.canExecute === b.canExecute &&
+             a.priority === b.priority;
     }
 
     /**

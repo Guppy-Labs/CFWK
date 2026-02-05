@@ -56,6 +56,8 @@ export class CommandProcessor {
                 return await this.handleLimbo(args, issuerName);
             case 'give':
                 return await this.handleGive(args, issuerName);
+            case 'drop':
+                return await this.handleDrop(args, issuerName);
             default:
                 return "Unknown command.";
         }
@@ -262,5 +264,33 @@ export class CommandProcessor {
         });
 
         return `Gave ${amount} ${itemDef.name} to ${user.username}.`;
+    }
+
+    private static async handleDrop(args: string[], issuer: string): Promise<string> {
+        if (args.length < 3) return "Usage: /drop [item id] [amount] [username]";
+        const itemId = args[0];
+        const amount = parseInt(args[1], 10);
+        const targetName = args.slice(2).join(' ');
+
+        if (!Number.isFinite(amount) || amount <= 0) return "Amount must be a positive number.";
+
+        const itemDef = getItemDefinition(itemId);
+        if (!itemDef) return `Unknown item '${itemId}'.`;
+
+        const user = await this.getUserByUsername(targetName);
+        if (!user) return `User '${targetName}' not found.`;
+
+        InstanceManager.getInstance().events.emit('drop_item', {
+            userId: user._id.toString(),
+            itemId,
+            amount
+        });
+
+        InstanceManager.getInstance().events.emit('msg_user', {
+            userId: user._id.toString(),
+            message: `Dropped ${amount} ${itemDef.name} at your feet.`
+        });
+
+        return `Dropped ${amount} ${itemDef.name} at ${user.username}.`;
     }
 }

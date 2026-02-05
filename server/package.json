@@ -4,7 +4,8 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "ts-node src/index.ts",
-    "dev": "nodemon src/index.ts --host"
+    "dev": "nodemon src/index.ts --host",
+    "migrate:character-appearance": "ts-node tools/migrate-character-appearance.ts"
   },
   "dependencies": {
     "@cfwk/shared": "*",

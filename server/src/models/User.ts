@@ -62,19 +62,25 @@ const UserSchema: Schema = new Schema({
   characterAppearance: {
     type: {
       body: {
-        primaryColor: { type: String, default: '#FFFFFF' },
-        secondaryColor: { type: String, default: '#CCCCCC' }
+        hueShift: { type: Number, default: 0 },
+        brightnessShift: { type: Number, default: 0 }
+      },
+      head: {
+        hueShift: { type: Number, default: 0 },
+        brightnessShift: { type: Number, default: 0 }
       },
       accessories: {
-        cape: {
+        neck: {
+          itemId: { type: String, default: 'scarf' },
           equipped: { type: Boolean, default: true },
-          primaryColor: { type: String, default: '#FF6B6B' },
-          secondaryColor: { type: String, default: '#CC5555' }
+          hueShift: { type: Number, default: 0 },
+          brightnessShift: { type: Number, default: 0 }
         },
-        scarf: {
+        cape: {
+          itemId: { type: String, default: 'cape' },
           equipped: { type: Boolean, default: true },
-          primaryColor: { type: String, default: '#4ECDC4' },
-          secondaryColor: { type: String, default: '#3BA99C' }
+          hueShift: { type: Number, default: 0 },
+          brightnessShift: { type: Number, default: 0 }
         }
       }
     },

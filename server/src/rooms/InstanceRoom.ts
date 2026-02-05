@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
-import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season } from "@cfwk/shared";
+import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { CommandProcessor } from "../utils/CommandProcessor";
@@ -23,6 +23,18 @@ export class InstancePlayerSchema extends Schema implements IPlayer {
     @type("number") afkSince: number = 0; // Timestamp (ms) when AFK started
     @type("boolean") isGuiOpen: boolean = false; // Main GUI open state
     @type("boolean") isChatOpen: boolean = false; // Chat open/focused state
+    @type("string") appearance: string = ""; // JSON-encoded ICharacterAppearance
+}
+
+/**
+ * Dropped item state
+ */
+export class DroppedItemSchema extends Schema {
+    @type("string") id: string = "";
+    @type("string") itemId: string = "";
+    @type("number") amount: number = 1;
+    @type("number") x: number = 0;
+    @type("number") y: number = 0;
 }
 
 /**
@@ -47,6 +59,7 @@ export class InstanceState extends Schema {
     @type("string") locationId: string = "";
     @type("string") mapFile: string = "";
     @type({ map: InstancePlayerSchema }) players = new MapSchema<InstancePlayerSchema>();
+    @type({ map: DroppedItemSchema }) droppedItems = new MapSchema<DroppedItemSchema>();
     @type(WorldTimeSchema) worldTime = new WorldTimeSchema();
 }
 
@@ -112,6 +125,16 @@ export class InstanceRoom extends Room<InstanceState> {
                     client.send('inventory', {
                         items: data.items
                     });
+                }
+            });
+        });
+
+        // Handle admin drop item command
+        this.instanceManager.events.on('drop_item', (data: { userId: string; itemId: string; amount: number }) => {
+            this.clients.forEach(client => {
+                const player = this.state.players.get(client.sessionId);
+                if (player && player.odcid === data.userId) {
+                    this.createDroppedItem(data.itemId, data.amount, player.x, player.y);
                 }
             });
         });
@@ -289,6 +312,52 @@ export class InstanceRoom extends Room<InstanceState> {
             });
         });
 
+        // Handle pickup item interactions
+        this.onMessage("pickupItem", async (client, data: { droppedItemId: string }) => {
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+
+            const droppedItem = this.state.droppedItems.get(data.droppedItemId);
+            if (!droppedItem) return;
+
+            const dx = droppedItem.x - player.x;
+            const dy = droppedItem.y - player.y;
+            const distance = Math.hypot(dx, dy);
+            const maxPickupDistance = 18;
+
+            if (distance > maxPickupDistance) return;
+
+            this.state.droppedItems.delete(data.droppedItemId);
+
+            const items = await InventoryCache.getInstance().addItem(
+                player.odcid,
+                droppedItem.itemId,
+                droppedItem.amount
+            );
+
+            client.send('inventory', { items });
+        });
+
+        // Handle dropping items from player inventory
+        this.onMessage("dropItem", async (client, data: { itemId: string; amount: number }) => {
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+
+            const amount = Math.max(1, Math.floor(data.amount || 1));
+            if (!data.itemId) return;
+
+            const updated = await InventoryCache.getInstance().removeItem(
+                player.odcid,
+                data.itemId,
+                amount
+            );
+
+            if (!updated) return;
+
+            this.createDroppedItem(data.itemId, amount, player.x, player.y);
+            client.send('inventory', { items: updated });
+        });
+
         // Handle chat messages
         this.onMessage("chat", async (client, data: { message: string }) => {
             const player = this.state.players.get(client.sessionId);
@@ -360,6 +429,16 @@ export class InstanceRoom extends Room<InstanceState> {
         });
     }
 
+    private createDroppedItem(itemId: string, amount: number, x: number, y: number) {
+        const drop = new DroppedItemSchema();
+        drop.id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        drop.itemId = itemId;
+        drop.amount = amount;
+        drop.x = x;
+        drop.y = y;
+        this.state.droppedItems.set(drop.id, drop);
+    }
+
     async onJoin(client: Client, options: { username?: string; odcid?: string }) {
         const odcid = options.odcid || client.sessionId;
         
@@ -383,6 +462,7 @@ export class InstanceRoom extends Room<InstanceState> {
         
         // --- Account Ban Check ---
         let isPremium = false;
+        let userAppearance: string = ""; // JSON-encoded appearance
         if (odcid !== client.sessionId) {
             try {
                 const user = await User.findById(odcid);
@@ -396,6 +476,10 @@ export class InstanceRoom extends Room<InstanceState> {
                 if (user && Array.isArray(user.permissions)) {
                     isPremium = user.permissions.includes('premium.shark');
                 }
+                
+                // Load character appearance for remote player rendering (always include, use defaults if missing)
+                const appearance = user?.characterAppearance || DEFAULT_CHARACTER_APPEARANCE;
+                userAppearance = JSON.stringify(appearance);
                 
                 // Track user's IP for future ban enforcement
                 if (user && clientIP && user.lastKnownIP !== clientIP) {
@@ -434,6 +518,7 @@ export class InstanceRoom extends Room<InstanceState> {
         player.isPremium = isPremium;
         player.odcid = odcid; // Use odcid for consistent coloring
         player.direction = 0; // Facing down
+        player.appearance = userAppearance; // Character customization data
         
         this.state.players.set(client.sessionId, player);
 

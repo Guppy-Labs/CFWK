@@ -85,7 +85,7 @@ export class MCAnimationController {
     constructor(scene: Phaser.Scene, config: MCAnimationConfig = {}) {
         this.scene = scene;
         this.config = { ...DEFAULT_CONFIG, ...config };
-        this.compositor = new CharacterCompositor(scene);
+        this.compositor = new CharacterCompositor(scene, 'local');
     }
 
     /**
@@ -93,8 +93,29 @@ export class MCAnimationController {
      * This composites all the layers and creates animations
      */
     async initialize(appearance: ICharacterAppearance = DEFAULT_CHARACTER_APPEARANCE): Promise<void> {
+        console.log('[MCAnimationController] Initializing with appearance:', JSON.stringify(appearance, null, 2));
+        
+        // DEBUG TEST: Uncomment the lines below to test if hue shifting works
+        // This will make the body bright blue and the head pink
+        // If you see these colors, the system works - the issue is with your saved data
+        /*
+        const testAppearance: ICharacterAppearance = {
+            ...appearance,
+            body: { hueShift: 180, brightnessShift: 0.1 },
+            head: { hueShift: -60, brightnessShift: 0 },
+            accessories: {
+                ...appearance.accessories,
+                cape: { ...appearance.accessories.cape, hueShift: 90, brightnessShift: 0 },
+                neck: { ...appearance.accessories.neck, hueShift: -90, brightnessShift: 0 }
+            }
+        };
+        appearance = testAppearance;
+        */
+        
         // Composite all layers into textures
         this.compositorResult = await this.compositor.compositeCharacter(appearance, ['walk']);
+        
+        console.log('[MCAnimationController] Compositor complete, texture keys:', Array.from(this.compositorResult.textureKeys.keys()));
         
         // Create Phaser animations from composited textures
         this.createAnimations();

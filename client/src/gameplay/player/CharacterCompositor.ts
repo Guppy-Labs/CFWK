@@ -3,6 +3,7 @@
  * 
  * Handles:
  * - Loading body + accessory animation strips
+ * - Applying hue/brightness color shifts to each layer
  * - Compositing them into combined textures per direction/animation
  * - Managing mirrored directions (W mirrors E, etc.)
  * - Handling different frame dimensions (16x27 vs 19x27)
@@ -14,8 +15,10 @@ import {
     MCDirection,
     MCAnimationType,
     MC_FRAME_DIMENSIONS,
-    MC_FRAMES_PER_ANIMATION
+    MC_FRAMES_PER_ANIMATION,
+    HueBrightnessShift
 } from '@cfwk/shared';
+import { applyColorShift } from './ColorShift';
 
 /**
  * Layer types that can be composited
@@ -48,6 +51,15 @@ const DIRECTION_SOURCE_MAP: Record<MCDirection, { source: SourceDirection; mirro
 };
 
 /**
+ * X-axis offset adjustments for specific directions (in pixels)
+ * Applied after mirroring to fine-tune sprite alignment
+ */
+const DIRECTION_X_OFFSET: Partial<Record<MCDirection, number>> = {
+    NE: 1,   // Shift 1px right
+    NW: -1   // Shift 1px left
+};
+
+/**
  * Result of compositing - contains texture keys for all generated textures
  */
 export interface CompositorResult {
@@ -71,9 +83,11 @@ export class CharacterCompositor {
     private loadedImages: Map<string, LoadedImage> = new Map();
     private textureCounter = 0;
     private generatedTextureKeys: string[] = [];
+    private textureKeyPrefix: string;
 
-    constructor(scene: Phaser.Scene) {
+    constructor(scene: Phaser.Scene, textureKeyPrefix: string = 'mc') {
         this.scene = scene;
+        this.textureKeyPrefix = textureKeyPrefix;
     }
 
     /**
@@ -112,8 +126,52 @@ export class CharacterCompositor {
     }
 
     /**
+     * Get the color shift values for a specific layer type
+     */
+    private getColorShiftForLayer(layerType: MCLayerType, appearance: ICharacterAppearance): HueBrightnessShift {
+        switch (layerType) {
+            case 'body':
+                return appearance.body;
+            case 'head':
+                return appearance.head;
+            case 'cape':
+                return {
+                    hueShift: appearance.accessories.cape.hueShift,
+                    brightnessShift: appearance.accessories.cape.brightnessShift
+                };
+            case 'scarf':
+                return {
+                    hueShift: appearance.accessories.neck.hueShift,
+                    brightnessShift: appearance.accessories.neck.brightnessShift
+                };
+            default:
+                return { hueShift: 0, brightnessShift: 0 };
+        }
+    }
+
+    /**
+     * Apply color shift to a loaded image and return a drawable source
+     */
+    private applyLayerColorShift(
+        loadedImage: LoadedImage,
+        layerType: MCLayerType,
+        appearance: ICharacterAppearance
+    ): HTMLCanvasElement | HTMLImageElement {
+        const shift = this.getColorShiftForLayer(layerType, appearance);
+        
+        // If no shift needed, return original image
+        if (shift.hueShift === 0 && shift.brightnessShift === 0) {
+            return loadedImage.img;
+        }
+        
+        // Apply color shift and return the modified canvas
+        return applyColorShift(loadedImage.img, shift.hueShift, shift.brightnessShift);
+    }
+
+    /**
      * Composite all layers for a single direction and animation type
      * Returns a canvas with all frames composited
+     * Each layer has its hue/brightness shift applied before compositing
      */
     private async compositeDirection(
         animType: MCAnimationType,
@@ -143,7 +201,7 @@ export class CharacterCompositor {
             }
         }
 
-        if (appearance.accessories.scarf.equipped) {
+        if (appearance.accessories.neck.equipped) {
             const scarfPath = this.getAssetPath(animType, 'scarf', source);
             try {
                 const scarfImg = await this.loadImage(scarfPath);
@@ -177,20 +235,36 @@ export class CharacterCompositor {
         canvas.height = dimensions.height;
         const ctx = canvas.getContext('2d')!;
 
+        // Get X offset for this direction (applied after mirroring)
+        const xOffset = DIRECTION_X_OFFSET[direction] || 0;
+
         // If mirroring, flip the context
         if (mirror) {
             ctx.translate(canvas.width, 0);
             ctx.scale(-1, 1);
         }
 
-        // Draw each layer in order (bottom to top)
+        // Draw each layer in order (bottom to top) with color shifts applied
         for (const layer of orderedLayers) {
-            ctx.drawImage(layer.img.img, 0, 0);
+            // Apply color shift to this layer
+            const shiftedSource = this.applyLayerColorShift(layer.img, layer.type, appearance);
+            ctx.drawImage(shiftedSource, 0, 0);
         }
 
         // Reset transform if we mirrored
         if (mirror) {
             ctx.setTransform(1, 0, 0, 1, 0, 0);
+        }
+
+        // Apply X offset adjustment if needed (shift the entire composited result)
+        if (xOffset !== 0) {
+            // Create a new canvas with the shifted content
+            const shiftedCanvas = document.createElement('canvas');
+            shiftedCanvas.width = canvas.width;
+            shiftedCanvas.height = canvas.height;
+            const shiftedCtx = shiftedCanvas.getContext('2d')!;
+            shiftedCtx.drawImage(canvas, xOffset, 0);
+            return shiftedCanvas;
         }
 
         return canvas;
@@ -200,7 +274,7 @@ export class CharacterCompositor {
      * Generate a unique texture key
      */
     private generateTextureKey(animType: MCAnimationType, direction: MCDirection): string {
-        const key = `mc-${animType}-${direction}-${this.textureCounter++}`;
+        const key = `${this.textureKeyPrefix}-${animType}-${direction}-${this.textureCounter++}`;
         this.generatedTextureKeys.push(key);
         return key;
     }

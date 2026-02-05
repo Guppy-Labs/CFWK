@@ -44,6 +44,40 @@ function isAuthenticated(req: express.Request, res: express.Response, next: expr
 
 router.use(isAuthenticated);
 
+const normalizeAppearance = (appearance: any): ICharacterAppearance => {
+    const num = (value: any, fallback: number) =>
+        Number.isFinite(value) ? value : fallback;
+    const bool = (value: any, fallback: boolean) =>
+        typeof value === 'boolean' ? value : fallback;
+    const str = (value: any, fallback: string) =>
+        typeof value === 'string' && value.length > 0 ? value : fallback;
+
+    return {
+        body: {
+            hueShift: num(appearance?.body?.hueShift, DEFAULT_CHARACTER_APPEARANCE.body.hueShift),
+            brightnessShift: num(appearance?.body?.brightnessShift, DEFAULT_CHARACTER_APPEARANCE.body.brightnessShift)
+        },
+        head: {
+            hueShift: num(appearance?.head?.hueShift, DEFAULT_CHARACTER_APPEARANCE.head.hueShift),
+            brightnessShift: num(appearance?.head?.brightnessShift, DEFAULT_CHARACTER_APPEARANCE.head.brightnessShift)
+        },
+        accessories: {
+            neck: {
+                itemId: str(appearance?.accessories?.neck?.itemId, DEFAULT_CHARACTER_APPEARANCE.accessories.neck.itemId),
+                equipped: bool(appearance?.accessories?.neck?.equipped, DEFAULT_CHARACTER_APPEARANCE.accessories.neck.equipped),
+                hueShift: num(appearance?.accessories?.neck?.hueShift, DEFAULT_CHARACTER_APPEARANCE.accessories.neck.hueShift),
+                brightnessShift: num(appearance?.accessories?.neck?.brightnessShift, DEFAULT_CHARACTER_APPEARANCE.accessories.neck.brightnessShift)
+            },
+            cape: {
+                itemId: str(appearance?.accessories?.cape?.itemId, DEFAULT_CHARACTER_APPEARANCE.accessories.cape.itemId),
+                equipped: bool(appearance?.accessories?.cape?.equipped, DEFAULT_CHARACTER_APPEARANCE.accessories.cape.equipped),
+                hueShift: num(appearance?.accessories?.cape?.hueShift, DEFAULT_CHARACTER_APPEARANCE.accessories.cape.hueShift),
+                brightnessShift: num(appearance?.accessories?.cape?.brightnessShift, DEFAULT_CHARACTER_APPEARANCE.accessories.cape.brightnessShift)
+            }
+        }
+    };
+};
+
 // --- Linking Routes ---
 router.get('/link/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 router.get('/link/discord', passport.authenticate('discord', { scope: ['identify', 'email'] }));
@@ -171,8 +205,13 @@ router.get('/character', async (req, res) => {
         const user = await User.findById((req.user as any).id);
         if (!user) return res.status(404).json({ message: 'User not found' });
 
+        // Log raw data from DB
+        console.log('[/character GET] Raw characterAppearance from DB:', JSON.stringify(user.characterAppearance, null, 2));
+        
         // Return appearance or default if not set
-        const appearance = user.characterAppearance || DEFAULT_CHARACTER_APPEARANCE;
+        const appearance = normalizeAppearance(user.characterAppearance || DEFAULT_CHARACTER_APPEARANCE);
+        console.log('[/character GET] Normalized appearance:', JSON.stringify(appearance, null, 2));
+        
         res.json({ appearance });
     } catch (e) {
         console.error(e);
@@ -192,45 +231,7 @@ router.post('/character', async (req, res) => {
         if (!user) return res.status(404).json({ message: 'User not found' });
 
         // Validate and merge with defaults
-        const validAppearance: ICharacterAppearance = {
-            body: {
-                primaryColor: appearance.body?.primaryColor || DEFAULT_CHARACTER_APPEARANCE.body.primaryColor,
-                secondaryColor: appearance.body?.secondaryColor || DEFAULT_CHARACTER_APPEARANCE.body.secondaryColor
-            },
-            accessories: {
-                cape: {
-                    equipped: typeof appearance.accessories?.cape?.equipped === 'boolean' 
-                        ? appearance.accessories.cape.equipped 
-                        : DEFAULT_CHARACTER_APPEARANCE.accessories.cape.equipped,
-                    primaryColor: appearance.accessories?.cape?.primaryColor || DEFAULT_CHARACTER_APPEARANCE.accessories.cape.primaryColor,
-                    secondaryColor: appearance.accessories?.cape?.secondaryColor || DEFAULT_CHARACTER_APPEARANCE.accessories.cape.secondaryColor
-                },
-                scarf: {
-                    equipped: typeof appearance.accessories?.scarf?.equipped === 'boolean'
-                        ? appearance.accessories.scarf.equipped
-                        : DEFAULT_CHARACTER_APPEARANCE.accessories.scarf.equipped,
-                    primaryColor: appearance.accessories?.scarf?.primaryColor || DEFAULT_CHARACTER_APPEARANCE.accessories.scarf.primaryColor,
-                    secondaryColor: appearance.accessories?.scarf?.secondaryColor || DEFAULT_CHARACTER_APPEARANCE.accessories.scarf.secondaryColor
-                }
-            }
-        };
-
-        // Validate hex colors
-        const hexColorRegex = /^#[0-9A-Fa-f]{6}$/;
-        const colors = [
-            validAppearance.body.primaryColor,
-            validAppearance.body.secondaryColor,
-            validAppearance.accessories.cape.primaryColor,
-            validAppearance.accessories.cape.secondaryColor,
-            validAppearance.accessories.scarf.primaryColor,
-            validAppearance.accessories.scarf.secondaryColor
-        ];
-
-        for (const color of colors) {
-            if (!hexColorRegex.test(color)) {
-                return res.status(400).json({ message: `Invalid color format: ${color}. Use hex format like #FFFFFF` });
-            }
-        }
+        const validAppearance: ICharacterAppearance = normalizeAppearance(appearance);
 
         user.characterAppearance = validAppearance;
         await user.save();

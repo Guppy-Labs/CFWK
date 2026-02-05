@@ -22,6 +22,7 @@ import { VisualEffectsManager } from '../fx/VisualEffectsManager';
 import { SeasonalEffectsManager } from '../fx/SeasonalEffectsManager';
 import { WorldTimeManager } from '../time/WorldTimeManager';
 import { AudioManager } from '../audio/AudioManager';
+import { DroppedItemManager } from '../items/DroppedItemManager';
 import { Toast } from '../../ui/Toast';
 import { DisconnectModal } from '../../ui/DisconnectModal';
 import { AfkModal } from '../../ui/AfkModal';
@@ -49,6 +50,7 @@ export class GameScene extends Phaser.Scene {
     private mcPlayerController?: MCPlayerController;
     private cameraController?: CameraController;
     private remotePlayerManager?: RemotePlayerManager;
+    private droppedItemManager?: DroppedItemManager;
     private debugOverlay?: DebugOverlay;
     private dustParticles?: DustParticleSystem;
     private waterSystem?: WaterSystem;
@@ -225,6 +227,14 @@ export class GameScene extends Phaser.Scene {
             Toast.info(`Seasonal Effects: ${enabled ? 'ON' : 'OFF'}`, 2000);
         });
         
+        // Meow sound (key 'Z')
+        this.input.keyboard?.on('keydown-Z', () => {
+            if (this.registry.get('chatFocused') === true) return;
+            if (this.registry.get('guiOpen') === true) return;
+            
+            this.audioManager?.playMeow();
+        });
+        
         // Default to enabled
         this.registry.set('visualEffectsEnabled', true);
         this.registry.set('seasonalEffectsEnabled', true);
@@ -372,10 +382,19 @@ export class GameScene extends Phaser.Scene {
         });
         this.remotePlayerManager.initialize();
 
+        this.droppedItemManager = new DroppedItemManager(this, {
+            occlusionManager: this.occlusionManager,
+            baseDepth: this.playerFrontDepth - 40
+        });
+        this.droppedItemManager.initialize();
+
         // Connect remote player manager to player controller for interaction detection
         const activeController = this.mcPlayerController;
         if (activeController && this.remotePlayerManager) {
             activeController.setRemotePlayerManager(this.remotePlayerManager);
+        }
+        if (activeController && this.droppedItemManager) {
+            activeController.setDroppedItemManager(this.droppedItemManager);
         }
 
         // Listen for chat messages (relayed from UIScene) for chat bubbles
@@ -660,6 +679,7 @@ export class GameScene extends Phaser.Scene {
     shutdown() {
         this.audioManager?.destroy();
         this.remotePlayerManager?.destroy();
+        this.droppedItemManager?.destroy();
         this.fires.forEach(fire => fire.destroy());
         this.fires = [];
         this.waterSystem?.destroy();

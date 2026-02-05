@@ -1,5 +1,8 @@
 
 import { Toast } from './ui/Toast';
+import { CharacterService } from './gameplay/player/CharacterService';
+import { DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
+import { renderCharacterPreview } from './skin/CharacterPreview';
 
 const usernameInput = document.getElementById('username-input') as HTMLInputElement;
 const saveUsernameBtn = document.getElementById('save-username-btn') as HTMLButtonElement;
@@ -20,6 +23,8 @@ const navUsername = document.getElementById('nav-username') as HTMLElement;
 const settingsAvatar = document.getElementById('settings-avatar') as HTMLImageElement;
 const avatarInput = document.getElementById('avatar-input') as HTMLInputElement;
 const changeAvatarBtn = document.getElementById('change-avatar-btn') as HTMLButtonElement;
+
+const skinPreviewCanvas = document.getElementById('skin-preview-canvas') as HTMLCanvasElement;
 
 
 const linkGoogleBtn = document.getElementById('link-google') as HTMLAnchorElement;
@@ -162,9 +167,26 @@ async function init() {
         }
         
         renderUser(data.user);
+        renderSkinPreview();
     } catch (e) {
         console.error(e);
     }
+}
+
+async function renderSkinPreview() {
+    if (!skinPreviewCanvas) return;
+
+    const service = CharacterService.getInstance();
+    let appearance = DEFAULT_CHARACTER_APPEARANCE;
+    try {
+        appearance = await service.fetchAppearance();
+    } catch {
+        // Use default appearance
+    }
+
+    renderCharacterPreview(skinPreviewCanvas, appearance, 'S', 2).catch(() => {
+        // Ignore preview errors
+    });
 }
 
 function renderUser(user: any) {
