@@ -15,7 +15,7 @@ import { PlayerShadow } from './PlayerShadow';
 import { MobileControls } from '../ui/MobileControls';
 import { DesktopInteractButton } from '../ui/DesktopInteractButton';
 import { NetworkManager } from '../network/NetworkManager';
-import { createChatBubble, createNameplate, getOcclusionAdjustedDepth } from './PlayerVisualUtils';
+import { createChatBubble, createIconBubble, createNameplate, getOcclusionAdjustedDepth } from './PlayerVisualUtils';
 import { currentUser } from '../index';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 import { InteractionManager, InteractionType } from '../interaction/InteractionManager';
@@ -61,6 +61,14 @@ export class MCPlayerController {
     private chatBubble?: Phaser.GameObjects.Container;
     private chatBubbleYOffset: number = 0;
     private chatTimer?: Phaser.Time.TimerEvent;
+    private readonly chatBubbleGap = 10;
+    private nameplateHeight = 0;
+    private fishingBubble?: Phaser.GameObjects.Container;
+    private fishingTimer?: Phaser.Time.TimerEvent;
+    private fishingKey?: Phaser.Input.Keyboard.Key;
+    private equippedRodId: string | null = null;
+    private isFishing = false;
+    private onFishingStart?: (rodItemId: string) => void;
 
     private config: Required<Omit<MCPlayerControllerConfig, 'occlusionManager'>> & { occlusionManager?: OcclusionManager };
 
@@ -326,6 +334,9 @@ export class MCPlayerController {
         if (this.interactKey && Phaser.Input.Keyboard.JustDown(this.interactKey)) {
             this.tryInteract();
         }
+        if (this.fishingKey && Phaser.Input.Keyboard.JustDown(this.fishingKey)) {
+            this.tryStartFishing();
+        }
 
         // Skip movement if locked (during interact animation)
         if (this.scene.time.now < this.interactionLockUntil) {
@@ -414,7 +425,10 @@ export class MCPlayerController {
 
         // Update chat bubble position to follow player
         if (this.chatBubble && this.player) {
-            this.chatBubble.setPosition(this.player.x, this.player.y - this.chatBubbleYOffset);
+            this.positionChatBubble();
+        }
+        if (this.fishingBubble && this.player) {
+            this.positionFishingBubble();
         }
 
         // Update depth sorting with occlusion awareness
@@ -564,6 +578,7 @@ export class MCPlayerController {
 
         // Interact key (F)
         this.interactKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F);
+        this.fishingKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
         // Initialize mobile controls
         this.mobileControls = new MobileControls();
@@ -724,10 +739,8 @@ export class MCPlayerController {
             depth: 99999
         });
 
-        const yOffset = 36 + 10 + (bubble.height / 2);
-        this.chatBubbleYOffset = yOffset;
         this.chatBubble = bubble.container;
-        this.chatBubble.setPosition(this.player.x, this.player.y - yOffset);
+        this.positionChatBubble();
 
         // Auto destroy with fade
         this.chatTimer = this.scene.time.delayedCall(4000, () => {
@@ -743,6 +756,104 @@ export class MCPlayerController {
                 });
             }
         });
+    }
+
+    setEquippedRodId(rodItemId: string | null) {
+        this.equippedRodId = rodItemId;
+    }
+
+    setFishingActive(active: boolean) {
+        this.isFishing = active;
+    }
+
+    setOnFishingStart(callback?: (rodItemId: string) => void) {
+        this.onFishingStart = callback;
+    }
+
+    showFishingBubble(rodItemId: string) {
+        if (!this.player) return;
+        const textureKey = `item-${rodItemId}-18`;
+        if (!this.scene.textures.exists(textureKey)) return;
+
+        if (this.fishingBubble) {
+            this.fishingBubble.destroy();
+            this.fishingBubble = undefined;
+        }
+        if (this.fishingTimer) {
+            this.fishingTimer.remove(false);
+            this.fishingTimer = undefined;
+        }
+
+        const bubble = createIconBubble({
+            scene: this.scene,
+            textureKey,
+            depth: 99999
+        });
+
+        this.fishingBubble = bubble.container;
+        this.positionFishingBubble(true);
+
+        this.fishingTimer = this.scene.time.delayedCall(2000, () => {
+            if (this.fishingBubble) {
+                this.scene.tweens.add({
+                    targets: this.fishingBubble,
+                    alpha: 0,
+                    duration: 250,
+                    onComplete: () => {
+                        this.fishingBubble?.destroy();
+                        this.fishingBubble = undefined;
+                    }
+                });
+            }
+        });
+    }
+
+    private positionChatBubble() {
+        if (!this.chatBubble || !this.player) return;
+        const bubbleHeight = this.chatBubble.getBounds().height;
+        const nameplateTop = this.nameplateHeight
+            ? this.player.y + this.nameplateYOffset - this.nameplateHeight / 2
+            : (this.localNameplate?.getBounds().top ?? (this.player.y + this.nameplateYOffset));
+        const bubbleY = nameplateTop - this.chatBubbleGap - bubbleHeight / 2;
+        this.chatBubbleYOffset = this.player.y - bubbleY;
+        this.chatBubble.setPosition(this.player.x, bubbleY);
+    }
+
+    private positionFishingBubble(isInitial: boolean = false) {
+        if (!this.fishingBubble || !this.player) return;
+        const bubbleHeight = this.fishingBubble.getBounds().height;
+        const nameplateTop = this.nameplateHeight
+            ? this.player.y + this.nameplateYOffset - this.nameplateHeight / 2
+            : (this.localNameplate?.getBounds().top ?? (this.player.y + this.nameplateYOffset));
+        const bubbleY = nameplateTop - this.chatBubbleGap - bubbleHeight / 2;
+        if (isInitial) {
+            this.fishingBubble.setPosition(this.player.x, bubbleY + 6);
+            this.fishingBubble.setAlpha(0);
+            this.scene.tweens.add({
+                targets: this.fishingBubble,
+                y: bubbleY,
+                alpha: 1,
+                duration: 250,
+                ease: 'Sine.out'
+            });
+        } else {
+            this.fishingBubble.setPosition(this.player.x, bubbleY);
+        }
+    }
+
+    private tryStartFishing() {
+        if (!this.player || this.isFishing) return;
+        const guiOpen = this.scene.registry.get('guiOpen') === true;
+        const chatFocused = this.scene.registry.get('chatFocused') === true;
+        if (guiOpen || chatFocused) return;
+        const nearWater = this.scene.registry.get('nearWater') === true;
+        if (!nearWater) return;
+        if (!this.equippedRodId) return;
+
+        this.isFishing = true;
+        this.showFishingBubble(this.equippedRodId);
+        this.networkManager.sendFishingStart(this.equippedRodId);
+        this.onFishingStart?.(this.equippedRodId);
     }
 
     /**
@@ -920,6 +1031,7 @@ export class MCPlayerController {
         });
 
         this.localNameplate = nameplate.container;
+        this.nameplateHeight = nameplate.nameText.height + 2; // padding.y * 2 from createNameplate
         this.localNameplate.setPosition(this.player.x, this.player.y + this.nameplateYOffset);
     }
 
@@ -959,6 +1071,12 @@ export class MCPlayerController {
         }
         if (this.chatTimer) {
             this.chatTimer.remove(false);
+        }
+        if (this.fishingBubble) {
+            this.fishingBubble.destroy();
+        }
+        if (this.fishingTimer) {
+            this.fishingTimer.remove(false);
         }
         this.localNameplate?.destroy();
         if (this.mobileInteractListener) {

@@ -23,7 +23,8 @@ export interface IUser extends Document {
   bannedUntil?: Date;
   mutedUntil?: Date;
   lastKnownIP?: string;
-  inventory?: { itemId: string; count: number }[];
+  inventory?: { index: number; itemId: string | null; count: number }[];
+  equippedRodId?: string | null;
   characterAppearance?: ICharacterAppearance;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -53,12 +54,14 @@ const UserSchema: Schema = new Schema({
   inventory: {
     type: [
       {
-        itemId: { type: String, required: true },
+        index: { type: Number, required: true },
+        itemId: { type: String, default: null },
         count: { type: Number, required: true, default: 0 }
       }
     ],
     default: []
   },
+  equippedRodId: { type: String, default: null },
   characterAppearance: {
     type: {
       body: {

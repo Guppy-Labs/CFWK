@@ -200,6 +200,13 @@ export class RemotePlayerManager {
         }
     }
 
+    showFishingBubble(sessionId: string, rodItemId: string) {
+        const player = this.remotePlayers.get(sessionId);
+        if (player) {
+            player.showFishingBubble(rodItemId);
+        }
+    }
+
     /**
      * Cleanup all remote players
      */

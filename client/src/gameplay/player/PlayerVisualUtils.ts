@@ -109,6 +109,20 @@ export type ChatBubbleResult = {
     height: number;
 };
 
+export type IconBubbleConfig = {
+    scene: Phaser.Scene;
+    textureKey: string;
+    size?: number;
+    padding?: number;
+    bgAlpha?: number;
+    depth?: number;
+};
+
+export type IconBubbleResult = {
+    container: Phaser.GameObjects.Container;
+    height: number;
+};
+
 export function createChatBubble(config: ChatBubbleConfig): ChatBubbleResult {
     const { scene, message } = config;
     const padding = config.padding ?? 4;
@@ -137,6 +151,34 @@ export function createChatBubble(config: ChatBubbleConfig): ChatBubbleResult {
     bg.fillTriangle(-5, height / 2, 5, height / 2, 0, height / 2 + arrowHeight);
 
     const container = scene.add.container(0, 0, [bg, text]);
+    container.setDepth(depth);
+
+    return { container, height };
+}
+
+export function createIconBubble(config: IconBubbleConfig): IconBubbleResult {
+    const { scene, textureKey } = config;
+    const size = config.size ?? 18;
+    const padding = config.padding ?? 4;
+    const bgAlpha = config.bgAlpha ?? 0.6;
+    const depth = config.depth ?? 99999;
+
+    const texture = scene.textures.get(textureKey);
+    const source = texture.getSourceImage() as HTMLImageElement | undefined;
+    const baseSize = source ? Math.max(source.width, source.height) : size;
+    const scale = size / baseSize;
+
+    const icon = scene.add.image(0, 0, textureKey).setOrigin(0.5);
+    icon.setScale(scale);
+
+    const width = size + padding * 2;
+    const height = size + padding * 2;
+
+    const bg = scene.add.graphics();
+    bg.fillStyle(0x000000, bgAlpha);
+    bg.fillRoundedRect(-width / 2, -height / 2, width, height, 4);
+
+    const container = scene.add.container(0, 0, [bg, icon]);
     container.setDepth(depth);
 
     return { container, height };

@@ -1,5 +1,5 @@
 import express from 'express';
-import { IInventoryResponse } from '@cfwk/shared';
+import { DEFAULT_INVENTORY_SLOTS, IInventoryResponse } from '@cfwk/shared';
 import { InventoryCache } from '../managers/InventoryCache';
 
 const router = express.Router();
@@ -14,10 +14,12 @@ router.use(isAuthenticated);
 router.get('/', async (req, res) => {
     try {
         const userId = (req.user as any).id;
-        const items = await InventoryCache.getInstance().getInventory(userId);
+        const { items: slots, equippedRodId } = await InventoryCache.getInstance().getInventoryState(userId);
 
         const response: IInventoryResponse = {
-            items
+            slots,
+            totalSlots: DEFAULT_INVENTORY_SLOTS,
+            equippedRodId
         };
         res.json(response);
     } catch (err) {

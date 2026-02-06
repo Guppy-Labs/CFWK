@@ -1,14 +1,14 @@
 import Phaser from 'phaser';
-import { StaminaBar } from '../ui/StaminaBar';
+import { PlayerHud } from '../ui/PlayerHud';
 import { TabListEntry } from '../ui/HeadbarTabList';
 import { Chat, ChatMessage } from '../ui/Chat';
 import { BookUI } from '../ui/BookUI';
 import { HeadbarUI } from '../ui/HeadbarUI';
 import { NetworkManager } from '../network/NetworkManager';
-import { ITEM_DEFINITIONS } from '@cfwk/shared';
+import { ITEM_DEFINITIONS, getItemImagePath } from '@cfwk/shared';
 
 export class UIScene extends Phaser.Scene {
-    private staminaBar?: StaminaBar;
+    private playerHud?: PlayerHud;
     private chat?: Chat;
     private bookUI?: BookUI;
     private headbarUI?: HeadbarUI;
@@ -18,6 +18,8 @@ export class UIScene extends Phaser.Scene {
     private bookKeyHandler?: (event: KeyboardEvent) => void;
     private mobileInventoryHandler?: () => void;
     private mobileMenuHandler?: () => void;
+    private inventoryUpdateHandler?: (event: Event) => void;
+    private nearWaterHandler?: (parent: any, value: boolean) => void;
     private networkManager = NetworkManager.getInstance();
     private cursorDefaultUrl?: string;
     private cursorHoverUrl?: string;
@@ -52,12 +54,20 @@ export class UIScene extends Phaser.Scene {
         this.load.image('ui-item-info-divider', '/ui/Line03a.png');
         this.load.image('ui-slot-base', '/ui/Slot01a.png');
         this.load.image('ui-slot-extended', '/ui/Slot01e.png');
+        this.load.image('ui-slot-empty', '/ui/Slot01g.png');
+        this.load.image('ui-slot-filled', '/ui/Slot01b.png');
         this.load.image('ui-slot-select-1', '/ui/select/sel1.png');
         this.load.image('ui-slot-select-2', '/ui/select/sel2.png');
         this.load.image('ui-slot-select-3', '/ui/select/sel3.png');
         this.load.image('ui-slot-select-4', '/ui/select/sel4.png');
         this.load.image('ui-scrollbar-track', '/ui/Bar07a.png');
         this.load.image('ui-scrollbar-thumb', '/ui/IconHandle03a.png');
+        this.load.image('ui-hud-slot', '/ui/Slot02e.png');
+        this.load.image('ui-hud-slot-filled', '/ui/Slot02b.png');
+        this.load.image('ui-hud-heart', '/ui/IconHealth01a.png');
+        this.load.image('ui-hud-stamina-bg', '/ui/Bar04a.png');
+        this.load.image('ui-hud-stamina-fill', '/ui/Fill02a.png');
+        this.load.image('ui-hud-key-r', '/ui/keys/R.png');
         this.load.image('ui-font', '/assets/font/game-font.png');
         this.load.image('ui-cursor-default', '/ui/Cursor03b.png');
         this.load.image('ui-cursor-hover', '/ui/Cursor03c.png');
@@ -70,17 +80,42 @@ export class UIScene extends Phaser.Scene {
         this.load.image('ui-season-autumn', '/ui/seasons/autumn.png');
 
         ITEM_DEFINITIONS.forEach((item) => {
-            this.load.image(`item-${item.id}`, `/items/${item.category.toLowerCase()}/${item.id}.png`);
+            const imagePath = getItemImagePath(item.id);
+            if (imagePath) {
+                this.load.image(`item-${item.id}`, `/${imagePath}`);
+            }
         });
     }
 
     create() {
         this.preloadItemIconTextures();
         this.setupCustomCursor();
-        this.staminaBar = new StaminaBar(this);
+        this.playerHud = new PlayerHud(this);
         this.chat = new Chat(this);
         this.bookUI = new BookUI(this);
         this.headbarUI = new HeadbarUI(this);
+
+        this.inventoryUpdateHandler = (event: Event) => {
+            const customEvent = event as CustomEvent<{ equippedRodId?: string | null }>;
+            const equippedRodId = customEvent.detail?.equippedRodId ?? null;
+            this.playerHud?.setEquippedRod(equippedRodId);
+        };
+        window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+
+        this.networkManager.getInventory().then((data) => {
+            if (data?.equippedRodId !== undefined) {
+                this.playerHud?.setEquippedRod(data.equippedRodId ?? null);
+            }
+        });
+
+        this.nearWaterHandler = (_parent: any, value: boolean) => {
+            this.playerHud?.setRodNearWater(Boolean(value));
+        };
+        this.registry.events.on('changedata-nearWater', this.nearWaterHandler);
+        const currentNearWater = this.registry.get('nearWater');
+        if (typeof currentNearWater === 'boolean') {
+            this.playerHud?.setRodNearWater(currentNearWater);
+        }
 
         this.registry.set('guiOpen', false);
 
@@ -103,16 +138,16 @@ export class UIScene extends Phaser.Scene {
         this.setupChatListener();
 
         // Listen for stamina changes from the registry
-        this.registry.events.on('changedata-stamina', (parent: any, value: number) => {
-            if (this.staminaBar) {
-                this.staminaBar.setStamina(value);
+        this.registry.events.on('changedata-stamina', (_parent: any, value: number) => {
+            if (this.playerHud) {
+                this.playerHud.setStamina(value);
             }
         });
 
         // Initialize with current value if exists
         const currentStamina = this.registry.get('stamina');
         if (typeof currentStamina === 'number') {
-            this.staminaBar.setStamina(currentStamina);
+            this.playerHud.setStamina(currentStamina);
         }
 
         const currentPlayers = this.registry.get('tablistPlayers') as TabListEntry[] | undefined;
@@ -261,6 +296,12 @@ export class UIScene extends Phaser.Scene {
             if (this.mobileMenuHandler) {
                 window.removeEventListener('mobile:menu', this.mobileMenuHandler as EventListener);
             }
+            if (this.inventoryUpdateHandler) {
+                window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+            }
+            if (this.nearWaterHandler) {
+                this.registry.events.off('changedata-nearWater', this.nearWaterHandler);
+            }
             window.removeEventListener('pointerdown', markActivity, { capture: true } as any);
             window.removeEventListener('mousedown', markActivity, { capture: true } as any);
             window.removeEventListener('touchstart', markActivity, { capture: true } as any);
@@ -268,6 +309,7 @@ export class UIScene extends Phaser.Scene {
             this.chat?.destroy();
             this.bookUI?.destroy();
             this.headbarUI?.destroy();
+            this.playerHud?.destroy();
         });
     }
 
@@ -351,6 +393,7 @@ export class UIScene extends Phaser.Scene {
         this.bookUI?.layout();
         this.chat?.refreshLayout();
         this.headbarUI?.layout();
+        this.playerHud?.layout();
     }
 
     private setupChatListener() {
@@ -373,10 +416,8 @@ export class UIScene extends Phaser.Scene {
         });
     }
 
-    update(time: number, delta: number) {
-        if (this.staminaBar) {
-            this.staminaBar.update(delta);
-        }
+    update(_time: number, delta: number) {
+        this.playerHud?.update(delta);
 
         if (this.headbarUI) {
             this.headbarUI.update();

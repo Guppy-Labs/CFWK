@@ -42,6 +42,9 @@ export class GameScene extends Phaser.Scene {
     private worldTimeManager = WorldTimeManager.getInstance();
     private characterService = CharacterService.getInstance();
     private unsubscribeDisconnect?: () => void;
+    private inventoryUpdateHandler?: (event: Event) => void;
+    private isFishingTransition = false;
+    private fishingFadeTimer?: Phaser.Time.TimerEvent;
 
     // Managers
     private mapLoader?: MapLoader;
@@ -116,6 +119,9 @@ export class GameScene extends Phaser.Scene {
         this.occlusionManager = new OcclusionManager(this.playerFrontDepth, this.playerOccludedDepthOffset);
         
         this.mcPlayerController?.setOcclusionManager(this.occlusionManager);
+        this.mcPlayerController?.setOnFishingStart((rodItemId) => {
+            this.startFishingTransition(rodItemId);
+        });
         
         // Initialize visual effects (Post-processing)
         this.visualEffectsManager = new VisualEffectsManager(this);
@@ -241,11 +247,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     private showConnectionStatus() {
-        if (this.instanceInfo?.instanceId === 'local') {
-            Toast.info('Could not Connect to Game Server (Offline Mode)', 4000);
-        } else if (this.networkManager.isConnected()) {
-            Toast.success(`Joined ${this.instanceInfo?.locationId || 'world'}`, 3000);
-        }
+        // Intentionally no-op: connection toasts removed to reduce UI clutter.
     }
 
     /**
@@ -399,10 +401,23 @@ export class GameScene extends Phaser.Scene {
 
         // Listen for chat messages (relayed from UIScene) for chat bubbles
         this.game.events.on('chat-message', this.handleChatMessage, this);
+
+        this.inventoryUpdateHandler = (event: Event) => {
+            const customEvent = event as CustomEvent<{ equippedRodId?: string | null }>;
+            const equippedRodId = customEvent.detail?.equippedRodId ?? null;
+            this.mcPlayerController?.setEquippedRodId(equippedRodId);
+        };
+        window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+        this.networkManager.getInventory().then((data) => {
+            if (data?.equippedRodId !== undefined) {
+                this.mcPlayerController?.setEquippedRodId(data.equippedRodId ?? null);
+            }
+        });
         
         // Listen for shove events from server
         this.setupShoveListener();
         this.setupShoveAttemptListener();
+        this.setupFishingListener();
         
         // Listen for server disconnection
         this.unsubscribeDisconnect = this.networkManager.onDisconnect((code) => {
@@ -431,8 +446,14 @@ export class GameScene extends Phaser.Scene {
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
              this.game.events.off('chat-message', this.handleChatMessage, this);
              this.unsubscribeDisconnect?.();
+             if (this.inventoryUpdateHandler) {
+                 window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+             }
              this.events.off('stop-audio', this.stopAllAudio, this);
+             this.events.off('fishing:stop', this.stopFishing, this);
         });
+
+        this.events.on('fishing:stop', this.stopFishing, this);
     }
 
     private stopAllAudio() {
@@ -446,6 +467,31 @@ export class GameScene extends Phaser.Scene {
         } else {
             this.remotePlayerManager?.showChat(data.sessionId, data.message);
         }
+    }
+
+    private startFishingTransition(rodItemId: string) {
+        if (this.isFishingTransition) return;
+        this.isFishingTransition = true;
+
+        if (this.fishingFadeTimer) {
+            this.fishingFadeTimer.remove(false);
+        }
+
+        this.fishingFadeTimer = this.time.delayedCall(2000, () => {
+            this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+                this.scene.launch('FishingScene', { rodItemId });
+                this.scene.pause();
+            });
+            this.cameras.main.fadeOut(500, 0, 0, 0);
+        });
+    }
+
+    private stopFishing() {
+        this.isFishingTransition = false;
+        this.fishingFadeTimer?.remove(false);
+        this.fishingFadeTimer = undefined;
+        this.mcPlayerController?.setFishingActive(false);
+        this.cameras.main.fadeIn(300, 0, 0, 0);
     }
 
     /**
@@ -509,6 +555,20 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
+    private setupFishingListener() {
+        const room = this.networkManager.getRoom();
+        if (!room) return;
+
+        room.onMessage("fishing:start", (data: { sessionId: string; rodItemId: string | null }) => {
+            if (!data?.rodItemId) return;
+            const mySessionId = this.networkManager.getSessionId();
+            if (data.sessionId === mySessionId) {
+                return;
+            }
+            this.remotePlayerManager?.showFishingBubble(data.sessionId, data.rodItemId);
+        });
+    }
+
     /**
      * Apply a shove force to a physics sprite
      */
@@ -559,6 +619,10 @@ export class GameScene extends Phaser.Scene {
 
         // Update water system (splash, footprints, depth effects)
         this.waterSystem?.update(delta);
+        const nearWater = this.waterSystem?.isNearWater(0.5) ?? false;
+        if (this.registry.get('nearWater') !== nearWater) {
+            this.registry.set('nearWater', nearWater);
+        }
         
         // Apply water effects to player
         const activeController = this.mcPlayerController;

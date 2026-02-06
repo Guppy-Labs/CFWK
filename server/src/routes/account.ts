@@ -206,11 +206,11 @@ router.get('/character', async (req, res) => {
         if (!user) return res.status(404).json({ message: 'User not found' });
 
         // Log raw data from DB
-        console.log('[/character GET] Raw characterAppearance from DB:', JSON.stringify(user.characterAppearance, null, 2));
+        // console.log('[/character GET] Raw characterAppearance from DB:', JSON.stringify(user.characterAppearance, null, 2));
         
         // Return appearance or default if not set
         const appearance = normalizeAppearance(user.characterAppearance || DEFAULT_CHARACTER_APPEARANCE);
-        console.log('[/character GET] Normalized appearance:', JSON.stringify(appearance, null, 2));
+        // console.log('[/character GET] Normalized appearance:', JSON.stringify(appearance, null, 2));
         
         res.json({ appearance });
     } catch (e) {

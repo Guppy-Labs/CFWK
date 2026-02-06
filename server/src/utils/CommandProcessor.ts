@@ -251,11 +251,11 @@ export class CommandProcessor {
         const user = await this.getUserByUsername(targetName);
         if (!user) return `User '${targetName}' not found.`;
 
-            const items = await InventoryCache.getInstance().addItem(user._id.toString(), itemId, amount);
+            const slots = await InventoryCache.getInstance().addItem(user._id.toString(), itemId, amount);
 
             InstanceManager.getInstance().events.emit('inventory_update', {
                 userId: user._id.toString(),
-                items
+                items: slots
             });
 
         InstanceManager.getInstance().events.emit('msg_user', {

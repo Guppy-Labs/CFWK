@@ -351,6 +351,47 @@ export class WaterSystem {
     }
 
     /**
+     * Check if player is near water within a tile radius
+     */
+    isNearWater(distanceTiles: number = 0.5): boolean {
+        if (!this.waterLayer) return false;
+        if (!this.isPlayerValid()) return false;
+
+        const feetX = this.player.x;
+        const feetY = this.player.y + 3;
+        const tileWidth = this.waterLayer.tilemap.tileWidth;
+        const tileHeight = this.waterLayer.tilemap.tileHeight;
+        const radiusPx = Math.max(tileWidth, tileHeight) * distanceTiles;
+
+        const tileX = this.waterLayer.worldToTileX(feetX);
+        const tileY = this.waterLayer.worldToTileY(feetY);
+        if (tileX === null || tileY === null) return false;
+
+        const radiusTiles = Math.max(1, Math.ceil(distanceTiles));
+
+        for (let x = tileX - radiusTiles; x <= tileX + radiusTiles; x++) {
+            for (let y = tileY - radiusTiles; y <= tileY + radiusTiles; y++) {
+                const tile = this.waterLayer.getTileAt(x, y);
+                if (!tile || tile.index < 0) continue;
+
+                const left = this.waterLayer.tileToWorldX(x);
+                const top = this.waterLayer.tileToWorldY(y);
+                const right = left + tileWidth;
+                const bottom = top + tileHeight;
+
+                const dx = feetX < left ? left - feetX : feetX > right ? feetX - right : 0;
+                const dy = feetY < top ? top - feetY : feetY > bottom ? feetY - bottom : 0;
+
+                if (Math.hypot(dx, dy) <= radiusPx) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Check if player has wet feet
      */
     getIsWet(): boolean {

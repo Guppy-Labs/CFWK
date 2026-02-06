@@ -38,7 +38,3 @@ logs
 # Project specifics
 server/uploads/
 *.tsbuildinfo
-
-# Temporarily hide client game assets
-client/public/assets/
-client/public/maps/

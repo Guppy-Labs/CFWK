@@ -167,18 +167,24 @@ export interface IJoinInstanceResponse {
 
 // --- Inventory System Types ---
 
-export interface InventoryEntry {
-    itemId: string;
-    count: number;
+export const DEFAULT_INVENTORY_SLOTS = 15;
+
+export interface InventorySlot {
+  index: number;
+  itemId: string | null;
+  count: number;
 }
 
 export interface IInventoryResponse {
-    items: InventoryEntry[];
+  slots: InventorySlot[];
+  totalSlots: number;
+  equippedRodId?: string | null;
 }
 
 // Re-export WorldTime module
 export * from './WorldTime';
 export * from './items';
+export * from './fishing';
 
 // --- Character Appearance Types ---
 

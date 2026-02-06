@@ -39,7 +39,7 @@ const CAPE_COLOR_PRESETS = [
     { id: 'forest', label: 'Forest', hueShift: 60 },
     { id: 'ocean', label: 'Ocean', hueShift: 120 },
     { id: 'plum', label: 'Plum', hueShift: 180 },
-    { id: 'crimson', label: 'Crimson', hueShift: -60 }
+    { id: 'crimson', label: 'Crimson', hueShift: -30 }
 ];
 
 const ACCESSORY_CATALOG = {

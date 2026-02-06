@@ -231,6 +231,24 @@ export class NetworkManager {
     }
 
     /**
+     * Send updated inventory slots to the server
+     */
+    sendInventorySlots(slots: IInventoryResponse['slots']) {
+        if (this.currentRoom) {
+            this.currentRoom.send('inventory:set', { slots });
+        }
+    }
+
+    /**
+     * Send equipped rod updates to the server
+     */
+    sendEquippedRod(equippedRodId: string | null) {
+        if (this.currentRoom) {
+            this.currentRoom.send('equipment:set', { equippedRodId });
+        }
+    }
+
+    /**
      * Send AFK status to the server
      */
     sendAfk(isAfk: boolean) {
@@ -299,6 +317,15 @@ export class NetworkManager {
     sendShoveAttempt(targetSessionId: string) {
         if (this.currentRoom) {
             this.currentRoom.send("shoveAttempt", { targetSessionId });
+        }
+    }
+
+    /**
+     * Send a fishing start event to the server (bubble sync)
+     */
+    sendFishingStart(rodItemId: string) {
+        if (this.currentRoom) {
+            this.currentRoom.send("fishing:start", { rodItemId });
         }
     }
 

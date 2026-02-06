@@ -3,6 +3,7 @@ import { Schema, MapSchema, type } from "@colyseus/schema";
 import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
+import { DEFAULT_INVENTORY_SLOTS } from "@cfwk/shared";
 import { CommandProcessor } from "../utils/CommandProcessor";
 import User from "../models/User";
 import BannedIP from "../models/BannedIP";
@@ -118,12 +119,15 @@ export class InstanceRoom extends Room<InstanceState> {
             });
         });
 
-        this.instanceManager.events.on('inventory_update', (data: { userId: string; items: { itemId: string; count: number }[] }) => {
+        this.instanceManager.events.on('inventory_update', (data: { userId: string; items: { index: number; itemId: string | null; count: number }[] }) => {
             this.clients.forEach(client => {
                 const player = this.state.players.get(client.sessionId);
                 if (player && player.odcid === data.userId) {
+                    const equippedRodId = InventoryCache.getInstance().getEquippedRod(data.userId);
                     client.send('inventory', {
-                        items: data.items
+                        slots: data.items,
+                        totalSlots: DEFAULT_INVENTORY_SLOTS,
+                        equippedRodId
                     });
                 }
             });
@@ -312,6 +316,14 @@ export class InstanceRoom extends Room<InstanceState> {
             });
         });
 
+        // Handle fishing start (bubble sync)
+        this.onMessage("fishing:start", (client, data: { rodItemId: string }) => {
+            this.broadcast("fishing:start", {
+                sessionId: client.sessionId,
+                rodItemId: data?.rodItemId ?? null
+            });
+        });
+
         // Handle pickup item interactions
         this.onMessage("pickupItem", async (client, data: { droppedItemId: string }) => {
             const player = this.state.players.get(client.sessionId);
@@ -329,13 +341,14 @@ export class InstanceRoom extends Room<InstanceState> {
 
             this.state.droppedItems.delete(data.droppedItemId);
 
-            const items = await InventoryCache.getInstance().addItem(
+            const slots = await InventoryCache.getInstance().addItem(
                 player.odcid,
                 droppedItem.itemId,
                 droppedItem.amount
             );
+            const { equippedRodId } = await InventoryCache.getInstance().getInventoryState(player.odcid);
 
-            client.send('inventory', { items });
+            client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
         });
 
         // Handle dropping items from player inventory
@@ -355,7 +368,35 @@ export class InstanceRoom extends Room<InstanceState> {
             if (!updated) return;
 
             this.createDroppedItem(data.itemId, amount, player.x, player.y);
-            client.send('inventory', { items: updated });
+            const { equippedRodId } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+            client.send('inventory', { slots: updated, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+        });
+
+        // Handle inventory slot updates from client
+        this.onMessage("inventory:set", async (client, data: { slots: { index: number; itemId: string | null; count: number }[] }) => {
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+            if (!data || !Array.isArray(data.slots)) return;
+
+            const normalized = data.slots
+                .filter((slot) => typeof slot.index === 'number' && slot.index >= 0)
+                .map((slot) => ({
+                    index: Math.floor(slot.index),
+                    itemId: slot.itemId ?? null,
+                    count: Math.max(0, Math.floor(slot.count ?? 0))
+                }))
+                .slice(0, DEFAULT_INVENTORY_SLOTS)
+                .sort((a, b) => a.index - b.index);
+
+            // Pad to full size
+            const padded = Array.from({ length: DEFAULT_INVENTORY_SLOTS }, (_v, i) => {
+                const existing = normalized.find((s) => s.index === i);
+                return existing ?? { index: i, itemId: null, count: 0 };
+            });
+
+            InventoryCache.getInstance().setInventory(player.odcid, padded);
+            const equippedRodId = InventoryCache.getInstance().getEquippedRod(player.odcid);
+            client.send('inventory', { slots: padded, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
         });
 
         // Handle chat messages
@@ -524,11 +565,23 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Send initial inventory to the client on join
         try {
-            const items = await InventoryCache.getInstance().getInventory(odcid);
-            client.send('inventory', { items });
+            const { items: slots, equippedRodId } = await InventoryCache.getInstance().getInventoryState(odcid);
+            client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
         } catch (err) {
             console.error('[InstanceRoom] Error sending initial inventory:', err);
         }
+
+        // Handle equipment updates from client
+        this.onMessage("equipment:set", async (client, data: { equippedRodId: string | null }) => {
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+
+            const equippedRodId = data?.equippedRodId ?? null;
+            InventoryCache.getInstance().setEquippedRod(player.odcid, equippedRodId);
+
+            const { items: slots } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+            client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+        });
         
         // Notify instance manager
         this.instanceManager.playerJoined(this.instanceId);

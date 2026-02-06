@@ -2,8 +2,9 @@ import Phaser from 'phaser';
 import { InventoryGroupsUI, GroupKey } from './inventory/InventoryGroupsUI';
 import { InventorySlotsUI, InventoryDisplayItem } from './inventory/InventorySlotsUI';
 import { InventoryItemDetailsUI, DEFAULT_ITEM_DETAILS_CONFIG } from './inventory/InventoryItemDetailsUI';
+import { EquipmentSlotsUI } from './inventory/EquipmentSlotsUI';
 import { NetworkManager } from '../network/NetworkManager';
-import { InventoryEntry, getItemDefinition, ItemDefinition, ItemCategory } from '@cfwk/shared';
+import { InventorySlot, getItemDefinition, ItemDefinition, ItemCategory } from '@cfwk/shared';
 
 type TabItem = {
     label: string;
@@ -26,11 +27,18 @@ export class BookUI {
     private inventoryGroups: InventoryGroupsUI;
     private inventorySlots: InventorySlotsUI;
     private inventoryDetails: InventoryItemDetailsUI;
+    private equipmentSlots: EquipmentSlotsUI;
     private activeTabLabel = 'Inventory';
-    private inventoryEntries: InventoryEntry[] = [];
-    private inventoryItems: Array<{ entry: InventoryEntry; def: ItemDefinition; display: InventoryDisplayItem }> = [];
+    private inventorySlotsData: InventorySlot[] = [];
+    private inventoryItems: Array<{ slot: InventorySlot; def: ItemDefinition; display: InventoryDisplayItem }> = [];
     private networkManager = NetworkManager.getInstance();
     private inventoryUpdateHandler?: (event: Event) => void;
+    
+    // Track if we're in "rod equip" mode (selected a rod from inventory)
+    private pendingRodEquip: InventoryDisplayItem | null = null;
+    private pendingRodSlotIndex: number | null = null;
+    private suppressInventorySelection = false;
+    private equippedRodId: string | null = null;
 
     private readonly coverWidth = 320;
     private readonly coverHeight = 219;
@@ -80,9 +88,10 @@ export class BookUI {
         this.container.setVisible(false);
 
         this.inventoryUpdateHandler = (event: Event) => {
-            const customEvent = event as CustomEvent<{ items: InventoryEntry[] }>;
-            const items = customEvent.detail?.items || [];
-            this.applyInventoryUpdate(items);
+            const customEvent = event as CustomEvent<{ slots: InventorySlot[]; totalSlots: number; equippedRodId?: string | null }>;
+            const slots = customEvent.detail?.slots || [];
+            const equippedRodId = customEvent.detail?.equippedRodId ?? null;
+            this.applyInventoryUpdate(slots, equippedRodId);
         };
         window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
 
@@ -98,18 +107,70 @@ export class BookUI {
         this.inventorySlots = new InventorySlotsUI(this.scene, this.container, {
             bottomReservedHeight: 0
         });
+        this.equipmentSlots = new EquipmentSlotsUI(this.scene, this.container);
+        
         this.inventoryGroups.setOnGroupChange((group) => {
             if (this.activeTabLabel !== 'Inventory') return;
             this.applyInventoryFilter(group);
-            this.inventorySlots.clearSelection();
+            this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
+            this.equipmentSlots.clearSelection();
+            this.pendingRodEquip = null;
             this.inventorySlots.setBottomReservedHeight(0);
         });
-        this.inventorySlots.setOnItemSelect((item, stackCount) => {
+        this.inventorySlots.setOnItemSelect((item, slotIndex, stackCount) => {
+            if (this.suppressInventorySelection) return;
+            if (slotIndex < 0) {
+                this.inventoryDetails.setItem(null);
+                this.inventorySlots.setBottomReservedHeight(0);
+                this.pendingRodEquip = null;
+                this.pendingRodSlotIndex = null;
+                return;
+            }
+            // Check if we're unequipping a rod from the equipment slot
+            if (this.equipmentSlots.isSelected() && this.equipmentSlots.hasRodEquipped()) {
+                const targetPos = this.inventorySlots.getSlotScreenPosition(slotIndex);
+                
+                // Only unequip when clicking an empty inventory slot
+                if (!item) {
+                    const currentRod = this.equipmentSlots.getEquippedRod();
+                    if (currentRod && this.placeItemInSlot(slotIndex, currentRod.id, 1)) {
+                        this.equipmentSlots.unequipRod(targetPos ?? undefined);
+                        this.equipmentSlots.clearSelection();
+                        this.equippedRodId = null;
+                        this.networkManager.sendEquippedRod(null);
+                        this.updateInventoryDisplay();
+                        this.inventoryDetails.setItem(null);
+                        this.inventorySlots.setBottomReservedHeight(0);
+                        this.pendingRodEquip = null;
+                        this.pendingRodSlotIndex = null;
+                    }
+                    return;
+                }
+
+                // Clicking a filled slot just switches selection to that item
+                this.equipmentSlots.clearSelection();
+            }
+            
+            // Normal inventory selection
+            this.equipmentSlots.clearSelection();
+            
             if (!item) {
                 this.inventoryDetails.setItem(null);
                 this.inventorySlots.setBottomReservedHeight(0);
+                this.pendingRodEquip = null;
+                this.pendingRodSlotIndex = null;
                 return;
             }
+            
+            // Check if this is a fishing rod
+            if (item.category === 'Tools' && item.id.includes('rod')) {
+                this.pendingRodEquip = item;
+                this.pendingRodSlotIndex = slotIndex;
+            } else {
+                this.pendingRodEquip = null;
+                this.pendingRodSlotIndex = null;
+            }
+            
             this.inventorySlots.setBottomReservedHeight(this.inventoryDetails.getReservedHeight());
             this.inventoryDetails.setItem({
                 name: item.name,
@@ -117,6 +178,92 @@ export class BookUI {
                 amount: stackCount ?? item.count,
                 stackSize: item.stackSize
             });
+        });
+
+        this.inventorySlots.setOnSlotDragComplete((fromIndex, toIndex, pointer) => {
+            if (this.suppressInventorySelection) return false;
+            if (toIndex !== undefined) {
+                if (this.swapInventorySlots(fromIndex, toIndex)) {
+                    this.clearSelectionAfterDrag();
+                    return true;
+                }
+                return false;
+            }
+
+            if (this.equipmentSlots.isPointerOverSlot(pointer)) {
+                if (this.handleInventoryDragToRodSlot(fromIndex)) {
+                    this.clearSelectionAfterDrag();
+                    return true;
+                }
+                return false;
+            }
+
+            return false;
+        });
+        
+        // Handle rod slot clicks
+        this.equipmentSlots.setOnRodSlotClick((currentRod) => {
+            if (!this.equipmentSlots.isSelected()) {
+                this.inventoryDetails.setItem(null);
+                this.inventorySlots.setBottomReservedHeight(0);
+                this.pendingRodEquip = null;
+                this.pendingRodSlotIndex = null;
+                return;
+            }
+            // If we have a rod selected in inventory, equip it
+            if (this.pendingRodEquip && this.pendingRodSlotIndex !== null) {
+                const sourceIndex = this.pendingRodSlotIndex;
+                const sourcePos = this.inventorySlots.getSlotScreenPosition(sourceIndex);
+
+                // Remove one from source slot first
+                if (!this.removeItemFromSlot(sourceIndex, 1)) {
+                    return;
+                }
+
+                // If there's already a rod equipped, place it back into inventory
+                if (currentRod) {
+                    const placed = this.placeItemInSlot(sourceIndex, currentRod.id, 1) || this.placeItemInFirstEmptySlot(currentRod.id, 1);
+                    if (!placed) {
+                        // Rollback removal if no space
+                        this.placeItemInSlot(sourceIndex, this.pendingRodEquip.id, 1);
+                        return;
+                    }
+                }
+
+                // Equip the new rod
+                this.equipmentSlots.equipRod(this.pendingRodEquip, sourcePos ?? undefined);
+                this.equippedRodId = this.pendingRodEquip.id;
+                this.networkManager.sendEquippedRod(this.pendingRodEquip.id);
+
+                // Clear selection states
+                this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
+                this.equipmentSlots.clearSelection();
+                this.inventoryDetails.setItem(null);
+                this.inventorySlots.setBottomReservedHeight(0);
+                this.pendingRodEquip = null;
+                this.pendingRodSlotIndex = null;
+                this.updateInventoryDisplay();
+
+            } else if (currentRod) {
+                // No rod selected in inventory, but rod slot has a rod - select it and show details
+                this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
+                this.equipmentSlots.setSelected(true);
+                this.inventoryDetails.setItem({
+                    name: currentRod.name,
+                    description: currentRod.description,
+                    amount: 1,
+                    stackSize: currentRod.stackSize
+                });
+                this.inventorySlots.setBottomReservedHeight(this.inventoryDetails.getReservedHeight());
+            }
+        });
+
+        this.equipmentSlots.setOnRodSlotDragComplete((pointer) => {
+            if (this.handleEquipmentDragToInventory(pointer)) {
+                this.clearSelectionAfterDrag();
+                return true;
+            }
+            return false;
         });
 
         this.createTabs();
@@ -159,9 +306,13 @@ export class BookUI {
         const pageH = this.pageHeight * scale;
         const leftPageLeftEdgeX = bookCenterX - pageW / 2 - (this.pageWidth / 2) * scale;
         const leftPageTopEdgeY = cy - pageH / 2;
+        const rightPageLeftEdgeX = bookCenterX + pageW / 2 - (this.pageWidth / 2) * scale;
+        const rightPageTopEdgeY = cy - pageH / 2;
+        
         this.inventoryGroups.layout(leftPageLeftEdgeX, leftPageTopEdgeY, scale);
         this.inventoryDetails.layout(leftPageLeftEdgeX, leftPageTopEdgeY, this.pageHeight, scale);
         this.inventorySlots.layout(leftPageLeftEdgeX, leftPageTopEdgeY, this.pageHeight, scale);
+        this.equipmentSlots.layout(rightPageLeftEdgeX, rightPageTopEdgeY, this.pageHeight, scale);
     }
 
     private createTabs() {
@@ -292,15 +443,19 @@ export class BookUI {
         });
         const isInventory = label === 'Inventory';
         this.inventoryGroups.setVisible(isInventory);
+        this.equipmentSlots.setVisible(isInventory);
         if (isInventory) {
             this.inventoryGroups.setActiveGroup('All', true);
             this.refreshInventory();
             this.inventorySlots.setBottomReservedHeight(0);
+            this.pendingRodEquip = null;
         } else {
             this.inventorySlots.setVisible(false);
             this.inventoryDetails.setVisible(false);
-            this.inventorySlots.clearSelection();
+            this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
+            this.equipmentSlots.clearSelection();
             this.inventorySlots.setBottomReservedHeight(0);
+            this.pendingRodEquip = null;
         }
     }
 
@@ -328,29 +483,42 @@ export class BookUI {
         const response = await this.networkManager.getInventory();
         if (!response) return;
 
-        this.applyInventoryUpdate(response.items || []);
+        this.applyInventoryUpdate(response.slots || [], response.equippedRodId ?? null);
     }
 
-    private applyInventoryUpdate(items: InventoryEntry[]) {
-        this.inventoryEntries = items;
-        this.inventoryItems = this.inventoryEntries
-            .map((entry) => {
-                const def = getItemDefinition(entry.itemId);
+    private applyInventoryUpdate(slots: InventorySlot[], equippedRodId: string | null) {
+        this.inventorySlotsData = slots;
+        this.equippedRodId = equippedRodId;
+        this.updateInventoryDisplay();
+        this.updateEquippedRodFromServer();
+    }
+
+    private updateInventoryDisplay() {
+        this.inventoryItems = this.inventorySlotsData
+            .filter((slot) => Boolean(slot.itemId) && slot.count > 0)
+            .map((slot) => {
+                const def = slot.itemId ? getItemDefinition(slot.itemId) : null;
                 if (!def) return null;
                 const display: InventoryDisplayItem = {
                     id: def.id,
                     name: def.name,
                     description: def.description,
-                    count: entry.count,
+                    count: slot.count,
                     stackSize: def.stackSize,
                     iconKey: `item-${def.id}-18`,
                     category: def.category
                 };
-                return { entry, def, display };
+                return { slot, def, display };
             })
-            .filter((value): value is { entry: InventoryEntry; def: ItemDefinition; display: InventoryDisplayItem } => Boolean(value));
+            .filter((value): value is { slot: InventorySlot; def: ItemDefinition; display: InventoryDisplayItem } => Boolean(value));
 
-        this.applyInventoryFilter(this.inventoryGroups.getActiveGroup());
+        this.withSuppressedInventorySelection(() => {
+            this.applyInventoryFilter(this.inventoryGroups.getActiveGroup());
+        });
+    }
+
+    private persistInventorySlots() {
+        this.networkManager.sendInventorySlots(this.inventorySlotsData);
     }
 
     private applyInventoryFilter(group: GroupKey) {
@@ -365,17 +533,22 @@ export class BookUI {
 
         const showAll = group === 'All';
         const category = this.getGroupCategory(group);
-        const filtered = showAll
-            ? this.inventoryItems.map((item) => item.display)
-            : category
-                ? this.inventoryItems
-                    .filter((item) => item.def.category === category)
-                    .map((item) => item.display)
-                : [];
 
-        this.inventorySlots.setVisible(showAll || category === 'Food');
-        this.inventorySlots.setItems(filtered, showAll ? 'all' : 'category');
-        if (!showAll && category !== 'Food') {
+        const itemBySlot = new Map<number, InventoryDisplayItem>();
+        this.inventoryItems.forEach((entry) => {
+            itemBySlot.set(entry.slot.index, entry.display);
+        });
+
+        const slotsDisplay = this.inventorySlotsData.map((slot) => ({
+            index: slot.index,
+            item: itemBySlot.get(slot.index) ?? null,
+            count: slot.count
+        }));
+
+        // Always show slots for inventory views
+        this.inventorySlots.setVisible(isInventory);
+        this.inventorySlots.setSlots(slotsDisplay, showAll ? null : category);
+        if (!showAll && category !== 'Food' && category !== 'Tools') {
             this.inventoryDetails.setItem(null);
             this.inventorySlots.setBottomReservedHeight(0);
         }
@@ -394,6 +567,196 @@ export class BookUI {
             default:
                 return null;
         }
+    }
+
+    private getSlotByIndex(index: number): InventorySlot | undefined {
+        return this.inventorySlotsData.find((slot) => slot.index === index);
+    }
+
+    private getRodDefinition(itemId: string): ItemDefinition | null {
+        const def = getItemDefinition(itemId);
+        if (!def) return null;
+        if (def.category !== 'Tools' || !def.id.includes('rod')) return null;
+        return def;
+    }
+
+    private createDisplayItem(def: ItemDefinition, count: number): InventoryDisplayItem {
+        return {
+            id: def.id,
+            name: def.name,
+            description: def.description,
+            count,
+            stackSize: def.stackSize,
+            iconKey: `item-${def.id}-18`,
+            category: def.category
+        };
+    }
+
+    private getStackSize(itemId: string): number {
+        const def = getItemDefinition(itemId);
+        return def?.stackSize ?? 99;
+    }
+
+    private removeItemFromSlot(index: number, amount: number): boolean {
+        const slot = this.getSlotByIndex(index);
+        if (!slot || !slot.itemId || slot.count < amount) return false;
+
+        slot.count -= amount;
+        if (slot.count <= 0) {
+            slot.itemId = null;
+            slot.count = 0;
+        }
+        this.persistInventorySlots();
+        return true;
+    }
+
+    private placeItemInSlot(index: number, itemId: string, amount: number): boolean {
+        const slot = this.getSlotByIndex(index);
+        if (!slot) return false;
+
+        const stackSize = this.getStackSize(itemId);
+        if (!slot.itemId) {
+            if (amount > stackSize) return false;
+            slot.itemId = itemId;
+            slot.count = amount;
+            this.persistInventorySlots();
+            return true;
+        }
+
+        if (slot.itemId !== itemId) return false;
+        if (slot.count + amount > stackSize) return false;
+
+        slot.count += amount;
+        this.persistInventorySlots();
+        return true;
+    }
+
+    private placeItemInFirstEmptySlot(itemId: string, amount: number): boolean {
+        for (const slot of this.inventorySlotsData) {
+            if (!slot.itemId || slot.count === 0) {
+                return this.placeItemInSlot(slot.index, itemId, amount);
+            }
+        }
+        return false;
+    }
+
+    private swapInventorySlots(fromIndex: number, toIndex: number): boolean {
+        if (fromIndex === toIndex) return false;
+        const fromSlot = this.getSlotByIndex(fromIndex);
+        const toSlot = this.getSlotByIndex(toIndex);
+        if (!fromSlot || !toSlot) return false;
+        if (!fromSlot.itemId || fromSlot.count <= 0) return false;
+
+        const tempItemId = fromSlot.itemId;
+        const tempCount = fromSlot.count;
+        fromSlot.itemId = toSlot.itemId;
+        fromSlot.count = toSlot.count;
+        toSlot.itemId = tempItemId;
+        toSlot.count = tempCount;
+
+        this.persistInventorySlots();
+        this.updateInventoryDisplay();
+        return true;
+    }
+
+    private handleInventoryDragToRodSlot(sourceIndex: number): boolean {
+        const sourceSlot = this.getSlotByIndex(sourceIndex);
+        if (!sourceSlot || !sourceSlot.itemId || sourceSlot.count <= 0) return false;
+
+        const rodDef = this.getRodDefinition(sourceSlot.itemId);
+        if (!rodDef) return false;
+
+        const currentRod = this.equipmentSlots.getEquippedRod();
+        if (currentRod) {
+            sourceSlot.itemId = currentRod.id;
+            sourceSlot.count = 1;
+        } else {
+            sourceSlot.itemId = null;
+            sourceSlot.count = 0;
+        }
+
+        this.persistInventorySlots();
+        const display = this.createDisplayItem(rodDef, 1);
+        this.equipmentSlots.equipRod(display);
+        this.equippedRodId = display.id;
+        this.networkManager.sendEquippedRod(display.id);
+        this.updateInventoryDisplay();
+        return true;
+    }
+
+    private handleEquipmentDragToInventory(pointer: Phaser.Input.Pointer): boolean {
+        const destIndex = this.inventorySlots.getSlotIndexAtPointer(pointer);
+        if (destIndex === undefined) return false;
+
+        const currentRod = this.equipmentSlots.getEquippedRod();
+        if (!currentRod) return false;
+
+        const destSlot = this.getSlotByIndex(destIndex);
+        if (!destSlot) return false;
+
+        if (destSlot.itemId) {
+            const destRodDef = this.getRodDefinition(destSlot.itemId);
+            if (!destRodDef) return false;
+
+            destSlot.itemId = currentRod.id;
+            destSlot.count = 1;
+
+            this.persistInventorySlots();
+            const display = this.createDisplayItem(destRodDef, 1);
+            this.equipmentSlots.equipRod(display);
+            this.equippedRodId = display.id;
+            this.networkManager.sendEquippedRod(display.id);
+        } else {
+            destSlot.itemId = currentRod.id;
+            destSlot.count = 1;
+
+            this.persistInventorySlots();
+            this.equipmentSlots.unequipRod();
+            this.equippedRodId = null;
+            this.networkManager.sendEquippedRod(null);
+        }
+
+        this.updateInventoryDisplay();
+        return true;
+    }
+
+    private clearSelectionAfterDrag() {
+        this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
+        this.equipmentSlots.clearSelection();
+        this.inventoryDetails.setItem(null);
+        this.inventorySlots.setBottomReservedHeight(0);
+        this.pendingRodEquip = null;
+        this.pendingRodSlotIndex = null;
+    }
+
+    private updateEquippedRodFromServer() {
+        const serverRodId = this.equippedRodId;
+        const currentRod = this.equipmentSlots.getEquippedRod();
+
+        if (!serverRodId) {
+            if (currentRod) {
+                this.equipmentSlots.unequipRod();
+            }
+            return;
+        }
+
+        if (currentRod && currentRod.id === serverRodId) return;
+
+        const def = getItemDefinition(serverRodId);
+        if (!def) return;
+
+        const display: InventoryDisplayItem = {
+            id: def.id,
+            name: def.name,
+            description: def.description,
+            count: 1,
+            stackSize: def.stackSize,
+            iconKey: `item-${def.id}-18`,
+            category: def.category
+        };
+
+        this.equipmentSlots.equipRod(display);
+        this.equipmentSlots.clearSelection();
     }
 
     private drawBitmapText(
@@ -504,19 +867,35 @@ export class BookUI {
     open() {
         this.openState = true;
         this.container.setVisible(true);
+        // Refresh layout and tab state to ensure everything is positioned and visible
+        this.layout();
+        this.setActiveTab(this.activeTabLabel);
     }
 
     openToTab(tabLabel: string) {
+        this.openState = true;
+        this.container.setVisible(true);
+        this.layout();
         this.setActiveTab(tabLabel);
-        this.open();
     }
 
     close() {
         this.openState = false;
         this.container.setVisible(false);
-        this.inventorySlots.clearSelection();
+        this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
+        this.equipmentSlots.clearSelection();
         this.inventoryDetails.setVisible(false);
         this.inventorySlots.setBottomReservedHeight(0);
+        this.pendingRodEquip = null;
+    }
+
+    private withSuppressedInventorySelection(action: () => void) {
+        this.suppressInventorySelection = true;
+        try {
+            action();
+        } finally {
+            this.suppressInventorySelection = false;
+        }
     }
 
     toggle() {

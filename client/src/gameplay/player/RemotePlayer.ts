@@ -3,7 +3,7 @@ import { OcclusionManager } from '../map/OcclusionManager';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 import { SharedMCTextures } from './SharedMCTextures';
 import { WaterSystem } from '../fx/water/WaterSystem';
-import { createChatBubble, createNameplate, getOcclusionAdjustedDepth } from './PlayerVisualUtils';
+import { createChatBubble, createIconBubble, createNameplate, getOcclusionAdjustedDepth } from './PlayerVisualUtils';
 
 /**
  * MCDirection type for MC character system
@@ -87,6 +87,7 @@ export class RemotePlayer {
     private sprite!: Phaser.GameObjects.Sprite;
     private nameplate!: Phaser.GameObjects.Container;
     private afkTimerText?: Phaser.GameObjects.Text;
+    private nameplateHeight = 0;
     
     private targetX: number;
     private targetY: number;
@@ -97,6 +98,8 @@ export class RemotePlayer {
     private occlusionManager?: OcclusionManager;
     private chatBubble?: Phaser.GameObjects.Container;
     private chatTimer?: Phaser.Time.TimerEvent;
+    private fishingBubble?: Phaser.GameObjects.Container;
+    private fishingTimer?: Phaser.Time.TimerEvent;
     private waterSystem?: WaterSystem;
     
     /** Custom animation key getter for per-player appearance */
@@ -104,6 +107,7 @@ export class RemotePlayer {
 
     // Interpolation
     private readonly interpSpeed = 0.25;
+    private readonly chatBubbleGap = 10;
 
     // Spawn effect
     private particles: PixelParticle[] = [];
@@ -335,6 +339,7 @@ export class RemotePlayer {
 
         this.nameplate = nameplate.container;
         this.afkTimerText = nameplate.afkTimerText;
+        this.nameplateHeight = nameplate.nameText.height + 2; // padding.y * 2 from createNameplate
 
         this.nameplate.setPosition(this.sprite.x, this.sprite.y + this.nameplateYOffset);
         this.nameplate.setAlpha(skipSpawnEffect ? 1 : 0);
@@ -484,14 +489,12 @@ export class RemotePlayer {
         this.nameplate.setPosition(this.sprite.x, this.sprite.y + this.nameplateYOffset);
 
         if (this.chatBubble) {
-            // Position above nameplate
-            // Calculate height based on text content if possible, or just use bounds
-            // Assuming text is child 1
-            const text = this.chatBubble.list[1] as Phaser.GameObjects.Text;
-            const bubbleHeight = text ? text.height + 16 : 40;
-            const yOffset = this.nameplateYOffset - 10 - (bubbleHeight / 2);
-            this.chatBubble.setPosition(this.sprite.x, this.sprite.y + yOffset);
+            this.positionChatBubble();
             this.chatBubble.setDepth(99999); // Always top
+        }
+        if (this.fishingBubble) {
+            this.positionFishingBubble();
+            this.fishingBubble.setDepth(99999);
         }
 
         // Update AFK transparency
@@ -674,6 +677,12 @@ export class RemotePlayer {
         if (this.chatTimer) {
             this.chatTimer.remove(false);
         }
+        if (this.fishingBubble) {
+            this.fishingBubble.destroy();
+        }
+        if (this.fishingTimer) {
+            this.fishingTimer.remove(false);
+        }
 
         this.sprite.destroy();
         this.nameplate.destroy();
@@ -696,9 +705,8 @@ export class RemotePlayer {
             depth: 99999
         });
 
-        const yOffset = -36 - 10 - (bubble.height / 2);
         this.chatBubble = bubble.container;
-        this.chatBubble.setPosition(this.sprite.x, this.sprite.y + yOffset);
+        this.positionChatBubble();
 
         // Auto destroy
         this.chatTimer = this.scene.time.delayedCall(4000, () => {
@@ -714,6 +722,75 @@ export class RemotePlayer {
                 });
             }
         });
+    }
+
+    showFishingBubble(rodItemId: string) {
+        const textureKey = `item-${rodItemId}-18`;
+        if (!this.scene.textures.exists(textureKey)) return;
+
+        if (this.fishingBubble) {
+            this.fishingBubble.destroy();
+            this.fishingBubble = undefined;
+        }
+        if (this.fishingTimer) {
+            this.fishingTimer.remove(false);
+            this.fishingTimer = undefined;
+        }
+
+        const bubble = createIconBubble({
+            scene: this.scene,
+            textureKey,
+            depth: 99999
+        });
+
+        this.fishingBubble = bubble.container;
+        this.positionFishingBubble(true);
+
+        this.fishingTimer = this.scene.time.delayedCall(2000, () => {
+            if (this.fishingBubble) {
+                this.scene.tweens.add({
+                    targets: this.fishingBubble,
+                    alpha: 0,
+                    duration: 250,
+                    onComplete: () => {
+                        this.fishingBubble?.destroy();
+                        this.fishingBubble = undefined;
+                    }
+                });
+            }
+        });
+    }
+
+    private positionChatBubble() {
+        if (!this.chatBubble) return;
+        const bubbleHeight = this.chatBubble.getBounds().height;
+        const nameplateTop = this.nameplateHeight
+            ? this.sprite.y + this.nameplateYOffset - this.nameplateHeight / 2
+            : (this.nameplate?.getBounds().top ?? (this.sprite.y + this.nameplateYOffset));
+        const bubbleY = nameplateTop - this.chatBubbleGap - bubbleHeight / 2;
+        this.chatBubble.setPosition(this.sprite.x, bubbleY);
+    }
+
+    private positionFishingBubble(isInitial: boolean = false) {
+        if (!this.fishingBubble) return;
+        const bubbleHeight = this.fishingBubble.getBounds().height;
+        const nameplateTop = this.nameplateHeight
+            ? this.sprite.y + this.nameplateYOffset - this.nameplateHeight / 2
+            : (this.nameplate?.getBounds().top ?? (this.sprite.y + this.nameplateYOffset));
+        const bubbleY = nameplateTop - this.chatBubbleGap - bubbleHeight / 2;
+        if (isInitial) {
+            this.fishingBubble.setPosition(this.sprite.x, bubbleY + 6);
+            this.fishingBubble.setAlpha(0);
+            this.scene.tweens.add({
+                targets: this.fishingBubble,
+                y: bubbleY,
+                alpha: 1,
+                duration: 250,
+                ease: 'Sine.out'
+            });
+        } else {
+            this.fishingBubble.setPosition(this.sprite.x, bubbleY);
+        }
     }
 
     /**
