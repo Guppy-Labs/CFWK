@@ -104,6 +104,14 @@ export class BookUI {
             frameTextureKey: DEFAULT_ITEM_DETAILS_CONFIG.frameTextureKey,
             dividerTextureKey: DEFAULT_ITEM_DETAILS_CONFIG.dividerTextureKey
         });
+        this.inventoryDetails.setOnDrop((itemId, amount, slotIndex) => {
+            this.networkManager.sendDropItem(itemId, amount);
+            this.inventoryDetails.setItem(null);
+            this.inventorySlots.setBottomReservedHeight(0);
+            this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
+            this.pendingRodEquip = null;
+            this.pendingRodSlotIndex = null;
+        });
         this.inventorySlots = new InventorySlotsUI(this.scene, this.container, {
             bottomReservedHeight: 0
         });
@@ -128,6 +136,12 @@ export class BookUI {
             }
             // Check if we're unequipping a rod from the equipment slot
             if (this.equipmentSlots.isSelected() && this.equipmentSlots.hasRodEquipped()) {
+                if (this.isFishingActive()) {
+                    this.equipmentSlots.clearSelection();
+                    this.pendingRodEquip = null;
+                    this.pendingRodSlotIndex = null;
+                    return;
+                }
                 const targetPos = this.inventorySlots.getSlotScreenPosition(slotIndex);
                 
                 // Only unequip when clicking an empty inventory slot
@@ -175,6 +189,8 @@ export class BookUI {
             this.inventoryDetails.setItem({
                 name: item.name,
                 description: item.description,
+                itemId: item.id,
+                slotIndex,
                 amount: stackCount ?? item.count,
                 stackSize: item.stackSize
             });
@@ -206,6 +222,12 @@ export class BookUI {
             if (!this.equipmentSlots.isSelected()) {
                 this.inventoryDetails.setItem(null);
                 this.inventorySlots.setBottomReservedHeight(0);
+                this.pendingRodEquip = null;
+                this.pendingRodSlotIndex = null;
+                return;
+            }
+            if (this.isFishingActive()) {
+                this.equipmentSlots.clearSelection();
                 this.pendingRodEquip = null;
                 this.pendingRodSlotIndex = null;
                 return;
@@ -251,6 +273,8 @@ export class BookUI {
                 this.inventoryDetails.setItem({
                     name: currentRod.name,
                     description: currentRod.description,
+                    itemId: currentRod.id,
+                    slotIndex: -1,
                     amount: 1,
                     stackSize: currentRod.stackSize
                 });
@@ -660,6 +684,7 @@ export class BookUI {
     }
 
     private handleInventoryDragToRodSlot(sourceIndex: number): boolean {
+        if (this.isFishingActive()) return false;
         const sourceSlot = this.getSlotByIndex(sourceIndex);
         if (!sourceSlot || !sourceSlot.itemId || sourceSlot.count <= 0) return false;
 
@@ -685,6 +710,7 @@ export class BookUI {
     }
 
     private handleEquipmentDragToInventory(pointer: Phaser.Input.Pointer): boolean {
+        if (this.isFishingActive()) return false;
         const destIndex = this.inventorySlots.getSlotIndexAtPointer(pointer);
         if (destIndex === undefined) return false;
 
@@ -757,6 +783,10 @@ export class BookUI {
 
         this.equipmentSlots.equipRod(display);
         this.equipmentSlots.clearSelection();
+    }
+
+    private isFishingActive(): boolean {
+        return this.scene.scene.isActive('FishingScene');
     }
 
     private drawBitmapText(

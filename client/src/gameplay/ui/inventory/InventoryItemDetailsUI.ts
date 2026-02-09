@@ -20,6 +20,8 @@ export type InventoryItemDetailsConfig = {
 export type InventoryItemDetailsData = {
     name: string;
     description: string;
+    itemId: string;
+    slotIndex: number;
     amount?: number;
     stackSize?: number;
 };
@@ -49,6 +51,16 @@ export class InventoryItemDetailsUI {
     private nameImage: Phaser.GameObjects.Image;
     private amountImage: Phaser.GameObjects.Image;
     private descriptionImage: Phaser.GameObjects.Image;
+    private dropButtonBg: Phaser.GameObjects.Image;
+    private dropButtonLabel: Phaser.GameObjects.Image;
+    private dropButton: Phaser.GameObjects.Container;
+    private dropButtonTextureKey?: string;
+    private dropLabelTextureKey?: string;
+    private dropButtonTextureCounter = 0;
+    private dropButtonWidth = 0;
+    private dropButtonHeight = 0;
+    private onDrop?: (itemId: string, amount: number, slotIndex: number) => void;
+    private currentItem?: { itemId: string; amount: number; slotIndex: number };
 
     private labelTextureCounter = 0;
     private dividerTextureCounter = 0;
@@ -112,8 +124,22 @@ export class InventoryItemDetailsUI {
         this.descriptionTextureKey = this.createTextTexture('', this.config.width - this.config.descriptionOffsetX * 2);
         this.descriptionImage = this.scene.add.image(0, 0, this.descriptionTextureKey).setOrigin(0, 0);
 
-        this.container.add([this.frame, this.divider, this.nameImage, this.amountImage, this.descriptionImage]);
+        const dropLabelWidth = Math.max(1, this.measureBitmapTextWidth('Drop'));
+        this.dropLabelTextureKey = this.createTextTexture('Drop', dropLabelWidth, false, '#f2e9dd');
+        this.dropButtonLabel = this.scene.add.image(0, 0, this.dropLabelTextureKey).setOrigin(0.5, 0.5);
+        this.dropButtonBg = this.scene.add.image(0, 0, 'ui-group-button-selected').setOrigin(0.5, 0.5);
+        this.dropButton = this.scene.add.container(0, 0, [this.dropButtonBg, this.dropButtonLabel]);
+        this.dropButtonBg.setInteractive({ useHandCursor: false });
+        this.dropButtonBg.on('pointerdown', () => this.handleDrop());
+
+        this.dropButton.setVisible(false);
+
+        this.container.add([this.frame, this.divider, this.nameImage, this.amountImage, this.descriptionImage, this.dropButton]);
         this.container.setVisible(false);
+    }
+
+    setOnDrop(callback?: (itemId: string, amount: number, slotIndex: number) => void) {
+        this.onDrop = callback;
     }
 
     setVisible(visible: boolean) {
@@ -123,6 +149,8 @@ export class InventoryItemDetailsUI {
     setItem(data: InventoryItemDetailsData | null) {
         if (!data) {
             this.setVisible(false);
+            this.dropButton.setVisible(false);
+            this.currentItem = undefined;
             return;
         }
 
@@ -147,6 +175,12 @@ export class InventoryItemDetailsUI {
         if (oldAmount && this.scene.textures.exists(oldAmount)) this.scene.textures.remove(oldAmount);
         if (oldDesc && this.scene.textures.exists(oldDesc)) this.scene.textures.remove(oldDesc);
 
+        this.currentItem = {
+            itemId: data.itemId,
+            amount: Math.max(1, data.amount ?? 1),
+            slotIndex: data.slotIndex
+        };
+        this.dropButton.setVisible(data.slotIndex >= 0);
         this.setVisible(true);
     }
 
@@ -169,10 +203,43 @@ export class InventoryItemDetailsUI {
 
         const descriptionY = dividerY + this.getDividerHeight() + this.config.descriptionOffsetY;
         this.descriptionImage.setPosition(this.config.descriptionOffsetX, descriptionY);
+
+        this.updateDropButtonLayout();
     }
 
     getReservedHeight(): number {
         return this.config.height - 4;
+    }
+
+    private updateDropButtonLayout() {
+        const targetWidth = Math.round(Math.max(30, Math.min(36, this.config.width * 0.25)));
+        const targetHeight = 12;
+        this.updateDropButtonTexture(targetWidth, targetHeight);
+
+        this.dropButtonBg.setDisplaySize(targetWidth, targetHeight);
+        this.dropButtonLabel.setPosition(0, -1);
+
+        const leftPadding = this.config.nameOffsetX;
+        const x = leftPadding + targetWidth / 2;
+        const y = this.config.height - targetHeight / 2 - 6;
+        this.dropButton.setPosition(x, y);
+    }
+
+    private updateDropButtonTexture(width: number, height: number) {
+        if (width === this.dropButtonWidth && height === this.dropButtonHeight && this.dropButtonTextureKey) {
+            return;
+        }
+        this.dropButtonWidth = width;
+        this.dropButtonHeight = height;
+
+        const newKey = this.createNineSliceTexture('ui-group-button-selected', width, height, 6, 6, `__inv_drop_btn_${this.dropButtonTextureCounter++}`);
+        const oldKey = this.dropButtonTextureKey;
+        this.dropButtonTextureKey = newKey;
+        this.dropButtonBg.setTexture(newKey);
+
+        if (oldKey && oldKey !== newKey && this.scene.textures.exists(oldKey)) {
+            this.scene.textures.remove(oldKey);
+        }
     }
 
     private createFrameTexture() {
@@ -203,6 +270,39 @@ export class InventoryItemDetailsUI {
         ctx.drawImage(srcImage, 0, srcH - border, border, border, 0, border + centerH, border, border);
         ctx.drawImage(srcImage, border, srcH - border, centerSrcW, border, border, border + centerH, centerW, border);
         ctx.drawImage(srcImage, srcW - border, srcH - border, border, border, border + centerW, border + centerH, border, border);
+
+        this.scene.textures.addCanvas(rtKey, canvas);
+        return rtKey;
+    }
+
+    private createNineSliceTexture(key: string, width: number, height: number, borderX: number, borderY: number, overrideKey?: string) {
+        const srcTexture = this.scene.textures.get(key);
+        const srcImage = srcTexture.getSourceImage() as HTMLImageElement;
+        const srcW = srcImage.width;
+        const srcH = srcImage.height;
+
+        const centerSrcW = srcW - borderX * 2;
+        const centerSrcH = srcH - borderY * 2;
+        const centerW = Math.max(1, width - borderX * 2);
+        const centerH = Math.max(1, height - borderY * 2);
+
+        const rtKey = overrideKey ?? `__inv_drop_btn_${this.dropButtonTextureCounter++}`;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+
+        ctx.drawImage(srcImage, 0, 0, borderX, borderY, 0, 0, borderX, borderY);
+        ctx.drawImage(srcImage, borderX, 0, centerSrcW, borderY, borderX, 0, centerW, borderY);
+        ctx.drawImage(srcImage, srcW - borderX, 0, borderX, borderY, borderX + centerW, 0, borderX, borderY);
+
+        ctx.drawImage(srcImage, 0, borderY, borderX, centerSrcH, 0, borderY, borderX, centerH);
+        ctx.drawImage(srcImage, borderX, borderY, centerSrcW, centerSrcH, borderX, borderY, centerW, centerH);
+        ctx.drawImage(srcImage, srcW - borderX, borderY, borderX, centerSrcH, borderX + centerW, borderY, borderX, centerH);
+
+        ctx.drawImage(srcImage, 0, srcH - borderY, borderX, borderY, 0, borderY + centerH, borderX, borderY);
+        ctx.drawImage(srcImage, borderX, srcH - borderY, centerSrcW, borderY, borderX, borderY + centerH, centerW, borderY);
+        ctx.drawImage(srcImage, srcW - borderX, srcH - borderY, borderX, borderY, borderX + centerW, borderY + centerH, borderX, borderY);
 
         this.scene.textures.addCanvas(rtKey, canvas);
         return rtKey;
@@ -242,6 +342,12 @@ export class InventoryItemDetailsUI {
     private getAmountText(data: InventoryItemDetailsData) {
         if (data.amount === undefined || data.stackSize === undefined) return '';
         return `${data.amount}/${data.stackSize}`;
+    }
+
+    private handleDrop() {
+        if (!this.currentItem) return;
+        if (this.currentItem.slotIndex < 0) return;
+        this.onDrop?.(this.currentItem.itemId, this.currentItem.amount, this.currentItem.slotIndex);
     }
 
     private getTextureWidth(textureKey?: string) {

@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
-import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE } from "@cfwk/shared";
+import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { DEFAULT_INVENTORY_SLOTS } from "@cfwk/shared";
@@ -75,6 +75,7 @@ export class InstanceRoom extends Room<InstanceState> {
     private instanceManager = InstanceManager.getInstance();
     private timeUpdateInterval?: ReturnType<typeof setInterval>;
     private afkCheckInterval?: ReturnType<typeof setInterval>;
+    private fishingCasts = new Map<string, { depth: number; region: string; castAt: number }>();
 
     onCreate(options: { instanceId: string; locationId: string; mapFile: string; maxPlayers: number }) {
         console.log(`[InstanceRoom] Creating room for instance: ${options.instanceId}`);
@@ -322,6 +323,51 @@ export class InstanceRoom extends Room<InstanceState> {
                 sessionId: client.sessionId,
                 rodItemId: data?.rodItemId ?? null
             });
+        });
+
+        // Handle fishing stop (bubble sync)
+        this.onMessage("fishing:stop", (client) => {
+            this.broadcast("fishing:stop", {
+                sessionId: client.sessionId
+            });
+        });
+
+        // Handle fishing cast (server-side loot selection setup)
+        this.onMessage("fishing:cast", (client, data: { depth?: number; region?: string }) => {
+            const depthRaw = typeof data?.depth === 'number' ? data.depth : 1;
+            const depth = Math.max(1, Math.min(12, depthRaw));
+            const region = typeof data?.region === 'string' && data.region ? data.region : 'temperate';
+            this.fishingCasts.set(client.sessionId, { depth, region, castAt: Date.now() });
+        });
+
+        // Handle fishing catch (award item if cast exists)
+        this.onMessage("fishing:catch", async (client) => {
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+
+            const cast = this.fishingCasts.get(client.sessionId);
+            if (!cast) return;
+
+            const entries = getLootTable(cast.region as any);
+            const itemId = selectFromLootTable(entries, cast.depth, 'rickety', null);
+            this.fishingCasts.delete(client.sessionId);
+            if (!itemId) return;
+
+            const { items: currentSlots, equippedRodId } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+            const stackSize = getItemDefinition(itemId)?.stackSize ?? 99;
+            const hasStackSpace = currentSlots.some((slot) => slot.itemId === itemId && slot.count < stackSize);
+            const hasEmptySlot = currentSlots.some((slot) => !slot.itemId || slot.count === 0);
+
+            if (!hasStackSpace && !hasEmptySlot) {
+                this.createDroppedItem(itemId, 1, player.x, player.y);
+                client.send('inventory', { slots: currentSlots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+                client.send('fishing:catchResult', { itemId });
+                return;
+            }
+
+            const slots = await InventoryCache.getInstance().addItem(player.odcid, itemId, 1);
+            client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+            client.send('fishing:catchResult', { itemId });
         });
 
         // Handle pickup item interactions
@@ -623,6 +669,7 @@ export class InstanceRoom extends Room<InstanceState> {
         }
         
         this.state.players.delete(client.sessionId);
+        this.fishingCasts.delete(client.sessionId);
         
         // Notify instance manager
         this.instanceManager.playerLeft(this.instanceId);

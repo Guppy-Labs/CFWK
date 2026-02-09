@@ -32,10 +32,16 @@ const port = Number(process.env.PORT || 3019);
 const app = express();
 
 const clientUrlEnv = process.env.CLIENT_URL || "http://localhost:5173";
-const allowedOrigins = (process.env.CLIENT_URLS || clientUrlEnv)
+const envOrigins = (process.env.CLIENT_URLS || "")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
+const defaultOrigins = [
+    clientUrlEnv,
+    "https://cutefishwithknives.com",
+    "https://dev.cutefishwithknives.com"
+];
+const allowedOrigins = Array.from(new Set([...(envOrigins.length ? envOrigins : [clientUrlEnv]), ...defaultOrigins]));
 
 app.use(cors({
     origin: (origin, callback) => {

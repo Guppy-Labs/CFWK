@@ -313,6 +313,10 @@ export class UIScene extends Phaser.Scene {
         });
     }
 
+    setHudVisible(visible: boolean) {
+        this.playerHud?.setVisible(visible);
+    }
+
     private setupCustomCursor() {
         this.cursorDefaultUrl = this.createScaledCursorDataUrl('ui-cursor-default', 2);
         this.cursorHoverUrl = this.createScaledCursorDataUrl('ui-cursor-hover', 2);

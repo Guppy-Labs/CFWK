@@ -330,6 +330,33 @@ export class NetworkManager {
     }
 
     /**
+     * Send a fishing stop event to the server (bubble sync)
+     */
+    sendFishingStop() {
+        if (this.currentRoom) {
+            this.currentRoom.send("fishing:stop", {});
+        }
+    }
+
+    /**
+     * Send a fishing cast event (for loot selection)
+     */
+    sendFishingCast(depth: number, region: string) {
+        if (this.currentRoom) {
+            this.currentRoom.send("fishing:cast", { depth, region });
+        }
+    }
+
+    /**
+     * Send a fishing catch event (award item if bite succeeded)
+     */
+    sendFishingCatch() {
+        if (this.currentRoom) {
+            this.currentRoom.send("fishing:catch", {});
+        }
+    }
+
+    /**
      * Get the local player's session ID
      */
     getSessionId(): string | null {

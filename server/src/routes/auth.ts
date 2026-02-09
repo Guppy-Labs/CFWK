@@ -6,6 +6,7 @@ import User from '../models/User';
 import BannedIP from '../models/BannedIP';
 import { ALLOWED_EMAILS } from '../config/access';
 import { sendEmail } from '../utils/email';
+import { getUsernameValidationError, normalizeUsername } from '../utils/username';
 
 const router = express.Router();
 
@@ -16,15 +17,18 @@ router.post('/register', async (req, res) => {
         const { email, password, username } = req.body;
         if (!email || !password) return res.status(400).json({ message: 'Missing fields' });
 
-        if (typeof username === 'string' && username.trim().toLowerCase() === 'system') {
-            return res.status(400).json({ message: 'Username taken' });
-        }
-
         const existing = await User.findOne({ email });
         if (existing) return res.status(400).json({ message: 'User already exists' });
 
         if (typeof username === 'string' && username.trim().length > 0) {
-            const existingUsername = await User.findOne({ username });
+            const usernameError = getUsernameValidationError(username);
+            if (usernameError) return res.status(400).json({ message: usernameError });
+
+            const normalizedUsername = normalizeUsername(username);
+            if (normalizedUsername.toLowerCase() === 'system') {
+                return res.status(400).json({ message: 'Username taken' });
+            }
+            const existingUsername = await User.findOne({ username: normalizedUsername });
             if (existingUsername) return res.status(400).json({ message: 'Username taken' });
         }
 
@@ -40,7 +44,7 @@ router.post('/register', async (req, res) => {
         const newUser = new User({ 
             email, 
             password: hashedPassword,
-            username: username, 
+            username: typeof username === 'string' && username.trim().length > 0 ? normalizeUsername(username) : undefined, 
             permissions: perms,
             isVerified: false,
             verificationToken: verifyToken
@@ -281,15 +285,17 @@ router.post('/set-username', async (req, res) => {
     const user = req.user as any;
     const { username } = req.body;
 
-    if (!username) return res.status(400).json({ message: 'Username required' });
-
-    if (typeof username === 'string' && username.trim().toLowerCase() === 'system') {
+    if (!username || typeof username !== 'string') return res.status(400).json({ message: 'Username required' });
+    const usernameError = getUsernameValidationError(username);
+    if (usernameError) return res.status(400).json({ message: usernameError });
+    const normalizedUsername = normalizeUsername(username);
+    if (normalizedUsername.toLowerCase() === 'system') {
         return res.status(400).json({ message: 'Username taken' });
     }
     
     // Check constraints
     // 1. Unique
-    const existing = await User.findOne({ username });
+    const existing = await User.findOne({ username: normalizedUsername });
     if (existing && existing.id !== user.id) return res.status(400).json({ message: 'Username taken' });
 
     // 2. 14 Days
@@ -305,7 +311,7 @@ router.post('/set-username', async (req, res) => {
         const userDoc = await User.findById(user.id);
         if(!userDoc) return res.status(404).json({ message: 'User not found' });
         
-        userDoc.username = username;
+        userDoc.username = normalizedUsername;
         userDoc.lastUsernameChange = new Date();
         await userDoc.save();
         

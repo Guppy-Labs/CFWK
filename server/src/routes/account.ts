@@ -5,6 +5,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import User, { DEFAULT_CHARACTER_APPEARANCE, ICharacterAppearance } from '../models/User';
+import { getUsernameValidationError, normalizeUsername } from '../utils/username';
 
 const router = express.Router();
 
@@ -114,8 +115,10 @@ router.post('/username', async (req, res) => {
     try {
         const { username } = req.body;
         if (!username || typeof username !== 'string') return res.status(400).json({ message: 'Invalid username' });
-
-        if (username.trim().toLowerCase() === 'system') {
+        const usernameError = getUsernameValidationError(username);
+        if (usernameError) return res.status(400).json({ message: usernameError });
+        const normalizedUsername = normalizeUsername(username);
+        if (normalizedUsername.toLowerCase() === 'system') {
             return res.status(400).json({ message: 'Username taken' });
         }
         
@@ -131,10 +134,10 @@ router.post('/username', async (req, res) => {
         }
 
         // Uniqueness check
-        const existing = await User.findOne({ username });
+        const existing = await User.findOne({ username: normalizedUsername });
         if (existing) return res.status(400).json({ message: 'Username taken' });
 
-        user.username = username;
+        user.username = normalizedUsername;
         user.lastUsernameChange = new Date();
         await user.save();
 

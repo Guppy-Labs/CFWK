@@ -3,6 +3,7 @@ import { Toast } from './ui/Toast';
 import { CharacterService } from './gameplay/player/CharacterService';
 import { DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
 import { renderCharacterPreview } from './skin/CharacterPreview';
+import { getUsernameValidationError, normalizeUsername } from './utils/username';
 
 const usernameInput = document.getElementById('username-input') as HTMLInputElement;
 const saveUsernameBtn = document.getElementById('save-username-btn') as HTMLButtonElement;
@@ -502,14 +503,20 @@ avatarInput.addEventListener('change', async () => {
 
 // Update Username
 saveUsernameBtn.addEventListener('click', async () => {
-    const val = usernameInput.value.trim();
-    if (!val) return;
+    const val = usernameInput.value;
+    const usernameError = getUsernameValidationError(val);
+    if (usernameError) {
+        Toast.error(usernameError);
+        usernameMsg.textContent = usernameError;
+        return;
+    }
     
     try {
+        const normalized = normalizeUsername(val);
         const res = await fetch('/api/account/username', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: val })
+            body: JSON.stringify({ username: normalized })
         });
         const data = await res.json();
         

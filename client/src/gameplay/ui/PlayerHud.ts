@@ -164,6 +164,10 @@ export class PlayerHud {
         this.updateStaminaVisual();
     }
 
+    setVisible(visible: boolean) {
+        this.container.setVisible(visible);
+    }
+
     layout() {
         const width = this.scene.scale.width;
         const height = this.scene.scale.height;

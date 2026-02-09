@@ -20,6 +20,8 @@ function updateAppSize() {
     return { width, height };
 }
 
+let orientationOverlayDismissed = false;
+
 function getOrientationOverlay(): HTMLDivElement {
     let overlay = document.getElementById('orientation-overlay') as HTMLDivElement | null;
     if (overlay) return overlay;
@@ -53,12 +55,27 @@ function getOrientationOverlay(): HTMLDivElement {
     title.style.fontWeight = '600';
 
     const body = document.createElement('div');
-    body.textContent = 'This game requires landscape orientation. Please rotate your device to continue.';
+    body.textContent = 'For a better experience, rotate your device to landscape.';
     body.style.fontSize = '14px';
     body.style.lineHeight = '1.4';
+    body.style.marginBottom = '12px';
+
+    const dismiss = document.createElement('button');
+    dismiss.textContent = 'Dismiss';
+    dismiss.style.background = '#4b3435';
+    dismiss.style.color = '#f2e9dd';
+    dismiss.style.border = '1px solid #6b514a';
+    dismiss.style.borderRadius = '6px';
+    dismiss.style.padding = '6px 12px';
+    dismiss.style.cursor = 'pointer';
+    dismiss.addEventListener('click', () => {
+        orientationOverlayDismissed = true;
+        overlay!.style.display = 'none';
+    });
 
     dialog.appendChild(title);
     dialog.appendChild(body);
+    dialog.appendChild(dismiss);
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     return overlay;
@@ -67,7 +84,12 @@ function getOrientationOverlay(): HTMLDivElement {
 function updateOrientationOverlay(width: number, height: number) {
     const overlay = getOrientationOverlay();
     const isTooTall = height > width * 1.4;
-    overlay.style.display = isTooTall ? 'flex' : 'none';
+    if (!isTooTall) {
+        orientationOverlayDismissed = false;
+        overlay.style.display = 'none';
+        return;
+    }
+    overlay.style.display = orientationOverlayDismissed ? 'none' : 'flex';
 }
 
 export function hideLoader() {
