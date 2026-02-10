@@ -102,9 +102,9 @@ export class CommandProcessor {
     }
 
     private static async handleTempBan(args: string[], issuer: string): Promise<string> {
-        if (args.length < 2) return "Usage: /tempban [duration] [username]";
-        const durationStr = args[0];
-        const targetName = args[1];
+        if (args.length < 2) return "Usage: /tempban [username] [duration]";
+        const targetName = args[0];
+        const durationStr = args[1];
 
         const ms = this.parseDuration(durationStr);
         if (!ms) return "Invalid duration format. Use 1d, 2h, 30m, etc.";
@@ -154,9 +154,9 @@ export class CommandProcessor {
     }
 
     private static async handleTempMute(args: string[], issuer: string): Promise<string> {
-        if (args.length < 2) return "Usage: /tempmute [duration] [username]";
-        const durationStr = args[0];
-        const targetName = args[1];
+        if (args.length < 2) return "Usage: /tempmute [username] [duration]";
+        const targetName = args[0];
+        const durationStr = args[1];
         
         const ms = this.parseDuration(durationStr);
         if (!ms) return "Invalid duration format.";
@@ -238,12 +238,12 @@ export class CommandProcessor {
     }
 
     private static async handleGive(args: string[], issuer: string): Promise<string> {
-        if (args.length < 3) return "Usage: /give [item id] [amount] [username]";
-        const itemId = args[0];
-        const amount = parseInt(args[1], 10);
-        const targetName = args.slice(2).join(' ');
+        if (args.length < 2) return "Usage: /give [username] [item id] [count]";
+        const targetName = args[0];
+        const itemId = args[1];
+        const amount = args.length >= 3 ? parseInt(args[2], 10) : 1;
 
-        if (!Number.isFinite(amount) || amount <= 0) return "Amount must be a positive number.";
+        if (!Number.isFinite(amount) || amount <= 0) return "Count must be a positive number.";
 
         const itemDef = getItemDefinition(itemId);
         if (!itemDef) return `Unknown item '${itemId}'.`;
@@ -258,21 +258,22 @@ export class CommandProcessor {
                 items: slots
             });
 
-        InstanceManager.getInstance().events.emit('msg_user', {
-            userId: user._id.toString(),
-            message: `You received ${amount} ${itemDef.name}.`
-        });
+        // because of the new inventory monitor ui, this isn't needed
+        // InstanceManager.getInstance().events.emit('msg_user', {
+        //     userId: user._id.toString(),
+        //     message: `You received ${amount} ${itemDef.name}.`
+        // });
 
         return `Gave ${amount} ${itemDef.name} to ${user.username}.`;
     }
 
     private static async handleDrop(args: string[], issuer: string): Promise<string> {
-        if (args.length < 3) return "Usage: /drop [item id] [amount] [username]";
-        const itemId = args[0];
-        const amount = parseInt(args[1], 10);
-        const targetName = args.slice(2).join(' ');
+        if (args.length < 2) return "Usage: /drop [username] [item id] [count]";
+        const targetName = args[0];
+        const itemId = args[1];
+        const amount = args.length >= 3 ? parseInt(args[2], 10) : 1;
 
-        if (!Number.isFinite(amount) || amount <= 0) return "Amount must be a positive number.";
+        if (!Number.isFinite(amount) || amount <= 0) return "Count must be a positive number.";
 
         const itemDef = getItemDefinition(itemId);
         if (!itemDef) return `Unknown item '${itemId}'.`;

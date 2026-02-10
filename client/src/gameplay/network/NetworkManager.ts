@@ -193,6 +193,11 @@ export class NetworkManager {
             this.inventoryCache = data;
             window.dispatchEvent(new CustomEvent('inventory:update', { detail: data }));
         });
+
+        this.currentRoom.onMessage('inventory:skip', (data: { itemId: string; quantity?: number }) => {
+            if (!data?.itemId) return;
+            window.dispatchEvent(new CustomEvent('inventory:skip', { detail: data }));
+        });
         
         // Mark that we have an active connection
         this.wasConnected = true;
@@ -353,6 +358,15 @@ export class NetworkManager {
     sendFishingCatch() {
         if (this.currentRoom) {
             this.currentRoom.send("fishing:catch", {});
+        }
+    }
+
+    /**
+     * Request hook details for a bite (item + clicks required)
+     */
+    sendFishingHook() {
+        if (this.currentRoom) {
+            this.currentRoom.send("fishing:hook", {});
         }
     }
 

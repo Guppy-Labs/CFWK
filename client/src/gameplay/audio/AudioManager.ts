@@ -43,6 +43,44 @@ export const AUDIO_CONFIG = {
             cooldown: 1300,       // Cooldown between meows (ms)
         },
     },
+
+    // UI and action SFX
+    sfx: {
+        rodCast: {
+            volume: 0.55,
+            rateMin: 0.75,
+            rateMax: 1.0,
+            detuneMax: 300,
+        },
+        rodReel: {
+            volume: 0.45,
+            burstDelayMs: 70,
+        },
+        waterSplash: {
+            volume: 0.55,
+        },
+        biteAlert: {
+            volume: 0.4,
+            rateNormal: 1,
+            rateFast: 2,
+            rateUltra: 4,
+            fastThreshold: 0.25,
+            ultraThreshold: 0.1,
+        },
+        reelClick: {
+            volume: 0.4,
+            scale: [0, 2, 3, 5, 7, 8, 10, 12],
+        },
+        itemCollected: {
+            volume: 0.45,
+        },
+        itemDrop: {
+            volume: 0.45,
+        },
+        itemSkip: {
+            volume: 0.5,
+        },
+    },
 };
 // ============================================================
 
@@ -130,6 +168,16 @@ export class AudioManager {
         this.scene.load.audio('meow2', '/audio/ambient/player/meows/meow2.mp3');
         this.scene.load.audio('meow3', '/audio/ambient/player/meows/meow3.mp3');
         this.scene.load.audio('meow4', '/audio/ambient/player/meows/meow4.mp3');
+
+        // Fishing + UI SFX
+        this.scene.load.audio('rod-cast', '/audio/ambient/action/rod-cast.mp3');
+        this.scene.load.audio('rod-reel', '/audio/ambient/action/rod-reel.mp3');
+        this.scene.load.audio('water-splash', '/audio/ambient/action/water-splash.mp3');
+        this.scene.load.audio('bite-alert', '/audio/ambient/ui/alert-1.mp3');
+        this.scene.load.audio('reel-click', '/audio/ambient/ui/click-node.mp3');
+        this.scene.load.audio('item-collected', '/audio/ambient/ui/item-collected.mp3');
+        this.scene.load.audio('item-drop', '/audio/ambient/ui/item-drop.mp3');
+        this.scene.load.audio('item-skip', '/audio/ambient/ui/item-skup.mp3');
     }
     
     /**
@@ -471,6 +519,122 @@ export class AudioManager {
         });
         
         return true;
+    }
+
+    playRodCast(distanceRatio: number) {
+        if (!this.scene.cache.audio.exists('rod-cast')) return;
+        const cfg = AUDIO_CONFIG.sfx.rodCast;
+        const ratio = Phaser.Math.Clamp(distanceRatio, 0, 1);
+        const rate = Phaser.Math.Linear(cfg.rateMax, cfg.rateMin, ratio);
+        const detune = cfg.detuneMax * ratio;
+        const sound = this.scene.sound.add('rod-cast', {
+            volume: cfg.volume,
+            rate,
+            detune
+        }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        sound.once('complete', () => sound.destroy());
+    }
+
+    playRodReel() {
+        if (!this.scene.cache.audio.exists('rod-reel')) return;
+        const cfg = AUDIO_CONFIG.sfx.rodReel;
+        const sound = this.scene.sound.add('rod-reel', {
+            volume: cfg.volume
+        }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        sound.once('complete', () => sound.destroy());
+    }
+
+    playRodReelBurst(count: number) {
+        const cfg = AUDIO_CONFIG.sfx.rodReel;
+        for (let i = 0; i < count; i += 1) {
+            this.scene.time.delayedCall(i * cfg.burstDelayMs, () => {
+                this.playRodReel();
+            });
+        }
+    }
+
+    playWaterSplash() {
+        if (!this.scene.cache.audio.exists('water-splash')) return;
+        const cfg = AUDIO_CONFIG.sfx.waterSplash;
+        const sound = this.scene.sound.add('water-splash', {
+            volume: cfg.volume
+        }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        sound.once('complete', () => sound.destroy());
+    }
+
+    startBiteAlertLoop(): Phaser.Sound.WebAudioSound | undefined {
+        if (!this.scene.cache.audio.exists('bite-alert')) return undefined;
+        const cfg = AUDIO_CONFIG.sfx.biteAlert;
+        const sound = this.scene.sound.add('bite-alert', {
+            volume: cfg.volume,
+            loop: true
+        }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        return sound;
+    }
+
+    updateBiteAlertLoop(sound: Phaser.Sound.WebAudioSound, remainingRatio: number) {
+        const cfg = AUDIO_CONFIG.sfx.biteAlert;
+        let rate = cfg.rateNormal;
+        if (remainingRatio <= cfg.ultraThreshold) {
+            rate = cfg.rateUltra;
+        } else if (remainingRatio <= cfg.fastThreshold) {
+            rate = cfg.rateFast;
+        }
+        sound.setRate(rate);
+    }
+
+    stopBiteAlertLoop(sound?: Phaser.Sound.WebAudioSound) {
+        if (!sound) return;
+        sound.stop();
+        sound.destroy();
+    }
+
+    playReelClick(noteIndex: number) {
+        if (!this.scene.cache.audio.exists('reel-click')) return;
+        const cfg = AUDIO_CONFIG.sfx.reelClick;
+        const scale = cfg.scale;
+        const semitone = scale[Math.max(0, noteIndex) % scale.length] ?? 0;
+        const detune = semitone * 100;
+        const sound = this.scene.sound.add('reel-click', {
+            volume: cfg.volume,
+            detune
+        }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        sound.once('complete', () => sound.destroy());
+    }
+
+    playItemCollected() {
+        if (!this.scene.cache.audio.exists('item-collected')) return;
+        const cfg = AUDIO_CONFIG.sfx.itemCollected;
+        const sound = this.scene.sound.add('item-collected', {
+            volume: cfg.volume
+        }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        sound.once('complete', () => sound.destroy());
+    }
+
+    playItemDrop() {
+        if (!this.scene.cache.audio.exists('item-drop')) return;
+        const cfg = AUDIO_CONFIG.sfx.itemDrop;
+        const sound = this.scene.sound.add('item-drop', {
+            volume: cfg.volume
+        }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        sound.once('complete', () => sound.destroy());
+    }
+
+    playItemSkip() {
+        if (!this.scene.cache.audio.exists('item-skip')) return;
+        const cfg = AUDIO_CONFIG.sfx.itemSkip;
+        const sound = this.scene.sound.add('item-skip', {
+            volume: cfg.volume
+        }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        sound.once('complete', () => sound.destroy());
     }
     
     /**

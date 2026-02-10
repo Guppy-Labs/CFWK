@@ -16,6 +16,8 @@
 // TYPES
 // ============================================================================
 
+import { getItemDefinition, ItemRarity, RodStats } from './items';
+
 export type WaterRegion = 'temperate' | 'tropical' | 'arctic' | 'deep' | 'freshwater';
 
 export type RodTier = 'rickety' | 'fisherman' | 'professional' | 'legendary';
@@ -38,6 +40,18 @@ export interface FishingLootEntry {
 export interface FishingLootTable {
     region: WaterRegion;
     entries: FishingLootEntry[];
+}
+
+export const DEFAULT_ROD_STATS: RodStats = {
+    speedMultiplier: 1,
+    rarityMultiplier: 1,
+    strength: 1
+};
+
+export function getRodStats(itemId?: string | null): RodStats {
+    if (!itemId) return DEFAULT_ROD_STATS;
+    const def = getItemDefinition(itemId);
+    return def?.rodStats ?? DEFAULT_ROD_STATS;
 }
 
 // ============================================================================
@@ -156,7 +170,8 @@ export function calculateEffectiveWeight(
     entry: FishingLootEntry,
     currentDepth: number,
     rodTier: RodTier,
-    baitType: BaitType
+    baitType: BaitType,
+    rarityMultiplier: number = 1
 ): number {
     // Check rod requirement
     if (entry.minRod !== null) {
@@ -177,8 +192,9 @@ export function calculateEffectiveWeight(
     // Items are easier to catch at their ideal depth
     const depthDifference = Math.abs(currentDepth - entry.idealDepth);
     const depthModifier = Math.max(0.2, 1 - (depthDifference * 0.05));
+    const rarityWeight = getRarityWeight(entry.itemId, rarityMultiplier);
 
-    return entry.weight * depthModifier;
+    return entry.weight * depthModifier * rarityWeight;
 }
 
 /**
@@ -193,12 +209,13 @@ export function selectFromLootTable(
     entries: FishingLootEntry[],
     currentDepth: number,
     rodTier: RodTier,
-    baitType: BaitType = null
+    baitType: BaitType = null,
+    rarityMultiplier: number = 1
 ): string | null {
     // Calculate effective weights for all entries
     const weightedEntries = entries.map(entry => ({
         itemId: entry.itemId,
-        weight: calculateEffectiveWeight(entry, currentDepth, rodTier, baitType)
+        weight: calculateEffectiveWeight(entry, currentDepth, rodTier, baitType, rarityMultiplier)
     })).filter(e => e.weight > 0);
 
     if (weightedEntries.length === 0) {
@@ -219,6 +236,17 @@ export function selectFromLootTable(
 
     // Fallback to last entry (shouldn't normally reach here)
     return weightedEntries[weightedEntries.length - 1].itemId;
+}
+
+const RARITY_ORDER: ItemRarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultimate'];
+
+function getRarityWeight(itemId: string, rarityMultiplier: number): number {
+    const def = getItemDefinition(itemId);
+    const rarity = def?.rarity ?? 'common';
+    const tier = Math.max(0, RARITY_ORDER.indexOf(rarity));
+    const base = Math.max(0.1, rarityMultiplier);
+    const weight = Math.pow(base, tier);
+    return Math.max(0.05, weight);
 }
 
 /**

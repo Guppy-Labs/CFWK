@@ -9,6 +9,7 @@ export type DroppedItemData = {
     amount: number;
     x: number;
     y: number;
+    createdAt: number;
 };
 
 export type DroppedItemEntity = DroppedItemData & {
@@ -25,6 +26,9 @@ export class DroppedItemManager {
     private config: DroppedItemManagerConfig;
     private networkManager = NetworkManager.getInstance();
     private items: Map<string, DroppedItemEntity> = new Map();
+    private readonly fadeStartMs = 4 * 60 * 1000;
+    private readonly fadeEndMs = 5 * 60 * 1000;
+    private readonly fadeEndAlpha = 0.4;
 
     constructor(scene: Phaser.Scene, config: DroppedItemManagerConfig) {
         this.scene = scene;
@@ -35,29 +39,12 @@ export class DroppedItemManager {
         const room = this.networkManager.getRoom();
         if (!room || !room.state?.droppedItems) return;
 
+        room.state.droppedItems.forEach((item: any, itemId: string) => {
+            this.addItemFromState(item, itemId);
+        });
+
         room.state.droppedItems.onAdd((item: any, itemId: string) => {
-            const sprite = this.createItemSprite(item);
-            const entity: DroppedItemEntity = {
-                id: itemId,
-                itemId: item.itemId,
-                amount: item.amount,
-                x: item.x,
-                y: item.y,
-                sprite
-            };
-
-            this.items.set(itemId, entity);
-
-            item.onChange(() => {
-                const existing = this.items.get(itemId);
-                if (!existing) return;
-                existing.itemId = item.itemId;
-                existing.amount = item.amount;
-                existing.x = item.x;
-                existing.y = item.y;
-                existing.sprite.setPosition(item.x, item.y);
-                this.updateDepth(existing);
-            });
+            this.addItemFromState(item, itemId);
         });
 
         room.state.droppedItems.onRemove((_item: any, itemId: string) => {
@@ -73,9 +60,53 @@ export class DroppedItemManager {
         return this.items;
     }
 
+    update() {
+        this.items.forEach((entity) => {
+            this.applyItemAlpha(entity);
+        });
+    }
+
     destroy() {
         this.items.forEach((entity) => entity.sprite.destroy());
         this.items.clear();
+    }
+
+    private addItemFromState(item: any, itemId: string) {
+        if (this.items.has(itemId)) return;
+        const sprite = this.createItemSprite(item);
+        const entity: DroppedItemEntity = {
+            id: itemId,
+            itemId: item.itemId,
+            amount: item.amount,
+            x: item.x,
+            y: item.y,
+            createdAt: item.createdAt ?? Date.now(),
+            sprite
+        };
+
+        this.items.set(itemId, entity);
+
+        item.onChange(() => {
+            const existing = this.items.get(itemId);
+            if (!existing) return;
+            const itemIdChanged = existing.itemId !== item.itemId;
+            existing.itemId = item.itemId;
+            existing.amount = item.amount;
+            existing.x = item.x;
+            existing.y = item.y;
+            existing.createdAt = item.createdAt ?? existing.createdAt;
+            existing.sprite.setPosition(item.x, item.y);
+            if (itemIdChanged) {
+                const textureKey = `item-${item.itemId}`;
+                const resolvedKey = this.scene.textures.exists(textureKey) ? textureKey : 'ui-slot-base';
+                existing.sprite.setTexture(resolvedKey, 0);
+                this.applyItemScale(existing.sprite, resolvedKey);
+            }
+            this.applyItemAlpha(existing);
+            this.updateDepth(existing);
+        });
+
+        this.applyItemAlpha(entity);
     }
 
     private createItemSprite(item: any): Phaser.GameObjects.Sprite {
@@ -84,7 +115,7 @@ export class DroppedItemManager {
         const sprite = this.scene.add.sprite(item.x, item.y, resolvedKey, 0);
 
         // Isometric "flat" look
-        sprite.setScale(0.25, 0.15);
+        this.applyItemScale(sprite, resolvedKey);
         sprite.setOrigin(0.5, 0.75);
 
         this.updateDepth({
@@ -99,6 +130,18 @@ export class DroppedItemManager {
         return sprite;
     }
 
+    private applyItemScale(sprite: Phaser.GameObjects.Sprite, textureKey: string) {
+        const texture = this.scene.textures.get(textureKey);
+        const source = texture.getSourceImage() as HTMLImageElement | undefined;
+        const width = source?.width ?? 32;
+        const height = source?.height ?? 32;
+        const baseScaleX = 0.25;
+        const baseScaleY = 0.15;
+        const scaleX = baseScaleX * (32 / Math.max(1, width));
+        const scaleY = baseScaleY * (32 / Math.max(1, height));
+        sprite.setScale(scaleX, scaleY);
+    }
+
     private updateDepth(item: DroppedItemEntity) {
         const depth = getOcclusionAdjustedDepth(
             this.config.occlusionManager,
@@ -108,5 +151,15 @@ export class DroppedItemManager {
             true
         );
         item.sprite.setDepth(depth);
+    }
+
+    private applyItemAlpha(item: DroppedItemEntity) {
+        const ageMs = Date.now() - item.createdAt;
+        let alpha = 1;
+        if (ageMs >= this.fadeStartMs) {
+            const t = Phaser.Math.Clamp((ageMs - this.fadeStartMs) / (this.fadeEndMs - this.fadeStartMs), 0, 1);
+            alpha = Phaser.Math.Linear(1, this.fadeEndAlpha, t);
+        }
+        item.sprite.setAlpha(alpha);
     }
 }

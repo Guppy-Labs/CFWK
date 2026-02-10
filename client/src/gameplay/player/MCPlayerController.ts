@@ -110,6 +110,7 @@ export class MCPlayerController {
     private afkOverlayNote?: Phaser.GameObjects.Text;
     private afkOverlayTextureKey?: string;
     private afkOverlayTextureCounter = 0;
+    private afkActivityHandler?: (parent: Phaser.Data.DataManager, value: number) => void;
     private guiEffect?: GuiSwirlEffect;
 
     // Interaction system
@@ -158,6 +159,15 @@ export class MCPlayerController {
 
         this.guiEffect = new GuiSwirlEffect(this.scene);
         this.lastActivityTime = Date.now();
+        const storedActivity = this.scene.registry.get('afkActivity');
+        if (typeof storedActivity === 'number') {
+            this.lastActivityTime = Math.max(this.lastActivityTime, storedActivity);
+        }
+        this.afkActivityHandler = (_parent: Phaser.Data.DataManager, value: number) => {
+            if (typeof value !== 'number') return;
+            this.registerAfkActivity(value);
+        };
+        this.scene.registry.events.on('changedata-afkActivity', this.afkActivityHandler);
 
         // Premium AFK timer (20 minutes)
         if (currentUser?.isPremium) {
@@ -453,11 +463,12 @@ export class MCPlayerController {
 
         // Update AFK tracking
         if (hasInput) {
-            this.lastActivityTime = Date.now();
-            if (this.isAfk) {
-                this.exitAfkState();
-            }
+            this.registerAfkActivity(Date.now());
         }
+        this.checkAfkState(delta);
+    }
+
+    updateAfkOnly(delta: number) {
         this.checkAfkState(delta);
     }
 
@@ -581,7 +592,7 @@ export class MCPlayerController {
         this.fishingKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
         // Initialize mobile controls
-        this.mobileControls = new MobileControls();
+        this.mobileControls = new MobileControls(this.scene);
 
         // Initialize desktop interact button
         this.desktopInteractButton = new DesktopInteractButton();
@@ -632,6 +643,8 @@ export class MCPlayerController {
         const chatFocused = this.scene.registry.get('chatFocused') === true;
         const guiOpen = this.scene.registry.get('guiOpen') === true;
         if (chatFocused || guiOpen) return;
+
+        this.registerAfkActivity(Date.now());
 
         if (this.scene.time.now < this.interactionLockUntil) return;
 
@@ -1035,6 +1048,14 @@ export class MCPlayerController {
         this.localNameplate.setPosition(this.player.x, this.player.y + this.nameplateYOffset);
     }
 
+    private registerAfkActivity(activityTime: number) {
+        if (!Number.isFinite(activityTime)) return;
+        this.lastActivityTime = Math.max(this.lastActivityTime, activityTime);
+        if (this.isAfk) {
+            this.exitAfkState();
+        }
+    }
+
     private enterAfkState() {
         this.isAfk = true;
         this.networkManager.sendAfk(true);
@@ -1089,6 +1110,9 @@ export class MCPlayerController {
         this.interactionManager?.destroy();
         this.animationController?.destroy();
         this.afkOverlayContainer?.destroy(true);
+        if (this.afkActivityHandler) {
+            this.scene.registry.events.off('changedata-afkActivity', this.afkActivityHandler);
+        }
         if (this.afkOverlayTextureKey && this.scene.textures.exists(this.afkOverlayTextureKey)) {
             this.scene.textures.remove(this.afkOverlayTextureKey);
         }

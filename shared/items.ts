@@ -1,5 +1,13 @@
 export type ItemCategory = 'Food' | 'Tools' | 'Loot' | 'Fish' | 'Junk' | 'Treasure';
 
+export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultimate';
+
+export type RodStats = {
+    speedMultiplier: number;
+    rarityMultiplier: number;
+    strength: number;
+};
+
 export type ItemConsumeEffect = {
     type: 'heal' | 'none' | string;
     amount?: number;
@@ -11,8 +19,11 @@ export type ItemDefinition = {
     name: string;
     category: ItemCategory;
     description: string;
+    rarity?: ItemRarity;
+    mass?: number;
     stackSize: number;
     consumeEffect: ItemConsumeEffect;
+    rodStats?: RodStats;
     /**
      * Optional custom file path relative to /public for the item image.
      * If not specified, defaults to: items/{category}/{id}.png
@@ -41,6 +52,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Tuna',
         category: 'Fish',
         description: 'A common tuna fish. Delicious when prepared properly.',
+        rarity: 'common',
+        mass: 3,
         stackSize: 50,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile000.png'
@@ -50,6 +63,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Mackerel',
         category: 'Fish',
         description: 'A sleek mackerel with shimmering scales.',
+        rarity: 'common',
+        mass: 2,
         stackSize: 50,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile001.png'
@@ -59,6 +74,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Cod',
         category: 'Fish',
         description: 'A plump cod fish, common in temperate waters.',
+        rarity: 'common',
+        mass: 3,
         stackSize: 50,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile005.png'
@@ -68,6 +85,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Salmon',
         category: 'Fish',
         description: 'A pink salmon, prized for its rich flavor.',
+        rarity: 'common',
+        mass: 5,
         stackSize: 50,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile007.png'
@@ -77,6 +96,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Catfish',
         category: 'Fish',
         description: 'A whiskered catfish that lurks in deeper waters.',
+        rarity: 'common',
+        mass: 4,
         stackSize: 50,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile004.png'
@@ -88,6 +109,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Fat Tuna',
         category: 'Fish',
         description: 'An exceptionally plump tuna. Worth more than its regular counterpart.',
+        rarity: 'uncommon',
+        mass: 6,
         stackSize: 30,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile002.png'
@@ -97,6 +120,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Fat Mackerel',
         category: 'Fish',
         description: 'A chunky mackerel with extra meat.',
+        rarity: 'uncommon',
+        mass: 5,
         stackSize: 30,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile003.png'
@@ -106,6 +131,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Fat Cod',
         category: 'Fish',
         description: 'An oversized cod, quite the catch!',
+        rarity: 'uncommon',
+        mass: 7,
         stackSize: 30,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile006.png'
@@ -115,6 +142,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Fat Salmon',
         category: 'Fish',
         description: 'A hefty salmon bursting with flavor.',
+        rarity: 'uncommon',
+        mass: 9,
         stackSize: 30,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile008.png'
@@ -124,6 +153,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Fat Catfish',
         category: 'Fish',
         description: 'A massive catfish. Its whiskers are impressively long.',
+        rarity: 'uncommon',
+        mass: 8,
         stackSize: 30,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile010.png'
@@ -133,6 +164,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Coho Salmon',
         category: 'Fish',
         description: 'A beautiful coho salmon with distinctive silver markings.',
+        rarity: 'uncommon',
+        mass: 6,
         stackSize: 30,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile009.png'
@@ -144,6 +177,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Rickety Rod',
         category: 'Tools',
         description: 'A worn fishing rod held together with hope and string.',
+        rodStats: { speedMultiplier: 0.75, rarityMultiplier: 0.4, strength: 0.5 },
         stackSize: 1,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile075.png'
@@ -153,6 +187,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: "Fisherman's Rod",
         category: 'Tools',
         description: 'A reliable fishing rod used by experienced anglers.',
+        rodStats: { speedMultiplier: 0.75, rarityMultiplier: 0.5, strength: 0.75 },
         stackSize: 1,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile081.png'
@@ -164,6 +199,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Sea Grass',
         category: 'Junk',
         description: 'A clump of sea grass. Not particularly useful.',
+        rarity: 'common',
+        mass: 1,
         stackSize: 99,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile225.png'
@@ -173,6 +210,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Old Boot',
         category: 'Junk',
         description: 'A waterlogged boot. Someone lost this ages ago.',
+        rarity: 'common',
+        mass: 2,
         stackSize: 50,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile226.png'
@@ -182,6 +221,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Broken Bottle',
         category: 'Junk',
         description: 'Shards of a broken glass bottle. Handle with care.',
+        rarity: 'common',
+        mass: 1,
         stackSize: 50,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile229.png'
@@ -191,6 +232,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Apple Core',
         category: 'Junk',
         description: 'The remains of someone\'s snack. Very fresh, oddly.',
+        rarity: 'common',
+        mass: 1,
         stackSize: 50,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile242.png'
@@ -200,6 +243,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Trash Bag',
         category: 'Junk',
         description: 'A soggy trash bag. Who throws these in the water?',
+        rarity: 'common',
+        mass: 4,
         stackSize: 50,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile249.png'
@@ -209,6 +254,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Sea Pickle',
         category: 'Junk',
         description: 'A bioluminescent sea pickle. Kinda cute, actually.',
+        rarity: 'common',
+        mass: 2,
         stackSize: 50,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile243.png'
@@ -218,6 +265,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Broken Spectacles',
         category: 'Junk',
         description: 'Someone\'s lost glasses. They probably can\'t read now.',
+        rarity: 'uncommon',
+        mass: 1,
         stackSize: 50,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile241.png'
@@ -229,6 +278,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Infested Boot',
         category: 'Treasure',
         description: 'An old boot now home to mysterious sea creatures.',
+        rarity: 'uncommon',
+        mass: 3,
         stackSize: 20,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile227.png'
@@ -238,6 +289,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Invested Vase',
         category: 'Treasure',
         description: 'An ancient vase covered in barnacles. Could be valuable!',
+        rarity: 'uncommon',
+        mass: 10,
         stackSize: 20,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile230.png'
@@ -247,6 +300,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Ruined Chest',
         category: 'Treasure',
         description: 'A waterlogged treasure chest. Most contents have rotted away.',
+        rarity: 'uncommon',
+        mass: 12,
         stackSize: 10,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile236.png'

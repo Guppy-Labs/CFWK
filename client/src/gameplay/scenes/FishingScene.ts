@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
-import { DAYLIGHT_HOURS, getItemImagePath } from '@cfwk/shared';
+import { DAYLIGHT_HOURS, getItemImagePath, getRodStats } from '@cfwk/shared';
 import { LightingManager } from '../fx/LightingManager';
 import { WorldTimeManager } from '../time/WorldTimeManager';
 import { NetworkManager } from '../network/NetworkManager';
 import { buildRodSideTexture } from '../rendering/rodSideTexture';
+import { AudioManager } from '../audio/AudioManager';
 
 type TileSnapshotData = {
     canvas: HTMLCanvasElement;
@@ -90,6 +91,13 @@ export class FishingScene extends Phaser.Scene {
     private readonly rodBreathRangePx = 16;
     private readonly waterBreathCycleSeconds = 2.8;
     private readonly waterBreathRangePx = 6;
+    private rodBaseScaleX = 1;
+    private rodBaseScaleY = 1;
+    private rodBaseOriginX = 1;
+    private rodBaseOriginY = 1;
+    private rodThrowPull = 0;
+    private rodThrowTween?: Phaser.Tweens.Tween;
+    private pendingCastRelease = false;
     private debugToggleHandler?: (event: KeyboardEvent) => void;
     private networkManager = NetworkManager.getInstance();
 
@@ -121,7 +129,10 @@ export class FishingScene extends Phaser.Scene {
     private biteWindowTimer?: Phaser.Time.TimerEvent;
     private readonly biteWindowMs = 5000;
     private reelClicks = 0;
-    private readonly reelClicksNeeded = 10;
+    private reelClicksNeeded = 10;
+    private readonly baseBiteDelayMinMs = 4000;
+    private readonly baseBiteDelayMaxMs = 12000;
+    private hookItemId?: string;
     private readonly biteMessages = [
         'Your rod is shaking!',
         "Something's hooked!",
@@ -146,8 +157,10 @@ export class FishingScene extends Phaser.Scene {
     private reelInStart?: Phaser.Math.Vector2;
     private reelInProgress = 0;
     private isReelInAnimating = false;
+    private isReelReturning = false;
     private caughtItemSprite?: Phaser.GameObjects.Image;
     private castButtonFadeTween?: Phaser.Tweens.Tween;
+    private biteAlertSound?: Phaser.Sound.WebAudioSound;
 
     constructor() {
         super({ key: 'FishingScene' });
@@ -201,6 +214,7 @@ export class FishingScene extends Phaser.Scene {
         this.createUI();
         this.layoutAll();
         this.setupCatchListener();
+        this.setupHookListener();
         this.setupGuiOpenListener();
 
         this.scale.on('resize', this.onResize, this);
@@ -210,6 +224,8 @@ export class FishingScene extends Phaser.Scene {
     update(_time: number, delta: number) {
         this.waterTime += delta * 0.001;
         this.breathTime += delta * 0.001;
+        const gameScene = this.scene.get('GameScene') as any;
+        gameScene?.updateAfkOnly?.(delta);
         this.worldTimeManager.update(delta);
         this.lightingManager?.updateFromWorldTime(this.worldTimeManager.getTime());
         this.renderPerspective();
@@ -218,6 +234,10 @@ export class FishingScene extends Phaser.Scene {
         this.updateCastHold(delta);
         this.updateCastLine();
         this.updateBiteBars();
+    }
+
+    private markAfkActivity() {
+        this.registry.set('afkActivity', Date.now());
     }
 
     private createPerspectiveView() {
@@ -447,7 +467,10 @@ export class FishingScene extends Phaser.Scene {
         this.stopButton.setDepth(10);
 
         this.stopButtonBg.setInteractive({ useHandCursor: false });
-        this.stopButtonBg.on('pointerdown', () => this.stopFishing());
+        this.stopButtonBg.on('pointerdown', () => {
+            this.markAfkActivity();
+            this.stopFishing();
+        });
 
         this.castButtonLabel = this.add.text(0, 0, 'Cast', {
             fontFamily: 'Minecraft, monospace',
@@ -519,7 +542,13 @@ export class FishingScene extends Phaser.Scene {
             displayWidth = (this.rodSideWidth / this.rodSideHeight) * displayHeight;
         }
 
-        this.rodSprite.setDisplaySize(displayWidth, displayHeight);
+        const scaleX = displayWidth / this.rodSideWidth;
+        const scaleY = displayHeight / this.rodSideHeight;
+        this.rodBaseScaleX = scaleX;
+        this.rodBaseScaleY = scaleY;
+        this.rodBaseOriginX = this.rodSprite.originX;
+        this.rodBaseOriginY = this.rodSprite.originY;
+        this.rodSprite.setScale(scaleX, scaleY);
         this.rodBaseX = width * (1 - this.rodOffsetXRatio) - this.rodMarginX;
         this.rodBaseY = height + this.rodBottomOverlap;
         this.rodSprite.setPosition(this.rodBaseX, this.rodBaseY);
@@ -528,7 +557,15 @@ export class FishingScene extends Phaser.Scene {
     private updateRodBreathing() {
         if (!this.rodSprite) return;
         const bob = Math.sin(this.breathTime * (Math.PI * 2) / this.rodBreathCycleSeconds) * this.rodBreathRangePx;
-        this.rodSprite.setPosition(this.rodBaseX, this.rodBaseY + bob);
+        const pull = this.rodThrowPull;
+        const pullRotation = Phaser.Math.Linear(0, 0.7, pull);
+        const pullScaleX = 1 + pull * 0.22;
+        const pullScaleY = 1 + pull * 0.48;
+        const pullOffsetX = pull * 24;
+        const pullOffsetY = pull * 16;
+        this.rodSprite.setScale(this.rodBaseScaleX * pullScaleX, this.rodBaseScaleY * pullScaleY);
+        this.rodSprite.setRotation(pullRotation);
+        this.rodSprite.setPosition(this.rodBaseX + pullOffsetX, this.rodBaseY + bob + pullOffsetY);
     }
 
     private onResize() {
@@ -536,6 +573,7 @@ export class FishingScene extends Phaser.Scene {
     }
 
     private stopFishing() {
+        this.markAfkActivity();
         const gameScene = this.scene.get('GameScene');
         gameScene?.events.emit('fishing:stop');
         this.scene.stop();
@@ -598,7 +636,12 @@ export class FishingScene extends Phaser.Scene {
     }
 
     private updateButtonTexture(width: number, height: number) {
-        if (width === this.currentButtonWidth && height === this.currentButtonHeight && this.buttonTextureKey) {
+        if (
+            width === this.currentButtonWidth
+            && height === this.currentButtonHeight
+            && this.buttonTextureKey
+            && this.textures.exists(this.buttonTextureKey)
+        ) {
             return;
         }
         this.currentButtonWidth = width;
@@ -615,7 +658,12 @@ export class FishingScene extends Phaser.Scene {
     }
 
     private updateCastButtonTexture(width: number, height: number) {
-        if (width === this.castButtonWidth && height === this.castButtonHeight && this.castButtonTextureKey) {
+        if (
+            width === this.castButtonWidth
+            && height === this.castButtonHeight
+            && this.castButtonTextureKey
+            && this.textures.exists(this.castButtonTextureKey)
+        ) {
             return;
         }
         this.castButtonWidth = width;
@@ -748,6 +796,7 @@ export class FishingScene extends Phaser.Scene {
     }
 
     private handleCastPress() {
+        this.markAfkActivity();
         if (!this.castButtonLabel) return;
         if (this.isReelInAnimating) return;
         if (this.biteActive) {
@@ -777,18 +826,21 @@ export class FishingScene extends Phaser.Scene {
             if (this.castBar) {
                 this.setBarVisible(this.castBar, false);
             }
+            this.releaseRodWithoutCast();
             return;
         }
 
         this.castPower = Phaser.Math.Clamp((this.castHoldDuration - this.castMinHoldMs) / (this.castMaxHoldMs - this.castMinHoldMs), 0, 1);
         this.currentDepth = Phaser.Math.Linear(this.castDepthMin, this.castDepthMax, this.castPower);
-        this.startCast();
+        this.pendingCastRelease = true;
+        this.releaseRodWithCast();
     }
 
     private updateCastHold(delta: number) {
         if (!this.isHoldingCast) return;
         this.castHoldDuration = Math.min(this.castMaxHoldMs, this.time.now - this.castHoldStart);
-        const ratio = Phaser.Math.Clamp((this.castHoldDuration - this.castMinHoldMs) / (this.castMaxHoldMs - this.castMinHoldMs), 0, 1);
+        const ratio = Phaser.Math.Clamp(this.castHoldDuration / this.castMaxHoldMs, 0, 1);
+        this.setRodThrowPull(ratio);
         if (this.castBar) {
             this.setBarValue(this.castBar, ratio);
         }
@@ -796,7 +848,9 @@ export class FishingScene extends Phaser.Scene {
 
     private startCast() {
         this.casted = true;
+        this.pendingCastRelease = false;
         this.setCastButtonLabel('Reel');
+        this.playRodCastSound();
         if (this.castBar) {
             this.setBarVisible(this.castBar, false);
         }
@@ -819,6 +873,7 @@ export class FishingScene extends Phaser.Scene {
             onComplete: () => {
                 this.isCastTossing = false;
                 this.isCastSettling = true;
+                this.playWaterSplash();
                 const baseLift = this.getCastLift();
                 const tossSettleMax = 0.7;
                 this.castSettleStartLift = baseLift * (1 - tossSettleMax);
@@ -856,6 +911,10 @@ export class FishingScene extends Phaser.Scene {
         this.reelInProgress = 0;
         this.reelInStart = undefined;
         this.isReelInAnimating = false;
+        this.rodThrowTween?.stop();
+        this.rodThrowTween = undefined;
+        this.rodThrowPull = 0;
+        this.pendingCastRelease = false;
         this.caughtItemSprite?.destroy();
         this.caughtItemSprite = undefined;
         if (updateButtonLabel) {
@@ -869,17 +928,52 @@ export class FishingScene extends Phaser.Scene {
         this.castButtonLabel.setText(text);
     }
 
+    private setRodThrowPull(value: number) {
+        this.rodThrowPull = Phaser.Math.Clamp(value, 0, 1);
+    }
+
+    private releaseRodWithoutCast() {
+        this.rodThrowTween?.stop();
+        this.rodThrowTween = this.tweens.add({
+            targets: this,
+            rodThrowPull: 0,
+            duration: 220,
+            ease: 'Sine.out'
+        });
+    }
+
+    private releaseRodWithCast() {
+        this.rodThrowTween?.stop();
+        this.rodThrowTween = this.tweens.add({
+            targets: this,
+            rodThrowPull: 0,
+            duration: 140,
+            ease: 'Sine.out'
+        });
+        if (this.pendingCastRelease) {
+            this.startCast();
+        }
+    }
+
     private queueBite() {
         this.biteTimer?.remove(false);
-        const delayMs = Phaser.Math.Between(4000, 8000);
+        const rodStats = getRodStats(this.rodItemId);
+        const speed = Math.max(0.1, rodStats.speedMultiplier);
+        const minDelay = Math.round(this.baseBiteDelayMinMs / speed);
+        const maxDelay = Math.round(this.baseBiteDelayMaxMs / speed);
+        const delayMs = Phaser.Math.Between(minDelay, Math.max(minDelay + 1, maxDelay));
         this.biteTimer = this.time.delayedCall(delayMs, () => this.startBite());
     }
 
     private startBite() {
         if (!this.casted) return;
+        if (this.isReelReturning) return;
         this.biteActive = true;
         this.reelClicks = 0;
+        this.reelClicksNeeded = 10;
+        this.hookItemId = undefined;
         this.cameras.main.shake(160, 0.004);
+        this.startBiteAlert();
 
         if (this.biteText) {
             const message = this.biteMessages[Phaser.Math.Between(0, this.biteMessages.length - 1)];
@@ -901,14 +995,18 @@ export class FishingScene extends Phaser.Scene {
             this.setBarValue(this.biteClickBar, 0);
         }
 
+        this.networkManager.sendFishingHook();
+
         this.biteWindowTimer?.remove(false);
         this.biteWindowTimer = this.time.delayedCall(this.biteWindowMs, () => this.failBite());
     }
 
     private handleReelClick() {
+        this.markAfkActivity();
         if (!this.biteActive) return;
         this.cameras.main.shake(60, 0.003);
         this.reelClicks = Math.min(this.reelClicksNeeded, this.reelClicks + 1);
+        this.playReelClickSounds(this.reelClicks);
         if (this.biteClickBar) {
             this.setBarValue(this.biteClickBar, this.reelClicks / this.reelClicksNeeded);
         }
@@ -923,6 +1021,7 @@ export class FishingScene extends Phaser.Scene {
         const ratio = remaining / this.biteWindowMs;
         this.setBarValue(this.biteTimeBar, ratio);
         this.updateBiteHint(remaining);
+        this.updateBiteAlertRate(ratio);
     }
 
     private completeCatch() {
@@ -940,6 +1039,8 @@ export class FishingScene extends Phaser.Scene {
     private clearBite() {
         this.biteTimer?.remove(false);
         this.biteWindowTimer?.remove(false);
+        this.hookItemId = undefined;
+        this.stopBiteAlert();
         if (this.biteText) {
             this.biteText.setVisible(false);
         }
@@ -1126,6 +1227,11 @@ export class FishingScene extends Phaser.Scene {
     private reelLineBack() {
         if (!this.casted || !this.castLineEnd) return;
         if (this.isReelInAnimating) return;
+        this.isReelReturning = true;
+        this.biteTimer?.remove(false);
+        this.biteActive = false;
+        this.clearBite();
+        this.playRodReelSound();
         const start = this.getRodTipPosition();
         const end = this.getCurrentLineEnd(start);
         this.isReelInAnimating = true;
@@ -1139,6 +1245,7 @@ export class FishingScene extends Phaser.Scene {
             ease: 'Sine.inOut',
             onComplete: () => {
                 this.isReelInAnimating = false;
+                this.isReelReturning = false;
                 this.resetCast();
             }
         });
@@ -1153,6 +1260,20 @@ export class FishingScene extends Phaser.Scene {
                 return;
             }
             this.playCatchAnimation(data.itemId);
+        });
+    }
+
+    private setupHookListener() {
+        const room = this.networkManager.getRoom();
+        if (!room) return;
+        room.onMessage('fishing:hooked', (data: { itemId?: string; clicksRequired?: number }) => {
+            if (!this.biteActive) return;
+            if (!data?.itemId || !data?.clicksRequired) return;
+            this.hookItemId = data.itemId;
+            this.reelClicksNeeded = Math.max(1, Math.floor(data.clicksRequired));
+            if (this.biteClickBar) {
+                this.setBarValue(this.biteClickBar, this.reelClicks / this.reelClicksNeeded);
+            }
         });
     }
 
@@ -1252,6 +1373,58 @@ export class FishingScene extends Phaser.Scene {
         });
     }
 
+    private getAudioManager(): AudioManager | undefined {
+        const gameScene = this.scene.get('GameScene') as { getAudioManager?: () => AudioManager | undefined };
+        return gameScene?.getAudioManager?.();
+    }
+
+    private playRodCastSound() {
+        const audio = this.getAudioManager();
+        audio?.playRodCast(this.castPower);
+    }
+
+    private playRodReelSound() {
+        const audio = this.getAudioManager();
+        audio?.playRodReel();
+    }
+
+    private playReelClickSounds(clickIndex: number) {
+        const audio = this.getAudioManager();
+        if (!audio) return;
+        if (clickIndex >= this.reelClicksNeeded) {
+            audio.playRodReelBurst(3);
+        } else {
+            audio.playRodReel();
+        }
+        audio.playReelClick(clickIndex - 1);
+    }
+
+    private playWaterSplash() {
+        const audio = this.getAudioManager();
+        audio?.playWaterSplash();
+    }
+
+    private startBiteAlert() {
+        const audio = this.getAudioManager();
+        if (!audio) return;
+        if (this.biteAlertSound) {
+            audio.stopBiteAlertLoop(this.biteAlertSound);
+        }
+        this.biteAlertSound = audio.startBiteAlertLoop();
+    }
+
+    private updateBiteAlertRate(remainingRatio: number) {
+        if (!this.biteAlertSound) return;
+        const audio = this.getAudioManager();
+        audio?.updateBiteAlertLoop(this.biteAlertSound, remainingRatio);
+    }
+
+    private stopBiteAlert() {
+        const audio = this.getAudioManager();
+        audio?.stopBiteAlertLoop(this.biteAlertSound);
+        this.biteAlertSound = undefined;
+    }
+
     shutdown() {
         this.scale.off('resize', this.onResize, this);
         if (this.scene.get('UIScene')) {
@@ -1291,6 +1464,12 @@ export class FishingScene extends Phaser.Scene {
         if (this.castButtonTextureKey && this.textures.exists(this.castButtonTextureKey)) {
             this.textures.remove(this.castButtonTextureKey);
         }
+        this.buttonTextureKey = undefined;
+        this.castButtonTextureKey = undefined;
+        this.currentButtonWidth = 0;
+        this.currentButtonHeight = 0;
+        this.castButtonWidth = 0;
+        this.castButtonHeight = 0;
         [this.castBar, this.biteTimeBar, this.biteClickBar].forEach((bar) => {
             if (bar?.textureKey && this.textures.exists(bar.textureKey)) {
                 this.textures.remove(bar.textureKey);
@@ -1302,5 +1481,6 @@ export class FishingScene extends Phaser.Scene {
         if (this.rodSideTextureKey && this.textures.exists(this.rodSideTextureKey)) {
             this.textures.remove(this.rodSideTextureKey);
         }
+        this.stopBiteAlert();
     }
 }

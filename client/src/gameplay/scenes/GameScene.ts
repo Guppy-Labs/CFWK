@@ -85,6 +85,9 @@ export class GameScene extends Phaser.Scene {
 
     preload() {
         const mapFile = this.instanceInfo?.mapFile || 'limbo.tmj';
+
+        this.load.image('ui-joystick-base', '/ui/Joystick01a.png');
+        this.load.image('ui-joystick-handle', '/ui/Handle01a.png');
         
         // Initialize map loader and preload map
         this.mapLoader = new MapLoader(this, {
@@ -255,6 +258,14 @@ export class GameScene extends Phaser.Scene {
      */
     private getActivePlayer(): Phaser.Physics.Matter.Sprite | undefined {
         return this.mcPlayerController?.getPlayer();
+    }
+
+    getAudioManager(): AudioManager | undefined {
+        return this.audioManager;
+    }
+
+    updateAfkOnly(delta: number) {
+        this.mcPlayerController?.updateAfkOnly(delta);
     }
 
     private onMapLoaded(map: Phaser.Tilemaps.Tilemap, groundLayers: Phaser.Tilemaps.TilemapLayer[]) {
@@ -671,6 +682,9 @@ export class GameScene extends Phaser.Scene {
 
         // Update remote players
         this.remotePlayerManager?.update(delta);
+
+        // Update dropped item fade
+        this.droppedItemManager?.update();
 
         // Update tablist registry
         this.updateTablistRegistry();

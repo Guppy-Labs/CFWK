@@ -42,6 +42,7 @@ export class InstanceManager {
 
     // Track connected users by odcid to prevent duplicate connections
     private connectedUsers: Map<string, string> = new Map(); // odcid -> sessionId
+    private emptyInstanceTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
     private constructor() {
         this.registerDefaultLocations();
@@ -210,6 +211,11 @@ export class InstanceManager {
         if (instance) {
             instance.currentPlayers++;
             console.log(`[InstanceManager] Player joined ${instanceId}. Count: ${instance.currentPlayers}/${instance.maxPlayers}`);
+            const timeout = this.emptyInstanceTimeouts.get(instanceId);
+            if (timeout) {
+                clearTimeout(timeout);
+                this.emptyInstanceTimeouts.delete(instanceId);
+            }
         }
     }
 
@@ -224,7 +230,13 @@ export class InstanceManager {
 
             // Clean up empty instances (except keep at least one lobby)
             if (instance.currentPlayers === 0 && instance.locationId !== "lobby") {
-                this.destroyInstance(instanceId);
+                if (!this.emptyInstanceTimeouts.has(instanceId)) {
+                    const timeout = setTimeout(() => {
+                        this.emptyInstanceTimeouts.delete(instanceId);
+                        this.destroyInstance(instanceId);
+                    }, 5 * 60 * 1000);
+                    this.emptyInstanceTimeouts.set(instanceId, timeout);
+                }
             }
         }
     }
@@ -236,6 +248,11 @@ export class InstanceManager {
         const instance = this.activeInstances.get(instanceId);
         if (instance) {
             this.activeInstances.delete(instanceId);
+            const timeout = this.emptyInstanceTimeouts.get(instanceId);
+            if (timeout) {
+                clearTimeout(timeout);
+                this.emptyInstanceTimeouts.delete(instanceId);
+            }
             console.log(`[InstanceManager] Destroyed instance: ${instanceId}`);
         }
     }

@@ -1,13 +1,14 @@
 /**
  * Mobile Controls - Minecraft Bedrock Style
- * Virtual joystick for 8-direction movement + sprint button
+ * Virtual joystick for 8-direction movement with sprint threshold
  * 
  * Design notes:
  * - Left side: Virtual joystick (movement)
- * - Right side: Sprint button
+ * - Right side: Action buttons (inventory/interact)
  * - Auto-hides on desktop, shows on touch devices
  */
 
+import Phaser from 'phaser';
 import { InteractionType, AvailableInteraction } from '../interaction/InteractionManager';
 
 export interface MobileInputState {
@@ -19,11 +20,10 @@ export interface MobileInputState {
 }
 
 export class MobileControls {
+    private scene: Phaser.Scene;
     private container: HTMLElement;
-    private joystickZone: HTMLElement;
-    private joystickBase: HTMLElement;
-    private joystickKnob: HTMLElement;
-    private sprintButton: HTMLElement;
+    private joystickBase?: Phaser.GameObjects.Image;
+    private joystickHandle?: Phaser.GameObjects.Image;
     private inventoryButton: HTMLElement;
     private interactButton: HTMLElement;
     private fullscreenButton: HTMLElement;
@@ -40,16 +40,21 @@ export class MobileControls {
     
     // Joystick state
     private joystickActive = false;
-    private joystickTouchId: number | null = null;
+    private joystickPointerId: number | null = null;
     private joystickCenter = { x: 0, y: 0 };
-    private readonly joystickRadius = 50;
-    private readonly deadzone = 0.2;
+    private readonly joystickBaseSize = 45;
+    private readonly joystickHandleWidth = 16;
+    private readonly joystickHandleHeight = 17;
+    private readonly joystickBorder = 4;
+    private readonly joystickBaseScale = 2;
+    private readonly joystickHandleScale = 2;
+    private readonly joystickMarginX = 50;
+    private readonly joystickMarginY = 60;
+    private readonly joystickDeadzone = 0.18;
+    private readonly joystickSprintThreshold = 0.9;
     
     // UI styling
     private readonly borderRadius = '16px';
-    
-    // Sprint button state
-    private sprintTouchId: number | null = null;
     
     // Visibility
     private isVisible = false;
@@ -62,21 +67,15 @@ export class MobileControls {
     private guiCurrentlyOpen = false;
     private guiOpenSource: 'inventory' | 'menu' | null = null;
     
-    constructor() {
+    constructor(scene: Phaser.Scene) {
+        this.scene = scene;
         this.container = this.createContainer();
-        this.joystickZone = this.createJoystickZone();
-        this.joystickBase = this.createJoystickBase();
-        this.joystickKnob = this.createJoystickKnob();
-        this.sprintButton = this.createSprintButton();
+        this.createJoystickSprites();
         this.inventoryButton = this.createInventoryButton();
         this.interactButton = this.createInteractButton();
         this.fullscreenButton = this.createFullscreenButton();
         this.menuButton = this.createMenuButton();
-        
-        this.joystickBase.appendChild(this.joystickKnob);
-        this.joystickZone.appendChild(this.joystickBase);
-        this.container.appendChild(this.joystickZone);
-        this.container.appendChild(this.sprintButton);
+
         this.container.appendChild(this.inventoryButton);
         this.container.appendChild(this.interactButton);
         this.container.appendChild(this.fullscreenButton);
@@ -173,8 +172,10 @@ export class MobileControls {
         const isMobile = MobileControls.isMobileDevice();
         const showTouchControls = isMobile && !this.keyboardUsed && !this.guiCurrentlyOpen;
 
-        this.joystickZone.style.display = showTouchControls ? 'block' : 'none';
-        this.setButtonVisible(this.sprintButton, showTouchControls);
+        this.setJoystickVisible(showTouchControls);
+        if (!showTouchControls) {
+            this.resetInput();
+        }
         const showInventory = showTouchControls
             || (isMobile && !this.keyboardUsed && this.guiCurrentlyOpen && this.guiOpenSource === 'inventory');
         this.setButtonVisible(this.inventoryButton, showInventory);
@@ -237,6 +238,12 @@ export class MobileControls {
         if (this.resizeListener) {
             window.removeEventListener('resize', this.resizeListener);
         }
+        this.scene.input.off('pointerdown', this.onJoystickPointerDown, this);
+        this.scene.input.off('pointermove', this.onJoystickPointerMove, this);
+        this.scene.input.off('pointerup', this.onJoystickPointerUp, this);
+        this.scene.input.off('pointerupoutside', this.onJoystickPointerUp, this);
+        this.joystickBase?.destroy();
+        this.joystickHandle?.destroy();
         this.container.remove();
         this.isVisible = false;
     }
@@ -250,12 +257,9 @@ export class MobileControls {
             sprint: false
         };
         this.joystickActive = false;
-        this.joystickTouchId = null;
-        this.sprintTouchId = null;
-        
-        // Reset joystick visual
-        this.joystickKnob.style.transform = 'translate(-50%, -50%)';
-        this.joystickBase.classList.remove('active');
+        this.joystickPointerId = null;
+
+        this.resetJoystickVisual();
     }
 
     private setupGuiOpenListener() {
@@ -272,7 +276,6 @@ export class MobileControls {
         this.updateDeviceVisibility();
 
         if (isOpen) {
-            this.sprintButton.classList.remove('active');
             this.interactButton.classList.remove('active');
             this.fullscreenButton.classList.remove('active');
         }
@@ -374,6 +377,45 @@ export class MobileControls {
         const topOffset = navbarHeight + 16;
         this.fullscreenButton.style.top = `${topOffset}px`;
         this.menuButton.style.top = `${topOffset}px`;
+        if (this.isJoystickVisible()) {
+            this.positionJoystick();
+        }
+    }
+
+    private positionJoystick() {
+        if (!this.joystickBase || !this.joystickHandle) return;
+        const x = this.joystickMarginX + (this.joystickBase.displayWidth * 0.5);
+        const y = this.scene.scale.height - this.joystickMarginY - (this.joystickBase.displayHeight * 0.5);
+        this.joystickBase.setPosition(x, y);
+        this.joystickHandle.setPosition(x, y);
+        this.joystickCenter = { x, y };
+    }
+
+    private setJoystickVisible(visible: boolean) {
+        if (this.joystickBase) {
+            this.joystickBase.setVisible(visible);
+        }
+        if (this.joystickHandle) {
+            this.joystickHandle.setVisible(visible);
+        }
+        if (visible) {
+            this.positionJoystick();
+        }
+    }
+
+    private resetJoystickVisual() {
+        if (!this.joystickHandle || !this.joystickBase) return;
+        this.joystickHandle.setPosition(this.joystickBase.x, this.joystickBase.y);
+    }
+
+    private getJoystickMaxDistance(): number {
+        const innerRadius = (this.joystickBaseSize - this.joystickBorder * 2) * 0.5 * this.joystickBaseScale;
+        const handleRadius = Math.max(this.joystickHandleWidth, this.joystickHandleHeight) * 0.5 * this.joystickHandleScale;
+        return Math.max(6, innerRadius - handleRadius);
+    }
+
+    private isJoystickVisible(): boolean {
+        return Boolean(this.joystickBase?.visible && this.joystickHandle?.visible);
     }
     
     // ==================== UI Creation ====================
@@ -397,222 +439,82 @@ export class MobileControls {
         return container;
     }
     
-    private createJoystickZone(): HTMLElement {
-        const zone = document.createElement('div');
-        zone.id = 'joystick-zone';
-        zone.style.cssText = `
-            position: absolute;
-            left: 0;
-            bottom: 0;
-            width: 45%;
-            height: 50%;
-            pointer-events: auto;
-            touch-action: none;
-        `;
-        return zone;
-    }
-    
-    private createJoystickBase(): HTMLElement {
-        const base = document.createElement('div');
-        base.id = 'joystick-base';
-        base.style.cssText = `
-            position: absolute;
-            left: 50px;
-            bottom: 50px;
-            width: 120px;
-            height: 120px;
-            border-radius: ${this.borderRadius};
-            background: rgba(40, 40, 40, 0.7);
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 
-                inset 0 0 20px rgba(0, 0, 0, 0.5),
-                0 0 10px rgba(0, 0, 0, 0.3);
-            transition: opacity 0.2s, transform 0.1s;
-            opacity: 0.8;
-        `;
-        
-        // Add direction indicators (Minecraft Bedrock style)
-        const indicators = this.createDirectionIndicators();
-        base.appendChild(indicators);
-        
-        return base;
-    }
-    
-    private createDirectionIndicators(): HTMLElement {
-        const container = document.createElement('div');
-        container.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-        `;
-        
-        // Create 8 direction indicators
-        const directions = [
-            { angle: -90, symbol: '▲' },   // Up
-            { angle: 90, symbol: '▼' },    // Down
-            { angle: 180, symbol: '◀' },   // Left
-            { angle: 0, symbol: '▶' },     // Right
-        ];
-        
-        directions.forEach(({ angle, symbol }) => {
-            const indicator = document.createElement('div');
-            const rad = (angle * Math.PI) / 180;
-            const dist = 42;
-            const x = Math.cos(rad) * dist;
-            const y = Math.sin(rad) * dist;
-            
-            indicator.textContent = symbol;
-            indicator.style.cssText = `
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(calc(-50% + ${x}px), calc(-50% + ${y}px));
-                color: rgba(255, 255, 255, 0.25);
-                font-size: 14px;
-                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-                pointer-events: none;
+    private createJoystickSprites() {
+        this.joystickBase = this.scene.add.image(0, 0, 'ui-joystick-base');
+        this.joystickHandle = this.scene.add.image(0, 0, 'ui-joystick-handle');
+        this.joystickBase.setOrigin(0.5, 0.5);
+        this.joystickHandle.setOrigin(0.5, 0.5);
+        this.joystickBase.setDepth(9999);
+        this.joystickHandle.setDepth(10000);
+        this.joystickBase.setScrollFactor(0);
+        this.joystickHandle.setScrollFactor(0);
+        this.joystickBase.setScale(this.joystickBaseScale);
+        this.joystickHandle.setScale(this.joystickHandleScale);
+        this.positionJoystick();
+        this.setJoystickVisible(false);
+
+        const styleId = 'mobile-controls-style';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+                #inventory-button, #interact-button {
+                    position: absolute;
+                    right: 50px;
+                    width: 64px;
+                    height: 64px;
+                    border-radius: 16px;
+                    background: rgba(40, 40, 40, 0.7);
+                    border: 2px solid rgba(255, 255, 255, 0.25);
+                    box-shadow:
+                        inset 0 0 12px rgba(0, 0, 0, 0.35),
+                        0 0 8px rgba(0, 0, 0, 0.25);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    pointer-events: auto;
+                    touch-action: none;
+                    transition: background 0.15s, transform 0.1s, border-color 0.15s;
+                    opacity: 0.8;
+                }
+                #inventory-button { bottom: 150px; }
+                #interact-button { bottom: 230px; }
+                #inventory-button .action-icon,
+                #interact-button .action-icon {
+                    width: 26px;
+                    height: 26px;
+                    color: rgba(255, 255, 255, 0.75);
+                }
+                #inventory-button.active,
+                #interact-button.active {
+                    background: rgba(255, 102, 170, 0.45) !important;
+                    border-color: rgba(255, 102, 170, 0.8) !important;
+                    transform: scale(0.95);
+                }
+                #inventory-button.active .action-icon,
+                #interact-button.active .action-icon {
+                    color: #fff;
+                }
+                #fullscreen-button {
+                    opacity: 0.6;
+                }
+                #fullscreen-button.active {
+                    opacity: 1;
+                    background: rgba(255, 102, 170, 0.45) !important;
+                    border-color: rgba(255, 102, 170, 0.8) !important;
+                    transform: scale(0.95);
+                    box-shadow:
+                        inset 0 0 10px rgba(0, 0, 0, 0.3),
+                        0 0 8px rgba(255, 102, 170, 0.35);
+                }
+                #fullscreen-button .fs-icon {
+                    width: 20px;
+                    height: 20px;
+                    color: rgba(255, 255, 255, 0.8);
+                }
             `;
-            container.appendChild(indicator);
-        });
-        
-        return container;
-    }
-    
-    private createJoystickKnob(): HTMLElement {
-        const knob = document.createElement('div');
-        knob.id = 'joystick-knob';
-        knob.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 50px;
-            height: 50px;
-            border-radius: ${this.borderRadius};
-            background: linear-gradient(145deg, #555555, #3a3a3a);
-            border: 2px solid rgba(255, 255, 255, 0.4);
-            box-shadow: 
-                0 4px 8px rgba(0, 0, 0, 0.4),
-                inset 0 2px 4px rgba(255, 255, 255, 0.1);
-            transition: transform 0.05s ease-out;
-        `;
-        return knob;
-    }
-    
-    private createSprintButton(): HTMLElement {
-        const button = document.createElement('div');
-        button.id = 'sprint-button';
-        // Using Lucide's "chrevrons-up" icon
-        button.innerHTML = `
-            <div class="sprint-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevrons-up-icon lucide-chevrons-up"><path d="m17 11-5-5-5 5"/><path d="m17 18-5-5-5 5"/></svg>
-            </div>
-        `;
-        button.style.cssText = `
-            position: absolute;
-            right: 50px;
-            bottom: 50px;
-            width: 80px;
-            height: 80px;
-            border-radius: ${this.borderRadius};
-            background: rgba(40, 40, 40, 0.7);
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 
-                inset 0 0 15px rgba(0, 0, 0, 0.4),
-                0 0 10px rgba(0, 0, 0, 0.3);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            pointer-events: auto;
-            touch-action: none;
-            transition: background 0.15s, transform 0.1s, border-color 0.15s;
-            opacity: 0.8;
-        `;
-        
-        // Style the inner elements
-        const style = document.createElement('style');
-        style.textContent = `
-            #sprint-button .sprint-icon {
-                width: 28px;
-                height: 28px;
-                color: rgba(255, 255, 255, 0.7);
-                margin-bottom: 2px;
-            }
-            #sprint-button.active {
-                background: rgba(255, 102, 170, 0.5) !important;
-                border-color: rgba(255, 102, 170, 0.8) !important;
-                transform: scale(0.95);
-            }
-            #sprint-button.active .sprint-icon {
-                color: #fff;
-            }
-            #inventory-button, #interact-button {
-                position: absolute;
-                right: 50px;
-                width: 64px;
-                height: 64px;
-                border-radius: 16px;
-                background: rgba(40, 40, 40, 0.7);
-                border: 2px solid rgba(255, 255, 255, 0.25);
-                box-shadow:
-                    inset 0 0 12px rgba(0, 0, 0, 0.35),
-                    0 0 8px rgba(0, 0, 0, 0.25);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                pointer-events: auto;
-                touch-action: none;
-                transition: background 0.15s, transform 0.1s, border-color 0.15s;
-                opacity: 0.8;
-            }
-            #inventory-button { bottom: 150px; }
-            #interact-button { bottom: 230px; }
-            #inventory-button .action-icon,
-            #interact-button .action-icon {
-                width: 26px;
-                height: 26px;
-                color: rgba(255, 255, 255, 0.75);
-            }
-            #inventory-button.active,
-            #interact-button.active {
-                background: rgba(255, 102, 170, 0.45) !important;
-                border-color: rgba(255, 102, 170, 0.8) !important;
-                transform: scale(0.95);
-            }
-            #inventory-button.active .action-icon,
-            #interact-button.active .action-icon {
-                color: #fff;
-            }
-            #joystick-base.active {
-                opacity: 1;
-                transform: scale(1.02);
-            }
-            #fullscreen-button {
-                opacity: 0.6;
-            }
-            #fullscreen-button.active {
-                opacity: 1;
-                background: rgba(255, 102, 170, 0.45) !important;
-                border-color: rgba(255, 102, 170, 0.8) !important;
-                transform: scale(0.95);
-                box-shadow:
-                    inset 0 0 10px rgba(0, 0, 0, 0.3),
-                    0 0 8px rgba(255, 102, 170, 0.35);
-            }
-            #fullscreen-button .fs-icon {
-                width: 20px;
-                height: 20px;
-                color: rgba(255, 255, 255, 0.8);
-            }
-        `;
-        document.head.appendChild(style);
-        
-        return button;
+            document.head.appendChild(style);
+        }
     }
     
     private createFullscreenButton(): HTMLElement {
@@ -899,142 +801,85 @@ export class MobileControls {
     // ==================== Event Handling ====================
     
     private setupEventListeners() {
-        // Joystick touch events
-        this.joystickZone.addEventListener('touchstart', this.onJoystickTouchStart.bind(this), { passive: false });
-        this.joystickZone.addEventListener('touchmove', this.onJoystickTouchMove.bind(this), { passive: false });
-        this.joystickZone.addEventListener('touchend', this.onJoystickTouchEnd.bind(this), { passive: false });
-        this.joystickZone.addEventListener('touchcancel', this.onJoystickTouchEnd.bind(this), { passive: false });
-        
-        // Sprint button touch events
-        this.sprintButton.addEventListener('touchstart', this.onSprintTouchStart.bind(this), { passive: false });
-        this.sprintButton.addEventListener('touchend', this.onSprintTouchEnd.bind(this), { passive: false });
-        this.sprintButton.addEventListener('touchcancel', this.onSprintTouchEnd.bind(this), { passive: false });
-        
+        this.scene.input.on('pointerdown', this.onJoystickPointerDown, this);
+        this.scene.input.on('pointermove', this.onJoystickPointerMove, this);
+        this.scene.input.on('pointerup', this.onJoystickPointerUp, this);
+        this.scene.input.on('pointerupoutside', this.onJoystickPointerUp, this);
+
         // Prevent context menu on long press
         this.container.addEventListener('contextmenu', (e) => e.preventDefault());
     }
-    
-    private onJoystickTouchStart(e: TouchEvent) {
-        e.preventDefault();
-        
-        if (this.joystickTouchId !== null) return;
-        
-        const touch = e.changedTouches[0];
-        this.joystickTouchId = touch.identifier;
+    private onJoystickPointerDown(pointer: Phaser.Input.Pointer) {
+        if (!this.isJoystickVisible()) return;
+        if (!this.joystickBase || !this.joystickHandle) return;
+        if (this.joystickPointerId !== null) return;
+
+        const dx = pointer.x - this.joystickBase.x;
+        const dy = pointer.y - this.joystickBase.y;
+        const radius = this.joystickBase.displayWidth * 0.5;
+        if (Math.hypot(dx, dy) > radius) return;
+
         this.joystickActive = true;
-        
-        // Set center at touch position (dynamic joystick)
-        const baseRect = this.joystickBase.getBoundingClientRect();
-        this.joystickCenter = {
-            x: baseRect.left + baseRect.width / 2,
-            y: baseRect.top + baseRect.height / 2
-        };
-        
-        this.joystickBase.classList.add('active');
-        this.updateJoystickPosition(touch.clientX, touch.clientY);
+        this.joystickPointerId = pointer.id;
+        this.joystickCenter = { x: this.joystickBase.x, y: this.joystickBase.y };
+        this.updateJoystickPosition(pointer.x, pointer.y);
     }
-    
-    private onJoystickTouchMove(e: TouchEvent) {
-        e.preventDefault();
-        
-        if (!this.joystickActive || this.joystickTouchId === null) return;
-        
-        // Find our touch
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            const touch = e.changedTouches[i];
-            if (touch.identifier === this.joystickTouchId) {
-                this.updateJoystickPosition(touch.clientX, touch.clientY);
-                break;
-            }
-        }
+
+    private onJoystickPointerMove(pointer: Phaser.Input.Pointer) {
+        if (!this.joystickActive) return;
+        if (this.joystickPointerId !== pointer.id) return;
+        this.updateJoystickPosition(pointer.x, pointer.y);
     }
-    
-    private onJoystickTouchEnd(e: TouchEvent) {
-        // Check if our touch ended
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            const touch = e.changedTouches[i];
-            if (touch.identifier === this.joystickTouchId) {
-                this.joystickActive = false;
-                this.joystickTouchId = null;
-                
-                // Reset visual
-                this.joystickKnob.style.transform = 'translate(-50%, -50%)';
-                this.joystickBase.classList.remove('active');
-                
-                // Reset directional input
-                this.inputState.up = false;
-                this.inputState.down = false;
-                this.inputState.left = false;
-                this.inputState.right = false;
-                break;
-            }
-        }
+
+    private onJoystickPointerUp(pointer: Phaser.Input.Pointer) {
+        if (!this.joystickActive) return;
+        if (this.joystickPointerId !== pointer.id) return;
+
+        this.joystickActive = false;
+        this.joystickPointerId = null;
+        this.inputState.up = false;
+        this.inputState.down = false;
+        this.inputState.left = false;
+        this.inputState.right = false;
+        this.inputState.sprint = false;
+        this.resetJoystickVisual();
     }
-    
-    private updateJoystickPosition(touchX: number, touchY: number) {
-        const dx = touchX - this.joystickCenter.x;
-        const dy = touchY - this.joystickCenter.y;
+
+    private updateJoystickPosition(pointerX: number, pointerY: number) {
+        if (!this.joystickBase || !this.joystickHandle) return;
+
+        const dx = pointerX - this.joystickCenter.x;
+        const dy = pointerY - this.joystickCenter.y;
         const distance = Math.hypot(dx, dy);
-        const maxDist = this.joystickRadius;
-        
-        // Calculate clamped position
+        const maxDist = this.getJoystickMaxDistance();
+
         let clampedX = dx;
         let clampedY = dy;
-        
         if (distance > maxDist) {
-            const ratio = maxDist / distance;
+            const ratio = maxDist / Math.max(1, distance);
             clampedX = dx * ratio;
             clampedY = dy * ratio;
         }
-        
-        // Update knob visual position
-        this.joystickKnob.style.transform = `translate(calc(-50% + ${clampedX}px), calc(-50% + ${clampedY}px))`;
-        
-        // Calculate normalized direction
+
+        this.joystickHandle.setPosition(this.joystickCenter.x + clampedX, this.joystickCenter.y + clampedY);
+
         const normalizedDist = Math.min(distance / maxDist, 1);
-        
-        // Apply deadzone
-        if (normalizedDist < this.deadzone) {
+        if (normalizedDist < this.joystickDeadzone) {
             this.inputState.up = false;
             this.inputState.down = false;
             this.inputState.left = false;
             this.inputState.right = false;
+            this.inputState.sprint = false;
             return;
         }
-        
-        // Convert to 8-direction input
+
+        this.inputState.sprint = normalizedDist >= this.joystickSprintThreshold;
+
         const angle = Math.atan2(dy, dx);
         const angleDeg = ((angle * 180) / Math.PI + 360) % 360;
-        
-        // Determine which of 8 directions based on angle
-        // Each direction covers 45 degrees
         this.inputState.right = angleDeg < 67.5 || angleDeg >= 292.5;
         this.inputState.down = angleDeg >= 22.5 && angleDeg < 157.5;
         this.inputState.left = angleDeg >= 112.5 && angleDeg < 247.5;
         this.inputState.up = angleDeg >= 202.5 && angleDeg < 337.5;
-    }
-    
-    private onSprintTouchStart(e: TouchEvent) {
-        e.preventDefault();
-        
-        if (this.sprintTouchId !== null) return;
-        
-        const touch = e.changedTouches[0];
-        this.sprintTouchId = touch.identifier;
-        this.inputState.sprint = true;
-        this.sprintButton.classList.add('active');
-    }
-    
-    private onSprintTouchEnd(e: TouchEvent) {
-        // Check if our touch ended
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            const touch = e.changedTouches[i];
-            if (touch.identifier === this.sprintTouchId) {
-                this.sprintTouchId = null;
-                this.inputState.sprint = false;
-                this.sprintButton.classList.remove('active');
-                break;
-            }
-        }
     }
 }

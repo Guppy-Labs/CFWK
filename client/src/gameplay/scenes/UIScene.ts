@@ -5,6 +5,7 @@ import { Chat, ChatMessage } from '../ui/Chat';
 import { BookUI } from '../ui/BookUI';
 import { HeadbarUI } from '../ui/HeadbarUI';
 import { NetworkManager } from '../network/NetworkManager';
+import { InventoryChangeMonitor } from '../ui/InventoryChangeMonitor';
 import { ITEM_DEFINITIONS, getItemImagePath } from '@cfwk/shared';
 
 export class UIScene extends Phaser.Scene {
@@ -12,6 +13,7 @@ export class UIScene extends Phaser.Scene {
     private chat?: Chat;
     private bookUI?: BookUI;
     private headbarUI?: HeadbarUI;
+    private inventoryChangeMonitor?: InventoryChangeMonitor;
     private tabKeyDownHandler?: (event: KeyboardEvent) => void;
     private tabKeyUpHandler?: (event: KeyboardEvent) => void;
     private chatKeyHandler?: (event: KeyboardEvent) => void;
@@ -94,6 +96,7 @@ export class UIScene extends Phaser.Scene {
         this.chat = new Chat(this);
         this.bookUI = new BookUI(this);
         this.headbarUI = new HeadbarUI(this);
+        this.inventoryChangeMonitor = new InventoryChangeMonitor(this);
 
         this.inventoryUpdateHandler = (event: Event) => {
             const customEvent = event as CustomEvent<{ equippedRodId?: string | null }>;
@@ -310,6 +313,7 @@ export class UIScene extends Phaser.Scene {
             this.bookUI?.destroy();
             this.headbarUI?.destroy();
             this.playerHud?.destroy();
+            this.inventoryChangeMonitor?.destroy();
         });
     }
 
@@ -398,6 +402,7 @@ export class UIScene extends Phaser.Scene {
         this.chat?.refreshLayout();
         this.headbarUI?.layout();
         this.playerHud?.layout();
+        this.inventoryChangeMonitor?.layout();
     }
 
     private setupChatListener() {
@@ -422,6 +427,7 @@ export class UIScene extends Phaser.Scene {
 
     update(_time: number, delta: number) {
         this.playerHud?.update(delta);
+        this.inventoryChangeMonitor?.update();
 
         if (this.headbarUI) {
             this.headbarUI.update();

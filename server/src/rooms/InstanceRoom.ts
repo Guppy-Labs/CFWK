@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
-import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition } from "@cfwk/shared";
+import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { DEFAULT_INVENTORY_SLOTS } from "@cfwk/shared";
@@ -36,6 +36,7 @@ export class DroppedItemSchema extends Schema {
     @type("number") amount: number = 1;
     @type("number") x: number = 0;
     @type("number") y: number = 0;
+    @type("number") createdAt: number = 0;
 }
 
 /**
@@ -75,7 +76,8 @@ export class InstanceRoom extends Room<InstanceState> {
     private instanceManager = InstanceManager.getInstance();
     private timeUpdateInterval?: ReturnType<typeof setInterval>;
     private afkCheckInterval?: ReturnType<typeof setInterval>;
-    private fishingCasts = new Map<string, { depth: number; region: string; castAt: number }>();
+    private droppedItemCleanupInterval?: ReturnType<typeof setInterval>;
+    private fishingCasts = new Map<string, { depth: number; region: string; castAt: number; itemId?: string; clicksRequired?: number }>();
 
     onCreate(options: { instanceId: string; locationId: string; mapFile: string; maxPlayers: number }) {
         console.log(`[InstanceRoom] Creating room for instance: ${options.instanceId}`);
@@ -192,6 +194,17 @@ export class InstanceRoom extends Room<InstanceState> {
                 }
             });
         }, 1000);
+
+        const dropExpireMs = 5 * 60 * 1000;
+        this.droppedItemCleanupInterval = setInterval(() => {
+            const now = Date.now();
+            this.state.droppedItems.forEach((drop, dropId) => {
+                const createdAt = drop.createdAt || now;
+                if (now - createdAt >= dropExpireMs) {
+                    this.state.droppedItems.delete(dropId);
+                }
+            });
+        }, 15000);
 
         // Handle player input
         this.onMessage("input", (client, input: PlayerInput) => {
@@ -340,6 +353,36 @@ export class InstanceRoom extends Room<InstanceState> {
             this.fishingCasts.set(client.sessionId, { depth, region, castAt: Date.now() });
         });
 
+        // Handle fishing hook (determine target item + required clicks)
+        this.onMessage("fishing:hook", async (client) => {
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+
+            const cast = this.fishingCasts.get(client.sessionId);
+            if (!cast) return;
+
+            if (cast.itemId && cast.clicksRequired) {
+                client.send('fishing:hooked', { itemId: cast.itemId, clicksRequired: cast.clicksRequired });
+                return;
+            }
+
+            const entries = getLootTable(cast.region as any);
+            const equippedRodIdCurrent = InventoryCache.getInstance().getEquippedRod(player.odcid);
+            const rodStats = getRodStats(equippedRodIdCurrent);
+            const itemId = selectFromLootTable(entries, cast.depth, 'rickety', null, rodStats.rarityMultiplier);
+            if (!itemId) return;
+
+            const mass = getItemDefinition(itemId)?.mass ?? 1;
+            const baseClicks = Math.ceil(mass * 1.5);
+            const strength = Math.max(0.1, rodStats.strength);
+            const clicksRequired = Math.max(1, Math.ceil(baseClicks * (1 / strength)));
+
+            cast.itemId = itemId;
+            cast.clicksRequired = clicksRequired;
+            this.fishingCasts.set(client.sessionId, cast);
+            client.send('fishing:hooked', { itemId, clicksRequired });
+        });
+
         // Handle fishing catch (award item if cast exists)
         this.onMessage("fishing:catch", async (client) => {
             const player = this.state.players.get(client.sessionId);
@@ -349,24 +392,27 @@ export class InstanceRoom extends Room<InstanceState> {
             if (!cast) return;
 
             const entries = getLootTable(cast.region as any);
-            const itemId = selectFromLootTable(entries, cast.depth, 'rickety', null);
+            const equippedRodIdCurrent = InventoryCache.getInstance().getEquippedRod(player.odcid);
+            const rodStats = getRodStats(equippedRodIdCurrent);
+            const itemId = cast.itemId ?? selectFromLootTable(entries, cast.depth, 'rickety', null, rodStats.rarityMultiplier);
             this.fishingCasts.delete(client.sessionId);
             if (!itemId) return;
 
-            const { items: currentSlots, equippedRodId } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+            const { items: currentSlots, equippedRodId: equippedRodIdFromState } = await InventoryCache.getInstance().getInventoryState(player.odcid);
             const stackSize = getItemDefinition(itemId)?.stackSize ?? 99;
             const hasStackSpace = currentSlots.some((slot) => slot.itemId === itemId && slot.count < stackSize);
             const hasEmptySlot = currentSlots.some((slot) => !slot.itemId || slot.count === 0);
 
             if (!hasStackSpace && !hasEmptySlot) {
                 this.createDroppedItem(itemId, 1, player.x, player.y);
-                client.send('inventory', { slots: currentSlots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+                client.send('inventory', { slots: currentSlots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId: equippedRodIdFromState });
+                client.send('inventory:skip', { itemId, quantity: 1 });
                 client.send('fishing:catchResult', { itemId });
                 return;
             }
 
             const slots = await InventoryCache.getInstance().addItem(player.odcid, itemId, 1);
-            client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+            client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId: equippedRodIdFromState });
             client.send('fishing:catchResult', { itemId });
         });
 
@@ -384,6 +430,16 @@ export class InstanceRoom extends Room<InstanceState> {
             const maxPickupDistance = 18;
 
             if (distance > maxPickupDistance) return;
+
+            const { items: currentSlots, equippedRodId: equippedRodIdFromState } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+            const stackSize = getItemDefinition(droppedItem.itemId)?.stackSize ?? 99;
+            const hasStackSpace = currentSlots.some((slot) => slot.itemId === droppedItem.itemId && slot.count < stackSize);
+            const hasEmptySlot = currentSlots.some((slot) => !slot.itemId || slot.count === 0);
+            if (!hasStackSpace && !hasEmptySlot) {
+                client.send('inventory', { slots: currentSlots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId: equippedRodIdFromState });
+                client.send('inventory:skip', { itemId: droppedItem.itemId, quantity: droppedItem.amount });
+                return;
+            }
 
             this.state.droppedItems.delete(data.droppedItemId);
 
@@ -523,6 +579,7 @@ export class InstanceRoom extends Room<InstanceState> {
         drop.amount = amount;
         drop.x = x;
         drop.y = y;
+        drop.createdAt = Date.now();
         this.state.droppedItems.set(drop.id, drop);
     }
 
@@ -682,6 +739,9 @@ export class InstanceRoom extends Room<InstanceState> {
         }
         if (this.afkCheckInterval) {
             clearInterval(this.afkCheckInterval);
+        }
+        if (this.droppedItemCleanupInterval) {
+            clearInterval(this.droppedItemCleanupInterval);
         }
     }
 
