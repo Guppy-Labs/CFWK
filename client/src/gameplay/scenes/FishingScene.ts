@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { DAYLIGHT_HOURS, getItemImagePath, getRodStats } from '@cfwk/shared';
+import { DAYLIGHT_HOURS, getItemDefinition, getItemImagePath, getRodStats } from '@cfwk/shared';
 import { LightingManager } from '../fx/LightingManager';
 import { WorldTimeManager } from '../time/WorldTimeManager';
 import { NetworkManager } from '../network/NetworkManager';
@@ -35,7 +35,6 @@ type BarVisual = {
 export class FishingScene extends Phaser.Scene {
     // UI elements
     private stopButton?: Phaser.GameObjects.Container;
-    private previewFrame?: Phaser.GameObjects.Image;
     private stopButtonBg?: Phaser.GameObjects.Image;
     private stopButtonLabel?: Phaser.GameObjects.Text;
     private buttonTextureKey?: string;
@@ -154,6 +153,9 @@ export class FishingScene extends Phaser.Scene {
 
     // Reel pull tuning
     private readonly reelPullMaxProgress = 0.8;
+    private readonly reelPullDownMin = 6;
+    private readonly reelPullDownMax = 90;
+    private readonly reelPullDownPower = 1.1;
 
     // Splash particle tuning
     private readonly splashTextureKey = 'fishing-water-splash';
@@ -171,6 +173,21 @@ export class FishingScene extends Phaser.Scene {
     private readonly splashSpreadBase = 6;
     private readonly splashSpreadPower = 10;
     private readonly splashDepth = 3;
+
+    // Catch splash tuning
+    private readonly catchSplashMassMin = 1;
+    private readonly catchSplashMassMax = 12;
+    private readonly catchSplashCountMin = 4;
+    private readonly catchSplashCountMax = 12;
+    private readonly catchSplashSpeedMin = 20;
+    private readonly catchSplashSpeedMax = 70;
+    private readonly catchSplashLifespanMin = 220;
+    private readonly catchSplashLifespanMax = 520;
+    private readonly catchSplashScaleStartMin = 0.3;
+    private readonly catchSplashScaleStartMax = 1.25;
+    private readonly catchSplashAlphaStart = 0.85;
+    private readonly catchSplashSpreadBase = 4;
+    private readonly catchSplashSpreadPower = 12;
 
     // Cast line
     private castLineGraphics?: Phaser.GameObjects.Graphics;
@@ -205,9 +222,6 @@ export class FishingScene extends Phaser.Scene {
     }
 
     preload() {
-        if (!this.textures.exists('ui-item-info-frame')) {
-            this.load.image('ui-item-info-frame', '/ui/Frame07a.png');
-        }
         if (!this.textures.exists('ui-group-button-selected')) {
             this.load.image('ui-group-button-selected', '/ui/Button08a.png');
         }
@@ -485,11 +499,6 @@ export class FishingScene extends Phaser.Scene {
     }
 
     private createUI() {
-        const frameScale = 2;
-        this.previewFrame = this.add.image(0, 0, 'ui-item-info-frame').setOrigin(1, 0);
-        this.previewFrame.setScale(frameScale);
-        this.previewFrame.setDepth(10);
-
         this.stopButtonLabel = this.add.text(0, 0, 'Stop Fishing', {
             fontFamily: 'Minecraft, monospace',
             fontSize: '12px',
@@ -643,22 +652,20 @@ export class FishingScene extends Phaser.Scene {
     }
 
     private layoutUI() {
-        if (!this.previewFrame || !this.stopButton || !this.stopButtonBg || !this.stopButtonLabel) return;
+        if (!this.stopButton || !this.stopButtonBg || !this.stopButtonLabel) return;
 
         const width = this.scale.width;
         const frameX = width - this.frameMargin;
         const frameY = this.frameTopOffset;
-        this.previewFrame.setPosition(frameX, frameY);
-
-        const targetButtonWidth = Math.round(this.previewFrame.displayWidth);
+        const targetButtonWidth = Math.round(Math.max(140, this.stopButtonLabel.width + 30));
         const targetButtonHeight = Math.max(18, Math.ceil(this.stopButtonLabel.height + 10));
         this.updateButtonTexture(targetButtonWidth, targetButtonHeight);
 
         this.stopButtonBg.setDisplaySize(targetButtonWidth, targetButtonHeight);
         this.stopButtonLabel.setPosition(0, 0);
 
-        const buttonX = frameX - this.previewFrame.displayWidth / 2;
-        const buttonY = frameY + this.previewFrame.displayHeight + this.buttonSpacing + targetButtonHeight / 2;
+        const buttonX = frameX - targetButtonWidth / 2;
+        const buttonY = frameY + targetButtonHeight / 2;
         this.stopButton.setPosition(buttonX, buttonY);
 
         if (!this.castButton || !this.castButtonBg || !this.castButtonLabel) return;
@@ -1285,17 +1292,16 @@ export class FishingScene extends Phaser.Scene {
 
     private updateReelLinePull() {
         if (!this.casted || !this.castLineBaseEnd) return;
-        const start = this.getRodTipPosition();
         const base = this.castLineBaseEnd;
         const progress = Phaser.Math.Clamp(
             (this.reelClicks / Math.max(1, this.reelClicksNeeded)) * this.reelPullMaxProgress,
             0,
             this.reelPullMaxProgress
         );
-        this.castLineEnd = new Phaser.Math.Vector2(
-            Phaser.Math.Linear(base.x, start.x, progress),
-            Phaser.Math.Linear(base.y, start.y, progress)
-        );
+        const power = Math.pow(Phaser.Math.Clamp(this.castPower, 0, 1), this.reelPullDownPower);
+        const downMax = Phaser.Math.Linear(this.reelPullDownMin, this.reelPullDownMax, power);
+        const downOffset = downMax * progress;
+        this.castLineEnd = new Phaser.Math.Vector2(base.x, base.y + downOffset);
     }
 
     private triggerWaterSplash(position: Phaser.Math.Vector2) {
@@ -1321,6 +1327,36 @@ export class FishingScene extends Phaser.Scene {
         );
     }
 
+    private triggerCatchSplash(itemId: string) {
+        if (!this.splashEmitter) return;
+        const def = getItemDefinition(itemId);
+        const mass = def?.mass ?? this.catchSplashMassMin;
+        const massRatio = Phaser.Math.Clamp(
+            (mass - this.catchSplashMassMin) / Math.max(1, this.catchSplashMassMax - this.catchSplashMassMin),
+            0,
+            1
+        );
+        const count = Math.round(Phaser.Math.Linear(this.catchSplashCountMin, this.catchSplashCountMax, massRatio));
+        const startScale = Phaser.Math.Linear(this.catchSplashScaleStartMin, this.catchSplashScaleStartMax, massRatio);
+        const speedMin = Phaser.Math.Linear(this.catchSplashSpeedMin, this.catchSplashSpeedMax * 0.7, massRatio);
+        const speedMax = Phaser.Math.Linear(this.catchSplashSpeedMax, this.catchSplashSpeedMax * 1.2, massRatio);
+        const lifespanMin = Phaser.Math.Linear(this.catchSplashLifespanMin, this.catchSplashLifespanMax * 0.8, massRatio);
+        const lifespanMax = Phaser.Math.Linear(this.catchSplashLifespanMax, this.catchSplashLifespanMax * 1.2, massRatio);
+
+        this.splashEmitter.setParticleScale(startScale, this.splashScaleEnd);
+        this.splashEmitter.setParticleSpeed(speedMin, speedMax);
+        this.splashEmitter.setParticleLifespan({ min: lifespanMin, max: lifespanMax });
+        this.splashEmitter.setParticleAlpha({ start: this.catchSplashAlphaStart, end: 0 });
+
+        const position = this.getRodTipPosition();
+        const spread = this.catchSplashSpreadBase + massRatio * this.catchSplashSpreadPower;
+        this.splashEmitter.emitParticleAt(
+            position.x + Phaser.Math.Between(-spread, spread),
+            position.y + Phaser.Math.Between(-spread * 0.25, spread * 0.25),
+            count
+        );
+    }
+
     private setupGuiOpenListener() {
         this.guiOpenHandler = (_parent: any, value: boolean) => {
             this.setFishingUiVisible(!value);
@@ -1331,7 +1367,6 @@ export class FishingScene extends Phaser.Scene {
     }
 
     private setFishingUiVisible(visible: boolean) {
-        this.previewFrame?.setVisible(visible);
         this.stopButton?.setVisible(visible);
         this.castButton?.setVisible(visible);
         if (this.castBar) {
@@ -1425,6 +1460,8 @@ export class FishingScene extends Phaser.Scene {
     private playCatchAnimation(itemId: string) {
         if (!this.casted) return;
         if (this.isReelInAnimating) return;
+
+        this.triggerCatchSplash(itemId);
 
         const textureKey = `item-${itemId}`;
         if (!this.textures.exists(textureKey)) {
@@ -1585,7 +1622,6 @@ export class FishingScene extends Phaser.Scene {
             this.guiOpenHandler = undefined;
         }
         this.stopButton?.destroy();
-        this.previewFrame?.destroy();
         this.castButton?.destroy();
         this.castBar?.bg.destroy();
         this.castBar?.fill.destroy();
