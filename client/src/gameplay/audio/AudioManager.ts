@@ -177,7 +177,7 @@ export class AudioManager {
         this.scene.load.audio('reel-click', '/audio/ambient/ui/click-node.mp3');
         this.scene.load.audio('item-collected', '/audio/ambient/ui/item-collected.mp3');
         this.scene.load.audio('item-drop', '/audio/ambient/ui/item-drop.mp3');
-        this.scene.load.audio('item-skip', '/audio/ambient/ui/item-skup.mp3');
+        this.scene.load.audio('item-skip', '/audio/ambient/ui/item-skip.mp3');
     }
     
     /**

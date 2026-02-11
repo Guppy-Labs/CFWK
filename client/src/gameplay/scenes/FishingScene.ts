@@ -141,11 +141,43 @@ export class FishingScene extends Phaser.Scene {
         'The line is tugging!'
     ];
 
+    // Line curve tuning
+    private readonly lineFinalSagMin = 50;
+    private readonly lineFinalSagMax = 160;
+    private readonly lineFinalSagPower = 1.15;
+    private readonly lineFinalSagDistanceFactor = 0.35;
+    private readonly lineFinalControl1T = 0.28;
+    private readonly lineFinalControl2T = 0.82;
+    private readonly lineFinalControl1SagRatio = 0.7;
+    private readonly lineFinalControl2SagRatio = 0.2;
+    private readonly lineFinalEndStraightness = 0.45;
+
+    // Reel pull tuning
+    private readonly reelPullMaxProgress = 0.8;
+
+    // Splash particle tuning
+    private readonly splashTextureKey = 'fishing-water-splash';
+    private readonly splashCountMin = 6;
+    private readonly splashCountMax = 14;
+    private readonly splashSpeedMin = 25;
+    private readonly splashSpeedMax = 80;
+    private readonly splashLifespanMin = 260;
+    private readonly splashLifespanMax = 540;
+    private readonly splashScaleStartMin = 0.4;
+    private readonly splashScaleStartMax = 1.1;
+    private readonly splashScaleEnd = 0.1;
+    private readonly splashAlphaStart = 0.8;
+    private readonly splashGravity = 120;
+    private readonly splashSpreadBase = 6;
+    private readonly splashSpreadPower = 10;
+    private readonly splashDepth = 3;
+
     // Cast line
     private castLineGraphics?: Phaser.GameObjects.Graphics;
     private castLineProgress = 0;
     private castLineTween?: Phaser.Tweens.Tween;
     private castLineEnd?: Phaser.Math.Vector2;
+    private castLineBaseEnd?: Phaser.Math.Vector2;
     private castTossTween?: Phaser.Tweens.Tween;
     private castSettleTween?: Phaser.Tweens.Tween;
     private castTossProgress = 0;
@@ -161,6 +193,7 @@ export class FishingScene extends Phaser.Scene {
     private caughtItemSprite?: Phaser.GameObjects.Image;
     private castButtonFadeTween?: Phaser.Tweens.Tween;
     private biteAlertSound?: Phaser.Sound.WebAudioSound;
+    private splashEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
 
     constructor() {
         super({ key: 'FishingScene' });
@@ -212,6 +245,7 @@ export class FishingScene extends Phaser.Scene {
         this.ensureUiVisible();
         this.setupDebugToggle();
         this.createUI();
+        this.createSplashEmitter();
         this.layoutAll();
         this.setupCatchListener();
         this.setupHookListener();
@@ -515,6 +549,34 @@ export class FishingScene extends Phaser.Scene {
 
         this.castLineGraphics = this.add.graphics();
         this.castLineGraphics.setDepth(4);
+    }
+
+    private createSplashEmitter() {
+        if (!this.textures.exists(this.splashTextureKey)) {
+            const graphics = this.make.graphics({ x: 0, y: 0 }, false);
+            const size = 8;
+            graphics.fillStyle(0xffffff, 1);
+            graphics.fillRect(2, 2, 4, 4);
+            graphics.fillStyle(0xffffff, 0.7);
+            graphics.fillRect(1, 3, 1, 2);
+            graphics.fillRect(6, 3, 1, 2);
+            graphics.fillRect(3, 1, 2, 1);
+            graphics.fillRect(3, 6, 2, 1);
+            graphics.generateTexture(this.splashTextureKey, size, size);
+            graphics.destroy();
+        }
+
+        this.splashEmitter = this.add.particles(0, 0, this.splashTextureKey, {
+            speed: { min: this.splashSpeedMin, max: this.splashSpeedMax },
+            angle: { min: -160, max: -20 },
+            scale: { start: this.splashScaleStartMin, end: this.splashScaleEnd },
+            alpha: { start: this.splashAlphaStart, end: 0 },
+            lifespan: { min: this.splashLifespanMin, max: this.splashLifespanMax },
+            gravityY: this.splashGravity,
+            quantity: 0,
+            emitting: false
+        });
+        this.splashEmitter.setDepth(this.splashDepth);
     }
 
     private layoutAll() {
@@ -874,6 +936,8 @@ export class FishingScene extends Phaser.Scene {
                 this.isCastTossing = false;
                 this.isCastSettling = true;
                 this.playWaterSplash();
+                const splashPos = this.getCurrentLineEnd(this.getRodTipPosition());
+                this.triggerWaterSplash(splashPos);
                 const baseLift = this.getCastLift();
                 const tossSettleMax = 0.7;
                 this.castSettleStartLift = baseLift * (1 - tossSettleMax);
@@ -890,6 +954,7 @@ export class FishingScene extends Phaser.Scene {
         });
 
         this.castLineEnd = this.getCastTarget(this.castPower);
+        this.castLineBaseEnd = this.castLineEnd.clone();
         this.networkManager.sendFishingCast(this.currentDepth, 'temperate');
         this.queueBite();
     }
@@ -900,6 +965,7 @@ export class FishingScene extends Phaser.Scene {
         this.currentDepth = this.castDepthMin;
         this.castLineProgress = 0;
         this.castLineEnd = undefined;
+        this.castLineBaseEnd = undefined;
         this.castLineTween?.stop();
         this.castTossTween?.stop();
         this.castSettleTween?.stop();
@@ -1007,6 +1073,7 @@ export class FishingScene extends Phaser.Scene {
         this.cameras.main.shake(60, 0.003);
         this.reelClicks = Math.min(this.reelClicksNeeded, this.reelClicks + 1);
         this.playReelClickSounds(this.reelClicks);
+        this.updateReelLinePull();
         if (this.biteClickBar) {
             this.setBarValue(this.biteClickBar, this.reelClicks / this.reelClicksNeeded);
         }
@@ -1098,7 +1165,7 @@ export class FishingScene extends Phaser.Scene {
             const settleEase = Phaser.Math.Easing.Quadratic.In(settleT);
             const tossSettleMax = 0.7;
             const settleLift = lift * (1 - settleEase * tossSettleMax);
-            this.drawCastLineToss(start, end, t, settleLift);
+            this.drawCastLineToss(start, end, t, settleLift, 0);
             return;
         }
 
@@ -1106,11 +1173,11 @@ export class FishingScene extends Phaser.Scene {
             const settleT = Phaser.Math.Clamp(this.castSettleProgress, 0, 1);
             const settleEase = Phaser.Math.Easing.Quadratic.In(settleT);
             const settleLift = this.castSettleStartLift * (1 - settleEase);
-            this.drawCastLineToss(start, end, 1, settleLift);
+            this.drawCastLineToss(start, end, 1, settleLift, settleT);
             return;
         }
 
-        this.drawCastLineToss(start, end, 1, 0);
+        this.drawCastLineFinal(start, end);
     }
 
     private getCurrentLineEnd(start: Phaser.Math.Vector2) {
@@ -1126,18 +1193,20 @@ export class FishingScene extends Phaser.Scene {
         );
     }
 
-    private drawCastLineToss(start: Phaser.Math.Vector2, end: Phaser.Math.Vector2, progress: number, lift: number) {
+    private drawCastLineToss(start: Phaser.Math.Vector2, end: Phaser.Math.Vector2, progress: number, lift: number, sagBlend: number) {
         if (!this.castLineGraphics) return;
         this.castLineGraphics.clear();
         this.castLineGraphics.lineStyle(2, 0x000000, 1);
 
+        const sag = this.getFinalLineSag(start, end) * Phaser.Math.Clamp(sagBlend, 0, 1);
+
         const control1 = new Phaser.Math.Vector2(
             Phaser.Math.Linear(start.x, end.x, 0.25),
-            Phaser.Math.Linear(start.y, end.y, 0.25) - lift
+            Phaser.Math.Linear(start.y, end.y, 0.25) - lift + sag * this.lineFinalControl1SagRatio
         );
         const control2 = new Phaser.Math.Vector2(
             Phaser.Math.Linear(start.x, end.x, 0.75),
-            Phaser.Math.Linear(start.y, end.y, 0.75) - lift * 0.85
+            Phaser.Math.Linear(start.y, end.y, 0.75) - lift * 0.85 + sag * this.lineFinalControl2SagRatio
         );
 
         const curve = new Phaser.Curves.CubicBezier(start, control1, control2, end);
@@ -1150,6 +1219,43 @@ export class FishingScene extends Phaser.Scene {
             this.castLineGraphics.lineTo(points[i].x, points[i].y);
         }
         this.castLineGraphics.strokePath();
+    }
+
+    private drawCastLineFinal(start: Phaser.Math.Vector2, end: Phaser.Math.Vector2) {
+        if (!this.castLineGraphics) return;
+        this.castLineGraphics.clear();
+        this.castLineGraphics.lineStyle(2, 0x000000, 1);
+
+        const sag = this.getFinalLineSag(start, end);
+        const control1 = new Phaser.Math.Vector2(
+            Phaser.Math.Linear(start.x, end.x, this.lineFinalControl1T),
+            Phaser.Math.Linear(start.y, end.y, this.lineFinalControl1T) + sag * this.lineFinalControl1SagRatio
+        );
+        const control2 = new Phaser.Math.Vector2(
+            Phaser.Math.Linear(start.x, end.x, this.lineFinalControl2T),
+            Phaser.Math.Linear(start.y, end.y, this.lineFinalControl2T) + sag * this.lineFinalControl2SagRatio
+        );
+
+        const straightness = Phaser.Math.Clamp(this.lineFinalEndStraightness, 0, 1);
+        control2.x = Phaser.Math.Linear(control2.x, end.x, straightness);
+        control2.y = Phaser.Math.Linear(control2.y, end.y, straightness);
+
+        const curve = new Phaser.Curves.CubicBezier(start, control1, control2, end);
+        const points = curve.getPoints(26);
+
+        this.castLineGraphics.beginPath();
+        this.castLineGraphics.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            this.castLineGraphics.lineTo(points[i].x, points[i].y);
+        }
+        this.castLineGraphics.strokePath();
+    }
+
+    private getFinalLineSag(start: Phaser.Math.Vector2, end: Phaser.Math.Vector2) {
+        const distance = Phaser.Math.Distance.Between(start.x, start.y, end.x, end.y);
+        const power = Math.pow(Phaser.Math.Clamp(this.castPower, 0, 1), this.lineFinalSagPower);
+        const baseSag = Phaser.Math.Linear(this.lineFinalSagMin, this.lineFinalSagMax, power);
+        return Math.min(baseSag, distance * this.lineFinalSagDistanceFactor);
     }
 
     private getWaterBreathOffset() {
@@ -1175,6 +1281,44 @@ export class FishingScene extends Phaser.Scene {
 
     private getCastLift() {
         return Phaser.Math.Linear(this.scale.height * 0.12, this.scale.height * 0.22, this.castPower);
+    }
+
+    private updateReelLinePull() {
+        if (!this.casted || !this.castLineBaseEnd) return;
+        const start = this.getRodTipPosition();
+        const base = this.castLineBaseEnd;
+        const progress = Phaser.Math.Clamp(
+            (this.reelClicks / Math.max(1, this.reelClicksNeeded)) * this.reelPullMaxProgress,
+            0,
+            this.reelPullMaxProgress
+        );
+        this.castLineEnd = new Phaser.Math.Vector2(
+            Phaser.Math.Linear(base.x, start.x, progress),
+            Phaser.Math.Linear(base.y, start.y, progress)
+        );
+    }
+
+    private triggerWaterSplash(position: Phaser.Math.Vector2) {
+        if (!this.splashEmitter) return;
+        const power = Phaser.Math.Clamp(this.castPower, 0, 1);
+        const count = Math.round(Phaser.Math.Linear(this.splashCountMin, this.splashCountMax, power));
+        const startScale = Phaser.Math.Linear(this.splashScaleStartMin, this.splashScaleStartMax, power);
+        const speedMin = Phaser.Math.Linear(this.splashSpeedMin, this.splashSpeedMax * 0.7, power);
+        const speedMax = Phaser.Math.Linear(this.splashSpeedMax, this.splashSpeedMax * 1.25, power);
+        const lifespanMin = Phaser.Math.Linear(this.splashLifespanMin, this.splashLifespanMax * 0.85, power);
+        const lifespanMax = Phaser.Math.Linear(this.splashLifespanMax, this.splashLifespanMax * 1.2, power);
+
+        this.splashEmitter.setParticleScale(startScale, this.splashScaleEnd);
+        this.splashEmitter.setParticleSpeed(speedMin, speedMax);
+        this.splashEmitter.setParticleLifespan({ min: lifespanMin, max: lifespanMax });
+        this.splashEmitter.setParticleAlpha({ start: this.splashAlphaStart, end: 0 });
+
+        const spread = this.splashSpreadBase + power * this.splashSpreadPower;
+        this.splashEmitter.emitParticleAt(
+            position.x + Phaser.Math.Between(-spread, spread),
+            position.y,
+            count
+        );
     }
 
     private setupGuiOpenListener() {
@@ -1271,6 +1415,7 @@ export class FishingScene extends Phaser.Scene {
             if (!data?.itemId || !data?.clicksRequired) return;
             this.hookItemId = data.itemId;
             this.reelClicksNeeded = Math.max(1, Math.floor(data.clicksRequired));
+            this.updateReelLinePull();
             if (this.biteClickBar) {
                 this.setBarValue(this.biteClickBar, this.reelClicks / this.reelClicksNeeded);
             }
@@ -1454,6 +1599,7 @@ export class FishingScene extends Phaser.Scene {
         this.biteText?.destroy();
         this.biteHint?.destroy();
         this.castLineGraphics?.destroy();
+        this.splashEmitter?.destroy();
         this.caughtItemSprite?.destroy();
         this.perspectiveImage?.destroy();
         this.rodSprite?.destroy();
@@ -1480,6 +1626,9 @@ export class FishingScene extends Phaser.Scene {
         }
         if (this.rodSideTextureKey && this.textures.exists(this.rodSideTextureKey)) {
             this.textures.remove(this.rodSideTextureKey);
+        }
+        if (this.textures.exists(this.splashTextureKey)) {
+            this.textures.remove(this.splashTextureKey);
         }
         this.stopBiteAlert();
     }

@@ -17,6 +17,7 @@ Disallow: /reset/
 Disallow: /forgot/
 Disallow: /sent/
 Disallow: /soon.html
+Disallow: /ad/
 
 # Disallow API endpoints
 Disallow: /api/
