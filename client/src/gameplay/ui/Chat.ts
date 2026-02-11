@@ -1,59 +1,31 @@
 import Phaser from 'phaser';
 import { ITEM_DEFINITIONS } from '@cfwk/shared';
-import { EmojiMap } from './EmojiMap';
+import { ChatLayout } from './chat/ChatLayout';
+import { ChatMessages } from './chat/ChatMessages';
+import { ChatInput } from './chat/ChatInput';
+import { ChatMobileInput } from './chat/ChatMobileInput';
+import type { ChatMessage, CommandSpec } from './chat/types';
 
-export interface ChatMessage {
-    username: string;
-    odcid: string;
-    message: string;
-    timestamp: number;
-    isSystem?: boolean;
-    isPremium?: boolean;
-}
+export type { ChatMessage } from './chat/types';
 
 export class Chat {
-    private scene: Phaser.Scene;
-    private container: Phaser.GameObjects.Container;
-    private background: Phaser.GameObjects.Rectangle;
-    private inputBackground: Phaser.GameObjects.Rectangle;
-    private inputText: Phaser.GameObjects.Text;
-    private ghostText: Phaser.GameObjects.Text;
-    private inputCursor: Phaser.GameObjects.Rectangle;
-    private mobileHint: Phaser.GameObjects.Text;
-    private messageContainer: Phaser.GameObjects.Container;
-    
-    private messages: ChatMessage[] = [];
-    private messageTexts: { container: Phaser.GameObjects.Container; timestamp: number }[] = [];
-    
-    private isFocused: boolean = false;
-    private currentInput: string = '';
-    private cursorVisible: boolean = true;
-    private cursorTimer?: Phaser.Time.TimerEvent;
-    private mobileHintSuppressed: boolean = false;
-    private selectionAll: boolean = false;
-    private history: string[] = [];
-    private historyIndex = -1;
-    private historyDraft = '';
-    private lastCursorX = 0;
-    private lastCursorY = 0;
-    private currentSuggestion: string | null = null;
-    private suggestionRemainder = '';
-    private suggestionContext?: {
-        tokens: string[];
-        tokenIndex: number;
-        commandSpec?: CommandSpec;
-        argIndex?: number;
-    };
-    
+    private layout: ChatLayout;
+    private messages: ChatMessages;
+    private input: ChatInput;
+    private mobileInput: ChatMobileInput | null = null;
+
+    private isFocused = false;
+    private mobileHintSuppressed = false;
+
     private onSendMessage?: (message: string) => void;
     private onFocusChange?: (focused: boolean) => void;
-    
+
     private readonly padding = 10;
     private readonly width = 320;
     private readonly messageHeight = 18;
     private readonly inputHeight = 28;
     private readonly maxVisibleMessages = 8;
-    private readonly unfocusedMessageDuration = 10000; // 10 seconds
+    private readonly unfocusedMessageDuration = 10000;
     private readonly maxMessages = 50;
     private readonly mobileLandscapeReservedBottom = 140;
     private readonly maxInputLength = 50;
@@ -70,988 +42,204 @@ export class Chat {
         { name: 'unban', args: ['player'] },
         { name: 'unmute', args: ['player'] }
     ];
-    
-    private isMobile: boolean = false;
-    private mobileInput: HTMLInputElement | null = null;
-    
-    constructor(scene: Phaser.Scene) {
-        this.scene = scene;
-        this.isMobile = this.detectMobile();
-        
-        // Main container
-        this.container = this.scene.add.container(this.padding, this.padding);
-        this.container.setDepth(9999);
-        this.container.setScrollFactor(0);
-        
-        // Background (only visible when focused)
-        const bgHeight = this.maxVisibleMessages * this.messageHeight + this.inputHeight + this.padding * 3;
-        this.background = this.scene.add.rectangle(0, 0, this.width, bgHeight, 0x000000, 0.6);
-        this.background.setOrigin(0, 0);
-        this.background.setVisible(false);
-        this.container.add(this.background);
-        
-        // Message container
-        this.messageContainer = this.scene.add.container(this.padding, this.padding);
-        this.container.add(this.messageContainer);
-        
-        // Input area background
-        const inputY = this.maxVisibleMessages * this.messageHeight + this.padding * 2;
-        this.inputBackground = this.scene.add.rectangle(0, inputY, this.width, this.inputHeight, 0x333333, 0.8);
-        this.inputBackground.setOrigin(0, 0);
-        this.inputBackground.setVisible(false);
-        this.container.add(this.inputBackground);
-        
-        // Input text
-        this.inputText = this.scene.add.text(this.padding, inputY + 6, '', {
-            fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
-            fontSize: '14px',
-            color: '#ffffff',
-            wordWrap: { width: this.width - this.padding * 2, useAdvancedWrap: true }
-        });
-        this.inputText.setVisible(false);
-        this.container.add(this.inputText);
 
-        this.ghostText = this.scene.add.text(this.padding, inputY + 6, '', {
-            fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
-            fontSize: '14px',
-            color: '#8a8a8a',
-            wordWrap: { width: this.width - this.padding * 2, useAdvancedWrap: true }
+    private readonly isMobile: boolean;
+    private readonly itemIds: string[];
+
+    constructor(private readonly scene: Phaser.Scene) {
+        this.isMobile = this.detectMobile();
+        this.itemIds = ITEM_DEFINITIONS.map((item) => item.id);
+
+        this.layout = new ChatLayout(this.scene, {
+            padding: this.padding,
+            width: this.width,
+            messageHeight: this.messageHeight,
+            inputHeight: this.inputHeight,
+            maxVisibleMessages: this.maxVisibleMessages,
+            mobileLandscapeReservedBottom: this.mobileLandscapeReservedBottom,
+            isMobile: this.isMobile
         });
-        this.ghostText.setVisible(false);
-        this.container.add(this.ghostText);
-        
-        // Cursor
-        this.inputCursor = this.scene.add.rectangle(this.padding, inputY + 6, 2, 14, 0xffffff);
-        this.inputCursor.setOrigin(0, 0);
-        this.inputCursor.setVisible(false);
-        this.container.add(this.inputCursor);
-        
-        // Mobile hint with larger touch area
-        this.mobileHint = this.scene.add.text(this.padding, inputY + 6, 'Tap to chat', {
-            fontFamily: 'Minecraft, monospace',
-            fontSize: '12px',
-            color: '#888888',
-            padding: { x: 10, y: 8 },
-            shadow: {
-                offsetX: 1,
-                offsetY: 1,
-                color: '#000000',
-                blur: 2,
-                fill: true
+
+        this.messages = new ChatMessages(this.scene, this.layout.getMessageContainer(), {
+            width: this.width,
+            padding: this.padding,
+            messageHeight: this.messageHeight,
+            maxVisibleMessages: this.maxVisibleMessages,
+            unfocusedMessageDuration: this.unfocusedMessageDuration,
+            maxMessages: this.maxMessages
+        });
+
+        this.input = new ChatInput(
+            this.scene,
+            {
+                inputText: this.layout.getInputText(),
+                ghostText: this.layout.getGhostText(),
+                inputCursor: this.layout.getInputCursor()
+            },
+            {
+                maxInputLength: this.maxInputLength,
+                commandSpecs: this.commandSpecs
+            },
+            {
+                onSendMessage: (message) => this.onSendMessage?.(message),
+                onRequestBlur: () => this.blur(),
+                onSyncMobileValue: (value) => this.mobileInput?.setValue(value),
+                getMessageAreaHeight: () => this.messages.getLastRenderHeight(),
+                updateInputLayout: (messageAreaHeight, inputTextHeight) => {
+                    this.layout.updateInputLayout(messageAreaHeight, inputTextHeight);
+                },
+                getOnlinePlayerNames: () => this.getOnlinePlayerNames(),
+                getItemIds: () => this.itemIds
             }
-        });
-        this.mobileHint.setVisible(this.isMobile);
-        this.mobileHint.setInteractive({ useHandCursor: true });
-        this.mobileHint.on('pointerdown', () => this.focus());
-        this.container.add(this.mobileHint);
-        
-        // On mobile, also make the input background area clickable when not focused
+        );
+
+        this.layout.getMobileHint().setInteractive({ useHandCursor: true });
+        this.layout.getMobileHint().on('pointerdown', () => this.focus());
+
         if (this.isMobile) {
-            this.inputBackground.setInteractive({ useHandCursor: true });
-            this.inputBackground.on('pointerdown', () => {
+            this.layout.getInputBackground().setInteractive({ useHandCursor: true });
+            this.layout.getInputBackground().on('pointerdown', () => {
                 if (!this.isFocused) {
                     this.focus();
                 }
             });
         }
-        
-        // Start cursor blink timer
-        this.cursorTimer = this.scene.time.addEvent({
-            delay: 530,
-            callback: () => {
-                if (this.isFocused) {
-                    this.cursorVisible = !this.cursorVisible;
-                    this.inputCursor.setVisible(this.cursorVisible);
-                }
-            },
-            loop: true
-        });
-        
-        // Clean up old unfocused messages periodically
+
         this.scene.time.addEvent({
             delay: 1000,
             callback: () => this.cleanupOldMessages(),
             loop: true
         });
 
-        // Apply initial mobile layout constraints
         if (this.isMobile) {
-            this.applyMobileLayout();
+            this.layout.applyMobileLayout();
         }
     }
 
-    private applyMobileLayout() {
-        const maxMessageAreaHeight = this.getMaxMessageAreaHeight();
-        const inputY = Math.min(
-            this.maxVisibleMessages * this.messageHeight + this.padding * 2,
-            maxMessageAreaHeight + this.padding * 2
-        );
-        this.inputBackground.y = inputY;
-        this.inputText.y = inputY + 6;
-        this.inputCursor.y = inputY + 6;
-        this.mobileHint.y = inputY + 6;
-    }
-    
-    private detectMobile(): boolean {
-        const ua = navigator.userAgent.toLowerCase();
-        const mobileKeywords = ['android', 'webos', 'iphone', 'ipad', 'ipod', 'blackberry', 'windows phone', 'mobile', 'tablet'];
-        const isMobileUA = mobileKeywords.some(keyword => ua.includes(keyword));
-        const isSmallScreen = window.innerWidth <= 1024 && window.innerHeight <= 1366;
-        const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-        return hasTouch && (isMobileUA || isSmallScreen);
-    }
-
-    private getMaxChatHeight(): number {
-        const screenHeight = this.scene.scale.height || window.innerHeight;
-        if (!this.isMobile) return Math.max(120, screenHeight - this.padding * 2);
-
-        const screenWidth = this.scene.scale.width || window.innerWidth;
-        const isLandscape = screenWidth > screenHeight;
-        const reservedBottom = isLandscape ? this.mobileLandscapeReservedBottom : 0;
-
-        return Math.max(120, screenHeight - reservedBottom - this.padding * 2);
-    }
-
-    private getMaxMessageAreaHeight(): number {
-        const defaultMax = this.maxVisibleMessages * this.messageHeight;
-        const maxChatHeight = this.getMaxChatHeight();
-        const maxMessageArea = maxChatHeight - this.inputHeight - this.padding * 3;
-        return Math.max(this.messageHeight * 2, Math.min(defaultMax, maxMessageArea));
-    }
-    
     setOnSendMessage(callback: (message: string) => void) {
         this.onSendMessage = callback;
     }
-    
+
     setOnFocusChange(callback: (focused: boolean) => void) {
         this.onFocusChange = callback;
     }
 
     setMobileHintSuppressed(suppressed: boolean) {
         this.mobileHintSuppressed = suppressed;
-
-        if (this.isFocused) {
-            this.mobileHint.setVisible(false);
-        } else {
-            this.mobileHint.setVisible(this.isMobile && !this.mobileHintSuppressed);
-        }
+        this.layout.setMobileHintSuppressed(suppressed, this.isFocused);
     }
-    
+
     isChatFocused(): boolean {
         return this.isFocused;
     }
 
     refreshLayout() {
         if (this.isMobile) {
-            this.applyMobileLayout();
+            this.layout.applyMobileLayout();
         }
-        this.renderMessages();
+        const height = this.messages.renderMessages(this.isFocused, this.layout.getMaxMessageAreaHeight());
+        if (this.isFocused) {
+            this.layout.updateInputLayout(height, this.layout.getInputText().height);
+            this.input.updateCursorPosition();
+        }
     }
-    
+
     focus() {
         if (this.isFocused) return;
-        
         this.isFocused = true;
-        this.selectionAll = false;
-        this.historyIndex = -1;
-        
-        // Restore previous draft or empty string
-        // this.currentInput is preserved until cleared by send()
-        this.inputText.setText(this.currentInput);
-        this.updateCursorPosition();
-        this.updateSuggestions();
-        
+
+        this.input.onFocus();
         window.addEventListener('paste', this.handlePaste);
 
-        // Show UI
-        this.background.setVisible(true);
-        this.inputBackground.setVisible(true);
-        this.inputText.setVisible(true);
-        this.ghostText.setVisible(true);
-        this.inputCursor.setVisible(true);
-        this.mobileHint.setVisible(false);
-        
-        // Show all messages
-        this.renderMessages();
-        
+        this.layout.setFocusedVisible(true, this.mobileHintSuppressed);
+
+        const height = this.messages.renderMessages(true, this.layout.getMaxMessageAreaHeight());
+        this.layout.updateInputLayout(height, this.layout.getInputText().height);
+        this.input.updateCursorPosition();
+
         this.onFocusChange?.(true);
-        
-        // On mobile, prompt for keyboard
+
         if (this.isMobile) {
-            this.promptMobileKeyboard();
+            if (!this.mobileInput) {
+                this.mobileInput = new ChatMobileInput(this.maxInputLength);
+            }
+            this.mobileInput.show(this.input.getCurrentInput(), {
+                onInput: (value) => this.input.applyInputText(value, false),
+                onSubmit: () => this.input.send(),
+                onBlur: () => this.blur()
+            });
         }
     }
-    
+
     blur() {
         if (!this.isFocused) return;
-        
         this.isFocused = false;
-        
-        // Clean up mobile input first
-        this.removeMobileInput();
-        
-        window.removeEventListener('paste', this.handlePaste);
 
-        // Hide focused UI
-        this.background.setVisible(false);
-        this.inputBackground.setVisible(false);
-        this.inputText.setVisible(false);
-        this.ghostText.setVisible(false);
-        this.inputCursor.setVisible(false);
-        this.mobileHint.setVisible(this.isMobile && !this.mobileHintSuppressed);
-        
-        // Re-render messages (unfocused mode)
-        this.renderMessages();
-        
+        this.mobileInput?.remove();
+        window.removeEventListener('paste', this.handlePaste);
+        this.input.onBlur();
+
+        this.layout.setFocusedVisible(false, this.mobileHintSuppressed);
+
+        this.messages.renderMessages(false, this.layout.getMaxMessageAreaHeight());
         this.onFocusChange?.(false);
     }
-    
-    private handlePaste = (e: ClipboardEvent) => {
-        if (!this.isFocused) return;
-        e.preventDefault();
-        
-        const pastedText = e.clipboardData?.getData('text');
-        if (pastedText) {
-            this.applyInputText(this.currentInput + pastedText, true);
-        }
-    }
 
-    private removeMobileInput() {
-        if (this.mobileInput) {
-            const input = this.mobileInput;
-            const form = input.parentElement; // Get wrapper form
-            
-            this.mobileInput = null;
-            
-            // Force blur to dismiss keyboard
-            try { 
-                input.blur(); 
-            } catch(e) {}
-            
-            // Remove from DOM
-            if (form && form.parentNode) {
-                form.parentNode.removeChild(form);
-            } else if (input.parentNode) {
-                // Fallback if not in form for some reason
-                input.parentNode.removeChild(input);
-            }
-        }
-    }
-    
     handleKeyDown(event: KeyboardEvent): boolean {
         if (!this.isFocused) {
-            // Check for chat open keys
             if (event.key === 't' || event.key === 'T' || event.key === '/') {
                 event.preventDefault();
                 if (event.key === '/') {
-                    this.currentInput = '/';
+                    this.input.setCurrentInput('/', false);
                 }
                 this.focus();
-                if (event.key === '/') {
-                    this.applyInputText('/', false);
-                }
                 return true;
             }
             return false;
         }
 
-        // On mobile with native input, let the browser handle typing events
-        if (this.isMobile && this.mobileInput) {
-            if (event.key === 'Enter') {
-                this.send();
-                return true;
-            }
-            // Allow other keys (letters, backspace) to propagate to the input
-            return false;
-        }
-        
-        // Chat is focused (Desktop) - prevent default to stop game controls/browser shortcuts
-        event.preventDefault();
-        event.stopPropagation();
-
-        if (this.handleControlShortcut(event)) {
-            return true;
-        }
-
-        if (event.key === 'Tab') {
-            if (this.applyTabCompletion()) {
-                return true;
-            }
-            return true;
-        }
-
-        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-            this.handleHistoryNavigation(event.key === 'ArrowUp' ? -1 : 1);
-            return true;
-        }
-        
-        if (event.key === 'Enter') {
-            this.send();
-            return true;
-        }
-        
-        if (event.key === 'Escape') {
-            this.blur();
-            return true;
-        }
-        
-        if (event.key === 'Backspace') {
-            if (this.selectionAll) {
-                this.applyInputText('', true);
-            } else {
-                this.applyInputText(this.currentInput.slice(0, -1), true);
-            }
-            return true;
-        }
-        
-        // Ignore control keys
-        if (event.key.length > 1) return true;
-        
-        // Add character
-        if (this.selectionAll) {
-            this.applyInputText(event.key, true);
-            return true;
-        }
-
-        if (this.currentInput.length < this.maxInputLength) {
-            this.applyInputText(this.currentInput + event.key, true);
-        }
-        
-        return true;
+        return this.input.handleKeyDown(event, {
+            isMobile: this.isMobile,
+            hasNativeInput: this.mobileInput?.isActive() ?? false
+        });
     }
-    
-    private send() {
-        const message = this.currentInput.trim();
-        
-        if (message.length > 0) {
-            this.onSendMessage?.(message);
-            this.history.push(message);
-            // Only clear input if message was sent
-            this.applyInputText('', false);
-        }
-        
-        this.blur();
-    }
-    
-    private updateCursorPosition() {
-        // Handle wrapped text cursor positioning
-        // Get the wrapped lines from Phaser's internal text structure if possible, 
-        // or rely on dimensions.
-        // Since we write char-by-char, last char is at end.
-        
-        // Basic cursor calc for single line:
-        // this.inputCursor.setPosition(this.padding + this.inputText.width + 1, this.inputText.y);
-        
-        // For multiline, we need position of the end of the text.
-        // Phaser Text doesn't explicitly expose "last character position".
-        // However, we can calculate it by checking the last line width.
-        
-        const lines = this.inputText.getWrappedText(this.currentInput);
-        const lineCount = lines.length;
-        
-        if (lineCount <= 1) {
-            this.inputCursor.setPosition(this.inputText.x + this.inputText.width + 1, this.inputText.y);
-            this.lastCursorX = this.inputText.x + this.inputText.width + 1;
-            this.lastCursorY = this.inputText.y;
-        } else {
-            // Measure the last line's width
-            const lastLine = lines[lineCount - 1];
-            // We need a temporary text object to measure just this line segment with same style
-            // Or we can assume specific font metrics. Let's create a temp text for accuracy.
-            const tempText = this.scene.add.text(0, 0, lastLine, {
-                fontFamily: 'Minecraft, monospace',
-                fontSize: '14px',
-            });
-            const lastLineWidth = tempText.width;
-            tempText.destroy();
-            
-            // Calculate Y offset based on line height (which Phaser handles internally)
-            // Phaser default line spacing is 0, but line height is fontSize usually.
-            // this.inputText.height should be total height.
-            // If we have N lines, the last line is at Y + (N-1) * (lineHeight usually).
-            // Actually, (this.inputText.height / lineCount) approximates line height.
-            const lineHeight = this.inputText.height / lineCount;
-            const lastLineY = this.inputText.y + (lineCount - 1) * lineHeight;
-            
-            this.inputCursor.setPosition(this.inputText.x + lastLineWidth + 1, lastLineY);
-            this.lastCursorX = this.inputText.x + lastLineWidth + 1;
-            this.lastCursorY = lastLineY;
-        }
 
-        this.updateGhostPosition();
-        
-        // Also ensure layout is updated if height changed
-        if (this.isFocused) {
-            // We need to trigger a layout update because input area might have grown
-            // Re-render messages is overkill, just update input layout
-            // But updateInputLayout takes messageAreaHeight which we need to recall or store.
-            // Let's store the last used message height
-            const currentMessageHeight = this.messageContainer.getAll().reduce((acc: number, child: any) => {
-                 // The last child in messageContainer has the greatest Y + height
-                 return Math.max(acc, child.y + Math.max(this.messageHeight, (child.list[1] as Phaser.GameObjects.Text).height) + 2);
-            }, 0);
-            
-            this.updateInputLayout(currentMessageHeight);
-        }
-    }
-    
     addMessage(msg: ChatMessage) {
-        this.messages.push(msg);
-        
-        // Trim old messages
-        if (this.messages.length > this.maxMessages) {
-            this.messages.shift();
-        }
-        
-        this.renderMessages();
-    }
-    
-    private renderMessages() {
-        // Clear existing
-        this.messageContainer.removeAll(true);
-        this.messageTexts = [];
-        
-        const now = Date.now();
-        // Calculate max area for messages (based on total height - input area)
-        // Default message area height roughly
-        const maxMessageAreaHeight = this.getMaxMessageAreaHeight();
-        
-        // Filter messages first by time if needed
-        const candidateMessages = this.isFocused 
-            ? this.messages
-            : this.messages.filter(m => now - m.timestamp < this.unfocusedMessageDuration);
-            
-        // Process messages from newest to oldest to fit them in the area
-        const messagesToRender: { msg: ChatMessage, height: number, container: Phaser.GameObjects.Container }[] = [];
-        let totalHeight = 0;
-        
-        // We only render as many as fit in the area
-        // Iterate backwards from newest
-        for (let i = candidateMessages.length - 1; i >= 0; i--) {
-            const msg = candidateMessages[i];
-            
-            // Create temporary display to measure
-            // Note: We don't know Y yet, so use 0. We'll set it later.
-            const msgContainer = this.createMessageDisplay(msg, 0);
-            const textItems = msgContainer.list.filter((child) => child instanceof Phaser.GameObjects.Text) as Phaser.GameObjects.Text[];
-            const messageHeight = Math.max(
-                this.messageHeight,
-                ...textItems.map((text) => text.height)
-            );
-            const entryHeight = messageHeight + 2; // + padding
-            
-            if (totalHeight + entryHeight > maxMessageAreaHeight + 20) { // Slight buffer
-               // Too tall, stop adding, and destroy this container since we won't use it
-               msgContainer.destroy();
-               break;
-            }
-            
-            totalHeight += entryHeight;
-            messagesToRender.unshift({ msg, height: entryHeight, container: msgContainer });
-        }
-        
-        // Now position them top-down
-        let currentY = 0;
-
-        messagesToRender.forEach((item) => {
-            const { msg, height, container } = item;
-            
-            // Set correct Y position
-            container.y = currentY;
-            
-            this.messageContainer.add(container);
-            this.messageTexts.push({ container: container, timestamp: msg.timestamp });
-            
-            currentY += height;
-        });
-
-        // Update layout if focused to accommodate variable message heights
+        this.messages.addMessage(msg);
+        this.messages.renderMessages(this.isFocused, this.layout.getMaxMessageAreaHeight());
         if (this.isFocused) {
-            this.updateInputLayout(currentY);
-            // Ensure cursor position is updated after layout change
-            this.updateCursorPosition();
+            this.layout.updateInputLayout(this.messages.getLastRenderHeight(), this.layout.getInputText().height);
+            this.input.updateCursorPosition();
         }
     }
 
-    private updateInputLayout(messageAreaHeight: number) {
-        // Position input below messages, but ensure minimum height conforms to design
-        // Default was around maxVisibleMessages * messageHeight
-        const maxMessageAreaHeight = this.getMaxMessageAreaHeight();
-        const clampedMessageAreaHeight = Math.min(messageAreaHeight, maxMessageAreaHeight);
-        const defaultHeight = Math.min(this.maxVisibleMessages * this.messageHeight, maxMessageAreaHeight);
-        const desiredStartY = Math.max(defaultHeight, clampedMessageAreaHeight) + this.padding * 2;
-        
-        // Move input elements
-        // Update background height based on INPUT TEXT height (which grows)
-        // Ensure minimum input height
-        const currentInputHeight = Math.max(this.inputHeight, this.inputText.height + 12); // +12 for padding top/bottom
-
-        const maxChatHeight = this.getMaxChatHeight();
-        const maxStartY = Math.max(this.padding, maxChatHeight - currentInputHeight - this.padding);
-        const startY = Math.min(desiredStartY, maxStartY);
-
-        this.inputBackground.y = startY;
-        this.inputText.y = startY + 6;
-        this.mobileHint.y = startY + 6;
-        
-        // Update input background height
-        this.inputBackground.height = currentInputHeight;
-        
-        const totalHeight = startY + currentInputHeight + this.padding;
-        this.background.height = Math.min(totalHeight, maxChatHeight);
-    }
-    
-    private createMessageDisplay(msg: ChatMessage, y: number): Phaser.GameObjects.Container {
-        const container = this.scene.add.container(0, y);
-
-        const nameColor = msg.isSystem ? '#ff0000' : '#ffffff';
-
-        const nameText = this.scene.add.text(0, 0, `${msg.username}: `, {
-            fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
-            fontSize: '14px',
-            color: nameColor
-        });
-        container.add(nameText);
-
-        let nameOffsetX = 0;
-        let sharkWidth = 0;
-        let sharkText: Phaser.GameObjects.Text | undefined;
-        if (msg.isPremium && !msg.isSystem) {
-            sharkText = this.scene.add.text(0, 0, '🦈', {
-                fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
-                fontSize: '12px',
-                color: '#ffffff'
-            });
-            sharkText.setOrigin(0, 0.5);
-            sharkText.setScale(0.9);
-            sharkText.setPosition(0, Math.floor(nameText.height / 2));
-            sharkWidth = sharkText.displayWidth;
-            nameOffsetX = sharkWidth + 2;
-            container.add(sharkText);
-            nameText.setX(nameOffsetX);
-        }
-        
-        const parsedMessage = EmojiMap.parse(msg.message);
-
-        const nameWidth = nameText.width + sharkWidth + (sharkText ? 2 : 0);
-        const messageText = this.scene.add.text(nameWidth, 0, parsedMessage, {
-            fontFamily: 'Minecraft, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", monospace',
-            fontSize: '14px',
-            color: msg.isSystem ? '#ff0000' : '#ffffff',
-            wordWrap: { width: this.width - this.padding * 2 - nameWidth, useAdvancedWrap: true }
-        });
-        container.add(messageText);
-
-        if (msg.isSystem) {
-            const bgPaddingX = 4;
-            const bgPaddingY = 1;
-            const messageBounds = messageText.getBounds();
-            const bgWidth = nameWidth + messageBounds.width + bgPaddingX * 2;
-            const bgHeight = Math.max(nameText.height, messageBounds.height) + bgPaddingY * 2;
-            const bg = this.scene.add.rectangle(-bgPaddingX, -bgPaddingY, bgWidth, bgHeight, 0xff4444, 0.25);
-            bg.setOrigin(0, 0);
-            container.addAt(bg, 0);
-        }
-        
-        return container;
-    }
-    
-    private cleanupOldMessages() {
-        if (this.isFocused) return;
-        
-        const now = Date.now();
-        let needsRender = false;
-        
-        for (const mt of this.messageTexts) {
-            if (now - mt.timestamp >= this.unfocusedMessageDuration) {
-                needsRender = true;
-                break;
-            }
-        }
-        
-        if (needsRender) {
-            this.renderMessages();
-        }
-    }
-    
-    private promptMobileKeyboard() {
-        // Clean up any existing input first
-        this.removeMobileInput();
-
-        // Find the game container (usually #app or canvas container) to handle fullscreen
-        const gameContainer = document.getElementById('app') || document.body;
-        
-        // Create form wrapper - helps with iOS "Go" button handling
-        const form = document.createElement('form');
-        form.action = 'javascript:void(0);'; // Prevent actual submission
-        form.style.cssText = `
-            position: fixed;
-            top: 0px;
-            left: 0px;
-            width: 1px;
-            height: 1px;
-            opacity: 0;
-            z-index: -1;
-            overflow: hidden;
-        `;
-
-        // Create input element
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.value = this.currentInput; // Initialize with current draft
-        input.autocomplete = 'off';
-        input.autocapitalize = 'off';
-        input.spellcheck = false;
-        // Important: font-size >= 16px prevents iOS from zooming in
-        input.style.cssText = `
-            font-size: 16px;
-            width: 100%;
-            height: 100%;
-            border: 0;
-            outline: 0;
-            margin: 0;
-            padding: 0;
-            pointer-events: auto;
-        `;
-        
-        form.appendChild(input);
-        gameContainer.appendChild(form);
-        this.mobileInput = input;
-        
-        let isHandlingSubmit = false;
-        
-        const handleInput = () => {
-            if (!this.isFocused || isHandlingSubmit) return;
-            
-            if (input.value.length > this.maxInputLength) {
-                input.value = input.value.substring(0, this.maxInputLength);
-            }
-            
-            this.applyInputText(input.value, false);
-        };
-        
-        const handleSubmit = (e?: Event) => {
-            e?.preventDefault();
-            if (isHandlingSubmit) return;
-            isHandlingSubmit = true;
-            
-            if (this.isFocused) {
-                this.send();
-            }
-        };
-
-        const handleKeydown = (e: KeyboardEvent) => {
-            // Stop propagation so Phaser key captures (SPACE, WASD) don't intercept this event
-            e.stopPropagation();
-            
-            // Allow Enter to work (it might trigger submit or our own handler)
-            if (e.key === 'Enter') {
-                // We handle Enter via the global handler mostly, but for the input itself,
-                // we want it to submit the form if possible, or just let it bubble to our logic.
-                // Actually, stopping propagation stops it from reaching window listeners!
-                // So the UIScene listener won't fire for this specific event if we stop it here.
-                
-                // However, handleKeyDown in Chat.ts is called by UIScene's CAPTURE listener.
-                // Capture happens BEFORE target bubble.
-                // So UIScene sees it first.
-                
-                // But the browser default action for Space/Text happens during Target/Default phase.
-                // Phaser listens on Window Bubble (usually).
-                // So stopping propagation here prevents Phaser (Window Bubble) from seeing it.
-                // It does NOT prevent UIScene (Window Capture) from having already seen it.
-                
-                // Does Phaser capture prevent default? Yes.
-                // Does Phaser capture happen on Window? Yes.
-                // If Phaser listens on Window Bubble, stopPropagation here works.
-                // If Phaser listens on Window Keydown (without capture flag, so bubble), it works.
-            }
-        };
-
-        const handleBlur = () => {
-            // Small delay to allow submit to fire first if that was the cause of blur
-            setTimeout(() => {
-                if (isHandlingSubmit) return;
-                
-                // If keyboard was dismissed but we didn't send/close, we should probably close
-                // to keep UI state consistent.
-                if (this.isFocused) {
-                    this.blur(); 
-                }
-            }, 50);
-        };
-        
-        // Listeners on the input
-        input.addEventListener('input', handleInput);
-        input.addEventListener('blur', handleBlur);
-        input.addEventListener('keydown', handleKeydown);
-        
-        // Listen for "Go" / "Enter" via form submit (more reliable on iOS)
-        form.addEventListener('submit', handleSubmit);
-        
-        // Prevent form submission from reloading page (redundant with action, but safe)
-        form.onsubmit = (e) => {
-            e.preventDefault();
-            handleSubmit(e);
-            return false;
-        };
-        
-        // Focus immediately - essential for iOS
-        // If this method was called from a touch event, this should work synchronously
-        try {
-            input.focus();
-            input.click(); // Sometimes helps wake up certain Android webviews
-        } catch (e) {
-            console.error('Failed to focus mobile input:', e);
-        }
-    }
-    
     destroy() {
-        this.removeMobileInput();
-        this.cursorTimer?.destroy();
-        this.container.destroy();
+        this.mobileInput?.remove();
+        this.input.destroy();
+        this.layout.destroy();
     }
 
-    private applyInputText(value: string, syncMobile: boolean) {
-        const trimmed = value.substring(0, this.maxInputLength);
-        this.currentInput = trimmed;
-        this.inputText.setText(this.currentInput);
-        this.selectionAll = false;
-        if (syncMobile && this.mobileInput) {
-            this.mobileInput.value = this.currentInput;
-        }
-        this.updateCursorPosition();
-        this.updateSuggestions();
+    private cleanupOldMessages() {
+        this.messages.cleanupOldMessages(this.isFocused, this.layout.getMaxMessageAreaHeight());
     }
 
-    private updateSuggestions() {
-        if (!this.isFocused || !this.currentInput.startsWith('/')) {
-            this.clearSuggestion();
-            return;
+    private handlePaste = (e: ClipboardEvent) => {
+        if (!this.isFocused) return;
+        e.preventDefault();
+
+        const pastedText = e.clipboardData?.getData('text');
+        if (pastedText) {
+            this.input.applyInputText(this.input.getCurrentInput() + pastedText, true);
         }
+    };
 
-        const result = this.getSuggestionResult();
-        if (!result) {
-            this.clearSuggestion();
-            return;
-        }
-
-        this.currentSuggestion = result.suggestion;
-        this.suggestionRemainder = result.remainder;
-        this.suggestionContext = result.context;
-        this.ghostText.setText(this.suggestionRemainder);
-        this.ghostText.setVisible(this.suggestionRemainder.length > 0 && this.isFocused);
-        this.updateGhostPosition();
-    }
-
-    private clearSuggestion() {
-        this.currentSuggestion = null;
-        this.suggestionRemainder = '';
-        this.suggestionContext = undefined;
-        this.ghostText.setText('');
-        this.ghostText.setVisible(false);
-    }
-
-    private updateGhostPosition() {
-        if (!this.ghostText) return;
-        this.ghostText.setPosition(this.lastCursorX, this.lastCursorY);
-    }
-
-    private getSuggestionResult(): { suggestion: string; remainder: string; context: SuggestionContext } | null {
-        const raw = this.currentInput;
-        if (!raw.startsWith('/')) return null;
-
-        const afterSlash = raw.slice(1);
-        const endsWithSpace = /\s$/.test(afterSlash);
-        const trimmed = afterSlash.trim();
-        const tokens = trimmed.length > 0 ? trimmed.split(/\s+/) : [];
-        if (endsWithSpace) {
-            tokens.push('');
-        }
-
-        if (tokens.length === 0) return null;
-
-        const tokenIndex = Math.max(0, tokens.length - 1);
-        const fragment = tokens[tokenIndex] ?? '';
-
-        if (tokenIndex === 0) {
-            if (!fragment) return null;
-            const command = this.pickSuggestion(fragment, this.commandSpecs.map((spec) => spec.name));
-            if (!command) return null;
-            const commandSpec = this.commandSpecs.find((spec) => spec.name === command);
-            const remainder = command.slice(fragment.length);
-            if (!remainder) return null;
-            return {
-                suggestion: command,
-                remainder,
-                context: { tokens, tokenIndex, commandSpec }
-            };
-        }
-
-        const commandName = tokens[0]?.toLowerCase() ?? '';
-        const commandSpec = this.commandSpecs.find((spec) => spec.name === commandName);
-        if (!commandSpec) return null;
-
-        const argIndex = tokenIndex - 1;
-        if (argIndex < 0 || argIndex >= commandSpec.args.length) return null;
-
-        const argType = commandSpec.args[argIndex];
-        if (argType === 'player') {
-            if (!fragment) return null;
-            const playerNames = this.getOnlinePlayerNames();
-            const player = this.pickSuggestion(fragment, playerNames);
-            if (!player) return null;
-            const remainder = player.slice(fragment.length);
-            if (!remainder) return null;
-            return {
-                suggestion: player,
-                remainder,
-                context: { tokens, tokenIndex, commandSpec, argIndex }
-            };
-        }
-
-        if (argType === 'item') {
-            if (!fragment) return null;
-            const itemIds = ITEM_DEFINITIONS.map((item) => item.id);
-            const itemId = this.pickSuggestion(fragment, itemIds);
-            if (!itemId) return null;
-            const remainder = itemId.slice(fragment.length);
-            if (!remainder) return null;
-            return {
-                suggestion: itemId,
-                remainder,
-                context: { tokens, tokenIndex, commandSpec, argIndex }
-            };
-        }
-
-        return null;
-    }
-
-    private pickSuggestion(fragment: string, options: string[]): string | null {
-        const normalized = fragment.toLowerCase();
-        const matches = options
-            .filter((option) => option.toLowerCase().startsWith(normalized))
-            .sort((a, b) => a.localeCompare(b));
-        if (matches.length === 0) return null;
-        return matches[0];
-    }
-
-    private applyTabCompletion(): boolean {
-        if (!this.currentSuggestion || !this.suggestionContext) return false;
-
-        const { tokens, tokenIndex, commandSpec, argIndex } = this.suggestionContext;
-        const updated = [...tokens];
-        updated[tokenIndex] = this.currentSuggestion;
-
-        let next = updated.join(' ');
-        const shouldAppendSpace = this.shouldAppendSpaceAfterCompletion(commandSpec, tokenIndex, argIndex);
-        if (shouldAppendSpace) {
-            next += ' ';
-        }
-
-        this.applyInputText(`/${next}`, true);
-        return true;
-    }
-
-    private shouldAppendSpaceAfterCompletion(commandSpec: CommandSpec | undefined, tokenIndex: number, argIndex?: number) {
-        if (tokenIndex === 0) {
-            if (!commandSpec) return false;
-            return commandSpec.args.length > 0;
-        }
-
-        if (!commandSpec || argIndex === undefined) return false;
-        return argIndex < commandSpec.args.length - 1;
-    }
-
-    private handleHistoryNavigation(step: number) {
-        if (this.history.length === 0) return;
-
-        if (this.historyIndex === -1) {
-            if (step > 0) return;
-            this.historyDraft = this.currentInput;
-            this.historyIndex = this.history.length - 1;
-            this.applyInputText(this.history[this.historyIndex], true);
-            return;
-        }
-
-        const nextIndex = this.historyIndex + step;
-        if (nextIndex < 0) {
-            this.historyIndex = 0;
-            this.applyInputText(this.history[this.historyIndex], true);
-            return;
-        }
-
-        if (nextIndex >= this.history.length) {
-            this.historyIndex = -1;
-            this.applyInputText(this.historyDraft, true);
-            return;
-        }
-
-        this.historyIndex = nextIndex;
-        this.applyInputText(this.history[this.historyIndex], true);
-    }
-
-    private handleControlShortcut(event: KeyboardEvent): boolean {
-        if (!event.ctrlKey && !event.metaKey) return false;
-
-        const key = event.key.toLowerCase();
-        if (key === 'a') {
-            this.selectionAll = true;
-            this.updateCursorPosition();
-            return true;
-        }
-
-        if (key === 'c') {
-            this.copyToClipboard(this.currentInput);
-            return true;
-        }
-
-        if (key === 'x') {
-            this.copyToClipboard(this.currentInput);
-            this.applyInputText('', true);
-            return true;
-        }
-
-        if (key === 'v') {
-            this.pasteFromClipboard();
-            return true;
-        }
-
-        return false;
-    }
-
-    private async copyToClipboard(text: string) {
-        if (!text) return;
-        if (navigator.clipboard?.writeText) {
-            try {
-                await navigator.clipboard.writeText(text);
-                return;
-            } catch (_err) {
-                // Ignore and fall through.
-            }
-        }
-
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        try {
-            document.execCommand('copy');
-        } finally {
-            document.body.removeChild(textarea);
-        }
-    }
-
-    private async pasteFromClipboard() {
-        if (!navigator.clipboard?.readText) return;
-        try {
-            const text = await navigator.clipboard.readText();
-            if (!text) return;
-            this.applyInputText(this.currentInput + text, true);
-        } catch (_err) {
-            // Ignore clipboard failures.
-        }
+    private detectMobile(): boolean {
+        const ua = navigator.userAgent.toLowerCase();
+        const mobileKeywords = ['android', 'webos', 'iphone', 'ipad', 'ipod', 'blackberry', 'windows phone', 'mobile', 'tablet'];
+        const isMobileUA = mobileKeywords.some((keyword) => ua.includes(keyword));
+        const isSmallScreen = window.innerWidth <= 1024 && window.innerHeight <= 1366;
+        const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        return hasTouch && (isMobileUA || isSmallScreen);
     }
 
     private getOnlinePlayerNames(): string[] {
@@ -1062,17 +250,3 @@ export class Chat {
             .filter((name): name is string => Boolean(name));
     }
 }
-
-type CommandArgType = 'player' | 'item' | 'duration' | 'count' | 'text';
-
-type CommandSpec = {
-    name: string;
-    args: CommandArgType[];
-};
-
-type SuggestionContext = {
-    tokens: string[];
-    tokenIndex: number;
-    commandSpec?: CommandSpec;
-    argIndex?: number;
-};
