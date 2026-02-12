@@ -68,17 +68,27 @@ export const AUDIO_CONFIG = {
             ultraThreshold: 0.1,
         },
         reelClick: {
-            volume: 0.4,
+            volume: 2,
             scale: [0, 2, 3, 5, 7, 8, 10, 12],
         },
         itemCollected: {
-            volume: 0.45,
+            volume: 2.5,
         },
         itemDrop: {
-            volume: 0.45,
+            volume: 2.5,
         },
         itemSkip: {
-            volume: 0.5,
+            volume: 1.5,
+        },
+        dialogueClick: {
+            volume: 2,
+        },
+        dialogueNext: {
+            volume: 0.6,
+        },
+        dialogueEndBurst: {
+            count: 2,
+            delayMs: 160,
         },
     },
 };
@@ -136,6 +146,12 @@ export class AudioManager {
     
     // Web Audio filter for water muffle effect
     private lowPassFilter?: BiquadFilterNode;
+    private dialogueFilter?: BiquadFilterNode;
+    private dialogueMuffleActive = false;
+    private musicVolumeMultiplier = 1;
+    private ambientVolumeMultiplier = 1;
+    private sfxVolumeMultiplier = 1;
+    private dialogueFilteredSounds = new Set<Phaser.Sound.WebAudioSound>();
     
     // Fire POI positions for distance-based volume
     private firePositions: { x: number; y: number }[] = [];
@@ -174,10 +190,12 @@ export class AudioManager {
         this.scene.load.audio('rod-reel', '/audio/ambient/action/rod-reel.mp3');
         this.scene.load.audio('water-splash', '/audio/ambient/action/water-splash.mp3');
         this.scene.load.audio('bite-alert', '/audio/ambient/ui/alert-1.mp3');
-        this.scene.load.audio('reel-click', '/audio/ambient/ui/click-node.mp3');
+        this.scene.load.audio('reel-click', '/audio/ambient/ui/click-note.mp3');
         this.scene.load.audio('item-collected', '/audio/ambient/ui/item-collected.mp3');
         this.scene.load.audio('item-drop', '/audio/ambient/ui/item-drop.mp3');
         this.scene.load.audio('item-skip', '/audio/ambient/ui/item-skip.mp3');
+        this.scene.load.audio('dialogue-click', '/audio/ambient/dialogue/click.mp3');
+        this.scene.load.audio('dialogue-next', '/audio/ambient/dialogue/next.mp3');
     }
     
     /**
@@ -251,13 +269,17 @@ export class AudioManager {
             return;
         }
         
+        const effectiveVolume = volume * this.musicVolumeMultiplier;
         this.currentMusic = this.scene.sound.add(key, {
-            volume: volume,
+            volume: effectiveVolume,
             loop: true
         });
         
         this.currentMusic.play();
         this.musicVolume = volume;
+        if (this.dialogueMuffleActive) {
+            this.applyDialogueFilter(this.currentMusic as Phaser.Sound.WebAudioSound);
+        }
         
         console.log(`[AudioManager] Playing music: ${key}`);
     }
@@ -277,13 +299,17 @@ export class AudioManager {
             return;
         }
         
+        const effectiveVolume = volume * this.ambientVolumeMultiplier;
         const sound = this.scene.sound.add(key, {
-            volume: volume,
+            volume: effectiveVolume,
             loop: true
         });
         
         sound.play();
         this.ambientSounds.set(key, sound);
+        if (this.dialogueMuffleActive) {
+            this.applyDialogueFilter(sound as Phaser.Sound.WebAudioSound);
+        }
         
         console.log(`[AudioManager] Playing ambient loop: ${key}`);
     }
@@ -322,7 +348,7 @@ export class AudioManager {
         // Calculate volume based on distance
         const cfg = AUDIO_CONFIG.ambient.fire;
         const t = Math.min(minDistance / cfg.maxDistance, 1); // 0 = at fire, 1 = far away
-        const volume = cfg.maxVolume - t * (cfg.maxVolume - cfg.minVolume);
+        const volume = (cfg.maxVolume - t * (cfg.maxVolume - cfg.minVolume)) * this.ambientVolumeMultiplier;
         
         // Apply volume (cast to WebAudioSound to access volume setter)
         (fireSound as Phaser.Sound.WebAudioSound).setVolume(volume);
@@ -392,7 +418,7 @@ export class AudioManager {
         const rate = baseRate * pitchVariation * wetMultiplier * depthRateMultiplier;
         
         // Random volume variation
-        const volume = cfg.baseVolume + (Math.random() - 0.5) * 2 * cfg.volumeVariation;
+        const volume = (cfg.baseVolume + (Math.random() - 0.5) * 2 * cfg.volumeVariation) * this.sfxVolumeMultiplier;
         
         // Calculate detune with depth effect (deeper = lower pitch)
         const baseDetune = (pitchVariation * wetMultiplier - 1) * 200;
@@ -436,9 +462,9 @@ export class AudioManager {
             }
             
             // Calculate filter frequency (higher = less muffled)
-            // At depth 0: 20000Hz (no filter), at max depth: waterDepthFilterMin Hz
+            // At depth 0: 10000Hz (no filter), at max depth: waterDepthFilterMin Hz
             const cfg = AUDIO_CONFIG.footsteps;
-            const filterFreq = 20000 - depthRatio * (20000 - cfg.waterDepthFilterMin);
+            const filterFreq = 10000 - depthRatio * (10000 - cfg.waterDepthFilterMin);
             this.lowPassFilter.frequency.value = filterFreq;
             this.lowPassFilter.Q.value = 1; // Gentle rolloff
             
@@ -455,6 +481,83 @@ export class AudioManager {
             // Silently fail if Web Audio API not available
         }
     }
+
+    setDialogueMuffle(active: boolean) {
+        if (this.dialogueMuffleActive === active) return;
+        this.dialogueMuffleActive = active;
+
+        this.musicVolumeMultiplier = active ? 0.6 : 1;
+        this.ambientVolumeMultiplier = active ? 0.5 : 1;
+        this.sfxVolumeMultiplier = active ? 0.35 : 1;
+
+        if (this.currentMusic && 'setVolume' in this.currentMusic) {
+            (this.currentMusic as Phaser.Sound.WebAudioSound).setVolume(this.musicVolume * this.musicVolumeMultiplier);
+            if (active) {
+                this.applyDialogueFilter(this.currentMusic as Phaser.Sound.WebAudioSound);
+            } else {
+                this.removeDialogueFilter(this.currentMusic as Phaser.Sound.WebAudioSound);
+            }
+        }
+
+        this.ambientSounds.forEach((sound, key) => {
+            if ('setVolume' in sound) {
+                const baseVolume = this.getAmbientVolume(key);
+                (sound as Phaser.Sound.WebAudioSound).setVolume(baseVolume * this.ambientVolumeMultiplier);
+            }
+            if (active) {
+                this.applyDialogueFilter(sound as Phaser.Sound.WebAudioSound);
+            } else {
+                this.removeDialogueFilter(sound as Phaser.Sound.WebAudioSound);
+            }
+        });
+    }
+
+    private applyDialogueFilter(sound: Phaser.Sound.WebAudioSound) {
+        try {
+            if (this.dialogueFilteredSounds.has(sound)) return;
+            const webAudio = this.scene.sound as Phaser.Sound.WebAudioSoundManager;
+            const context = webAudio.context;
+            if (!context || !sound.source) return;
+
+            if (!this.dialogueFilter) {
+                this.dialogueFilter = context.createBiquadFilter();
+                this.dialogueFilter.type = 'lowpass';
+                this.dialogueFilter.frequency.value = 1200;
+                this.dialogueFilter.Q.value = 0.9;
+            }
+
+            const gainNode = (sound as any).volumeNode as GainNode;
+            if (gainNode && webAudio.destination) {
+                const shouldConnectFilter = this.dialogueFilteredSounds.size === 0;
+                gainNode.disconnect();
+                gainNode.connect(this.dialogueFilter);
+                if (shouldConnectFilter) {
+                    this.dialogueFilter.connect(webAudio.destination);
+                }
+                this.dialogueFilteredSounds.add(sound);
+            }
+        } catch (e) {
+            // Silently fail if Web Audio API not available
+        }
+    }
+
+    private removeDialogueFilter(sound: Phaser.Sound.WebAudioSound) {
+        try {
+            if (!this.dialogueFilteredSounds.has(sound)) return;
+            const webAudio = this.scene.sound as Phaser.Sound.WebAudioSoundManager;
+            const gainNode = (sound as any).volumeNode as GainNode;
+            if (gainNode && webAudio.destination) {
+                gainNode.disconnect();
+                gainNode.connect(webAudio.destination);
+            }
+            this.dialogueFilteredSounds.delete(sound);
+            if (this.dialogueFilteredSounds.size === 0) {
+                this.dialogueFilter?.disconnect();
+            }
+        } catch (e) {
+            // Silently fail if Web Audio API not available
+        }
+    }
     
     /**
      * Set master music volume
@@ -462,7 +565,7 @@ export class AudioManager {
     setMusicVolume(volume: number) {
         this.musicVolume = Phaser.Math.Clamp(volume, 0, 1);
         if (this.currentMusic && 'setVolume' in this.currentMusic) {
-            (this.currentMusic as Phaser.Sound.WebAudioSound).setVolume(this.musicVolume);
+            (this.currentMusic as Phaser.Sound.WebAudioSound).setVolume(this.musicVolume * this.musicVolumeMultiplier);
         }
     }
     
@@ -473,7 +576,7 @@ export class AudioManager {
         this.ambientVolume = Phaser.Math.Clamp(volume, 0, 1);
         this.ambientSounds.forEach(sound => {
             if ('setVolume' in sound) {
-                (sound as Phaser.Sound.WebAudioSound).setVolume(this.ambientVolume);
+                (sound as Phaser.Sound.WebAudioSound).setVolume(this.ambientVolume * this.ambientVolumeMultiplier);
             }
         });
     }
@@ -515,7 +618,7 @@ export class AudioManager {
         
         // Play the meow
         this.scene.sound.play(meowKey, {
-            volume: AUDIO_CONFIG.player.meow.volume
+            volume: AUDIO_CONFIG.player.meow.volume * this.sfxVolumeMultiplier
         });
         
         return true;
@@ -528,7 +631,7 @@ export class AudioManager {
         const rate = Phaser.Math.Linear(cfg.rateMax, cfg.rateMin, ratio);
         const detune = cfg.detuneMax * ratio;
         const sound = this.scene.sound.add('rod-cast', {
-            volume: cfg.volume,
+            volume: cfg.volume * this.sfxVolumeMultiplier,
             rate,
             detune
         }) as Phaser.Sound.WebAudioSound;
@@ -540,7 +643,7 @@ export class AudioManager {
         if (!this.scene.cache.audio.exists('rod-reel')) return;
         const cfg = AUDIO_CONFIG.sfx.rodReel;
         const sound = this.scene.sound.add('rod-reel', {
-            volume: cfg.volume
+            volume: cfg.volume * this.sfxVolumeMultiplier
         }) as Phaser.Sound.WebAudioSound;
         sound.play();
         sound.once('complete', () => sound.destroy());
@@ -559,7 +662,7 @@ export class AudioManager {
         if (!this.scene.cache.audio.exists('water-splash')) return;
         const cfg = AUDIO_CONFIG.sfx.waterSplash;
         const sound = this.scene.sound.add('water-splash', {
-            volume: cfg.volume
+            volume: cfg.volume * this.sfxVolumeMultiplier
         }) as Phaser.Sound.WebAudioSound;
         sound.play();
         sound.once('complete', () => sound.destroy());
@@ -569,7 +672,7 @@ export class AudioManager {
         if (!this.scene.cache.audio.exists('bite-alert')) return undefined;
         const cfg = AUDIO_CONFIG.sfx.biteAlert;
         const sound = this.scene.sound.add('bite-alert', {
-            volume: cfg.volume,
+            volume: cfg.volume * this.sfxVolumeMultiplier,
             loop: true
         }) as Phaser.Sound.WebAudioSound;
         sound.play();
@@ -600,7 +703,7 @@ export class AudioManager {
         const semitone = scale[Math.max(0, noteIndex) % scale.length] ?? 0;
         const detune = semitone * 100;
         const sound = this.scene.sound.add('reel-click', {
-            volume: cfg.volume,
+            volume: cfg.volume * this.sfxVolumeMultiplier,
             detune
         }) as Phaser.Sound.WebAudioSound;
         sound.play();
@@ -610,29 +713,58 @@ export class AudioManager {
     playItemCollected() {
         if (!this.scene.cache.audio.exists('item-collected')) return;
         const cfg = AUDIO_CONFIG.sfx.itemCollected;
-        const sound = this.scene.sound.add('item-collected', {
-            volume: cfg.volume
-        }) as Phaser.Sound.WebAudioSound;
-        sound.play();
-        sound.once('complete', () => sound.destroy());
+        this.scene.sound.play('item-collected', {
+            volume: cfg.volume * this.sfxVolumeMultiplier
+        });
     }
 
     playItemDrop() {
         if (!this.scene.cache.audio.exists('item-drop')) return;
         const cfg = AUDIO_CONFIG.sfx.itemDrop;
-        const sound = this.scene.sound.add('item-drop', {
-            volume: cfg.volume
-        }) as Phaser.Sound.WebAudioSound;
-        sound.play();
-        sound.once('complete', () => sound.destroy());
+        this.scene.sound.play('item-drop', {
+            volume: cfg.volume * this.sfxVolumeMultiplier
+        });
     }
 
     playItemSkip() {
         if (!this.scene.cache.audio.exists('item-skip')) return;
         const cfg = AUDIO_CONFIG.sfx.itemSkip;
-        const sound = this.scene.sound.add('item-skip', {
-            volume: cfg.volume
+        this.scene.sound.play('item-skip', {
+            volume: cfg.volume * this.sfxVolumeMultiplier
+        });
+    }
+
+    playDialogueClick() {
+        if (!this.scene.cache.audio.exists('dialogue-click')) return;
+        const cfg = AUDIO_CONFIG.sfx.dialogueClick;
+        this.playDialogueSfxUnfiltered('dialogue-click', cfg.volume * this.sfxVolumeMultiplier);
+    }
+
+    playDialogueNext() {
+        if (!this.scene.cache.audio.exists('dialogue-next')) return;
+        const cfg = AUDIO_CONFIG.sfx.dialogueNext;
+        this.playDialogueSfxUnfiltered('dialogue-next', cfg.volume * this.sfxVolumeMultiplier);
+    }
+
+    playDialogueEndBurst() {
+        if (!this.scene.cache.audio.exists('dialogue-next')) return;
+        const cfg = AUDIO_CONFIG.sfx.dialogueEndBurst;
+        for (let i = 0; i < cfg.count; i += 1) {
+            this.scene.time.delayedCall(i * cfg.delayMs, () => {
+                this.playDialogueNext();
+            });
+        }
+    }
+
+    private playDialogueSfxUnfiltered(key: string, volume: number) {
+        const sound = this.scene.sound.add(key, {
+            volume
         }) as Phaser.Sound.WebAudioSound;
+
+        if (this.dialogueFilteredSounds.has(sound)) {
+            this.removeDialogueFilter(sound);
+        }
+
         sound.play();
         sound.once('complete', () => sound.destroy());
     }

@@ -11,7 +11,13 @@
 
 import Phaser from 'phaser';
 import { CharacterCompositor, CompositorResult } from './CharacterCompositor';
-import { DEFAULT_CHARACTER_APPEARANCE, MC_FRAME_DIMENSIONS, MC_FRAMES_PER_ANIMATION, MCDirection } from '@cfwk/shared';
+import {
+    DEFAULT_CHARACTER_APPEARANCE,
+    MC_FRAME_DIMENSIONS_BY_ANIM,
+    MC_FRAMES_PER_ANIMATION_BY_ANIM,
+    MCDirection,
+    MCAnimationType
+} from '@cfwk/shared';
 
 export class SharedMCTextures {
     private static instance: SharedMCTextures;
@@ -37,25 +43,25 @@ export class SharedMCTextures {
         if (this.initialized) return;
 
         // Check if MC animations already exist (created by local player)
-        if (scene.anims.exists('mc-walk-S')) {
+        if (scene.anims.exists('mc-walk-S') && scene.anims.exists('mc-idle-S')) {
             console.log('[SharedMCTextures] MC animations already exist, reusing them');
             this.initialized = true;
-            
-            // Get texture keys from the existing animations
-            const walkSAnim = scene.anims.get('mc-walk-S');
-            if (walkSAnim && walkSAnim.frames.length > 0) {
-                // Store for getTextureKey lookups
-                this.compositorResult = {
-                    textureKeys: new Map(),
-                    frameDimensions: new Map()
-                };
-                // Extract texture keys from existing animations
-                const directions: MCDirection[] = ['N', 'S', 'E', 'W', 'NE', 'SE', 'NW', 'SW'];
+
+            // Store for getTextureKey lookups
+            this.compositorResult = {
+                textureKeys: new Map(),
+                frameDimensions: new Map()
+            };
+
+            // Extract texture keys from existing animations
+            const directions: MCDirection[] = ['N', 'S', 'E', 'W', 'NE', 'SE', 'NW', 'SW'];
+            const animTypes: MCAnimationType[] = ['walk', 'idle'];
+            for (const animType of animTypes) {
                 for (const dir of directions) {
-                    const anim = scene.anims.get(`mc-walk-${dir}`);
+                    const anim = scene.anims.get(`mc-${animType}-${dir}`);
                     if (anim && anim.frames.length > 0) {
-                        this.compositorResult.textureKeys.set(`walk-${dir}`, anim.frames[0].textureKey);
-                        this.compositorResult.frameDimensions.set(dir, MC_FRAME_DIMENSIONS[dir]);
+                        this.compositorResult.textureKeys.set(`${animType}-${dir}`, anim.frames[0].textureKey);
+                        this.compositorResult.frameDimensions.set(dir, MC_FRAME_DIMENSIONS_BY_ANIM[animType][dir]);
                     }
                 }
             }
@@ -68,42 +74,48 @@ export class SharedMCTextures {
         try {
             this.compositorResult = await this.compositor.compositeCharacter(
                 DEFAULT_CHARACTER_APPEARANCE,
-                ['walk']
+                ['walk', 'idle']
             );
 
             // Create animations (matching format in MCAnimationController)
             const directions: MCDirection[] = ['N', 'S', 'E', 'W', 'NE', 'SE', 'NW', 'SW'];
-            
-            for (const direction of directions) {
-                const textureKey = this.compositorResult.textureKeys.get(`walk-${direction}`);
-                if (!textureKey) continue;
+            const animTypes: MCAnimationType[] = ['walk', 'idle'];
 
-                const dimensions = MC_FRAME_DIMENSIONS[direction];
-                const animKey = `mc-walk-${direction}`;
+            for (const animType of animTypes) {
+                const frameRate = animType === 'idle' ? 6 : 10;
+                const frameCount = MC_FRAMES_PER_ANIMATION_BY_ANIM[animType];
 
-                // Add frame definitions to texture
-                const texture = scene.textures.get(textureKey);
-                if (!texture) continue;
+                for (const direction of directions) {
+                    const textureKey = this.compositorResult.textureKeys.get(`${animType}-${direction}`);
+                    if (!textureKey) continue;
 
-                for (let i = 0; i < MC_FRAMES_PER_ANIMATION; i++) {
-                    if (!texture.has(String(i))) {
-                        texture.add(i, 0, i * dimensions.width, 0, dimensions.width, dimensions.height);
-                    }
-                }
+                    const dimensions = MC_FRAME_DIMENSIONS_BY_ANIM[animType][direction];
+                    const animKey = `mc-${animType}-${direction}`;
 
-                // Create animation if it doesn't exist
-                if (!scene.anims.exists(animKey)) {
-                    const frames: Phaser.Types.Animations.AnimationFrame[] = [];
-                    for (let i = 0; i < MC_FRAMES_PER_ANIMATION; i++) {
-                        frames.push({ key: textureKey, frame: i });
+                    // Add frame definitions to texture
+                    const texture = scene.textures.get(textureKey);
+                    if (!texture) continue;
+
+                    for (let i = 0; i < frameCount; i++) {
+                        if (!texture.has(String(i))) {
+                            texture.add(i, 0, i * dimensions.width, 0, dimensions.width, dimensions.height);
+                        }
                     }
 
-                    scene.anims.create({
-                        key: animKey,
-                        frames: frames,
-                        frameRate: 10,
-                        repeat: -1
-                    });
+                    // Create animation if it doesn't exist
+                    if (!scene.anims.exists(animKey)) {
+                        const frames: Phaser.Types.Animations.AnimationFrame[] = [];
+                        for (let i = 0; i < frameCount; i++) {
+                            frames.push({ key: textureKey, frame: i });
+                        }
+
+                        scene.anims.create({
+                            key: animKey,
+                            frames: frames,
+                            frameRate,
+                            repeat: -1
+                        });
+                    }
                 }
             }
             
@@ -124,8 +136,8 @@ export class SharedMCTextures {
     /**
      * Get texture key for a direction
      */
-    getTextureKey(direction: MCDirection): string | undefined {
-        return this.compositorResult?.textureKeys.get(`walk-${direction}`);
+    getTextureKey(direction: MCDirection, animType: MCAnimationType = 'walk'): string | undefined {
+        return this.compositorResult?.textureKeys.get(`${animType}-${direction}`);
     }
 
     /**

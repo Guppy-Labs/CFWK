@@ -179,6 +179,10 @@ export class HeadbarUI {
         this.tabList.setPlayers(players);
     }
 
+    setVisible(visible: boolean) {
+        this.container.setVisible(visible);
+    }
+
     /**
      * Show the tab list with smooth animation
      */

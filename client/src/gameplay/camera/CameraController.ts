@@ -30,6 +30,9 @@ export class CameraController {
     private targetZoom: number;
     private zoomLerpSpeed: number;
     private followEnabled = true;
+    private dialogueFocusActive = false;
+    private dialogueFocusTarget: { x: number; y: number } | null = null;
+    private dialogueFocusZoom?: number;
     
     // Lock position lerping
     private lockTargetPosition: { x: number; y: number } | null = null;
@@ -118,6 +121,15 @@ export class CameraController {
      * Call this from the game update loop
      */
     update(feetLeftX: number, feetRightX: number, feetY: number) {
+        if (this.dialogueFocusActive && this.dialogueFocusTarget) {
+            this.targetZoom = this.dialogueFocusZoom ?? this.baseZoom;
+            if (Math.abs(this.currentZoom - this.targetZoom) > 0.001) {
+                this.currentZoom = Phaser.Math.Linear(this.currentZoom, this.targetZoom, this.zoomLerpSpeed);
+                this.camera.setZoom(this.currentZoom);
+            }
+            return;
+        }
+
         // Check if feet line segment intersects any zoom region
         let newTargetZoom = this.baseZoom;
         let activeLock: { x: number; y: number } | undefined;
@@ -185,6 +197,21 @@ export class CameraController {
                 }
             }
         }
+    }
+
+    setDialogueFocus(target: { x: number; y: number }, zoomMultiplier: number) {
+        this.dialogueFocusActive = true;
+        this.dialogueFocusTarget = target;
+        this.dialogueFocusZoom = this.baseZoom * zoomMultiplier;
+    }
+
+    clearDialogueFocus() {
+        if (!this.dialogueFocusActive) return;
+        this.dialogueFocusActive = false;
+        this.dialogueFocusTarget = null;
+        this.dialogueFocusZoom = undefined;
+        this.targetZoom = this.baseZoom;
+        this.enableFollow();
     }
 
     private loadPoiPositions(): Map<string, { x: number; y: number }> {

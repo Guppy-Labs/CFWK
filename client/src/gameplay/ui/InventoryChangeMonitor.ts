@@ -28,6 +28,7 @@ export class InventoryChangeMonitor {
     private inventorySkipHandler?: (event: Event) => void;
     private debugGraphics?: Phaser.GameObjects.Graphics;
     private debugVisible = false;
+    private pendingExits = new Map<string, { quantity: number; timer: Phaser.Time.TimerEvent }>();
 
     private readonly maxVisible = 5;
     private readonly indicatorWidth = 240;
@@ -39,6 +40,7 @@ export class InventoryChangeMonitor {
     private readonly slideOffset = 26;
     private readonly visibleDurationMs = 5000;
     private readonly depth = 9500;
+    private readonly exitDebounceMs = 250;
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
@@ -66,6 +68,10 @@ export class InventoryChangeMonitor {
         this.layoutIndicators(false);
     }
 
+    setVisible(visible: boolean) {
+        this.container.setVisible(visible);
+    }
+
     update() {
         this.updateDebugOutline();
     }
@@ -82,13 +88,15 @@ export class InventoryChangeMonitor {
             indicator.container.destroy();
         });
         this.indicators = [];
+        this.pendingExits.forEach((pending) => pending.timer.remove(false));
+        this.pendingExits.clear();
         this.debugGraphics?.destroy();
         this.container.destroy();
     }
 
     private handleInventoryUpdate(data?: IInventoryResponse) {
         if (!data?.slots) return;
-        const nextCounts = this.buildCounts(data.slots);
+        const nextCounts = this.buildCounts(data.slots, data.equippedRodId ?? null);
         if (!this.previousCounts) {
             this.previousCounts = nextCounts;
             return;
@@ -100,21 +108,54 @@ export class InventoryChangeMonitor {
             const next = nextCounts.get(itemId) ?? 0;
             const delta = next - prev;
             if (delta > 0) {
-                this.addOrUpdateIndicator('entry', itemId, delta);
+                const pending = this.pendingExits.get(itemId);
+                if (pending) {
+                    pending.timer.remove(false);
+                    this.pendingExits.delete(itemId);
+                    const remaining = delta - pending.quantity;
+                    if (remaining > 0) {
+                        this.addOrUpdateIndicator('entry', itemId, remaining);
+                    }
+                } else {
+                    this.addOrUpdateIndicator('entry', itemId, delta);
+                }
             } else if (delta < 0) {
-                this.addOrUpdateIndicator('exit', itemId, Math.abs(delta));
+                this.queueExitIndicator(itemId, Math.abs(delta));
             }
         });
 
         this.previousCounts = nextCounts;
     }
 
-    private buildCounts(slots: InventorySlot[]): Map<string, number> {
+    private queueExitIndicator(itemId: string, quantity: number) {
+        const existing = this.pendingExits.get(itemId);
+        if (existing) {
+            existing.timer.remove(false);
+            existing.quantity += quantity;
+        }
+
+        const timer = this.scene.time.delayedCall(this.exitDebounceMs, () => {
+            const pending = this.pendingExits.get(itemId);
+            if (!pending) return;
+            this.pendingExits.delete(itemId);
+            this.addOrUpdateIndicator('exit', itemId, pending.quantity);
+        });
+
+        this.pendingExits.set(itemId, {
+            quantity: existing ? existing.quantity : quantity,
+            timer
+        });
+    }
+
+    private buildCounts(slots: InventorySlot[], equippedRodId: string | null): Map<string, number> {
         const counts = new Map<string, number>();
         slots.forEach((slot) => {
             if (!slot.itemId || slot.count <= 0) return;
             counts.set(slot.itemId, (counts.get(slot.itemId) ?? 0) + slot.count);
         });
+        if (equippedRodId && !counts.has(equippedRodId)) {
+            counts.set(equippedRodId, 1);
+        }
         return counts;
     }
 

@@ -1,0 +1,57 @@
+{
+    "id": "test",
+    "forks": [
+        {
+            "checks": [
+                {
+                    "type": "hasItem",
+                    "itemId": "rickety_rod"
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "text": "Hey! Nice timing, I was just polishing my knife."
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "text": "Uh, hi. Can I fish now?"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "angry",
+                    "text": "Hey now... I ALREADY GAVE YOU A ROD! NOW SCRAM!!!"
+                }
+            ]
+        },
+        {
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "text": "Hey! Nice timing, I was just polishing my knife."
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "text": "Uh, hi. Can I fish now?"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "sad",
+                    "text": "Ugh, fine. But you better not mess up my fishing spot!"
+                }
+            ],
+            "actions": [
+                {
+                    "type": "giveItem",
+                    "itemId": "rickety_rod",
+                    "amount": 1,
+                    "ifMissing": true
+                }
+            ]
+        }
+    ]
+}

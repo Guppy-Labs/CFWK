@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { MobileControls } from '../../ui/MobileControls';
-import { DesktopInteractButton } from '../../ui/DesktopInteractButton';
 import type { InteractionManager } from '../../interaction/InteractionManager';
 
 type MovementInput = {
@@ -32,7 +31,6 @@ export class MCInputManager {
     private interactKey?: Phaser.Input.Keyboard.Key;
     private fishingKey?: Phaser.Input.Keyboard.Key;
     private mobileControls?: MobileControls;
-    private desktopInteractButton?: DesktopInteractButton;
     private mobileInteractListener?: () => void;
 
     constructor(
@@ -69,16 +67,11 @@ export class MCInputManager {
         return this.mobileControls;
     }
 
-    getDesktopInteractButton(): DesktopInteractButton | undefined {
-        return this.desktopInteractButton;
-    }
-
     destroy() {
         if (this.mobileInteractListener) {
             window.removeEventListener('mobile:interact', this.mobileInteractListener);
         }
         this.mobileControls?.destroy();
-        this.desktopInteractButton?.destroy();
     }
 
     private setupInput() {
@@ -95,11 +88,9 @@ export class MCInputManager {
         this.fishingKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
         this.mobileControls = new MobileControls(this.scene);
-        this.desktopInteractButton = new DesktopInteractButton();
 
         this.interactionManager.onInteractionChange((interaction) => {
             this.mobileControls?.setAvailableInteraction(interaction);
-            this.desktopInteractButton?.setAvailableInteraction(interaction);
         });
 
         this.mobileInteractListener = () => {

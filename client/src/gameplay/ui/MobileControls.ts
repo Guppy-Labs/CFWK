@@ -19,15 +19,45 @@ export interface MobileInputState {
     sprint: boolean;
 }
 
+export type JoystickDebugInfo = {
+    isMobileDevice: boolean;
+    keyboardUsed: boolean;
+    guiOpen: boolean;
+    showTouchControls: boolean;
+    containerVisible: boolean;
+    joystickVisible: boolean;
+    hasBaseTexture: boolean;
+    hasHandleTexture: boolean;
+    spritesReady: boolean;
+    renderScene: string;
+    baseAlpha: number;
+    handleAlpha: number;
+    baseDepth: number;
+    handleDepth: number;
+    baseX: number;
+    baseY: number;
+    handleX: number;
+    handleY: number;
+    radius: number;
+    viewWidth: number;
+    viewHeight: number;
+    zoom: number;
+};
+
 export class MobileControls {
     private scene: Phaser.Scene;
+    private joystickScene?: Phaser.Scene;
+    private inputScene?: Phaser.Scene;
     private container: HTMLElement;
     private joystickBase?: Phaser.GameObjects.Image;
     private joystickHandle?: Phaser.GameObjects.Image;
-    private inventoryButton: HTMLElement;
-    private interactButton: HTMLElement;
-    private fullscreenButton: HTMLElement;
-    private menuButton: HTMLElement;
+    private inventoryButton?: Phaser.GameObjects.Image;
+    private interactButton?: Phaser.GameObjects.Image;
+    private inventoryKeyIcon?: Phaser.GameObjects.Image;
+    private interactKeyIcon?: Phaser.GameObjects.Image;
+    private fullscreenButton?: Phaser.GameObjects.Image;
+    private menuButton?: Phaser.GameObjects.Image;
+    private fullscreenChangeListener?: () => void;
     private guiOpenListener?: (event: Event) => void;
     
     private inputState: MobileInputState = {
@@ -46,12 +76,25 @@ export class MobileControls {
     private readonly joystickHandleWidth = 16;
     private readonly joystickHandleHeight = 17;
     private readonly joystickBorder = 4;
-    private readonly joystickBaseScale = 2;
-    private readonly joystickHandleScale = 2;
-    private readonly joystickMarginX = 50;
-    private readonly joystickMarginY = 60;
+    private readonly joystickBaseScale = 3.2;
+    private readonly joystickHandleScale = 3.2;
+    private readonly joystickMarginX = 24;
+    private readonly joystickMarginY = 24;
     private readonly joystickDeadzone = 0.18;
     private readonly joystickSprintThreshold = 0.9;
+    private readonly joystickHandleOvershoot = 15;
+    private readonly inventoryInteractGap = 14;
+    private readonly controlOpacity = 0.5;
+    private readonly keyIconScale = 2;
+    private readonly keyIconOffset = 4;
+    private readonly actionButtonSize = 24;
+    private readonly topButtonSize = 16;
+    private readonly topButtonMargin = 16;
+    private readonly topButtonGap = 14;
+    private readonly pressedTint = 0xb3b3b3;
+    private joystickLoadHooked = false;
+    private lastShowTouchControls = false;
+    private lastJoystickTarget = { x: 0, y: 0, radius: 0 };
     
     // UI styling
     private readonly borderRadius = '16px';
@@ -61,6 +104,8 @@ export class MobileControls {
     private keyboardUsed = false; // Once keyboard is used, hide controls permanently
     private keyboardListener?: (e: KeyboardEvent) => void;
     private resizeListener?: () => void;
+    private scaleResizeListener?: (gameSize: Phaser.Structs.Size) => void;
+    private inputBlocked = false;
     
     // Interact button state
     private currentInteraction: AvailableInteraction | null = null;
@@ -70,16 +115,9 @@ export class MobileControls {
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
         this.container = this.createContainer();
-        this.createJoystickSprites();
-        this.inventoryButton = this.createInventoryButton();
-        this.interactButton = this.createInteractButton();
-        this.fullscreenButton = this.createFullscreenButton();
-        this.menuButton = this.createMenuButton();
-
-        this.container.appendChild(this.inventoryButton);
-        this.container.appendChild(this.interactButton);
-        this.container.appendChild(this.fullscreenButton);
-        this.container.appendChild(this.menuButton);
+        this.ensureJoystickSprites();
+        this.createInventorySprite();
+        this.createInteractSprite();
         
         this.setupEventListeners();
         this.setupKeyboardDetection();
@@ -104,11 +142,12 @@ export class MobileControls {
         
         // Also check screen size as a secondary indicator
         const isSmallScreen = window.innerWidth <= 1024 && window.innerHeight <= 1366;
+        const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
         
         // Must have touch AND be identified as mobile by UA or have small screen
         const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
         
-        return hasTouch && (isMobileUA || isSmallScreen);
+        return hasTouch && (isMobileUA || isSmallScreen || isCoarsePointer);
     }
     
     /**
@@ -151,7 +190,7 @@ export class MobileControls {
             if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
             
             // Movement or common game keys detected - user has a keyboard
-            const gameKeys = ['w', 'a', 's', 'd', 'W', 'A', 'S', 'D', 
+            const gameKeys = ['w', 'a', 's', 'd', 'W', 'A', 'S', 'D',
                 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
                 ' ', 'Enter', 'Escape'];
             
@@ -169,22 +208,37 @@ export class MobileControls {
     }
 
     private updateDeviceVisibility() {
+        this.ensureJoystickSprites();
+        this.ensureInventorySprite();
+        this.ensureInteractSprite();
+        this.ensureKeyIcons();
+        this.ensureTopButtons();
+        if (this.inputBlocked) {
+            this.setJoystickVisible(false);
+            this.setInventoryVisible(false);
+            this.setInteractVisible(false);
+            this.setTopButtonVisible(this.fullscreenButton, false);
+            this.setTopButtonVisible(this.menuButton, false);
+            this.resetInput();
+            return;
+        }
         const isMobile = MobileControls.isMobileDevice();
         const showTouchControls = isMobile && !this.keyboardUsed && !this.guiCurrentlyOpen;
+        this.lastShowTouchControls = showTouchControls;
 
         this.setJoystickVisible(showTouchControls);
         if (!showTouchControls) {
             this.resetInput();
         }
-        const showInventory = showTouchControls
-            || (isMobile && !this.keyboardUsed && this.guiCurrentlyOpen && this.guiOpenSource === 'inventory');
-        this.setButtonVisible(this.inventoryButton, showInventory);
+        const showInventory = !this.guiCurrentlyOpen || this.guiOpenSource === 'inventory';
+        this.setInventoryVisible(showInventory);
+        this.setInventoryPressed(this.guiCurrentlyOpen && this.guiOpenSource === 'inventory');
         this.updateInteractButtonVisibility();
 
         const showMenu = !this.guiCurrentlyOpen || this.guiOpenSource === 'menu';
         const showFullscreen = !this.guiCurrentlyOpen;
-        this.setButtonVisible(this.fullscreenButton, showFullscreen);
-        this.setButtonVisible(this.menuButton, showMenu);
+        this.setTopButtonVisible(this.fullscreenButton, showFullscreen);
+        this.setTopButtonVisible(this.menuButton, showMenu);
     }
     
     /**
@@ -214,6 +268,7 @@ export class MobileControls {
         this.isVisible = true;
         this.updateDeviceVisibility();
         this.updateTopButtonPositions();
+        this.updateInventoryPosition();
     }
     
     /**
@@ -223,6 +278,10 @@ export class MobileControls {
         this.container.style.display = 'none';
         this.isVisible = false;
         this.resetInput();
+        this.setInventoryVisible(false);
+        this.setInteractVisible(false);
+        this.setTopButtonVisible(this.fullscreenButton, false);
+        this.setTopButtonVisible(this.menuButton, false);
     }
     
     /**
@@ -238,12 +297,24 @@ export class MobileControls {
         if (this.resizeListener) {
             window.removeEventListener('resize', this.resizeListener);
         }
-        this.scene.input.off('pointerdown', this.onJoystickPointerDown, this);
-        this.scene.input.off('pointermove', this.onJoystickPointerMove, this);
-        this.scene.input.off('pointerup', this.onJoystickPointerUp, this);
-        this.scene.input.off('pointerupoutside', this.onJoystickPointerUp, this);
+        if (this.scaleResizeListener) {
+            this.scene.scale.off('resize', this.scaleResizeListener);
+        }
+        if (this.fullscreenChangeListener) {
+            document.removeEventListener('fullscreenchange', this.fullscreenChangeListener);
+            document.removeEventListener('webkitfullscreenchange', this.fullscreenChangeListener);
+            document.removeEventListener('mozfullscreenchange', this.fullscreenChangeListener);
+            document.removeEventListener('MSFullscreenChange', this.fullscreenChangeListener);
+        }
+        this.unbindInputScene();
         this.joystickBase?.destroy();
         this.joystickHandle?.destroy();
+        this.inventoryButton?.destroy();
+        this.inventoryKeyIcon?.destroy();
+        this.interactButton?.destroy();
+        this.interactKeyIcon?.destroy();
+        this.fullscreenButton?.destroy();
+        this.menuButton?.destroy();
         this.container.remove();
         this.isVisible = false;
     }
@@ -276,8 +347,8 @@ export class MobileControls {
         this.updateDeviceVisibility();
 
         if (isOpen) {
-            this.interactButton.classList.remove('active');
-            this.fullscreenButton.classList.remove('active');
+            this.setSpritePressed(this.fullscreenButton, false);
+            this.setSpritePressed(this.menuButton, false);
         }
     }
 
@@ -286,8 +357,16 @@ export class MobileControls {
      */
     setAvailableInteraction(interaction: AvailableInteraction | null) {
         this.currentInteraction = interaction;
-        this.updateInteractButtonVisibility();
-        this.updateInteractButtonIcon();
+        if (!this.inputBlocked) {
+            this.updateInteractButtonVisibility();
+            this.updateInteractButtonIcon();
+        }
+    }
+
+    setInputBlocked(blocked: boolean) {
+        if (this.inputBlocked === blocked) return;
+        this.inputBlocked = blocked;
+        this.updateDeviceVisibility();
     }
 
     /**
@@ -296,58 +375,32 @@ export class MobileControls {
     private updateInteractButtonVisibility() {
         // Only show if: not in GUI AND there's an available interaction
         const isMobile = MobileControls.isMobileDevice();
-        const shouldShow = !this.guiCurrentlyOpen && this.currentInteraction !== null && isMobile && !this.keyboardUsed;
-        this.setButtonVisible(this.interactButton, shouldShow);
+        const shouldShow = !this.guiCurrentlyOpen
+            && this.currentInteraction !== null
+            && (!isMobile || !this.keyboardUsed);
+        this.setInteractVisible(shouldShow);
     }
 
     /**
      * Update interact button icon based on interaction type
      */
     private updateInteractButtonIcon() {
-        if (!this.currentInteraction) return;
+        if (!this.currentInteraction || !this.interactButton) return;
 
-        const iconContainer = this.interactButton.querySelector('.action-icon');
-        if (!iconContainer) return;
-
-        switch (this.currentInteraction.type) {
-            case InteractionType.Shove:
-                // Lucide "hand" icon for shoving
-                iconContainer.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-hand">
-                        <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/>
-                        <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/>
-                        <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/>
-                        <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
-                    </svg>
-                `;
-                break;
-            case InteractionType.Pickup:
-                // Lucide "package" icon for pickup
-                iconContainer.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-package">
-                        <path d="M16.5 9.4 7.5 4.2"/>
-                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
-                        <path d="M3.3 7 12 12l8.7-5"/>
-                        <path d="M12 22V12"/>
-                    </svg>
-                `;
-                break;
-            default:
-                // Default pointer icon
-                iconContainer.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pointer-icon lucide-pointer">
-                        <path d="M22 14a8 8 0 0 1-8 8"/>
-                        <path d="M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/>
-                        <path d="M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1"/>
-                        <path d="M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10"/>
-                        <path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
-                    </svg>
-                `;
+        const texture = this.currentInteraction.type === InteractionType.Talk
+            ? 'ui-interact-chat'
+            : 'ui-interact-blank';
+        if (this.interactButton.texture.key !== texture) {
+            this.interactButton.setTexture(texture);
         }
     }
 
-    private setButtonVisible(button: HTMLElement, visible: boolean) {
-        button.style.display = visible ? 'flex' : 'none';
+    private setTopButtonVisible(button: Phaser.GameObjects.Image | undefined, visible: boolean) {
+        if (!button) return;
+        button.setVisible(visible);
+        if (visible) {
+            this.updateTopButtonPositions();
+        }
     }
 
     private setupResizeListener() {
@@ -357,6 +410,14 @@ export class MobileControls {
             }
         };
         window.addEventListener('resize', this.resizeListener);
+
+        this.scaleResizeListener = () => {
+            if (!this.isVisible) return;
+            this.updateTopButtonPositions();
+            this.updateInventoryPosition();
+            this.positionJoystick();
+        };
+        this.scene.scale.on('resize', this.scaleResizeListener);
     }
 
     private getNavbarHeight(): number {
@@ -373,22 +434,37 @@ export class MobileControls {
     }
 
     private updateTopButtonPositions() {
-        const navbarHeight = this.getNavbarHeight();
-        const topOffset = navbarHeight + 16;
-        this.fullscreenButton.style.top = `${topOffset}px`;
-        this.menuButton.style.top = `${topOffset}px`;
+        const topOffset = this.topButtonMargin;
+        const camera = (this.joystickScene ?? this.scene).cameras.main;
+        const viewWidth = camera.width;
+        const size = this.topButtonSize * this.joystickBaseScale;
+        const halfSize = size / 2;
+        const y = topOffset + halfSize;
+        const menuX = viewWidth - this.topButtonMargin - halfSize;
+        const fullscreenX = menuX - size - this.topButtonGap;
+        if (this.menuButton) {
+            this.menuButton.setPosition(menuX, y);
+        }
+        if (this.fullscreenButton) {
+            this.fullscreenButton.setPosition(fullscreenX, y);
+        }
         if (this.isJoystickVisible()) {
             this.positionJoystick();
         }
+        this.updateInventoryPosition();
     }
 
     private positionJoystick() {
         if (!this.joystickBase || !this.joystickHandle) return;
+        const camera = (this.joystickScene ?? this.scene).cameras.main;
+        const viewWidth = camera.width;
+        const viewHeight = camera.height;
         const x = this.joystickMarginX + (this.joystickBase.displayWidth * 0.5);
-        const y = this.scene.scale.height - this.joystickMarginY - (this.joystickBase.displayHeight * 0.5);
+        const y = viewHeight - this.joystickMarginY - (this.joystickBase.displayHeight * 0.5);
         this.joystickBase.setPosition(x, y);
         this.joystickHandle.setPosition(x, y);
         this.joystickCenter = { x, y };
+        this.lastJoystickTarget = { x, y, radius: this.joystickBase.displayWidth * 0.5 };
     }
 
     private setJoystickVisible(visible: boolean) {
@@ -411,11 +487,50 @@ export class MobileControls {
     private getJoystickMaxDistance(): number {
         const innerRadius = (this.joystickBaseSize - this.joystickBorder * 2) * 0.5 * this.joystickBaseScale;
         const handleRadius = Math.max(this.joystickHandleWidth, this.joystickHandleHeight) * 0.5 * this.joystickHandleScale;
-        return Math.max(6, innerRadius - handleRadius);
+        return Math.max(6, innerRadius - handleRadius + this.joystickHandleOvershoot);
     }
 
     private isJoystickVisible(): boolean {
         return Boolean(this.joystickBase?.visible && this.joystickHandle?.visible);
+    }
+
+    getJoystickDebugInfo(): JoystickDebugInfo {
+        const camera = (this.joystickScene ?? this.scene).cameras.main;
+        const zoom = camera.zoom || 1;
+        const viewWidth = camera.width;
+        const viewHeight = camera.height;
+        const baseX = this.joystickBase?.x ?? this.lastJoystickTarget.x;
+        const baseY = this.joystickBase?.y ?? this.lastJoystickTarget.y;
+        const handleX = this.joystickHandle?.x ?? baseX;
+        const handleY = this.joystickHandle?.y ?? baseY;
+        const radius = this.joystickBase?.displayWidth
+            ? this.joystickBase.displayWidth * 0.5
+            : this.lastJoystickTarget.radius;
+
+        return {
+            isMobileDevice: MobileControls.isMobileDevice(),
+            keyboardUsed: this.keyboardUsed,
+            guiOpen: this.guiCurrentlyOpen,
+            showTouchControls: this.lastShowTouchControls,
+            containerVisible: this.isVisible,
+            joystickVisible: this.isJoystickVisible(),
+            hasBaseTexture: this.scene.textures.exists('ui-joystick-base'),
+            hasHandleTexture: this.scene.textures.exists('ui-joystick-handle'),
+            spritesReady: Boolean(this.joystickBase && this.joystickHandle),
+            renderScene: this.joystickScene?.scene.key ?? 'none',
+            baseAlpha: this.joystickBase?.alpha ?? 0,
+            handleAlpha: this.joystickHandle?.alpha ?? 0,
+            baseDepth: this.joystickBase?.depth ?? 0,
+            handleDepth: this.joystickHandle?.depth ?? 0,
+            baseX,
+            baseY,
+            handleX,
+            handleY,
+            radius,
+            viewWidth,
+            viewHeight,
+            zoom
+        };
     }
     
     // ==================== UI Creation ====================
@@ -440,8 +555,13 @@ export class MobileControls {
     }
     
     private createJoystickSprites() {
-        this.joystickBase = this.scene.add.image(0, 0, 'ui-joystick-base');
-        this.joystickHandle = this.scene.add.image(0, 0, 'ui-joystick-handle');
+        if (this.joystickBase || this.joystickHandle) return;
+        const targetScene = this.getJoystickScene();
+        if (!targetScene) return;
+
+        this.joystickScene = targetScene;
+        this.joystickBase = targetScene.add.image(0, 0, 'ui-joystick-base');
+        this.joystickHandle = targetScene.add.image(0, 0, 'ui-joystick-handle');
         this.joystickBase.setOrigin(0.5, 0.5);
         this.joystickHandle.setOrigin(0.5, 0.5);
         this.joystickBase.setDepth(9999);
@@ -450,257 +570,307 @@ export class MobileControls {
         this.joystickHandle.setScrollFactor(0);
         this.joystickBase.setScale(this.joystickBaseScale);
         this.joystickHandle.setScale(this.joystickHandleScale);
+        this.joystickBase.setAlpha(this.controlOpacity);
+        this.joystickHandle.setAlpha(this.controlOpacity);
         this.positionJoystick();
         this.setJoystickVisible(false);
-
-        const styleId = 'mobile-controls-style';
-        if (!document.getElementById(styleId)) {
-            const style = document.createElement('style');
-            style.id = styleId;
-            style.textContent = `
-                #inventory-button, #interact-button {
-                    position: absolute;
-                    right: 50px;
-                    width: 64px;
-                    height: 64px;
-                    border-radius: 16px;
-                    background: rgba(40, 40, 40, 0.7);
-                    border: 2px solid rgba(255, 255, 255, 0.25);
-                    box-shadow:
-                        inset 0 0 12px rgba(0, 0, 0, 0.35),
-                        0 0 8px rgba(0, 0, 0, 0.25);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    pointer-events: auto;
-                    touch-action: none;
-                    transition: background 0.15s, transform 0.1s, border-color 0.15s;
-                    opacity: 0.8;
-                }
-                #inventory-button { bottom: 150px; }
-                #interact-button { bottom: 230px; }
-                #inventory-button .action-icon,
-                #interact-button .action-icon {
-                    width: 26px;
-                    height: 26px;
-                    color: rgba(255, 255, 255, 0.75);
-                }
-                #inventory-button.active,
-                #interact-button.active {
-                    background: rgba(255, 102, 170, 0.45) !important;
-                    border-color: rgba(255, 102, 170, 0.8) !important;
-                    transform: scale(0.95);
-                }
-                #inventory-button.active .action-icon,
-                #interact-button.active .action-icon {
-                    color: #fff;
-                }
-                #fullscreen-button {
-                    opacity: 0.6;
-                }
-                #fullscreen-button.active {
-                    opacity: 1;
-                    background: rgba(255, 102, 170, 0.45) !important;
-                    border-color: rgba(255, 102, 170, 0.8) !important;
-                    transform: scale(0.95);
-                    box-shadow:
-                        inset 0 0 10px rgba(0, 0, 0, 0.3),
-                        0 0 8px rgba(255, 102, 170, 0.35);
-                }
-                #fullscreen-button .fs-icon {
-                    width: 20px;
-                    height: 20px;
-                    color: rgba(255, 255, 255, 0.8);
-                }
-            `;
-            document.head.appendChild(style);
-        }
     }
-    
-    private createFullscreenButton(): HTMLElement {
-        const button = document.createElement('div');
-        button.id = 'fullscreen-button';
-        // Using Lucide's "maximize" icon (will be updated dynamically)
-        button.innerHTML = `
-            <div class="fs-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M8 3H5a2 2 0 0 0-2 2v3"/>
-                    <path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
-                    <path d="M3 16v3a2 2 0 0 0 2 2h3"/>
-                    <path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
-                </svg>
-            </div>
-        `;
-        button.style.cssText = `
-            position: absolute;
-            right: 66px;
-            top: 16px;
-            width: 36px;
-            height: 36px;
-            border-radius: ${parseFloat(this.borderRadius) * 0.5}px;
-            background: rgba(40, 40, 40, 0.7);
-            border: 2px solid rgba(255, 255, 255, 0.25);
-            box-shadow: 
-                inset 0 0 10px rgba(0, 0, 0, 0.3),
-                0 0 8px rgba(0, 0, 0, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            pointer-events: auto;
-            touch-action: none;
-            transition: opacity 0.15s, transform 0.1s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
-        `;
-        
-        // Handle fullscreen toggle (trigger on release)
-        button.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            button.classList.add('active');
+
+    private ensureJoystickSprites() {
+        if (this.joystickBase && this.joystickHandle) return;
+
+        const targetScene = this.getJoystickScene();
+        if (!targetScene) return;
+
+        this.bindInputScene(targetScene);
+
+        const hasBase = this.scene.textures.exists('ui-joystick-base');
+        const hasHandle = this.scene.textures.exists('ui-joystick-handle');
+
+        if (!hasBase || !hasHandle) {
+            if (!this.joystickLoadHooked) {
+                this.joystickLoadHooked = true;
+                this.scene.load.once(Phaser.Loader.Events.COMPLETE, () => {
+                    this.joystickLoadHooked = false;
+                    this.ensureJoystickSprites();
+                    this.updateDeviceVisibility();
+                });
+            }
+            return;
+        }
+
+        this.createJoystickSprites();
+    }
+
+    private createInventorySprite() {
+        if (this.inventoryButton) return;
+        const targetScene = this.getJoystickScene();
+        if (!targetScene) return;
+
+        this.inventoryButton = targetScene.add.image(0, 0, 'ui-backpack');
+        this.inventoryButton.setOrigin(0.5, 0.5);
+        this.inventoryButton.setDepth(10001);
+        this.inventoryButton.setScrollFactor(0);
+        this.inventoryButton.setScale(this.joystickBaseScale);
+        this.inventoryButton.setAlpha(this.controlOpacity);
+        this.inventoryButton.setVisible(false);
+        this.inventoryButton.setInteractive({ useHandCursor: true });
+        this.inventoryButton.on('pointerdown', () => {
+            if (this.inputBlocked) return;
+            this.setInventoryPressed(true);
         });
-        button.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            button.classList.remove('active');
+        this.inventoryButton.on('pointerup', () => {
+            if (this.inputBlocked) return;
+            this.setInventoryPressed(false);
+            window.dispatchEvent(new CustomEvent('mobile:inventory'));
+        });
+        this.inventoryButton.on('pointerupoutside', () => this.setInventoryPressed(false));
+        this.inventoryButton.on('pointerout', () => this.setInventoryPressed(false));
+
+        this.updateInventoryPosition();
+    }
+
+    private createInteractSprite() {
+        if (this.interactButton) return;
+        const targetScene = this.getJoystickScene();
+        if (!targetScene) return;
+
+        this.interactButton = targetScene.add.image(0, 0, 'ui-interact-blank');
+        this.interactButton.setOrigin(0.5, 0.5);
+        this.interactButton.setDepth(10002);
+        this.interactButton.setScrollFactor(0);
+        this.interactButton.setScale(this.joystickBaseScale);
+        this.interactButton.setAlpha(this.controlOpacity);
+        this.interactButton.setVisible(false);
+        this.interactButton.setInteractive({ useHandCursor: true });
+        this.interactButton.on('pointerdown', () => {
+            if (this.inputBlocked) return;
+            this.setInteractPressed(true);
+            window.dispatchEvent(new CustomEvent('mobile:interact'));
+        });
+        this.interactButton.on('pointerup', () => this.setInteractPressed(false));
+        this.interactButton.on('pointerupoutside', () => this.setInteractPressed(false));
+        this.interactButton.on('pointerout', () => this.setInteractPressed(false));
+
+        this.updateInteractPosition();
+    }
+
+    private ensureInteractSprite() {
+        if (this.interactButton) return;
+        const targetScene = this.getJoystickScene();
+        if (!targetScene) return;
+        if (!this.scene.textures.exists('ui-interact-blank') || !this.scene.textures.exists('ui-interact-chat')) return;
+        this.createInteractSprite();
+    }
+
+    private ensureKeyIcons() {
+        this.ensureInventoryKeyIcon();
+        this.ensureInteractKeyIcon();
+    }
+
+    private ensureTopButtons() {
+        this.ensureFullscreenButton();
+        this.ensureMenuButton();
+    }
+
+    private ensureInventoryKeyIcon() {
+        if (this.inventoryKeyIcon) return;
+        const targetScene = this.getJoystickScene();
+        if (!targetScene) return;
+        if (!this.scene.textures.exists('ui-hud-key-e')) return;
+
+        this.inventoryKeyIcon = targetScene.add.image(0, 0, 'ui-hud-key-e');
+        this.inventoryKeyIcon.setOrigin(0, 0);
+        this.inventoryKeyIcon.setDepth(10003);
+        this.inventoryKeyIcon.setScrollFactor(0);
+        this.inventoryKeyIcon.setScale(this.keyIconScale);
+        this.inventoryKeyIcon.setVisible(false);
+    }
+
+    private ensureInteractKeyIcon() {
+        if (this.interactKeyIcon) return;
+        const targetScene = this.getJoystickScene();
+        if (!targetScene) return;
+        if (!this.scene.textures.exists('ui-hud-key-f')) return;
+
+        this.interactKeyIcon = targetScene.add.image(0, 0, 'ui-hud-key-f');
+        this.interactKeyIcon.setOrigin(0, 0);
+        this.interactKeyIcon.setDepth(10004);
+        this.interactKeyIcon.setScrollFactor(0);
+        this.interactKeyIcon.setScale(this.keyIconScale);
+        this.interactKeyIcon.setVisible(false);
+    }
+
+    private ensureFullscreenButton() {
+        if (this.fullscreenButton) return;
+        const targetScene = this.getJoystickScene();
+        if (!targetScene) return;
+        if (!this.scene.textures.exists('ui-fullscreen') || !this.scene.textures.exists('ui-exit-fullscreen')) return;
+
+        this.fullscreenButton = targetScene.add.image(0, 0, 'ui-fullscreen');
+        this.fullscreenButton.setOrigin(0.5, 0.5);
+        this.fullscreenButton.setDepth(10005);
+        this.fullscreenButton.setScrollFactor(0);
+        this.fullscreenButton.setScale(this.joystickBaseScale);
+        this.fullscreenButton.setAlpha(this.controlOpacity);
+        this.fullscreenButton.setVisible(false);
+        this.fullscreenButton.setInteractive({ useHandCursor: true });
+        this.fullscreenButton.on('pointerdown', () => {
+            if (this.inputBlocked) return;
+            this.setSpritePressed(this.fullscreenButton, true);
+        });
+        this.fullscreenButton.on('pointerup', () => {
+            if (this.inputBlocked) return;
+            this.setSpritePressed(this.fullscreenButton, false);
             this.toggleFullscreen();
         });
-        button.addEventListener('pointerleave', () => button.classList.remove('active'));
-        button.addEventListener('pointercancel', () => button.classList.remove('active'));
-        
-        // Update icon when fullscreen changes
-        document.addEventListener('fullscreenchange', () => this.updateFullscreenIcon(button));
-        document.addEventListener('webkitfullscreenchange', () => this.updateFullscreenIcon(button));
-        document.addEventListener('mozfullscreenchange', () => this.updateFullscreenIcon(button));
-        document.addEventListener('MSFullscreenChange', () => this.updateFullscreenIcon(button));
-        
-        return button;
+        this.fullscreenButton.on('pointerupoutside', () => this.setSpritePressed(this.fullscreenButton, false));
+        this.fullscreenButton.on('pointerout', () => this.setSpritePressed(this.fullscreenButton, false));
+
+        this.bindFullscreenChangeListener();
+        this.updateFullscreenIcon();
+        this.updateTopButtonPositions();
     }
 
-    private createMenuButton(): HTMLElement {
-        const button = document.createElement('div');
-        button.id = 'menu-button';
-        // Using Lucide's "menu" icon (hamburger)
-        button.innerHTML = `
-            <div class="menu-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="4" x2="20" y1="12" y2="12"/>
-                    <line x1="4" x2="20" y1="6" y2="6"/>
-                    <line x1="4" x2="20" y1="18" y2="18"/>
-                </svg>
-            </div>
-        `;
-        button.style.cssText = `
-            position: absolute;
-            right: 16px;
-            top: 16px;
-            width: 36px;
-            height: 36px;
-            border-radius: ${parseFloat(this.borderRadius) * 0.5}px;
-            background: rgba(40, 40, 40, 0.7);
-            border: 2px solid rgba(255, 255, 255, 0.25);
-            box-shadow: 
-                inset 0 0 10px rgba(0, 0, 0, 0.3),
-                0 0 8px rgba(0, 0, 0, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            pointer-events: auto;
-            touch-action: none;
-            transition: opacity 0.15s, transform 0.1s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
-        `;
+    private ensureMenuButton() {
+        if (this.menuButton) return;
+        const targetScene = this.getJoystickScene();
+        if (!targetScene) return;
+        if (!this.scene.textures.exists('ui-menu')) return;
 
-        // Style the icon
-        const style = document.createElement('style');
-        style.textContent = `
-            #menu-button {
-                opacity: 0.6;
-            }
-            #menu-button .menu-icon {
-                width: 16px;
-                height: 16px;
-                color: rgba(255, 255, 255, 0.8);
-            }
-            #menu-button.active {
-                opacity: 1;
-                background: rgba(255, 102, 170, 0.45) !important;
-                border-color: rgba(255, 102, 170, 0.8) !important;
-                transform: scale(0.95);
-                box-shadow:
-                    inset 0 0 10px rgba(0, 0, 0, 0.3),
-                    0 0 8px rgba(255, 102, 170, 0.35);
-            }
-        `;
-        document.head.appendChild(style);
-
-        // Handle menu toggle (trigger on release)
-        button.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            button.classList.add('active');
+        this.menuButton = targetScene.add.image(0, 0, 'ui-menu');
+        this.menuButton.setOrigin(0.5, 0.5);
+        this.menuButton.setDepth(10006);
+        this.menuButton.setScrollFactor(0);
+        this.menuButton.setScale(this.joystickBaseScale);
+        this.menuButton.setAlpha(this.controlOpacity);
+        this.menuButton.setVisible(false);
+        this.menuButton.setInteractive({ useHandCursor: true });
+        this.menuButton.on('pointerdown', () => {
+            if (this.inputBlocked) return;
+            this.setSpritePressed(this.menuButton, true);
         });
-        button.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            button.classList.remove('active');
+        this.menuButton.on('pointerup', () => {
+            if (this.inputBlocked) return;
+            this.setSpritePressed(this.menuButton, false);
             window.dispatchEvent(new CustomEvent('mobile:menu'));
         });
-        button.addEventListener('pointerleave', () => button.classList.remove('active'));
-        button.addEventListener('pointercancel', () => button.classList.remove('active'));
+        this.menuButton.on('pointerupoutside', () => this.setSpritePressed(this.menuButton, false));
+        this.menuButton.on('pointerout', () => this.setSpritePressed(this.menuButton, false));
 
-        return button;
+        this.updateTopButtonPositions();
     }
 
-    private createInventoryButton(): HTMLElement {
-        const button = document.createElement('div');
-        button.id = 'inventory-button';
-        // Using Lucide's "backpack" icon
-        button.innerHTML = `
-            <div class="action-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-backpack-icon lucide-backpack"><path d="M4 10a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 10h8"/><path d="M8 18h8"/><path d="M8 22v-6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
-            </div>
-        `;
-
-        const fire = () => window.dispatchEvent(new CustomEvent('mobile:inventory'));
-        button.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            button.classList.add('active');
-        });
-        button.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            button.classList.remove('active');
-            fire();
-        });
-        button.addEventListener('pointerleave', () => button.classList.remove('active'));
-        button.addEventListener('pointercancel', () => button.classList.remove('active'));
-
-        return button;
+    private ensureInventorySprite() {
+        if (this.inventoryButton) return;
+        const targetScene = this.getJoystickScene();
+        if (!targetScene) return;
+        if (!this.scene.textures.exists('ui-backpack')) return;
+        this.createInventorySprite();
     }
 
-    private createInteractButton(): HTMLElement {
-        const button = document.createElement('div');
-        button.id = 'interact-button';
-        // Using Lucide's "pointer" icon (hand with pointing finger) - default icon
-        button.innerHTML = `
-            <div class="action-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pointer-icon lucide-pointer"><path d="M22 14a8 8 0 0 1-8 8"/><path d="M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1"/><path d="M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10"/><path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
-            </div>
-        `;
-
-        // Start hidden - will be shown when interaction is available
-        button.style.display = 'none';
-
-        // Interact fires on press (not release) for faster response
-        const fire = () => window.dispatchEvent(new CustomEvent('mobile:interact'));
-        button.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            button.classList.add('active');
-            fire(); // Fire immediately on press
-        });
-        button.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            button.classList.remove('active');
-        });
-        button.addEventListener('pointerleave', () => button.classList.remove('active'));
-        button.addEventListener('pointercancel', () => button.classList.remove('active'));
-
-        return button;
+    private updateInventoryPosition() {
+        if (!this.inventoryButton) return;
+        const camera = (this.joystickScene ?? this.scene).cameras.main;
+        const viewWidth = camera.width;
+        const viewHeight = camera.height;
+        const size = this.actionButtonSize * this.joystickBaseScale;
+        const halfSize = size / 2;
+        const x = viewWidth - this.joystickMarginX - halfSize;
+        const y = viewHeight - this.joystickMarginY - halfSize;
+        this.inventoryButton.setPosition(x, y);
+        if (this.inventoryKeyIcon) {
+            this.inventoryKeyIcon.setPosition(x - halfSize - this.keyIconOffset, y - halfSize - this.keyIconOffset);
+        }
+        this.updateInteractPosition();
     }
-    
+
+    private updateInteractPosition() {
+        if (!this.interactButton) return;
+        const camera = (this.joystickScene ?? this.scene).cameras.main;
+        const viewWidth = camera.width;
+        const viewHeight = camera.height;
+        const size = this.actionButtonSize * this.joystickBaseScale;
+        const halfSize = size / 2;
+        const x = viewWidth - this.joystickMarginX - halfSize;
+        const y = viewHeight - this.joystickMarginY - size - this.inventoryInteractGap - halfSize;
+        this.interactButton.setPosition(x, y);
+        if (this.interactKeyIcon) {
+            this.interactKeyIcon.setPosition(x - halfSize - this.keyIconOffset, y - halfSize - this.keyIconOffset);
+        }
+    }
+
+    private setInteractVisible(visible: boolean) {
+        if (!this.interactButton) return;
+        this.interactButton.setVisible(visible);
+        this.setInteractKeyVisible(visible);
+        if (visible) {
+            this.updateInteractPosition();
+        }
+    }
+
+    private setInventoryVisible(visible: boolean) {
+        if (!this.inventoryButton) return;
+        this.inventoryButton.setVisible(visible);
+        this.setInventoryKeyVisible(visible);
+    }
+
+    private setInventoryKeyVisible(buttonVisible: boolean) {
+        if (!this.inventoryKeyIcon) return;
+        const isMobile = MobileControls.isMobileDevice();
+        this.inventoryKeyIcon.setVisible(buttonVisible && !isMobile);
+    }
+
+    private setInteractKeyVisible(buttonVisible: boolean) {
+        if (!this.interactKeyIcon) return;
+        const isMobile = MobileControls.isMobileDevice();
+        const shouldShow = buttonVisible && !isMobile && this.currentInteraction !== null;
+        this.interactKeyIcon.setVisible(shouldShow);
+    }
+
+    private setInventoryPressed(pressed: boolean) {
+        this.setSpritePressed(this.inventoryButton, pressed);
+    }
+
+    private setInteractPressed(pressed: boolean) {
+        this.setSpritePressed(this.interactButton, pressed);
+    }
+
+    private setSpritePressed(button: Phaser.GameObjects.Image | undefined, pressed: boolean) {
+        if (!button) return;
+        if (pressed) {
+            button.setTint(this.pressedTint);
+        } else {
+            button.clearTint();
+        }
+    }
+
+    private bindInputScene(scene: Phaser.Scene) {
+        if (this.inputScene === scene) return;
+        this.unbindInputScene();
+
+        this.inputScene = scene;
+        scene.input.on('pointerdown', this.onJoystickPointerDown, this);
+        scene.input.on('pointermove', this.onJoystickPointerMove, this);
+        scene.input.on('pointerup', this.onJoystickPointerUp, this);
+        scene.input.on('pointerupoutside', this.onJoystickPointerUp, this);
+    }
+
+    private unbindInputScene() {
+        if (!this.inputScene) return;
+        this.inputScene.input.off('pointerdown', this.onJoystickPointerDown, this);
+        this.inputScene.input.off('pointermove', this.onJoystickPointerMove, this);
+        this.inputScene.input.off('pointerup', this.onJoystickPointerUp, this);
+        this.inputScene.input.off('pointerupoutside', this.onJoystickPointerUp, this);
+        this.inputScene = undefined;
+    }
+
+    private getJoystickScene(): Phaser.Scene | null {
+        const uiScene = this.scene.scene.get('UIScene');
+        if (uiScene && uiScene.sys.isActive()) return uiScene;
+        return null;
+    }
+
     private isIOS(): boolean {
         return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -768,43 +938,28 @@ export class MobileControls {
         }
     }
     
-    private updateFullscreenIcon(button: HTMLElement) {
+    private updateFullscreenIcon() {
+        if (!this.fullscreenButton) return;
         const isFullscreen = this.isAnyFullscreen();
-        
-        if (isFullscreen) {
-            // Show exit fullscreen icon (Lucide "minimize")
-            button.innerHTML = `
-                <div class="fs-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M8 3v3a2 2 0 0 1-2 2H3"/>
-                        <path d="M21 8h-3a2 2 0 0 1-2-2V3"/>
-                        <path d="M3 16h3a2 2 0 0 1 2 2v3"/>
-                        <path d="M16 21v-3a2 2 0 0 1 2-2h3"/>
-                    </svg>
-                </div>
-            `;
-        } else {
-            // Show enter fullscreen icon (Lucide "maximize")
-            button.innerHTML = `
-                <div class="fs-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M8 3H5a2 2 0 0 0-2 2v3"/>
-                        <path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
-                        <path d="M3 16v3a2 2 0 0 0 2 2h3"/>
-                        <path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
-                    </svg>
-                </div>
-            `;
+        const texture = isFullscreen ? 'ui-exit-fullscreen' : 'ui-fullscreen';
+        if (this.fullscreenButton.texture.key !== texture) {
+            this.fullscreenButton.setTexture(texture);
         }
+    }
+
+    private bindFullscreenChangeListener() {
+        if (this.fullscreenChangeListener) return;
+        this.fullscreenChangeListener = () => this.updateFullscreenIcon();
+        document.addEventListener('fullscreenchange', this.fullscreenChangeListener);
+        document.addEventListener('webkitfullscreenchange', this.fullscreenChangeListener);
+        document.addEventListener('mozfullscreenchange', this.fullscreenChangeListener);
+        document.addEventListener('MSFullscreenChange', this.fullscreenChangeListener);
     }
     
     // ==================== Event Handling ====================
     
     private setupEventListeners() {
-        this.scene.input.on('pointerdown', this.onJoystickPointerDown, this);
-        this.scene.input.on('pointermove', this.onJoystickPointerMove, this);
-        this.scene.input.on('pointerup', this.onJoystickPointerUp, this);
-        this.scene.input.on('pointerupoutside', this.onJoystickPointerUp, this);
+        this.bindInputScene(this.scene);
 
         // Prevent context menu on long press
         this.container.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -873,7 +1028,8 @@ export class MobileControls {
             return;
         }
 
-        this.inputState.sprint = normalizedDist >= this.joystickSprintThreshold;
+        const fullyExtended = distance >= maxDist;
+        this.inputState.sprint = fullyExtended;
 
         const angle = Math.atan2(dy, dx);
         const angleDeg = ((angle * 180) / Math.PI + 360) % 360;

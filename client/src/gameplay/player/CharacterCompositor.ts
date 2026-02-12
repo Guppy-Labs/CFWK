@@ -14,8 +14,8 @@ import {
     ICharacterAppearance,
     MCDirection,
     MCAnimationType,
-    MC_FRAME_DIMENSIONS,
-    MC_FRAMES_PER_ANIMATION,
+    MC_FRAME_DIMENSIONS_BY_ANIM,
+    MC_FRAMES_PER_ANIMATION_BY_ANIM,
     HueBrightnessShift
 } from '@cfwk/shared';
 import { applyColorShift } from './ColorShift';
@@ -179,8 +179,8 @@ export class CharacterCompositor {
         appearance: ICharacterAppearance
     ): Promise<HTMLCanvasElement> {
         const { source, mirror } = DIRECTION_SOURCE_MAP[direction];
-        const dimensions = MC_FRAME_DIMENSIONS[direction];
-        const frameCount = MC_FRAMES_PER_ANIMATION;
+        const dimensions = MC_FRAME_DIMENSIONS_BY_ANIM[animType][direction];
+        const frameCount = MC_FRAMES_PER_ANIMATION_BY_ANIM[animType];
 
         // Load all required images
         const bodyPath = this.getAssetPath(animType, 'body', source);
@@ -302,7 +302,7 @@ export class CharacterCompositor {
 
                     const mapKey = `${animType}-${direction}`;
                     textureKeys.set(mapKey, textureKey);
-                    frameDimensions.set(direction, MC_FRAME_DIMENSIONS[direction]);
+                    frameDimensions.set(direction, MC_FRAME_DIMENSIONS_BY_ANIM[animType][direction]);
 
                 } catch (e) {
                     console.error(`Failed to composite ${animType}/${direction}:`, e);

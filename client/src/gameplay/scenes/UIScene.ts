@@ -7,6 +7,8 @@ import { HeadbarUI } from '../ui/HeadbarUI';
 import { NetworkManager } from '../network/NetworkManager';
 import { InventoryChangeMonitor } from '../ui/InventoryChangeMonitor';
 import { ITEM_DEFINITIONS, getItemImagePath } from '@cfwk/shared';
+import { DialogueUI } from '../ui/DialogueUI';
+import type { DialogueRenderLine } from '../dialogue/DialogueTypes';
 
 export class UIScene extends Phaser.Scene {
     private playerHud?: PlayerHud;
@@ -14,6 +16,9 @@ export class UIScene extends Phaser.Scene {
     private bookUI?: BookUI;
     private headbarUI?: HeadbarUI;
     private inventoryChangeMonitor?: InventoryChangeMonitor;
+    private dialogueUI?: DialogueUI;
+    private dialogueActive = false;
+    private pendingDialogueAdvanceHandler?: () => void;
     private tabKeyDownHandler?: (event: KeyboardEvent) => void;
     private tabKeyUpHandler?: (event: KeyboardEvent) => void;
     private chatKeyHandler?: (event: KeyboardEvent) => void;
@@ -70,9 +75,32 @@ export class UIScene extends Phaser.Scene {
         this.load.image('ui-hud-stamina-bg', '/ui/Bar04a.png');
         this.load.image('ui-hud-stamina-fill', '/ui/Fill02a.png');
         this.load.image('ui-hud-key-r', '/ui/keys/R.png');
+        this.load.image('ui-hud-key-e', '/ui/keys/E.png');
+        this.load.image('ui-hud-key-f', '/ui/keys/F.png');
+        this.load.image('ui-backpack', '/ui/Backpack01a.png');
+        this.load.image('ui-interact-chat', '/ui/InteractChat01a.png');
+        this.load.image('ui-interact-blank', '/ui/InteractBlank01a.png');
+        this.load.image('ui-menu', '/ui/Menu01a.png');
+        this.load.image('ui-fullscreen', '/ui/Fullscreen01a.png');
+        this.load.image('ui-exit-fullscreen', '/ui/ExitFullscreen01a.png');
         this.load.image('ui-font', '/assets/font/game-font.png');
+        this.load.text('ui-font-map', '/assets/font/game-font.map.txt');
         this.load.image('ui-cursor-default', '/ui/Cursor03b.png');
         this.load.image('ui-cursor-hover', '/ui/Cursor03c.png');
+        this.load.image('ui-dialogue-cursor', '/ui/Cursor03a.png');
+        this.load.image('ui-dialogue-content', '/ui/dialogue/content.png');
+        this.load.image('ui-dialogue-name', '/ui/dialogue/name.png');
+        this.load.image('dialogue-char-test-angry', '/ui/dialogue/chars/test/angry.png');
+        this.load.image('dialogue-char-test-disgust', '/ui/dialogue/chars/test/disgust.png');
+        this.load.image('dialogue-char-test-fear', '/ui/dialogue/chars/test/fear.png');
+        this.load.image('dialogue-char-test-happy', '/ui/dialogue/chars/test/happy.png');
+        this.load.image('dialogue-char-test-sad', '/ui/dialogue/chars/test/sad.png');
+        this.load.image('dialogue-char-test-surprise', '/ui/dialogue/chars/test/surprise.png');
+        this.load.image('dialogue-char-mc-angry', '/ui/dialogue/chars/mc/angry.png');
+        this.load.image('dialogue-char-mc-disgust', '/ui/dialogue/chars/mc/disgust.png');
+        this.load.image('dialogue-char-mc-happy', '/ui/dialogue/chars/mc/happy.png');
+        this.load.image('dialogue-char-mc-sad', '/ui/dialogue/chars/mc/sad.png');
+        this.load.image('dialogue-char-mc-surprise', '/ui/dialogue/chars/mc/surprise.png');
 
         // Headbar textures
         this.load.image('ui-headbar-banner', '/ui/Banner01b.png');
@@ -97,6 +125,14 @@ export class UIScene extends Phaser.Scene {
         this.bookUI = new BookUI(this);
         this.headbarUI = new HeadbarUI(this);
         this.inventoryChangeMonitor = new InventoryChangeMonitor(this);
+        this.dialogueUI = new DialogueUI(this);
+        if (this.pendingDialogueAdvanceHandler) {
+            this.dialogueUI.setOnAdvance(this.pendingDialogueAdvanceHandler);
+            this.pendingDialogueAdvanceHandler = undefined;
+        }
+        this.playerHud.setOnRodUse(() => {
+            window.dispatchEvent(new CustomEvent('hud:rod-use'));
+        });
 
         this.inventoryUpdateHandler = (event: Event) => {
             const customEvent = event as CustomEvent<{ equippedRodId?: string | null }>;
@@ -200,6 +236,7 @@ export class UIScene extends Phaser.Scene {
 
         // Intercept chat keys at window level
         this.chatKeyHandler = (event: KeyboardEvent) => {
+            if (this.registry.get('inputBlocked') === true) return;
             if (this.registry.get('guiOpen') === true) return;
             // Let the chat handle all keys when focused, or open keys when not
             if (this.chat?.handleKeyDown(event)) {
@@ -214,6 +251,7 @@ export class UIScene extends Phaser.Scene {
         this.bookKeyHandler = (event: KeyboardEvent) => {
             if (event.repeat) return;
             if (event.key.toLowerCase() !== 'e') return;
+            if (this.registry.get('inputBlocked') === true) return;
             if (this.chat?.isChatFocused()) return;
             event.preventDefault();
             event.stopPropagation();
@@ -235,6 +273,7 @@ export class UIScene extends Phaser.Scene {
         window.addEventListener('keydown', this.bookKeyHandler, { capture: true });
 
         this.mobileInventoryHandler = () => {
+            if (this.registry.get('inputBlocked') === true) return;
             if (this.chat?.isChatFocused()) return;
             // If already open, just close it
             if (this.bookUI?.isOpen()) {
@@ -255,6 +294,7 @@ export class UIScene extends Phaser.Scene {
         window.addEventListener('mobile:inventory', this.mobileInventoryHandler as EventListener);
 
         this.mobileMenuHandler = () => {
+            if (this.registry.get('inputBlocked') === true) return;
             if (this.chat?.isChatFocused()) return;
             // If already open, just close it
             if (this.bookUI?.isOpen()) {
@@ -314,11 +354,47 @@ export class UIScene extends Phaser.Scene {
             this.headbarUI?.destroy();
             this.playerHud?.destroy();
             this.inventoryChangeMonitor?.destroy();
+            this.dialogueUI?.destroy();
         });
     }
 
     setHudVisible(visible: boolean) {
         this.playerHud?.setVisible(visible);
+    }
+
+    setDialogueAdvanceHandler(handler: () => void) {
+        if (this.dialogueUI) {
+            this.dialogueUI.setOnAdvance(handler);
+        } else {
+            this.pendingDialogueAdvanceHandler = handler;
+        }
+    }
+
+    showDialogueLine(line: DialogueRenderLine) {
+        this.dialogueUI?.showLine(line);
+    }
+
+    setDialogueActive(active: boolean) {
+        if (this.dialogueActive === active) return;
+        this.dialogueActive = active;
+
+        if (active) {
+            if (this.chat?.isChatFocused()) {
+                this.chat.blur();
+            }
+            if (this.bookUI?.isOpen()) {
+                this.bookUI.close();
+                this.registry.set('guiOpen', false);
+                window.dispatchEvent(new CustomEvent('gui-open-changed', { detail: { isOpen: false, source: 'dialogue' } }));
+            }
+        } else {
+            this.dialogueUI?.hide();
+        }
+
+        this.playerHud?.setVisible(!active);
+        this.headbarUI?.setVisible(!active);
+        this.chat?.setVisible(!active);
+        this.inventoryChangeMonitor?.setVisible(!active);
     }
 
     private setupCustomCursor() {
@@ -403,6 +479,7 @@ export class UIScene extends Phaser.Scene {
         this.headbarUI?.layout();
         this.playerHud?.layout();
         this.inventoryChangeMonitor?.layout();
+        this.dialogueUI?.layout();
     }
 
     private setupChatListener() {

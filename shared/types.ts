@@ -254,19 +254,55 @@ export type MCDirection = 'N' | 'S' | 'E' | 'W' | 'NE' | 'SE' | 'SW' | 'NW';
  * Frame dimensions for MC animations by direction
  * N/S directions are 16x27, E/W are 19x27 (cape extends), NE/NW/SE/SW are 18x27
  */
-export const MC_FRAME_DIMENSIONS: Record<MCDirection, { width: number; height: number }> = {
-  N: { width: 16, height: 27 },
-  S: { width: 16, height: 27 },
-  E: { width: 19, height: 27 },
-  W: { width: 19, height: 27 },
-  NE: { width: 18, height: 27 },
-  SE: { width: 18, height: 27 },
-  NW: { width: 18, height: 27 },
-  SW: { width: 18, height: 27 }
+export const MC_FRAME_DIMENSIONS_BY_ANIM: Record<MCAnimationType, Record<MCDirection, { width: number; height: number }>> = {
+  walk: {
+    N: { width: 16, height: 27 },
+    S: { width: 16, height: 27 },
+    E: { width: 19, height: 27 },
+    W: { width: 19, height: 27 },
+    NE: { width: 18, height: 27 },
+    SE: { width: 18, height: 27 },
+    NW: { width: 18, height: 27 },
+    SW: { width: 18, height: 27 }
+  },
+  idle: {
+    N: { width: 16, height: 27 },
+    S: { width: 14, height: 29 },
+    E: { width: 19, height: 28 },
+    W: { width: 19, height: 28 },
+    NE: { width: 18, height: 27 },
+    SE: { width: 18, height: 27 },
+    NW: { width: 18, height: 27 },
+    SW: { width: 18, height: 27 }
+  },
+  run: {
+    N: { width: 16, height: 27 },
+    S: { width: 16, height: 27 },
+    E: { width: 19, height: 27 },
+    W: { width: 19, height: 27 },
+    NE: { width: 18, height: 27 },
+    SE: { width: 18, height: 27 },
+    NW: { width: 18, height: 27 },
+    SW: { width: 18, height: 27 }
+  }
 };
 
 /**
- * Number of frames per animation strip
+ * Frame dimensions for MC walk animations by direction
  */
-export const MC_FRAMES_PER_ANIMATION = 8;
+export const MC_FRAME_DIMENSIONS = MC_FRAME_DIMENSIONS_BY_ANIM.walk;
+
+/**
+ * Number of frames per animation strip, by animation type
+ */
+export const MC_FRAMES_PER_ANIMATION_BY_ANIM: Record<MCAnimationType, number> = {
+  walk: 8,
+  idle: 10,
+  run: 8
+};
+
+/**
+ * Number of frames per animation strip for MC walk animations
+ */
+export const MC_FRAMES_PER_ANIMATION = MC_FRAMES_PER_ANIMATION_BY_ANIM.walk;
 

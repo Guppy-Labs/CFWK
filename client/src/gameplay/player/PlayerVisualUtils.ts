@@ -10,6 +10,8 @@ export type NameplateConfig = {
     yOffset: number;
     depth: number;
     includeAfkTimer?: boolean;
+    bgColor?: number;
+    bgAlpha?: number;
 };
 
 export type NameplateResult = {
@@ -20,7 +22,7 @@ export type NameplateResult = {
 };
 
 export function createNameplate(config: NameplateConfig): NameplateResult {
-    const { scene, text, isPremium, fontSize, yOffset, depth, includeAfkTimer } = config;
+    const { scene, text, isPremium, fontSize, yOffset, depth, includeAfkTimer, bgColor, bgAlpha } = config;
 
     const padding = { x: 2, y: 1 };
     const nameText = scene.add.text(0, 0, text, {
@@ -49,7 +51,7 @@ export function createNameplate(config: NameplateConfig): NameplateResult {
     const bgHeight = textHeight + padding.y * 2;
 
     const nameBg = scene.add.graphics();
-    nameBg.fillStyle(0x000000, 0.6);
+    nameBg.fillStyle(bgColor ?? 0x000000, bgAlpha ?? 0.6);
     nameBg.fillRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight);
 
     const afkTimerText = includeAfkTimer

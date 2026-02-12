@@ -8,6 +8,7 @@
 import { RemotePlayerManager } from '../player/RemotePlayerManager';
 import { NetworkManager } from '../network/NetworkManager';
 import { DroppedItemManager } from '../items/DroppedItemManager';
+import type { NPCManager, NPCInteractable } from '../npc/NPCManager';
 
 /**
  * Interaction types available in the game
@@ -15,7 +16,8 @@ import { DroppedItemManager } from '../items/DroppedItemManager';
 export enum InteractionType {
     None = 'none',
     Shove = 'shove',
-    Pickup = 'pickup'
+    Pickup = 'pickup',
+    Talk = 'talk'
 }
 
 /**
@@ -28,6 +30,8 @@ export interface AvailableInteraction {
     droppedItemId?: string;
     itemId?: string;
     amount?: number;
+    npcId?: string;
+    npcName?: string;
     /** Distance to target in pixels */
     distance: number;
     /** Whether the interaction can be executed (strict check passed) */
@@ -65,6 +69,7 @@ const DEFAULT_CONFIG: InteractionConfig = {
 
 const INTERACTION_PRIORITY = {
     [InteractionType.Pickup]: 100,
+    [InteractionType.Talk]: 75,
     [InteractionType.Shove]: 50
 };
 
@@ -78,6 +83,7 @@ export class InteractionManager {
     private remotePlayerManager?: RemotePlayerManager;
     private droppedItemManager?: DroppedItemManager;
     private networkManager = NetworkManager.getInstance();
+    private npcManager?: NPCManager;
     
     /** Current available interaction (or null if none) */
     private currentInteraction: AvailableInteraction | null = null;
@@ -113,6 +119,13 @@ export class InteractionManager {
     }
 
     /**
+     * Set the NPC manager reference
+     */
+    setNpcManager(manager: NPCManager) {
+        this.npcManager = manager;
+    }
+
+    /**
      * Update local player position and facing angle
      * Called each frame from PlayerController
      */
@@ -127,7 +140,7 @@ export class InteractionManager {
      * Should be called each frame
      */
     update(): void {
-        if (!this.remotePlayerManager && !this.droppedItemManager) {
+        if (!this.remotePlayerManager && !this.droppedItemManager && !this.npcManager) {
             this.setInteraction(null);
             return;
         }
@@ -211,6 +224,33 @@ export class InteractionManager {
             });
         }
 
+        if (this.npcManager) {
+            const npcs = this.npcManager.getInteractables();
+            npcs.forEach((npc: NPCInteractable) => {
+                const dx = npc.x - this.localX;
+                const dy = npc.y - this.localY;
+                const distance = Math.hypot(dx, dy);
+
+                if (distance > npc.range) return;
+
+                const canExecute = distance <= npc.range;
+                const priority = INTERACTION_PRIORITY[InteractionType.Talk];
+
+                if (priority > bestPriority || (priority === bestPriority && distance < bestDistance)) {
+                    bestPriority = priority;
+                    bestDistance = distance;
+                    bestInteraction = {
+                        type: InteractionType.Talk,
+                        npcId: npc.id,
+                        npcName: npc.name,
+                        distance,
+                        canExecute,
+                        priority
+                    };
+                }
+            });
+        }
+
         this.setInteraction(bestInteraction);
     }
 
@@ -243,6 +283,11 @@ export class InteractionManager {
             return this.executePickup(this.currentInteraction.droppedItemId);
         }
 
+        if (this.currentInteraction.type === InteractionType.Talk) {
+            if (!this.currentInteraction.npcId) return false;
+            return this.executeNpcTalk(this.currentInteraction.npcId);
+        }
+
         return false;
     }
 
@@ -267,6 +312,14 @@ export class InteractionManager {
         if (!droppedItemId) return false;
         this.networkManager.sendPickupItem(droppedItemId);
         console.log(`[InteractionManager] Picked up item: ${droppedItemId}`);
+        return true;
+    }
+
+    private executeNpcTalk(npcId: string): boolean {
+        console.log(`[InteractionManager] NPC interaction triggered: ${npcId}`);
+        window.dispatchEvent(new CustomEvent('npc:interact', {
+            detail: { npcId, npcName: this.currentInteraction?.npcName }
+        }));
         return true;
     }
 
@@ -309,11 +362,12 @@ export class InteractionManager {
         if (a === null && b === null) return true;
         if (a === null || b === null) return false;
         
-         return a.type === b.type && 
-             a.targetSessionId === b.targetSessionId &&
-             a.droppedItemId === b.droppedItemId &&
-             a.canExecute === b.canExecute &&
-             a.priority === b.priority;
+        return a.type === b.type &&
+            a.targetSessionId === b.targetSessionId &&
+            a.droppedItemId === b.droppedItemId &&
+            a.npcId === b.npcId &&
+            a.canExecute === b.canExecute &&
+            a.priority === b.priority;
     }
 
     /**

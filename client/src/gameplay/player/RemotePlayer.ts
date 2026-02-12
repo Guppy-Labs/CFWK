@@ -4,6 +4,7 @@ import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 import { SharedMCTextures } from './SharedMCTextures';
 import { WaterSystem } from '../fx/water/WaterSystem';
 import { createChatBubble, createIconBubble, createNameplate, getOcclusionAdjustedDepth } from './PlayerVisualUtils';
+import { MCAnimationType, MC_FRAME_DIMENSIONS_BY_ANIM } from '@cfwk/shared';
 
 /**
  * MCDirection type for MC character system
@@ -70,8 +71,8 @@ export type RemotePlayerConfig = {
     isChatOpen?: boolean; // Initial chat open/focused state
     isPremium?: boolean; // Shark tier badge
     groundLayers?: Phaser.Tilemaps.TilemapLayer[];
-    /** Custom animation key getter for per-player appearance - returns animation key for direction */
-    customAnimationKeyGetter?: (direction: MCDirection) => string | undefined;
+    /** Custom animation key getter for per-player appearance - returns animation key for anim + direction */
+    customAnimationKeyGetter?: (anim: string, direction: MCDirection) => string | undefined;
 };
 
 /**
@@ -103,11 +104,14 @@ export class RemotePlayer {
     private waterSystem?: WaterSystem;
     
     /** Custom animation key getter for per-player appearance */
-    private customAnimationKeyGetter?: (direction: MCDirection) => string | undefined;
+    private customAnimationKeyGetter?: (anim: string, direction: MCDirection) => string | undefined;
 
     // Interpolation
     private readonly interpSpeed = 0.25;
     private readonly chatBubbleGap = 10;
+    private readonly scale = 1.2;
+    private readonly hitboxWidth = 16;
+    private readonly collidableHeight = 6;
 
     // Spawn effect
     private particles: PixelParticle[] = [];
@@ -205,12 +209,11 @@ export class RemotePlayer {
         // - Scale: 1.2
         // - Collidable height: 6 * 1.5 = 9
         const baseHeight = 27;
-        const scale = 1.2;
-        const scaledHeight = baseHeight * scale;
-        const collidableHeight = 6 * scale;
+        const scaledHeight = baseHeight * this.scale;
+        const collidableHeight = this.collidableHeight * this.scale;
         
         // Use setScale instead of setDisplaySize to preserve texture proportions
-        this.sprite.setScale(scale);
+        this.sprite.setScale(this.scale);
         
         // Match origin so feet align with position (same formula as MCPlayerController)
         const originY = 1 - collidableHeight / (2 * scaledHeight);
@@ -382,7 +385,7 @@ export class RemotePlayer {
     /**
      * Update the animation key getter after textures are generated
      */
-    setCustomAnimationKeyGetter(getter?: (direction: MCDirection) => string | undefined) {
+    setCustomAnimationKeyGetter(getter?: (anim: string, direction: MCDirection) => string | undefined) {
         this.customAnimationKeyGetter = getter;
         this.updateAnimation(this.currentAnim, this.currentDirection);
     }
@@ -431,9 +434,9 @@ export class RemotePlayer {
         let animKey: string | undefined;
         
         if (this.customAnimationKeyGetter) {
-            animKey = this.customAnimationKeyGetter(mcDir);
+            animKey = this.customAnimationKeyGetter(anim, mcDir);
             if (!animKey) {
-                console.warn(`[RemotePlayer] customAnimationKeyGetter returned undefined for ${this.sessionId} dir ${mcDir}`);
+                console.warn(`[RemotePlayer] customAnimationKeyGetter returned undefined for ${this.sessionId} anim ${anim} dir ${mcDir}`);
             }
         }
         
@@ -444,6 +447,37 @@ export class RemotePlayer {
         
         if (this.scene.anims.exists(animKey) && this.sprite.anims.currentAnim?.key !== animKey) {
             this.sprite.play(animKey);
+        }
+
+        this.updateSpriteOrigin(anim, mcDir);
+    }
+
+    private updateSpriteOrigin(anim: string, direction: MCDirection) {
+        const animType: MCAnimationType = anim === 'idle' || anim === 'walk' || anim === 'run' ? anim : 'walk';
+        const dimensions = MC_FRAME_DIMENSIONS_BY_ANIM[animType][direction];
+        const scaledWidth = dimensions.width * this.scale;
+        const scaledHeight = dimensions.height * this.scale;
+        const scaledCollidableHeight = this.collidableHeight * this.scale;
+
+        this.sprite.setDisplaySize(scaledWidth, scaledHeight);
+
+        const originY = 1 - scaledCollidableHeight / (2 * scaledHeight);
+
+        if (dimensions.width > this.hitboxWidth) {
+            const extraWidth = dimensions.width - this.hitboxWidth;
+            const extraScaled = extraWidth * this.scale;
+
+            if (direction === 'E' || direction === 'NE' || direction === 'SE') {
+                const originX = 0.5 + (extraScaled / 2) / scaledWidth;
+                this.sprite.setOrigin(originX, originY);
+            } else if (direction === 'W' || direction === 'NW' || direction === 'SW') {
+                const originX = 0.5 - (extraScaled / 2) / scaledWidth;
+                this.sprite.setOrigin(originX, originY);
+            } else {
+                this.sprite.setOrigin(0.5, originY);
+            }
+        } else {
+            this.sprite.setOrigin(0.5, originY);
         }
     }
 

@@ -992,15 +992,33 @@
                  "width":0,
                  "x":558.5,
                  "y":590.75
+                }, 
+                {
+                 "height":0,
+                 "id":30,
+                 "name":"TestNPC",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"npc",
+                         "type":"string",
+                         "value":"test"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":358.5,
+                 "y":505
                 }],
          "opacity":1,
          "type":"objectgroup",
-         "visible":false,
+         "visible":true,
          "x":0,
          "y":0
         }],
  "nextlayerid":18,
- "nextobjectid":30,
+ "nextobjectid":31,
  "orientation":"orthogonal",
  "properties":[
         {

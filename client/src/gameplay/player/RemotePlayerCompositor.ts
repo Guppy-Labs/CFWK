@@ -18,8 +18,9 @@ import {
     ICharacterAppearance,
     DEFAULT_CHARACTER_APPEARANCE,
     MCDirection,
-    MC_FRAME_DIMENSIONS,
-    MC_FRAMES_PER_ANIMATION
+    MC_FRAME_DIMENSIONS_BY_ANIM,
+    MC_FRAMES_PER_ANIMATION_BY_ANIM,
+    MCAnimationType
 } from '@cfwk/shared';
 
 /**
@@ -79,50 +80,54 @@ export class RemotePlayerCompositor {
     private createAnimations(sessionId: string, compositorResult: CompositorResult): string[] {
         const animationKeys: string[] = [];
         const directions: MCDirection[] = ['N', 'S', 'E', 'W', 'NE', 'SE', 'NW', 'SW'];
-        const animType = 'walk';
-        const frameRate = 10;
-        
-        for (const direction of directions) {
-            const textureKey = compositorResult.textureKeys.get(`${animType}-${direction}`);
-            if (!textureKey) continue;
-            
-            const dimensions = MC_FRAME_DIMENSIONS[direction];
-            const animKey = this.buildAnimationKey(sessionId, animType, direction);
-            
-            // Get the texture and add frame definitions
-            const texture = this.scene.textures.get(textureKey);
-            if (!texture) continue;
-            
-            // Add numbered frames for each animation frame
-            for (let i = 0; i < MC_FRAMES_PER_ANIMATION; i++) {
-                const frameName = String(i);
-                if (!texture.has(frameName)) {
-                    texture.add(
-                        frameName,
-                        0,
-                        i * dimensions.width,
-                        0,
-                        dimensions.width,
-                        dimensions.height
-                    );
+        const animTypes: MCAnimationType[] = ['walk', 'idle'];
+
+        for (const animType of animTypes) {
+            const frameRate = animType === 'idle' ? 6 : 10;
+            const frameCount = MC_FRAMES_PER_ANIMATION_BY_ANIM[animType];
+
+            for (const direction of directions) {
+                const textureKey = compositorResult.textureKeys.get(`${animType}-${direction}`);
+                if (!textureKey) continue;
+
+                const dimensions = MC_FRAME_DIMENSIONS_BY_ANIM[animType][direction];
+                const animKey = this.buildAnimationKey(sessionId, animType, direction);
+
+                // Get the texture and add frame definitions
+                const texture = this.scene.textures.get(textureKey);
+                if (!texture) continue;
+
+                // Add numbered frames for each animation frame
+                for (let i = 0; i < frameCount; i++) {
+                    const frameName = String(i);
+                    if (!texture.has(frameName)) {
+                        texture.add(
+                            frameName,
+                            0,
+                            i * dimensions.width,
+                            0,
+                            dimensions.width,
+                            dimensions.height
+                        );
+                    }
                 }
-            }
-            
-            // Create the animation
-            const frames: Phaser.Types.Animations.AnimationFrame[] = [];
-            for (let i = 0; i < MC_FRAMES_PER_ANIMATION; i++) {
-                frames.push({ key: textureKey, frame: String(i) });
-            }
-            
-            // Only create if it doesn't exist
-            if (!this.scene.anims.exists(animKey)) {
-                this.scene.anims.create({
-                    key: animKey,
-                    frames: frames,
-                    frameRate,
-                    repeat: -1
-                });
-                animationKeys.push(animKey);
+
+                // Create the animation
+                const frames: Phaser.Types.Animations.AnimationFrame[] = [];
+                for (let i = 0; i < frameCount; i++) {
+                    frames.push({ key: textureKey, frame: String(i) });
+                }
+
+                // Only create if it doesn't exist
+                if (!this.scene.anims.exists(animKey)) {
+                    this.scene.anims.create({
+                        key: animKey,
+                        frames: frames,
+                        frameRate,
+                        repeat: -1
+                    });
+                    animationKeys.push(animKey);
+                }
             }
         }
         
@@ -150,7 +155,7 @@ export class RemotePlayerCompositor {
         this.compositors.set(sessionId, compositor);
         
         // Generate textures
-        const compositorResult = await compositor.compositeCharacter(appearance, ['walk']);
+        const compositorResult = await compositor.compositeCharacter(appearance, ['walk', 'idle']);
         
         // Create animations
         const animationKeys = this.createAnimations(sessionId, compositorResult);
@@ -175,22 +180,22 @@ export class RemotePlayerCompositor {
     /**
      * Get the animation key for a player's direction (public API)
      */
-    getPlayerAnimationKey(sessionId: string, direction: MCDirection): string | undefined {
+    getPlayerAnimationKey(sessionId: string, animType: MCAnimationType, direction: MCDirection): string | undefined {
         const result = this.playerTextures.get(sessionId);
         if (!result) return undefined;
         
-        const animKey = `remote-${sessionId}-walk-${direction}`;
+        const animKey = `remote-${sessionId}-${animType}-${direction}`;
         return result.animationKeys.includes(animKey) ? animKey : undefined;
     }
     
     /**
      * Get the texture key for a player's direction
      */
-    getTextureKey(sessionId: string, direction: MCDirection = 'S'): string | undefined {
+    getTextureKey(sessionId: string, direction: MCDirection = 'S', animType: MCAnimationType = 'walk'): string | undefined {
         const result = this.playerTextures.get(sessionId);
         if (!result) return undefined;
         
-        return result.compositorResult.textureKeys.get(`walk-${direction}`);
+        return result.compositorResult.textureKeys.get(`${animType}-${direction}`);
     }
     
     /**

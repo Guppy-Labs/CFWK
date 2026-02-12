@@ -13,8 +13,8 @@ import Phaser from 'phaser';
 import {
     MCDirection,
     MCAnimationType,
-    MC_FRAME_DIMENSIONS,
-    MC_FRAMES_PER_ANIMATION,
+    MC_FRAME_DIMENSIONS_BY_ANIM,
+    MC_FRAMES_PER_ANIMATION_BY_ANIM,
     ICharacterAppearance,
     DEFAULT_CHARACTER_APPEARANCE
 } from '@cfwk/shared';
@@ -75,7 +75,7 @@ export class MCAnimationController {
 
     // Current state
     private currentDirection: MCDirectionIndex = MCDirectionIndex.Down;
-    private currentAnimation: MCAnimationType = 'walk';
+    private currentAnimation: MCAnimationType = 'idle';
     private currentRotation: number = Math.PI / 2; // Start facing down (south)
     private isSprinting = false;
 
@@ -113,7 +113,7 @@ export class MCAnimationController {
         */
         
         // Composite all layers into textures
-        this.compositorResult = await this.compositor.compositeCharacter(appearance, ['walk']);
+        this.compositorResult = await this.compositor.compositeCharacter(appearance, ['walk', 'idle']);
         
         console.log('[MCAnimationController] Compositor complete, texture keys:', Array.from(this.compositorResult.textureKeys.keys()));
         
@@ -128,14 +128,14 @@ export class MCAnimationController {
         if (this.animationsCreated || !this.compositorResult) return;
 
         const directions: MCDirection[] = ['N', 'S', 'E', 'W', 'NE', 'SE', 'NW', 'SW'];
-        const animTypes: MCAnimationType[] = ['walk'];
+        const animTypes: MCAnimationType[] = ['walk', 'idle'];
 
         for (const animType of animTypes) {
             for (const direction of directions) {
                 const textureKey = this.compositorResult.textureKeys.get(`${animType}-${direction}`);
                 if (!textureKey) continue;
 
-                const dimensions = MC_FRAME_DIMENSIONS[direction];
+                const dimensions = MC_FRAME_DIMENSIONS_BY_ANIM[animType][direction];
                 const animKey = this.getAnimationKey(animType, direction);
 
                 // Get the texture and add frame definitions manually
@@ -144,7 +144,8 @@ export class MCAnimationController {
 
                 // Remove the default '__BASE' frame that addCanvas creates
                 // and add numbered frames for each animation frame
-                for (let i = 0; i < MC_FRAMES_PER_ANIMATION; i++) {
+                const frameCount = MC_FRAMES_PER_ANIMATION_BY_ANIM[animType];
+                for (let i = 0; i < frameCount; i++) {
                     texture.add(
                         i,              // Frame name (number)
                         0,              // Source index
@@ -162,7 +163,7 @@ export class MCAnimationController {
 
                 // Create the animation with explicit frame references
                 const frames: Phaser.Types.Animations.AnimationFrame[] = [];
-                for (let i = 0; i < MC_FRAMES_PER_ANIMATION; i++) {
+                for (let i = 0; i < frameCount; i++) {
                     frames.push({
                         key: textureKey,
                         frame: i
@@ -241,10 +242,8 @@ export class MCAnimationController {
         const dirString = INDEX_TO_DIRECTION[this.currentDirection];
 
         // Determine animation type
-        let newAnimation: MCAnimationType = 'walk';
-        // When we have idle/run, we'll use them:
-        // if (!isMoving) newAnimation = 'idle';
-        // else if (this.isSprinting) newAnimation = 'run';
+        let newAnimation: MCAnimationType = isMoving ? 'walk' : 'idle';
+        // If we add run assets later, swap this to 'run' when sprinting.
 
         // Get animation key
         const animKey = this.getAnimationKey(newAnimation, dirString);
@@ -254,7 +253,7 @@ export class MCAnimationController {
         player.setFlipX(false);
 
         // Update display size based on direction (E/W are wider)
-        const dimensions = MC_FRAME_DIMENSIONS[dirString];
+        const dimensions = MC_FRAME_DIMENSIONS_BY_ANIM[newAnimation][dirString];
         const scale = this.config.scale;
         player.setDisplaySize(dimensions.width * scale, dimensions.height * scale);
 
@@ -268,7 +267,7 @@ export class MCAnimationController {
 
         // Adjust animation speed based on actual velocity
         // This makes walking look slower and sprinting look faster
-        if (player.anims.currentAnim) {
+        if (player.anims.currentAnim && newAnimation !== 'idle') {
             const speed = actualSpeed;
             // Map speed to timeScale: ~1.6 walk speed = 1.0, ~2.4 sprint = 1.5
             // Minimum 0.5 for very slow movement, max 1.5 for sprinting
@@ -286,6 +285,8 @@ export class MCAnimationController {
                 timeScale = 0.6;
             }
             player.anims.timeScale = timeScale;
+        } else if (player.anims.currentAnim && newAnimation === 'idle') {
+            player.anims.timeScale = 1.0;
         }
     }
 
@@ -312,14 +313,14 @@ export class MCAnimationController {
      * Returns the south-facing walk first frame
      */
     getInitialTextureKey(): string {
-        return this.compositorResult?.textureKeys.get('walk-S') || 'mc-walk-S-0';
+        return this.compositorResult?.textureKeys.get('idle-S') || this.compositorResult?.textureKeys.get('walk-S') || 'mc-walk-S-0';
     }
 
     /**
      * Get the initial animation key
      */
     getInitialAnimationKey(): string {
-        return this.getAnimationKey('walk', 'S');
+        return this.getAnimationKey('idle', 'S');
     }
 
     /**
@@ -341,7 +342,7 @@ export class MCAnimationController {
      */
     getCurrentFrameDimensions(): { width: number; height: number } {
         const dirString = INDEX_TO_DIRECTION[this.currentDirection];
-        return MC_FRAME_DIMENSIONS[dirString];
+        return MC_FRAME_DIMENSIONS_BY_ANIM[this.currentAnimation][dirString];
     }
 
     /**
@@ -370,10 +371,10 @@ export class MCAnimationController {
      */
     getHitboxOffset(): { x: number; y: number } {
         const dirString = INDEX_TO_DIRECTION[this.currentDirection];
-        const dimensions = MC_FRAME_DIMENSIONS[dirString];
-        
+        const dimensions = MC_FRAME_DIMENSIONS_BY_ANIM[this.currentAnimation][dirString];
+
         // N/S have 16px width, no offset needed
-        if (dimensions.width === 16) {
+        if (dimensions.width <= 16) {
             return { x: 0, y: 0 };
         }
 

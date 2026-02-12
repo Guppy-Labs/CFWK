@@ -23,10 +23,13 @@ import { SeasonalEffectsManager } from '../fx/SeasonalEffectsManager';
 import { WorldTimeManager } from '../time/WorldTimeManager';
 import { AudioManager } from '../audio/AudioManager';
 import { DroppedItemManager } from '../items/DroppedItemManager';
+import { NPCManager } from '../npc/NPCManager';
 import { Toast } from '../../ui/Toast';
 import { DisconnectModal } from '../../ui/DisconnectModal';
 import { AfkModal } from '../../ui/AfkModal';
 import { LimboModal } from '../../ui/LimboModal';
+import { DialogueManager } from '../dialogue/DialogueManager';
+import type { UIScene } from './UIScene';
 import { IInstanceInfo, ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
 import { NetworkManager } from '../network/NetworkManager';
 import { hideLoader, setLoaderText, currentUser } from '../index';
@@ -43,6 +46,7 @@ export class GameScene extends Phaser.Scene {
     private characterService = CharacterService.getInstance();
     private unsubscribeDisconnect?: () => void;
     private inventoryUpdateHandler?: (event: Event) => void;
+    private rodUseHandler?: () => void;
     private isFishingTransition = false;
     private fishingFadeTimer?: Phaser.Time.TimerEvent;
 
@@ -54,6 +58,7 @@ export class GameScene extends Phaser.Scene {
     private cameraController?: CameraController;
     private remotePlayerManager?: RemotePlayerManager;
     private droppedItemManager?: DroppedItemManager;
+    private npcManager?: NPCManager;
     private debugOverlay?: DebugOverlay;
     private dustParticles?: DustParticleSystem;
     private waterSystem?: WaterSystem;
@@ -61,6 +66,7 @@ export class GameScene extends Phaser.Scene {
     private visualEffectsManager?: VisualEffectsManager;
     private seasonalEffectsManager?: SeasonalEffectsManager;
     private audioManager?: AudioManager;
+    private dialogueManager?: DialogueManager;
     private groundLayers?: Phaser.Tilemaps.TilemapLayer[];
     private fires: FireParticleSystem[] = [];
     private lastTablistSnapshot = '';
@@ -76,6 +82,10 @@ export class GameScene extends Phaser.Scene {
 
     constructor() {
         super('GameScene');
+    }
+
+    getMobileControls() {
+        return this.mcPlayerController?.getMobileControls();
     }
 
     init(data: GameSceneData) {
@@ -114,6 +124,8 @@ export class GameScene extends Phaser.Scene {
     create() {
         this.cameras.main.setBackgroundColor('#121212');
 
+        this.registry.set('inputBlocked', false);
+
         // Allow other systems to stop audio (e.g., disconnect/AFK)
         this.events.on('stop-audio', this.stopAllAudio, this);
 
@@ -134,9 +146,10 @@ export class GameScene extends Phaser.Scene {
 
         // Launch UI Scene
         this.scene.launch('UIScene');
-        const uiScene = this.scene.get('UIScene');
-        
+        const uiScene = this.scene.get('UIScene') as UIScene;
+
         this.debugOverlay = new DebugOverlay(this, uiScene);
+        this.dialogueManager = new DialogueManager(this, uiScene);
         this.setupDebugToggle();
 
         // Show instance connection status
@@ -264,6 +277,38 @@ export class GameScene extends Phaser.Scene {
         return this.audioManager;
     }
 
+    getPlayerPosition(): { x: number; y: number } | null {
+        const player = this.getActivePlayer();
+        if (!player) return null;
+        return { x: player.x, y: player.y };
+    }
+
+    getNpcPosition(id: string): { x: number; y: number; name: string } | null {
+        return this.npcManager?.getNpcById(id) ?? null;
+    }
+
+    setDialogueActive(active: boolean, focusPoint?: { x: number; y: number }) {
+        if (active) {
+            this.registry.set('inputBlocked', true);
+            this.mcPlayerController?.getMobileControls()?.setInputBlocked(true);
+            if (focusPoint) {
+                this.cameraController?.setDialogueFocus(focusPoint, 1.35);
+            }
+            this.audioManager?.setDialogueMuffle(true);
+        } else {
+            if (!this.isFishingTransition) {
+                this.registry.set('inputBlocked', false);
+                this.mcPlayerController?.getMobileControls()?.setInputBlocked(false);
+            }
+            this.cameraController?.clearDialogueFocus();
+            this.audioManager?.setDialogueMuffle(false);
+        }
+    }
+
+    setInteractionCooldown(durationMs: number) {
+        this.mcPlayerController?.setInteractionCooldown(durationMs);
+    }
+
     updateAfkOnly(delta: number) {
         this.mcPlayerController?.updateAfkOnly(delta);
     }
@@ -293,6 +338,15 @@ export class GameScene extends Phaser.Scene {
         // Create fire effects from POI points in the map
         this.setupFireEffects(map);
 
+        // Load NPCs from POI points in the map
+        this.npcManager = new NPCManager(this, {
+            baseDepth: this.playerFrontDepth,
+            occlusionManager: this.occlusionManager,
+            lightingManager: this.lightingManager
+        });
+        this.npcManager.loadAndSpawnFromMap(map);
+        this.mcPlayerController?.setNpcManager(this.npcManager);
+
         // Initial occlusion update
         if (player) {
             this.occlusionManager?.update(player);
@@ -314,7 +368,6 @@ export class GameScene extends Phaser.Scene {
         // Map is fully loaded - hide the loader and show controls
         hideLoader();
         this.mcPlayerController?.getMobileControls()?.show();
-        this.mcPlayerController?.getDesktopInteractButton()?.show();
 
         // If AFK flag is set and we're in limbo, show AFK modal
         if (this.instanceInfo?.locationId === 'limbo' && localStorage.getItem('cfwk_afk') === 'true') {
@@ -419,6 +472,11 @@ export class GameScene extends Phaser.Scene {
             this.mcPlayerController?.setEquippedRodId(equippedRodId);
         };
         window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+
+        this.rodUseHandler = () => {
+            this.mcPlayerController?.requestFishing();
+        };
+        window.addEventListener('hud:rod-use', this.rodUseHandler);
         this.networkManager.getInventory().then((data) => {
             if (data?.equippedRodId !== undefined) {
                 this.mcPlayerController?.setEquippedRodId(data.equippedRodId ?? null);
@@ -460,8 +518,13 @@ export class GameScene extends Phaser.Scene {
              if (this.inventoryUpdateHandler) {
                  window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
              }
+             if (this.rodUseHandler) {
+                 window.removeEventListener('hud:rod-use', this.rodUseHandler);
+             }
              this.events.off('stop-audio', this.stopAllAudio, this);
              this.events.off('fishing:stop', this.stopFishing, this);
+               this.npcManager?.destroy();
+                         this.dialogueManager?.destroy();
         });
 
         this.events.on('fishing:stop', this.stopFishing, this);
@@ -483,6 +546,8 @@ export class GameScene extends Phaser.Scene {
     private startFishingTransition(rodItemId: string) {
         if (this.isFishingTransition) return;
         this.isFishingTransition = true;
+        this.registry.set('inputBlocked', true);
+        this.mcPlayerController?.getMobileControls()?.setInputBlocked(true);
 
         if (this.fishingFadeTimer) {
             this.fishingFadeTimer.remove(false);
@@ -502,6 +567,8 @@ export class GameScene extends Phaser.Scene {
         this.fishingFadeTimer?.remove(false);
         this.fishingFadeTimer = undefined;
         this.mcPlayerController?.setFishingActive(false);
+        this.registry.set('inputBlocked', false);
+        this.mcPlayerController?.getMobileControls()?.setInputBlocked(false);
         this.cameras.main.fadeIn(300, 0, 0, 0);
     }
 
@@ -672,6 +739,9 @@ export class GameScene extends Phaser.Scene {
             this.occlusionManager?.update(player);
         }
 
+        // Update NPC depth sorting with current occlusion state
+        this.npcManager?.update();
+
         // Update fire effects
         if (this.occlusionManager) {
             this.fires.forEach(fire => {
@@ -692,6 +762,7 @@ export class GameScene extends Phaser.Scene {
         // Update debug overlay
         if (this.debugOverlay?.isEnabled()) {
             const activeController = this.mcPlayerController;
+            const mobileControls = activeController?.getMobileControls();
             // Gather extended debug info
             const extendedDebug: ExtendedDebugInfo = {
                 // Camera
@@ -719,6 +790,9 @@ export class GameScene extends Phaser.Scene {
                 
                 // Performance
                 fps: this.game.loop.actualFps,
+
+                // UI
+                joystickDebug: mobileControls?.getJoystickDebugInfo(),
                 
                 // Generated border
                 generatedBorder: this.collisionManager?.getGeneratedBorderPolygon(),

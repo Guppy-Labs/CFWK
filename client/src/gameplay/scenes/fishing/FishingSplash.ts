@@ -3,34 +3,34 @@ import { getItemDefinition } from '@cfwk/shared';
 
 export class FishingSplash {
     private readonly splashTextureKey = 'fishing-water-splash';
-    private readonly splashCountMin = 6;
-    private readonly splashCountMax = 14;
-    private readonly splashSpeedMin = 25;
-    private readonly splashSpeedMax = 80;
-    private readonly splashLifespanMin = 260;
-    private readonly splashLifespanMax = 540;
-    private readonly splashScaleStartMin = 0.4;
-    private readonly splashScaleStartMax = 1.1;
-    private readonly splashScaleEnd = 0.1;
-    private readonly splashAlphaStart = 0.8;
-    private readonly splashGravity = 120;
-    private readonly splashSpreadBase = 6;
-    private readonly splashSpreadPower = 10;
-    private readonly splashDepth = 3;
+    private readonly splashCountMin = 36;
+    private readonly splashCountMax = 80;
+    private readonly splashSpeedMin = 70;
+    private readonly splashSpeedMax = 180;
+    private readonly splashLifespanMin = 900;
+    private readonly splashLifespanMax = 1400;
+    private readonly splashScaleStartMin = 2.6;
+    private readonly splashScaleStartMax = 4.8;
+    private readonly splashScaleEnd = 0.25;
+    private readonly splashAlphaStart = 1.0;
+    private readonly splashGravity = 240;
+    private readonly splashSpreadBase = 16;
+    private readonly splashSpreadPower = 28;
+    private readonly splashDepth = 6;
 
     private readonly catchSplashMassMin = 1;
     private readonly catchSplashMassMax = 12;
-    private readonly catchSplashCountMin = 4;
-    private readonly catchSplashCountMax = 12;
-    private readonly catchSplashSpeedMin = 20;
-    private readonly catchSplashSpeedMax = 70;
-    private readonly catchSplashLifespanMin = 220;
-    private readonly catchSplashLifespanMax = 520;
-    private readonly catchSplashScaleStartMin = 0.3;
-    private readonly catchSplashScaleStartMax = 1.25;
-    private readonly catchSplashAlphaStart = 0.85;
-    private readonly catchSplashSpreadBase = 4;
-    private readonly catchSplashSpreadPower = 12;
+    private readonly catchSplashCountMin = 12;
+    private readonly catchSplashCountMax = 36;
+    private readonly catchSplashSpeedMin = 60;
+    private readonly catchSplashSpeedMax = 170;
+    private readonly catchSplashLifespanMin = 700;
+    private readonly catchSplashLifespanMax = 1300;
+    private readonly catchSplashScaleStartMin = 2.8;
+    private readonly catchSplashScaleStartMax = 5.2;
+    private readonly catchSplashAlphaStart = 1.0;
+    private readonly catchSplashSpreadBase = 12;
+    private readonly catchSplashSpreadPower = 28;
 
     private splashEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
 
@@ -67,19 +67,21 @@ export class FishingSplash {
     triggerWaterSplash(position: Phaser.Math.Vector2, castPower: number) {
         if (!this.splashEmitter) return;
         const power = Phaser.Math.Clamp(castPower, 0, 1);
-        const count = Math.round(Phaser.Math.Linear(this.splashCountMin, this.splashCountMax, power));
-        const startScale = Phaser.Math.Linear(this.splashScaleStartMin, this.splashScaleStartMax, power);
-        const speedMin = Phaser.Math.Linear(this.splashSpeedMin, this.splashSpeedMax * 0.7, power);
-        const speedMax = Phaser.Math.Linear(this.splashSpeedMax, this.splashSpeedMax * 1.25, power);
-        const lifespanMin = Phaser.Math.Linear(this.splashLifespanMin, this.splashLifespanMax * 0.85, power);
-        const lifespanMax = Phaser.Math.Linear(this.splashLifespanMax, this.splashLifespanMax * 1.2, power);
+        const distanceFactor = Phaser.Math.Clamp(1 - power, 0, 1);
+        const sizeFactor = Phaser.Math.Easing.Quadratic.Out(distanceFactor);
+        const count = Math.round(Phaser.Math.Linear(this.splashCountMin, this.splashCountMax, sizeFactor));
+        const startScale = Phaser.Math.Linear(this.splashScaleStartMin, this.splashScaleStartMax, sizeFactor);
+        const speedMin = Phaser.Math.Linear(this.splashSpeedMin, this.splashSpeedMax * 0.7, sizeFactor);
+        const speedMax = Phaser.Math.Linear(this.splashSpeedMax, this.splashSpeedMax * 1.25, sizeFactor);
+        const lifespanMin = Phaser.Math.Linear(this.splashLifespanMin, this.splashLifespanMax * 0.85, sizeFactor);
+        const lifespanMax = Phaser.Math.Linear(this.splashLifespanMax, this.splashLifespanMax * 1.2, sizeFactor);
 
         this.splashEmitter.setParticleScale(startScale, this.splashScaleEnd);
         this.splashEmitter.setParticleSpeed(speedMin, speedMax);
         this.splashEmitter.setParticleLifespan({ min: lifespanMin, max: lifespanMax });
         this.splashEmitter.setParticleAlpha({ start: this.splashAlphaStart, end: 0 });
 
-        const spread = this.splashSpreadBase + power * this.splashSpreadPower;
+        const spread = this.splashSpreadBase + sizeFactor * this.splashSpreadPower;
         this.splashEmitter.emitParticleAt(
             position.x + Phaser.Math.Between(-spread, spread),
             position.y,

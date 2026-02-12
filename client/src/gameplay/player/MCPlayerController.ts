@@ -14,7 +14,8 @@ import { InteractionManager, InteractionType } from '../interaction/InteractionM
 import { DroppedItemManager } from '../items/DroppedItemManager';
 import { RemotePlayerManager } from './RemotePlayerManager';
 import { OcclusionManager } from '../map/OcclusionManager';
-import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE, MC_FRAME_DIMENSIONS } from '@cfwk/shared';
+import type { NPCManager } from '../npc/NPCManager';
+import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
 import { MCInputManager } from './mc/MCInputManager';
 import { MCBubbleManager } from './mc/MCBubbleManager';
 import { MCAfkManager } from './mc/MCAfkManager';
@@ -50,6 +51,11 @@ export class MCPlayerController {
     private isInitialized = false;
 
     private currentRotation = Math.PI / 2;
+
+    private lastDiagonalAngle?: number;
+    private lastDiagonalReleaseTime: number | null = null;
+    private wasDiagonalInput = false;
+    private readonly diagonalReleaseLeewayMs = 150;
 
     private stamina = 1;
     private isSprinting = false;
@@ -190,7 +196,7 @@ export class MCPlayerController {
 
         const { scale, depth } = this.config;
 
-        const initialDimensions = MC_FRAME_DIMENSIONS['S'];
+        const initialDimensions = this.animationController.getCurrentFrameDimensions();
         const scaledWidth = initialDimensions.width * scale;
         const scaledHeight = initialDimensions.height * scale;
         const scaledCollidableHeight = this.collidableHeight * scale;
@@ -228,10 +234,10 @@ export class MCPlayerController {
         const x = Math.round(spawnX);
         const y = Math.round(spawnY - scaledCollidableHeight / 2);
         this.networkManager.sendPosition(x, y);
-        this.networkManager.sendAnimation('walk', this.animationController.getDirection());
+        this.networkManager.sendAnimation(this.animationController.getAnimation(), this.animationController.getDirection());
         this.lastSyncedX = x;
         this.lastSyncedY = y;
-        this.lastSyncedAnim = 'walk';
+        this.lastSyncedAnim = this.animationController.getAnimation();
         this.lastSyncedDirection = this.animationController.getDirection();
 
         return player;
@@ -255,21 +261,24 @@ export class MCPlayerController {
             this.localNameplate.setPosition(this.player.x, this.player.y + this.nameplateYOffset);
         }
 
-        const actionPresses = this.inputManager.getActionPresses();
-        if (actionPresses.interactPressed) {
-            this.tryInteract();
-        }
-        if (actionPresses.fishingPressed) {
-            this.tryStartFishing();
-        }
-
         if (this.scene.time.now < this.interactionLockUntil) {
             return;
         }
 
         const guiOpen = this.scene.registry.get('guiOpen') === true;
         const chatFocused = this.scene.registry.get('chatFocused') === true;
-        const inputBlocked = guiOpen || chatFocused;
+        const transitionBlocked = this.scene.registry.get('inputBlocked') === true;
+        const inputBlocked = guiOpen || chatFocused || transitionBlocked;
+
+        if (!inputBlocked) {
+            const actionPresses = this.inputManager.getActionPresses();
+            if (actionPresses.interactPressed) {
+                this.tryInteract();
+            }
+            if (actionPresses.fishingPressed) {
+                this.tryStartFishing();
+            }
+        }
 
         const movement = this.inputManager.getMovementInput(inputBlocked);
 
@@ -287,6 +296,18 @@ export class MCPlayerController {
         }
 
         const hasInput = len > 0;
+
+        const hasVertical = (movement.moveUp || movement.moveDown) && movement.moveUp !== movement.moveDown;
+        const hasHorizontal = (movement.moveLeft || movement.moveRight) && movement.moveLeft !== movement.moveRight;
+        const isDiagonalInput = hasVertical && hasHorizontal;
+
+        if (isDiagonalInput) {
+            this.lastDiagonalAngle = Math.atan2(targetVy, targetVx);
+            this.lastDiagonalReleaseTime = null;
+        } else if (this.wasDiagonalInput && !isDiagonalInput) {
+            this.lastDiagonalReleaseTime = this.scene.time.now;
+        }
+        this.wasDiagonalInput = isDiagonalInput;
         this.updateStamina(delta, movement.wantSprint, hasInput);
 
         let speed = this.config.speed;
@@ -318,6 +339,12 @@ export class MCPlayerController {
 
         if (hasInput) {
             this.currentRotation = Math.atan2(targetVy, targetVx);
+        } else if (
+            this.lastDiagonalAngle !== undefined &&
+            this.lastDiagonalReleaseTime !== null &&
+            this.scene.time.now - this.lastDiagonalReleaseTime <= this.diagonalReleaseLeewayMs
+        ) {
+            this.currentRotation = this.lastDiagonalAngle;
         }
 
         this.animationController.setSprinting(this.isSprinting);
@@ -466,7 +493,8 @@ export class MCPlayerController {
     private tryInteract() {
         const chatFocused = this.scene.registry.get('chatFocused') === true;
         const guiOpen = this.scene.registry.get('guiOpen') === true;
-        if (chatFocused || guiOpen) return;
+        const transitionBlocked = this.scene.registry.get('inputBlocked') === true;
+        if (chatFocused || guiOpen || transitionBlocked) return;
 
         this.afkManager.registerAfkActivity(Date.now());
 
@@ -494,6 +522,11 @@ export class MCPlayerController {
         this.interactionLockUntil = this.scene.time.now + durationMs;
     }
 
+    setInteractionCooldown(durationMs: number) {
+        const until = this.scene.time.now + Math.max(0, durationMs);
+        this.interactionLockUntil = Math.max(this.interactionLockUntil, until);
+    }
+
     setRemotePlayerManager(manager: RemotePlayerManager) {
         this.interactionManager.setRemotePlayerManager(manager);
     }
@@ -502,16 +535,16 @@ export class MCPlayerController {
         this.interactionManager.setDroppedItemManager(manager);
     }
 
+    setNpcManager(manager: NPCManager) {
+        this.interactionManager.setNpcManager(manager);
+    }
+
     setOcclusionManager(manager: OcclusionManager) {
         this._occlusionManager = manager;
     }
 
     getMobileControls() {
         return this.inputManager.getMobileControls();
-    }
-
-    getDesktopInteractButton() {
-        return this.inputManager.getDesktopInteractButton();
     }
 
     getIsMoving(): boolean {
@@ -544,6 +577,10 @@ export class MCPlayerController {
         this.onFishingStart = callback;
     }
 
+    requestFishing() {
+        this.tryStartFishing();
+    }
+
     showFishingBubble(rodItemId: string) {
         this.bubbleManager.showFishingBubble(rodItemId);
     }
@@ -552,7 +589,8 @@ export class MCPlayerController {
         if (!this.player || this.isFishing) return;
         const guiOpen = this.scene.registry.get('guiOpen') === true;
         const chatFocused = this.scene.registry.get('chatFocused') === true;
-        if (guiOpen || chatFocused) return;
+        const transitionBlocked = this.scene.registry.get('inputBlocked') === true;
+        if (guiOpen || chatFocused || transitionBlocked) return;
         const nearWater = this.scene.registry.get('nearWater') === true;
         if (!nearWater) return;
         if (!this.equippedRodId) return;

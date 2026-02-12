@@ -33,6 +33,11 @@ const ICONS = {
             <path d="M3.3 7 12 12l8.7-5"/>
             <path d="M12 22V12"/>
         </svg>
+    `,
+    talk: `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-circle">
+            <path d="M21 11.5a8.38 8.38 0 0 1-1.9 5.4a8.5 8.5 0 0 1-6.6 3.1a8.38 8.38 0 0 1-5.4-1.9L3 21l1.9-4.1a8.38 8.38 0 0 1-1.9-5.4a8.5 8.5 0 0 1 3.1-6.6a8.38 8.38 0 0 1 5.4-1.9h.5a8.48 8.48 0 0 1 8 8z"/>
+        </svg>
     `
 };
 
@@ -44,6 +49,9 @@ export class DesktopInteractButton {
     private isVisible = false;
     private guiCurrentlyOpen = false;
     private guiOpenListener?: (event: Event) => void;
+    private readonly cornerMargin = 24;
+    private readonly inventorySize = 24 * 3.2;
+    private readonly inventoryGap = 14;
 
     constructor() {
         // Create container
@@ -169,6 +177,9 @@ export class DesktopInteractButton {
                 case InteractionType.Pickup:
                     this.iconContainer.innerHTML = ICONS.pickup;
                     break;
+                case InteractionType.Talk:
+                    this.iconContainer.innerHTML = ICONS.talk;
+                    break;
                 default:
                     this.iconContainer.innerHTML = ICONS.none;
             }
@@ -182,8 +193,17 @@ export class DesktopInteractButton {
     private updateVisibility() {
         // Only show on desktop (non-mobile) when not in GUI
         const isMobile = MobileControls.isMobileDevice();
-        const shouldShow = this.isVisible && !isMobile && !this.guiCurrentlyOpen;
+        const shouldShow = this.isVisible && !isMobile && !this.guiCurrentlyOpen && !!this.currentInteraction;
         this.container.style.display = shouldShow ? 'flex' : 'none';
+        if (shouldShow) {
+            this.updatePosition();
+        }
+    }
+
+    private updatePosition() {
+        const bottom = this.cornerMargin + this.inventorySize + this.inventoryGap;
+        this.container.style.right = `${this.cornerMargin}px`;
+        this.container.style.bottom = `${Math.round(bottom)}px`;
     }
 
     /**

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { OccluderRegion } from '../map/TiledTypes';
 import { WorldTimeState, formatFullDateTime } from '@cfwk/shared';
 import { ZoomRegion } from '../camera/CameraController';
+import type { JoystickDebugInfo } from '../ui/MobileControls';
 
 /**
  * Water debug info from WaterSystem
@@ -45,6 +46,9 @@ export interface ExtendedDebugInfo {
     
     // Performance
     fps?: number;
+
+    // UI
+    joystickDebug?: JoystickDebugInfo;
 }
 
 /**
@@ -54,6 +58,7 @@ export class DebugOverlay {
     private scene: Phaser.Scene;
     private uiScene: Phaser.Scene;
     private graphics?: Phaser.GameObjects.Graphics;
+    private uiGraphics?: Phaser.GameObjects.Graphics;
     private timeText?: Phaser.GameObjects.Text;
     private enabled = false;
     private textOnly = false;
@@ -83,6 +88,12 @@ export class DebugOverlay {
             this.graphics.setScrollFactor(1);
         }
 
+        if (!this.uiGraphics) {
+            this.uiGraphics = this.uiScene.add.graphics();
+            this.uiGraphics.setDepth(9998);
+            this.uiGraphics.setScrollFactor(0);
+        }
+
         if (!this.timeText) {
             this.timeText = this.uiScene.add.text(
                 10,
@@ -102,6 +113,7 @@ export class DebugOverlay {
         }
 
         this.graphics.setVisible(this.enabled && !this.textOnly);
+        this.uiGraphics.setVisible(this.enabled && !this.textOnly);
         this.timeText.setVisible(this.enabled);
         
         // Force immediate text update when toggling on
@@ -124,6 +136,7 @@ export class DebugOverlay {
     ) {
         if (!this.graphics || !this.enabled) return;
         this.graphics.clear();
+        this.uiGraphics?.clear();
 
         if (!this.textOnly) {
             this.drawOccluders(occluderRegions);
@@ -133,6 +146,7 @@ export class DebugOverlay {
             this.drawGeneratedBorder(extendedDebug?.generatedBorder);
             this.drawSpawnPoint(spawnPoint);
             this.drawPlayer(player);
+            this.drawJoystickDebug(extendedDebug?.joystickDebug);
         }
         this.updateTimeDisplay(worldTime, waterDebug, extendedDebug);
     }
@@ -209,6 +223,35 @@ export class DebugOverlay {
                 ? ` | ${extendedDebug.instanceId.substring(0, 8)}...`
                 : '';
             lines.push(connStr + playersStr + instanceStr);
+        }
+
+        // Joystick debug
+        if (extendedDebug?.joystickDebug) {
+            const jd = extendedDebug.joystickDebug;
+            lines.push(
+                `Joystick: ${jd.joystickVisible ? 'VISIBLE' : 'HIDDEN'} | `
+                + `Mobile:${jd.isMobileDevice ? 'Y' : 'N'} `
+                + `Show:${jd.showTouchControls ? 'Y' : 'N'} `
+                + `GUI:${jd.guiOpen ? 'Y' : 'N'} `
+                + `KB:${jd.keyboardUsed ? 'Y' : 'N'}`
+            );
+            lines.push(
+                `JS Pos: (${jd.baseX.toFixed(1)}, ${jd.baseY.toFixed(1)}) `
+                + `R:${jd.radius.toFixed(1)} Z:${jd.zoom.toFixed(2)} `
+                + `View:${jd.viewWidth.toFixed(0)}x${jd.viewHeight.toFixed(0)}`
+            );
+            lines.push(
+                `JS Tex: base:${jd.hasBaseTexture ? 'Y' : 'N'} `
+                + `handle:${jd.hasHandleTexture ? 'Y' : 'N'} `
+                + `sprites:${jd.spritesReady ? 'Y' : 'N'} `
+                + `container:${jd.containerVisible ? 'Y' : 'N'}`
+            );
+            lines.push(
+                `JS Alpha: base:${jd.baseAlpha.toFixed(2)} `
+                + `handle:${jd.handleAlpha.toFixed(2)} `
+                + `Depth: ${jd.baseDepth}/${jd.handleDepth} `
+                + `Scene: ${jd.renderScene}`
+            );
         }
         
         this.timeText.setText(lines.join('\n'));
@@ -362,5 +405,22 @@ export class DebugOverlay {
         this.graphics!.moveTo(bottomLeft.x, bottomLeft.y);
         this.graphics!.lineTo(bottomRight.x, bottomRight.y);
         this.graphics!.strokePath();
+    }
+
+    private drawJoystickDebug(debug?: JoystickDebugInfo) {
+        if (!debug || !this.uiGraphics) return;
+
+        const color = debug.joystickVisible ? 0x00ffd0 : 0xff8800;
+        this.uiGraphics.lineStyle(2, color, 0.85);
+        this.uiGraphics.strokeRect(0, 0, debug.viewWidth, debug.viewHeight);
+
+        if (debug.radius > 0) {
+            this.uiGraphics.strokeCircle(debug.baseX, debug.baseY, debug.radius);
+        }
+
+        this.uiGraphics.lineStyle(2, 0xffffff, 0.9);
+        this.uiGraphics.strokeCircle(debug.baseX, debug.baseY, 4);
+        this.uiGraphics.strokeCircle(debug.handleX, debug.handleY, 3);
+        this.uiGraphics.lineBetween(debug.baseX, debug.baseY, debug.handleX, debug.handleY);
     }
 }

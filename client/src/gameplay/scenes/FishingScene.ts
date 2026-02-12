@@ -9,6 +9,7 @@ import { FishingPerspective } from './fishing/FishingPerspective';
 import { FishingRodView } from './fishing/FishingRodView';
 import { FishingSplash } from './fishing/FishingSplash';
 import type { FishingSceneData } from './fishing/types';
+import type { GameScene } from './GameScene';
 
 export class FishingScene extends Phaser.Scene {
     private ui?: FishingUi;
@@ -125,6 +126,7 @@ export class FishingScene extends Phaser.Scene {
         this.rodView.create();
         this.enableSceneLighting();
         this.ensureUiVisible();
+        this.enableSharedControls();
         this.setupDebugToggle();
 
         this.ui = new FishingUi(this, {
@@ -196,6 +198,14 @@ export class FishingScene extends Phaser.Scene {
             const uiScene = this.scene.get('UIScene') as any;
             uiScene?.setHudVisible?.(false);
         }
+    }
+
+    private enableSharedControls() {
+        this.registry.set('inputBlocked', false);
+        const gameScene = this.scene.get('GameScene') as GameScene | null;
+        const controls = gameScene?.getMobileControls?.();
+        controls?.setInputBlocked(false);
+        controls?.show();
     }
 
     private setupDebugToggle() {

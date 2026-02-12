@@ -59,14 +59,14 @@ export class RemotePlayerManager {
 
                 // Composite custom textures for this player
                 const appearance = player.appearance || '';
-                let animationKeyGetter: ((direction: string) => string | undefined) | undefined;
+                let animationKeyGetter: ((anim: string, direction: string) => string | undefined) | undefined;
                 
                 if (appearance && appearance.trim() !== '') {
                     try {
                         await this.remoteCompositor.compositeForPlayer(sessionId, appearance);
                         // Create a function to get animation keys for this player
-                        animationKeyGetter = (direction: string) => {
-                            return this.remoteCompositor.getPlayerAnimationKey(sessionId, direction as any);
+                        animationKeyGetter = (anim: string, direction: string) => {
+                            return this.remoteCompositor.getPlayerAnimationKey(sessionId, anim as any, direction as any);
                         };
                     } catch (err) {
                         console.warn(`[RemotePlayerManager] Failed to composite textures for ${sessionId}, using default:`, err);
@@ -142,8 +142,8 @@ export class RemotePlayerManager {
                             .then(() => {
                                 const remote = this.remotePlayers.get(sessionId);
                                 if (remote) {
-                                    remote.setCustomAnimationKeyGetter((direction: any) =>
-                                        this.remoteCompositor.getPlayerAnimationKey(sessionId, direction)
+                                    remote.setCustomAnimationKeyGetter((anim: any, direction: any) =>
+                                        this.remoteCompositor.getPlayerAnimationKey(sessionId, anim, direction)
                                     );
                                 }
                             })

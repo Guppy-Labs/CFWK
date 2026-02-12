@@ -144,6 +144,13 @@ export class Chat {
         }
     }
 
+    setVisible(visible: boolean) {
+        if (!visible && this.isFocused) {
+            this.blur();
+        }
+        this.layout.getContainer().setVisible(visible);
+    }
+
     focus() {
         if (this.isFocused) return;
         this.isFocused = true;

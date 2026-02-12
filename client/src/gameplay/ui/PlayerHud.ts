@@ -12,6 +12,7 @@ export class PlayerHud {
     private rodSlotShine: Phaser.GameObjects.Image;
     private rodShineTween?: Phaser.Tweens.Tween;
     private rodNearWater = false;
+    private onRodUse?: () => void;
     private hearts: Phaser.GameObjects.Image[] = [];
     private staminaBarBg: Phaser.GameObjects.Image;
     private staminaFill: Phaser.GameObjects.TileSprite;
@@ -71,6 +72,8 @@ export class PlayerHud {
 
         this.rodSlot = this.scene.add.image(0, 0, this.rodSlotTextureKey).setOrigin(0.5, 0.5);
         this.rodSlot.setScale(this.armorSlotScale);
+        this.rodSlot.setInteractive({ useHandCursor: true });
+        this.rodSlot.on('pointerdown', () => this.handleRodUse());
         this.rightAccessorySlot = this.scene.add.image(0, 0, this.rodSlotTextureKey).setOrigin(0.5, 0.5);
         this.rightAccessorySlot.setScale(this.armorSlotScale);
         this.rodSlotShine = this.scene.add.image(0, 0, this.rodSlotTextureKey).setOrigin(0.5, 0.5);
@@ -145,6 +148,10 @@ export class PlayerHud {
     setRodNearWater(isNearWater: boolean) {
         this.rodNearWater = isNearWater;
         this.updateRodShine();
+    }
+
+    setOnRodUse(handler?: () => void) {
+        this.onRodUse = handler;
     }
 
     update(delta: number) {
@@ -274,7 +281,7 @@ export class PlayerHud {
         }
 
         this.rodSlotShine.setVisible(true);
-        this.rodKeyIcon.setVisible(true);
+        this.rodKeyIcon.setVisible(!this.isMobileDevice());
         if (!this.rodShineTween) {
             this.rodSlotShine.setAlpha(0.55);
             this.rodShineTween = this.scene.tweens.add({
@@ -286,6 +293,18 @@ export class PlayerHud {
                 ease: 'Sine.inOut'
             });
         }
+    }
+
+    private handleRodUse() {
+        if (!this.rodNearWater || !this.rodIcon) return;
+        const guiOpen = this.scene.registry.get('guiOpen') === true;
+        if (guiOpen) return;
+        this.onRodUse?.();
+    }
+
+    private isMobileDevice(): boolean {
+        const os = this.scene.sys.game.device.os;
+        return Boolean(os.android || os.iOS || os.iPad || os.iPhone || os.windowsPhone);
     }
 
     private updateStaminaBarTexture(width: number, height: number) {
