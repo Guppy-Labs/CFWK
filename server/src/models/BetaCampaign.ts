@@ -11,6 +11,7 @@ export interface IBetaCampaign extends Document {
     endedAt?: Date;
     endReason?: string;
     endProcessed?: boolean;
+    endNotified?: boolean;
 }
 
 const BetaCampaignSchema: Schema = new Schema({
@@ -23,7 +24,8 @@ const BetaCampaignSchema: Schema = new Schema({
     createdBy: { type: String, required: true },
     endedAt: { type: Date },
     endReason: { type: String },
-    endProcessed: { type: Boolean, default: false }
+    endProcessed: { type: Boolean, default: false },
+    endNotified: { type: Boolean, default: false }
 }, {
     timestamps: true
 });

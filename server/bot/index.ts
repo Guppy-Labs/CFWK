@@ -175,7 +175,7 @@ function buildLinkedEmbed(endsAt: Date) {
     const endTs = Math.floor(endsAt.getTime() / 1000);
     const embed = new EmbedBuilder()
         .setTitle('Cute Fish With Knives Beta Access')
-        .setDescription(`You can now play the beta. Access ends at <t:${endTs}:f>.`)
+        .setDescription(`You can now join the beta session. Access ends at <t:${endTs}:f>.`)
         .setColor(0x66ccff);
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -204,16 +204,33 @@ function buildUnlinkedEmbed() {
     return { embeds: [embed], components: [row] };
 }
 
+function buildEndedEmbed(endedAt: Date) {
+    const endTs = Math.floor(endedAt.getTime() / 1000);
+    const embed = new EmbedBuilder()
+        .setTitle('Beta Campaign Ended')
+        .setDescription(`This beta test ended at <t:${endTs}:f>. Thanks for playing!`)
+        .setColor(0xff6b6b);
+
+    return { embeds: [embed] };
+}
+
 async function collectCampaignTargets(campaign: any) {
     if (!client.guilds.cache.has(BOT_GUILD_ID)) {
         await client.guilds.fetch(BOT_GUILD_ID).catch(() => undefined);
     }
     const guild = await client.guilds.fetch(BOT_GUILD_ID);
-    await guild.members.fetch();
 
     const accessUsers = (campaign.accessUsers || []) as string[];
     const accessRoles = (campaign.accessRoles || []) as string[];
     const targetIds = new Set<string>(accessUsers);
+
+    if (accessRoles.length > 0) {
+        try {
+            await guild.members.fetch();
+        } catch (err) {
+            console.warn('[BetaBot] Failed to fetch all guild members. Using cached role members only.', err);
+        }
+    }
 
     accessRoles.forEach((roleId: string) => {
         const role = guild.roles.cache.get(roleId);
@@ -231,7 +248,7 @@ async function syncDirectInvites(campaign: any) {
     let dmFailed = 0;
 
     for (const discordId of targetIds) {
-        const user = await User.findOne({ discordId });
+        const user = await User.findOne({ discordId: String(discordId) });
         if (user) {
             const needsGrant = !user.betaAccessUntil || user.betaAccessUntil.getTime() < campaign.endsAt.getTime();
             if (!needsGrant) continue;
@@ -258,6 +275,31 @@ client.on('ready', async () => {
         const campaign = await BetaCampaign.findOne({ active: true, endsAt: { $gt: new Date() } });
         if (!campaign) return;
         await syncDirectInvites(campaign);
+    }, DIRECT_SYNC_INTERVAL_MS);
+
+    setInterval(async () => {
+        const endedCampaigns = await BetaCampaign.find({
+            active: false,
+            endedAt: { $ne: null },
+            endNotified: { $ne: true }
+        });
+
+        for (const campaign of endedCampaigns) {
+            try {
+                const { targetIds } = await collectCampaignTargets(campaign);
+                for (const discordId of targetIds) {
+                    try {
+                        const dmTarget = await client.users.fetch(discordId);
+                        await dmTarget.send(buildEndedEmbed(campaign.endedAt || new Date()));
+                    } catch {
+                        // Ignore DM failures
+                    }
+                }
+            } finally {
+                campaign.endNotified = true;
+                await campaign.save();
+            }
+        }
     }, DIRECT_SYNC_INTERVAL_MS);
 });
 
@@ -396,7 +438,7 @@ client.on('interactionCreate', async (interaction) => {
 
             const { targetIds } = await collectCampaignTargets(campaign);
             for (const discordId of targetIds) {
-                const user = await User.findOne({ discordId });
+                const user = await User.findOne({ discordId: String(discordId) });
                 if (user) {
                     user.betaAccessUntil = campaign.endsAt;
                     await user.save();
