@@ -556,7 +556,7 @@ export class BookUI {
         }
 
         const showAll = group === 'All';
-        const category = this.getGroupCategory(group);
+        const categories = this.getGroupCategories(group);
 
         const itemBySlot = new Map<number, InventoryDisplayItem>();
         this.inventoryItems.forEach((entry) => {
@@ -571,22 +571,26 @@ export class BookUI {
 
         // Always show slots for inventory views
         this.inventorySlots.setVisible(isInventory);
-        this.inventorySlots.setSlots(slotsDisplay, showAll ? null : category);
-        if (!showAll && category !== 'Food' && category !== 'Tools') {
+        this.inventorySlots.setSlots(slotsDisplay, showAll ? null : categories);
+        const allowDetails = showAll
+            || categories?.includes('Food')
+            || categories?.includes('Tools');
+        if (!allowDetails) {
             this.inventoryDetails.setItem(null);
             this.inventorySlots.setBottomReservedHeight(0);
         }
     }
 
-    private getGroupCategory(group: GroupKey): ItemCategory | null {
+    private getGroupCategories(group: GroupKey): ItemCategory[] | null {
         switch (group) {
             case 'Tools':
-                return 'Tools';
+                return ['Tools'];
             case 'Food':
-                return 'Food';
+                return ['Food'];
             case 'Gear':
+                return ['Treasure', 'Loot'];
             case 'Fishing':
-                return null;
+                return ['Fish', 'Junk'];
             case 'All':
             default:
                 return null;

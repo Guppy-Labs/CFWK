@@ -111,8 +111,6 @@ export class MCAfkManager {
 
     private handleAfkKick() {
         this.afkKicked = true;
-        localStorage.setItem('cfwk_afk', 'true');
-        window.location.href = '/game?location=limbo';
     }
 
     private showAfkOverlay(remainingMs: number) {

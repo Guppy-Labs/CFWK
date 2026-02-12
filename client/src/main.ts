@@ -34,6 +34,17 @@ export interface UserData {
     username: string;
 }
 
+function formatRemaining(ms: number): string {
+    if (ms <= 0) return 'ended';
+    const totalSeconds = Math.floor(ms / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+}
+
 // Auth check
 async function checkAuth() {
     try {
@@ -56,9 +67,22 @@ async function checkAuth() {
         }
 
         const perms = data.user.permissions || [];
-        if (!perms.includes('access.game')) {
+        const betaAccessUntil = data.user.betaAccessUntil ? new Date(data.user.betaAccessUntil) : null;
+        const hasBetaAccess = !!(betaAccessUntil && betaAccessUntil.getTime() > Date.now());
+           if (!perms.includes('access.game') && !hasBetaAccess) {
              window.location.href = '/account'; 
              return;
+        }
+
+        const betaChip = document.getElementById('beta-access-chip') as HTMLElement | null;
+        if (betaChip && hasBetaAccess && betaAccessUntil) {
+            const updateChip = () => {
+                const remainingMs = betaAccessUntil.getTime() - Date.now();
+                betaChip.textContent = `Beta ends in ${formatRemaining(remainingMs)}`;
+                betaChip.style.display = remainingMs > 0 ? 'inline-flex' : 'none';
+            };
+            updateChip();
+            setInterval(updateChip, 60000);
         }
 
         setLoaderText('Initializing game...');

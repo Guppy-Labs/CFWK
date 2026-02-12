@@ -428,6 +428,9 @@ router.get('/me', async (req, res) => {
         //@ts-ignore
         u.hasPassword = !!req.user.password;
         delete u.password;
+
+        const betaAccessUntil = u.betaAccessUntil ? new Date(u.betaAccessUntil) : null;
+        u.hasBetaAccess = !!(betaAccessUntil && betaAccessUntil.getTime() > Date.now());
         
         // Check if user's IP is banned
         const clientIP = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() 

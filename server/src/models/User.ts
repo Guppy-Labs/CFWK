@@ -31,6 +31,7 @@ export interface IUser extends Document {
   premiumStatus?: string; // active, past_due, canceled, etc
   premiumTier?: 'shark' | null;
   premiumCurrentPeriodEnd?: Date;
+  betaAccessUntil?: Date | null;
 }
 
 const UserSchema: Schema = new Schema({
@@ -93,7 +94,8 @@ const UserSchema: Schema = new Schema({
   stripeSubscriptionId: { type: String },
   premiumStatus: { type: String },
   premiumTier: { type: String, default: null },
-  premiumCurrentPeriodEnd: { type: Date }
+  premiumCurrentPeriodEnd: { type: Date },
+  betaAccessUntil: { type: Date, default: null }
 }, {
   timestamps: true
 });

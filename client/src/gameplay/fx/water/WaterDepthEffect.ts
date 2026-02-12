@@ -46,6 +46,11 @@ export class WaterDepthEffect {
     private maskGraphics?: Phaser.GameObjects.Graphics;
     private fadeOverlay?: Phaser.GameObjects.Graphics;  // Gradient fade at water line
     private fadeMask?: Phaser.Display.Masks.BitmapMask;  // Mask fade to player pixels
+    private underwaterSprite?: Phaser.GameObjects.Sprite;
+    private underwaterMask?: Phaser.Display.Masks.GeometryMask;
+    private underwaterMaskGraphics?: Phaser.GameObjects.Graphics;
+    private readonly underwaterAlpha = 0.28;
+    private readonly underwaterTint = 0x4f7f99;
     
     // Cache for depth calculations
     private depthCache: Map<string, number> = new Map();
@@ -81,11 +86,30 @@ export class WaterDepthEffect {
         
         // Create fade overlay for water line (semi-transparent gradient effect)
         this.fadeOverlay = this.scene.add.graphics();
-        this.fadeOverlay.setDepth(999); // Above player
+        this.fadeOverlay.setDepth(this.player.depth + 0.01);
         
         // Create bitmap mask from player sprite so fade only shows over visible pixels
         this.fadeMask = new Phaser.Display.Masks.BitmapMask(this.scene, this.player);
         this.fadeOverlay.setMask(this.fadeMask);
+
+        // Create an underwater sprite to show the submerged portion with transparency
+        this.underwaterSprite = this.scene.add.sprite(
+            this.player.x,
+            this.player.y,
+            this.player.texture.key,
+            this.player.frame?.name
+        );
+        this.underwaterSprite.setOrigin(this.player.originX, this.player.originY);
+        this.underwaterSprite.setDisplaySize(this.player.displayWidth, this.player.displayHeight);
+        this.underwaterSprite.setAlpha(this.underwaterAlpha);
+        this.underwaterSprite.setTint(this.underwaterTint);
+        this.underwaterSprite.setVisible(false);
+        this.underwaterSprite.setDepth(this.player.depth - 0.01);
+
+        this.underwaterMaskGraphics = this.scene.add.graphics();
+        this.underwaterMaskGraphics.setVisible(false);
+        this.underwaterMask = new Phaser.Display.Masks.GeometryMask(this.scene, this.underwaterMaskGraphics);
+        this.underwaterSprite.setMask(this.underwaterMask);
     }
 
     /**
@@ -287,11 +311,16 @@ export class WaterDepthEffect {
 
         // Clear fade overlay
         this.fadeOverlay?.clear();
+        this.fadeOverlay?.setDepth(this.player.depth + 0.01);
+
+        this.syncUnderwaterSprite();
 
         if (!this.isInWater || this.currentDepth < 0.1) {
             // Not in water - clear effects
             this.sinkOffset = 0;
             this.player.clearMask();
+            this.underwaterSprite?.setVisible(false);
+            this.underwaterMaskGraphics?.clear();
             return;
         }
 
@@ -304,6 +333,8 @@ export class WaterDepthEffect {
         // Don't apply visual clipping until we're past the start threshold
         if (effectiveDepth <= 0) {
             this.player.clearMask();
+            this.underwaterSprite?.setVisible(false);
+            this.underwaterMaskGraphics?.clear();
             return;
         }
 
@@ -327,7 +358,7 @@ export class WaterDepthEffect {
             const stepHeight = fadeHeight / steps;
             
             for (let i = 0; i < steps; i++) {
-                const alpha = (i / steps) * 0.4; // Fade from 0 to 0.4 alpha
+                const alpha = (i / steps) * 0.25; // Fade from 0 to 0.25 alpha
                 const y = waterLineY - fadeHeight + (i * stepHeight);
                 
                 this.fadeOverlay.fillStyle(0x5588aa, alpha);
@@ -354,6 +385,34 @@ export class WaterDepthEffect {
             
             this.player.setMask(this.playerMask!);
         }
+
+        // Update mask to show only the submerged part on the underwater sprite
+        if (this.underwaterSprite && this.underwaterMaskGraphics) {
+            this.underwaterSprite.setVisible(true);
+            this.underwaterMaskGraphics.clear();
+
+            const maskWidth = 200;
+            const maskHeight = 200;
+            this.underwaterMaskGraphics.fillStyle(0xffffff);
+            this.underwaterMaskGraphics.fillRect(
+                playerX - maskWidth / 2,
+                waterLineY,
+                maskWidth,
+                maskHeight
+            );
+        }
+    }
+
+    private syncUnderwaterSprite() {
+        if (!this.underwaterSprite || !this.player.frame) return;
+
+        this.underwaterSprite.setPosition(this.player.x, this.player.y);
+        this.underwaterSprite.setDepth(this.player.depth - 0.01);
+        this.underwaterSprite.setOrigin(this.player.originX, this.player.originY);
+        this.underwaterSprite.setDisplaySize(this.player.displayWidth, this.player.displayHeight);
+        this.underwaterSprite.setFlipX(this.player.flipX);
+        this.underwaterSprite.setFlipY(this.player.flipY);
+        this.underwaterSprite.setTexture(this.player.texture.key, this.player.frame.name);
     }
 
     /**
@@ -364,6 +423,9 @@ export class WaterDepthEffect {
         this.fadeOverlay?.clearMask();
         this.fadeMask?.destroy();
         this.fadeOverlay?.destroy();
+        this.underwaterMaskGraphics?.destroy();
+        this.underwaterMask?.destroy();
+        this.underwaterSprite?.destroy();
         this.player.clearMask();
         // Reset animation time scale
         if (this.player.anims) {

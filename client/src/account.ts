@@ -127,7 +127,18 @@ const lcSeconds = document.getElementById('lc-seconds') as HTMLElement;
 const mapmakerCard = document.getElementById('mapmaker-card') as HTMLElement;
 const preregCard = document.getElementById('prereg-card') as HTMLElement;
 const navPlayBtn = document.getElementById('nav-play-btn') as HTMLElement;
+const navBetaBtn = document.getElementById('nav-beta-btn') as HTMLButtonElement;
 const navUpgradeBtn = document.getElementById('nav-upgrade-btn') as HTMLAnchorElement;
+const betaAccessCard = document.getElementById('beta-access-card') as HTMLElement;
+const betaAccessTime = document.getElementById('beta-access-time') as HTMLElement;
+
+// Beta Modal
+const betaModal = document.getElementById('beta-modal') as HTMLElement;
+const betaCloseBtn = document.getElementById('beta-close') as HTMLElement;
+const betaCancelBtn = document.getElementById('beta-cancel-btn') as HTMLButtonElement;
+const betaCodeInput = document.getElementById('beta-code-input') as HTMLInputElement;
+const betaSubmitBtn = document.getElementById('beta-submit-btn') as HTMLButtonElement;
+const betaFeedback = document.getElementById('beta-feedback') as HTMLElement;
 
 const releaseDate = new Date('2026-05-02T06:00:00').getTime();
 let countdownInterval: any;
@@ -140,6 +151,35 @@ function closeCountdownModal() {
     countdownModal.style.display = 'none';
 }
 
+function openBetaModal() {
+    if (!betaModal) return;
+    betaModal.style.display = 'block';
+    if (betaCodeInput) {
+        betaCodeInput.value = '';
+        betaCodeInput.focus();
+    }
+    if (betaFeedback) {
+        betaFeedback.textContent = '';
+        betaFeedback.className = 'beta-feedback';
+    }
+}
+
+function closeBetaModal() {
+    if (!betaModal) return;
+    betaModal.style.display = 'none';
+}
+
+function formatRemaining(ms: number): string {
+    if (ms <= 0) return 'ended';
+    const totalSeconds = Math.floor(ms / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+}
+
 if (countdownContainer) {
     countdownContainer.addEventListener('click', openCountdownModal);
 }
@@ -149,6 +189,31 @@ window.addEventListener('click', (e) => {
         closeCountdownModal();
     }
 });
+
+if (navBetaBtn) {
+    navBetaBtn.addEventListener('click', openBetaModal);
+}
+
+if (betaCloseBtn) betaCloseBtn.addEventListener('click', closeBetaModal);
+if (betaCancelBtn) betaCancelBtn.addEventListener('click', closeBetaModal);
+window.addEventListener('click', (e) => {
+    if (e.target === betaModal) closeBetaModal();
+});
+
+if (betaCodeInput) {
+    betaCodeInput.addEventListener('input', () => {
+        betaCodeInput.value = betaCodeInput.value.replace(/[^0-9]/g, '').slice(0, 8);
+    });
+
+    betaCodeInput.addEventListener('paste', (event) => {
+        const text = event.clipboardData?.getData('text') || '';
+        const digits = text.replace(/[^0-9]/g, '').slice(0, 8);
+        if (digits.length > 0) {
+            event.preventDefault();
+            betaCodeInput.value = digits;
+        }
+    });
+}
 
 // --- Fetch User Data ---
 async function init() {
@@ -246,8 +311,25 @@ function renderUser(user: any) {
     // Always show countdown for all users
     startCountdown();
     
-    if (perms.includes('access.game') && !isBanned) {
-        if(navPlayBtn) navPlayBtn.style.display = 'inline-flex';
+    const betaAccessUntil = user.betaAccessUntil ? new Date(user.betaAccessUntil) : null;
+    const hasBetaAccess = !!(betaAccessUntil && betaAccessUntil.getTime() > Date.now());
+
+    if ((perms.includes('access.game') || hasBetaAccess) && !isBanned) {
+        if (navPlayBtn) navPlayBtn.style.display = 'inline-flex';
+        if (navBetaBtn) navBetaBtn.style.display = 'none';
+    } else if (!isBanned) {
+        if (navBetaBtn) navBetaBtn.style.display = 'inline-flex';
+        if (navPlayBtn) navPlayBtn.style.display = 'none';
+    }
+
+    if (betaAccessCard && betaAccessTime) {
+        if (hasBetaAccess && betaAccessUntil) {
+            const remaining = betaAccessUntil.getTime() - Date.now();
+            betaAccessTime.textContent = `Ends in ${formatRemaining(remaining)}`;
+            betaAccessCard.style.display = 'flex';
+        } else {
+            betaAccessCard.style.display = 'none';
+        }
     }
 
     // Update upgrade button based on premium status
@@ -591,6 +673,62 @@ logoutBtn.addEventListener('click', async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     window.location.href = '/login';
 });
+
+if (betaSubmitBtn) {
+    betaSubmitBtn.addEventListener('click', async () => {
+        if (!betaCodeInput) return;
+        const code = betaCodeInput.value.trim();
+        if (!/^[0-9]{8}$/.test(code)) {
+            Toast.error('Enter an 8 digit code');
+            if (betaFeedback) {
+                betaFeedback.textContent = 'Enter an 8 digit code.';
+                betaFeedback.className = 'beta-feedback error';
+            }
+            return;
+        }
+
+        try {
+            betaSubmitBtn.disabled = true;
+            betaSubmitBtn.textContent = 'Checking...';
+            if (betaFeedback) {
+                betaFeedback.textContent = 'Checking your code...';
+                betaFeedback.className = 'beta-feedback';
+            }
+
+            const res = await fetch('/api/beta/redeem', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                Toast.success('Beta access unlocked');
+                if (data.betaAccessUntil && betaFeedback) {
+                    const remainingMs = new Date(data.betaAccessUntil).getTime() - Date.now();
+                    betaFeedback.textContent = `Unlocked! ${formatRemaining(remainingMs)} left.`;
+                    betaFeedback.className = 'beta-feedback success';
+                }
+                setTimeout(() => closeBetaModal(), 600);
+                init();
+            } else {
+                Toast.error(data.message || 'Code rejected');
+                if (betaFeedback) {
+                    betaFeedback.textContent = data.message || 'Code rejected.';
+                    betaFeedback.className = 'beta-feedback error';
+                }
+            }
+        } catch (e) {
+            Toast.error('Failed to redeem code');
+            if (betaFeedback) {
+                betaFeedback.textContent = 'Failed to redeem code.';
+                betaFeedback.className = 'beta-feedback error';
+            }
+        } finally {
+            betaSubmitBtn.disabled = false;
+            betaSubmitBtn.textContent = 'Unlock Beta';
+        }
+    });
+}
 
 // Check for Link Errors
 const urlParams = new URLSearchParams(window.location.search);

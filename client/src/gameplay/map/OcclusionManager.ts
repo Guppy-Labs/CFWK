@@ -85,16 +85,8 @@ export class OcclusionManager {
 
         if (this.activeTags.size === 0) return;
 
-        // Find the lowest-order occluded layer to preserve ordering above it
-        let minActiveOrder = Infinity;
-        this.activeTags.forEach((tag) => {
-            const layer = this.layers.find(l => l.tag === tag);
-            if (layer && layer.order < minActiveOrder) minActiveOrder = layer.order;
-        });
-
         this.layers.forEach((entry) => {
-            const shouldElevate = entry.order >= minActiveOrder;
-            if (!shouldElevate) return;
+            if (!this.activeTags.has(entry.tag)) return;
 
             const elevatedDepth = this.playerFrontDepth + this.playerOccludedDepthOffset + entry.order;
             const maxDepth = this.getMaxDepthBelowHigherLayers(entry);

@@ -34,7 +34,6 @@ export class Chat {
         { name: 'broadcast', args: ['text'] },
         { name: 'drop', args: ['player', 'item', 'count'] },
         { name: 'give', args: ['player', 'item', 'count'] },
-        { name: 'limbo', args: ['player'] },
         { name: 'mute', args: ['player'] },
         { name: 'reboot', args: [] },
         { name: 'tempban', args: ['player', 'duration'] },

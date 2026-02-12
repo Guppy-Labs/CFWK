@@ -1,33 +1,31 @@
 /**
- * DisconnectModal - Shows when the server connection is lost
+ * DisconnectModal - Shows when the server connection is lost or a user is removed
  * Guppy Labs 2026
  */
+
+type DisconnectModalOptions = {
+    title: string;
+    message: string;
+    showReconnect?: boolean;
+    showLeave?: boolean;
+    reconnectLabel?: string;
+    leaveLabel?: string;
+    icon?: 'disconnect' | 'ban' | 'afk' | 'warning';
+    onReconnect?: () => void;
+    onLeave?: () => void;
+};
 
 export class DisconnectModal {
     private static modal: HTMLElement | null = null;
     private static isShowing = false;
 
-    /**
-     * Show the disconnect modal after a delay
-     * @param delayMs - Time in ms to wait before showing (default: 5000)
-     * @param message - Custom message to show (optional)
-     * @param title - Custom title (optional)
-     */
-    static show(delayMs: number = 5000, message?: string, title?: string): void {
+    static show(options: DisconnectModalOptions): void {
         if (this.isShowing) return;
         this.isShowing = true;
 
-        // Store flag so reload goes to limbo
-        localStorage.setItem('cfwk_disconnected', 'true');
-
-        setTimeout(() => {
-            this.createModal(message, title);
-        }, delayMs);
+        this.createModal(options);
     }
 
-    /**
-     * Hide and remove the modal
-     */
     static hide(): void {
         if (this.modal) {
             this.modal.remove();
@@ -36,54 +34,64 @@ export class DisconnectModal {
         this.isShowing = false;
     }
 
-    private static createModal(message?: string, title?: string): void {
-        // Remove existing modal if any
+    private static createModal(options: DisconnectModalOptions): void {
         this.hide();
         this.isShowing = true;
 
-        const displayTitle = title || 'Server Offline';
-        const displayMessage = message || 'The connection to the game server was lost.<br>Please try again later.';
-        
-        // Pick icon based on title - both "BANNED" and "ACCOUNT BANNED" use the banned icon
-        const isBanned = displayTitle.toUpperCase().includes('BANNED');
-        const icon = isBanned ? this.getBannedIcon() : this.getDisconnectIcon();
+        const showReconnect = options.showReconnect !== false;
+        const showLeave = options.showLeave !== false;
+        const reconnectLabel = options.reconnectLabel || 'Reconnect';
+        const leaveLabel = options.leaveLabel || 'Leave Game';
+
+        const icon = this.getIcon(options.icon, options.title);
 
         this.modal = document.createElement('div');
         this.modal.className = 'disconnect-modal-overlay';
         this.modal.innerHTML = `
             <div class="disconnect-modal">
                 <div class="disconnect-modal-icon">${icon}</div>
-                <div class="disconnect-modal-title">${displayTitle}</div>
+                <div class="disconnect-modal-title">${options.title}</div>
                 <div class="disconnect-modal-message">
-                    ${displayMessage}
+                    ${options.message}
                 </div>
-                <button class="disconnect-modal-btn" id="disconnect-reload-btn">
-                    Reload Game
-                </button>
+                <div class="afk-modal-actions">
+                    ${showLeave ? `<button class="disconnect-modal-btn afk-modal-btn-secondary" id="disconnect-leave-btn">${leaveLabel}</button>` : ''}
+                    ${showReconnect ? `<button class="disconnect-modal-btn" id="disconnect-reconnect-btn">${reconnectLabel}</button>` : ''}
+                </div>
             </div>
         `;
 
         document.body.appendChild(this.modal);
 
-        // Add click handler for reload button
-        const reloadBtn = this.modal.querySelector('#disconnect-reload-btn');
-        reloadBtn?.addEventListener('click', () => {
-            window.location.reload();
+        const reconnectBtn = this.modal.querySelector('#disconnect-reconnect-btn');
+        const leaveBtn = this.modal.querySelector('#disconnect-leave-btn');
+
+        reconnectBtn?.addEventListener('click', () => {
+            this.hide();
+            if (options.onReconnect) {
+                options.onReconnect();
+            } else {
+                window.location.reload();
+            }
+        });
+
+        leaveBtn?.addEventListener('click', () => {
+            this.hide();
+            if (options.onLeave) {
+                options.onLeave();
+            } else {
+                window.location.href = '/account';
+            }
         });
     }
 
-    /**
-     * Check if user was previously disconnected (for boot scene)
-     */
-    static wasDisconnected(): boolean {
-        return localStorage.getItem('cfwk_disconnected') === 'true';
-    }
+    private static getIcon(icon: DisconnectModalOptions['icon'], title: string): string {
+        if (icon === 'ban') return this.getBannedIcon();
+        if (icon === 'afk') return this.getAfkIcon();
+        if (icon === 'warning') return this.getWarningIcon();
 
-    /**
-     * Clear the disconnected flag
-     */
-    static clearDisconnectedFlag(): void {
-        localStorage.removeItem('cfwk_disconnected');
+        const isBanned = title.toUpperCase().includes('BANNED');
+        return isBanned ? this.getBannedIcon() : this.getDisconnectIcon();
     }
 
     /**
@@ -133,6 +141,26 @@ export class DisconnectModal {
             <rect x="9" y="5" width="2" height="2" fill="#ff4444"/>
             <rect x="5" y="9" width="2" height="2" fill="#ff4444"/>
             <rect x="3" y="11" width="2" height="2" fill="#ff4444"/>
+        </svg>`;
+    }
+
+    private static getAfkIcon(): string {
+        return `<svg width="48" height="48" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="image-rendering: pixelated;">
+            <rect x="2" y="2" width="12" height="12" fill="#2f2f2f"/>
+            <rect x="3" y="3" width="10" height="10" fill="#3f3f3f"/>
+            <rect x="7" y="4" width="2" height="5" fill="#ffcc66"/>
+            <rect x="8" y="8" width="3" height="2" fill="#ffcc66"/>
+            <rect x="7" y="10" width="2" height="2" fill="#ffcc66"/>
+        </svg>`;
+    }
+
+    private static getWarningIcon(): string {
+        return `<svg width="48" height="48" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="image-rendering: pixelated;">
+            <rect x="7" y="2" width="2" height="8" fill="#ffcc66"/>
+            <rect x="7" y="11" width="2" height="2" fill="#ffcc66"/>
+            <rect x="6" y="10" width="4" height="1" fill="#ffcc66"/>
+            <rect x="5" y="11" width="6" height="1" fill="#ffcc66"/>
+            <rect x="4" y="12" width="8" height="1" fill="#ffcc66"/>
         </svg>`;
     }
 }

@@ -110,6 +110,9 @@ export class MCPlayerController {
 
         this.animationController = new MCAnimationController(scene, {
             walkFrameRate: 10,
+            walkAnimSpeedMin: 6,
+            walkAnimSpeedMax: 14,
+            walkAnimSpeedMaxVelocity: this.config.sprintSpeed,
             scale: this.config.scale
         });
 
@@ -360,7 +363,9 @@ export class MCPlayerController {
             this._occlusionManager,
             this.player.x,
             feetY,
-            this.config.depth ?? 260
+            this.config.depth ?? 260,
+            false,
+            false
         );
         this.player.setDepth(depth);
 

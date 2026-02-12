@@ -374,10 +374,8 @@ export class MobileControls {
      */
     private updateInteractButtonVisibility() {
         // Only show if: not in GUI AND there's an available interaction
-        const isMobile = MobileControls.isMobileDevice();
         const shouldShow = !this.guiCurrentlyOpen
-            && this.currentInteraction !== null
-            && (!isMobile || !this.keyboardUsed);
+            && this.currentInteraction !== null;
         this.setInteractVisible(shouldShow);
     }
 
@@ -817,14 +815,14 @@ export class MobileControls {
 
     private setInventoryKeyVisible(buttonVisible: boolean) {
         if (!this.inventoryKeyIcon) return;
-        const isMobile = MobileControls.isMobileDevice();
-        this.inventoryKeyIcon.setVisible(buttonVisible && !isMobile);
+        const isDesktopLike = !MobileControls.isMobileDevice() || this.keyboardUsed;
+        this.inventoryKeyIcon.setVisible(buttonVisible && isDesktopLike);
     }
 
     private setInteractKeyVisible(buttonVisible: boolean) {
         if (!this.interactKeyIcon) return;
-        const isMobile = MobileControls.isMobileDevice();
-        const shouldShow = buttonVisible && !isMobile && this.currentInteraction !== null;
+        const isDesktopLike = !MobileControls.isMobileDevice() || this.keyboardUsed;
+        const shouldShow = buttonVisible && isDesktopLike && this.currentInteraction !== null;
         this.interactKeyIcon.setVisible(shouldShow);
     }
 
@@ -939,9 +937,11 @@ export class MobileControls {
     }
     
     private updateFullscreenIcon() {
-        if (!this.fullscreenButton) return;
+        if (!this.fullscreenButton || !this.fullscreenButton.active) return;
+        if (!this.fullscreenButton.visible || !this.isVisible) return;
         const isFullscreen = this.isAnyFullscreen();
         const texture = isFullscreen ? 'ui-exit-fullscreen' : 'ui-fullscreen';
+        if (!this.scene.textures.exists(texture)) return;
         if (this.fullscreenButton.texture.key !== texture) {
             this.fullscreenButton.setTexture(texture);
         }

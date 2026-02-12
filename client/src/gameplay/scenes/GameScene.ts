@@ -26,8 +26,6 @@ import { DroppedItemManager } from '../items/DroppedItemManager';
 import { NPCManager } from '../npc/NPCManager';
 import { Toast } from '../../ui/Toast';
 import { DisconnectModal } from '../../ui/DisconnectModal';
-import { AfkModal } from '../../ui/AfkModal';
-import { LimboModal } from '../../ui/LimboModal';
 import { DialogueManager } from '../dialogue/DialogueManager';
 import type { UIScene } from './UIScene';
 import { IInstanceInfo, ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
@@ -94,7 +92,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     preload() {
-        const mapFile = this.instanceInfo?.mapFile || 'limbo.tmj';
+        const mapFile = this.instanceInfo?.mapFile || 'lobby.tmj';
 
         this.load.image('ui-joystick-base', '/ui/Joystick01a.png');
         this.load.image('ui-joystick-handle', '/ui/Handle01a.png');
@@ -203,7 +201,7 @@ export class GameScene extends Phaser.Scene {
      * Load the map (shared between MC and legacy paths)
      */
     private loadMapLegacy() {
-        const mapFile = this.instanceInfo?.mapFile || 'limbo.tmj';
+        const mapFile = this.instanceInfo?.mapFile || 'lobby.tmj';
         const mapKey = `map-${mapFile.replace('.tmj', '')}`;
         
         if (!this.collisionManager || !this.occlusionManager) {
@@ -361,7 +359,7 @@ export class GameScene extends Phaser.Scene {
         this.seasonalEffectsManager?.setInitialSeason(this.worldTimeManager.getTime().season);
 
         // Initialize audio (music and ambient sounds for this map)
-        const mapFile = this.instanceInfo?.mapFile || 'limbo.tmj';
+        const mapFile = this.instanceInfo?.mapFile || 'lobby.tmj';
         const mapKey = `map-${mapFile.replace('.tmj', '')}`;
         this.audioManager?.initialize(mapKey);
 
@@ -369,61 +367,6 @@ export class GameScene extends Phaser.Scene {
         hideLoader();
         this.mcPlayerController?.getMobileControls()?.show();
 
-        // If AFK flag is set and we're in limbo, show AFK modal
-        if (this.instanceInfo?.locationId === 'limbo' && localStorage.getItem('cfwk_afk') === 'true') {
-            localStorage.removeItem('cfwk_afk');
-            AfkModal.show(
-                () => {
-                    // Close only
-                },
-                () => {
-                    DisconnectModal.clearDisconnectedFlag();
-                    this.scene.stop('UIScene');
-                    this.scene.start('BootScene');
-                }
-            );
-        }
-
-        if (this.instanceInfo?.locationId === 'limbo') {
-            const reason = localStorage.getItem('cfwk_limbo_reason');
-            const message = localStorage.getItem('cfwk_limbo_message') || '';
-            if (reason) {
-                localStorage.removeItem('cfwk_limbo_reason');
-                localStorage.removeItem('cfwk_limbo_message');
-
-                const isBan = reason === 'ban';
-                const isAdmin = reason === 'admin';
-                
-                let title: string;
-                let displayMessage: string;
-                let showRejoin: boolean;
-                
-                if (isBan) {
-                    title = 'BANNED';
-                    displayMessage = message || 'You have been banned from Cute Fish With Knives.';
-                    showRejoin = false;
-                } else if (isAdmin) {
-                    title = 'Sent to Limbo';
-                    displayMessage = message || 'You were sent to limbo by an admin.';
-                    showRejoin = true;
-                } else {
-                    title = 'Server Offline';
-                    displayMessage = message || 'The connection to the game server was lost.<br>Please try again later.';
-                    showRejoin = true;
-                }
-
-                LimboModal.show(title, displayMessage, {
-                    showRejoin,
-                    onClose: () => {
-                        // Close only
-                    },
-                    onRejoin: () => {
-                        this.scene.stop('UIScene');
-                        this.scene.start('BootScene');
-                    }
-                });
-            }
-        }
     }
 
     private setupFireEffects(map: Phaser.Tilemaps.Tilemap) {
@@ -492,24 +435,44 @@ export class GameScene extends Phaser.Scene {
         this.unsubscribeDisconnect = this.networkManager.onDisconnect((code) => {
             console.log(`[GameScene] Server disconnected with code: ${code}`);
             this.stopAllAudio();
-            const afkFlag = localStorage.getItem('cfwk_afk') === 'true';
-            if (!afkFlag) {
-                const error = this.networkManager.getConnectionError();
-                if (code === 4003) {
-                    localStorage.setItem('cfwk_limbo_reason', 'ban');
-                    localStorage.setItem('cfwk_limbo_message', 'You have been banned from Cute Fish With Knives.');
-                } else if (code === 4004) {
-                    localStorage.setItem('cfwk_limbo_reason', 'admin');
-                    localStorage.setItem('cfwk_limbo_message', 'You were sent to limbo by an admin.');
-                } else {
-                    const detail = error ? ` (${error})` : ` (code ${code})`;
-                    localStorage.setItem('cfwk_limbo_reason', 'offline');
-                    localStorage.setItem('cfwk_limbo_message', `The connection to the game server was lost${detail}.<br>Please try again later.`);
-                }
+            this.registry.set('inputBlocked', true);
+            this.mcPlayerController?.getMobileControls()?.setInputBlocked(true);
+
+            const error = this.networkManager.getConnectionError();
+            const detail = error ? ` (${error})` : ` (code ${code})`;
+
+            if (code === 4003) {
+                DisconnectModal.show({
+                    title: 'BANNED',
+                    message: 'You have been banned from Cute Fish With Knives.',
+                    showReconnect: false,
+                    icon: 'ban'
+                });
+                return;
             }
 
-            this.scene.stop('UIScene');
-            this.scene.start('BootScene');
+            if (code === 4000) {
+                DisconnectModal.show({
+                    title: 'AFK Timeout',
+                    message: 'You were disconnected for being idle. Reconnect when you are ready to play.',
+                    icon: 'afk',
+                    onReconnect: () => {
+                        this.scene.stop('UIScene');
+                        this.scene.start('BootScene');
+                    }
+                });
+                return;
+            }
+
+            DisconnectModal.show({
+                title: 'Server Offline',
+                message: `The connection to the game server was lost${detail}.<br>Please try again later.`,
+                icon: 'disconnect',
+                onReconnect: () => {
+                    this.scene.stop('UIScene');
+                    this.scene.start('BootScene');
+                }
+            });
         });
         
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {

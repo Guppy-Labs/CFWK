@@ -177,12 +177,6 @@ export class NetworkManager {
                 return;
             }
 
-            // Handle sent to limbo
-            if (code === 4004) {
-                this.disconnectCallbacks.forEach(cb => cb(code));
-                return;
-            }
-
             // Notify listeners if we had an active connection (server went offline)
             if (hadConnection) {
                 this.disconnectCallbacks.forEach(cb => cb(code));

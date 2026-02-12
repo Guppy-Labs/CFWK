@@ -45,37 +45,10 @@ export class BootScene extends Phaser.Scene {
     }
 
     private async requestInstance() {
-        const limboFallback: IInstanceInfo = { 
-            instanceId: 'local',
-            locationId: 'limbo',
-            mapFile: 'limbo.tmj',
-            roomName: 'instance',
-            currentPlayers: 1,
-            maxPlayers: 50
-        };
-
-        // If AFK flag is set, send to limbo
-        if (localStorage.getItem('cfwk_afk') === 'true') {
-            console.warn('[BootScene] Limbo route: AFK flag detected');
-            this.startGame(limboFallback);
-            return;
-        }
-
-        // If limbo reason is set (disconnect/ban), send to limbo
-        const limboReason = localStorage.getItem('cfwk_limbo_reason');
-        if (limboReason) {
-            console.warn(`[BootScene] Limbo route: reason=${limboReason}`);
-            this.startGame(limboFallback);
-            return;
-        }
-
-        // Check if user was previously disconnected - send them to limbo
-        if (DisconnectModal.wasDisconnected()) {
-            DisconnectModal.clearDisconnectedFlag();
-            console.warn('[BootScene] Limbo route: previously disconnected flag');
-            this.startGame(limboFallback);
-            return;
-        }
+        localStorage.removeItem('cfwk_afk');
+        localStorage.removeItem('cfwk_limbo_reason');
+        localStorage.removeItem('cfwk_limbo_message');
+        localStorage.removeItem('cfwk_disconnected');
 
         const attemptJoin = async () => {
             const instance = await this.networkManager.requestInstance('lobby');
@@ -132,10 +105,13 @@ export class BootScene extends Phaser.Scene {
                 ? "You are permanently banned."
                 : `You are banned until ${date.toLocaleString()}`;
 
-            localStorage.setItem('cfwk_limbo_reason', 'ban');
-            localStorage.setItem('cfwk_limbo_message', banMessage);
-            console.warn('[BootScene] Limbo route: IP banned');
-            this.startGame(limboFallback);
+            console.warn('[BootScene] Connection blocked: IP banned');
+            DisconnectModal.show({
+                title: 'BANNED',
+                message: banMessage,
+                showReconnect: false,
+                icon: 'ban'
+            });
             return;
         }
 
@@ -151,20 +127,27 @@ export class BootScene extends Phaser.Scene {
                 ? "Your account is permanently banned."
                 : `Your account is banned until ${date.toLocaleString()}`;
 
-            localStorage.setItem('cfwk_limbo_reason', 'ban');
-            localStorage.setItem('cfwk_limbo_message', banMessage);
-            console.warn('[BootScene] Limbo route: account banned');
-            this.startGame(limboFallback);
+            console.warn('[BootScene] Connection blocked: account banned');
+            DisconnectModal.show({
+                title: 'ACCOUNT BANNED',
+                message: banMessage,
+                showReconnect: false,
+                icon: 'ban'
+            });
             return;
         }
         
         if (result && typeof result !== 'string') {
             this.startGame(result);
         } else {
-            // Timeout or failure - go to limbo
+            // Timeout or failure - show offline modal
             const error = this.networkManager.getConnectionError();
-            console.warn(`[BootScene] Limbo route: instance request/connect failed${error ? ` (${error})` : ''}`);
-            this.startGame(limboFallback);
+            console.warn(`[BootScene] Instance request/connect failed${error ? ` (${error})` : ''}`);
+            DisconnectModal.show({
+                title: 'Server Offline',
+                message: `The connection to the game server was lost${error ? ` (${error})` : ''}.<br>Please try again later.`,
+                icon: 'disconnect'
+            });
         }
     }
 

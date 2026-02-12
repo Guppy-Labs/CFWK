@@ -35,6 +35,7 @@ export type InventorySlotDisplay = {
     index: number;
     item: InventoryDisplayItem | null;
     count: number;
+    sourceIndex?: number;
 };
 
 export class InventorySlotsUI {
@@ -57,7 +58,7 @@ export class InventorySlotsUI {
     private maxScroll = 0;
     private trackHeight = 0;
     private currentRows = 0;
-    private filterCategory: string | null = null;
+    private filterCategories: string[] | null = null;
     private slots: InventorySlotDisplay[] = [];
     private onItemSelect?: (item: InventoryDisplayItem | null, slotIndex: number, stackCount?: number) => void;
     private lastLayout?: { leftPageLeftEdgeX: number; leftPageTopEdgeY: number; pageHeight: number; scale: number };
@@ -78,6 +79,8 @@ export class InventorySlotsUI {
     private slotIndexToStackCount = new Map<number, number>();
     private slotIndexToIcon = new Map<number, Phaser.GameObjects.Image>();
     private slotIndexToCountImage = new Map<number, Phaser.GameObjects.Image>();
+    private displayIndexToSlotIndex = new Map<number, number>();
+    private slotIndexToDisplayIndex = new Map<number, number>();
     private lastSelectionPointerId?: number;
     private lastSelectionPointerDownTime?: number;
     private disableHoverIndicator = false;
@@ -179,9 +182,9 @@ export class InventorySlotsUI {
         this.container.setVisible(visible);
     }
 
-    setSlots(slots: InventorySlotDisplay[], filterCategory: string | null) {
+    setSlots(slots: InventorySlotDisplay[], filterCategories: string[] | null) {
         this.slots = slots;
-        this.filterCategory = filterCategory;
+        this.filterCategories = filterCategories;
         this.clearSelection();
         this.refreshSlotsAndItems();
     }
@@ -234,7 +237,7 @@ export class InventorySlotsUI {
      */
     getSelectedSlotScreenPosition(): { x: number; y: number } | null {
         if (this.selectedSlotIndex === undefined || !this.lastLayout || !this.slotsBounds) return null;
-        
+
         const localPos = this.getSlotCenterPosition(this.selectedSlotIndex);
         if (!localPos) return null;
 
@@ -246,14 +249,18 @@ export class InventorySlotsUI {
     }
 
     getSlotIndexAtPointer(pointer: Phaser.Input.Pointer): number | undefined {
-        return this.getNearestSlotIndex(pointer);
+        const displayIndex = this.getNearestSlotIndex(pointer);
+        if (displayIndex === undefined) return undefined;
+        return this.getSourceIndex(displayIndex);
     }
 
     /**
      * Check if a slot at index is empty (for receiving items)
      */
     isSlotEmpty(index: number): boolean {
-        return !this.slotIndexToItem.has(index);
+        const displayIndex = this.getDisplayIndex(index);
+        if (displayIndex === undefined) return true;
+        return !this.slotIndexToItem.has(displayIndex);
     }
 
     /**
@@ -261,8 +268,10 @@ export class InventorySlotsUI {
      */
     getSlotScreenPosition(index: number): { x: number; y: number } | null {
         if (!this.lastLayout || !this.slotsBounds) return null;
-        
-        const localPos = this.getSlotCenterPosition(index);
+
+        const displayIndex = this.getDisplayIndex(index);
+        if (displayIndex === undefined) return null;
+        const localPos = this.getSlotCenterPosition(displayIndex);
         if (!localPos) return null;
 
         const scale = this.lastLayout.scale;
@@ -309,14 +318,19 @@ export class InventorySlotsUI {
         this.applyScroll();
     }
 
-    private buildSlots(rows: number, unlockedSlots: number, _itemCount?: number) {
+    private buildSlots(rows: number, unlockedSlots: number, maxSlots?: number) {
         const { columns, slotSize, slotSpacing } = this.config;
         this.slotsContent.removeAll(true);
         this.itemsContent.removeAll(true);
 
+        const totalSlots = typeof maxSlots === 'number' ? Math.max(0, maxSlots) : rows * columns;
+        if (totalSlots === 0) return;
+        let created = 0;
+
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < columns; col++) {
                 const index = row * columns + col;
+                if (created >= totalSlots) return;
                 const isUnlocked = index < unlockedSlots;
                 const textureKey = isUnlocked ? 'ui-slot-base' : 'ui-slot-extended';
                 const slot = this.scene.add.image(0, 0, textureKey).setOrigin(0, 0);
@@ -324,6 +338,7 @@ export class InventorySlotsUI {
                 const y = row * (slotSize + slotSpacing);
                 slot.setPosition(x, y);
                 this.slotsContent.add(slot);
+                created += 1;
             }
         }
     }
@@ -448,11 +463,43 @@ export class InventorySlotsUI {
         const availableSlots = this.config.unlockedSlots;
         const cappedSlots = this.slots.slice(0, availableSlots);
 
-        this.currentSlotCount = availableSlots;
-        this.currentRows = this.config.rows;
-        this.buildSlots(this.currentRows, availableSlots, cappedSlots.length);
+        let displaySlots: InventorySlotDisplay[] = [];
+        if (this.filterCategories && this.filterCategories.length > 0) {
+            displaySlots = cappedSlots
+                .filter((slot) => slot.item && this.filterCategories?.includes(slot.item.category))
+                .map((slot, displayIndex) => ({
+                    ...slot,
+                    index: displayIndex,
+                    sourceIndex: slot.index
+                }));
+        } else {
+            displaySlots = cappedSlots.map((slot) => ({
+                ...slot,
+                sourceIndex: slot.index
+            }));
+        }
 
-        this.renderSlots(cappedSlots);
+        this.displayIndexToSlotIndex.clear();
+        this.slotIndexToDisplayIndex.clear();
+        displaySlots.forEach((slot) => {
+            const sourceIndex = slot.sourceIndex ?? slot.index;
+            this.displayIndexToSlotIndex.set(slot.index, sourceIndex);
+            this.slotIndexToDisplayIndex.set(sourceIndex, slot.index);
+        });
+
+        const displayCount = this.filterCategories ? displaySlots.length : availableSlots;
+        const rows = this.filterCategories
+            ? Math.max(1, Math.ceil(displayCount / this.config.columns))
+            : this.config.rows;
+        this.currentSlotCount = displayCount;
+        this.currentRows = rows;
+        if (this.filterCategories) {
+            this.buildSlots(this.currentRows, displayCount, displayCount);
+        } else {
+            this.buildSlots(this.currentRows, availableSlots);
+        }
+
+        this.renderSlots(displaySlots);
 
         if (this.lastLayout) {
             this.layout(
@@ -473,19 +520,19 @@ export class InventorySlotsUI {
         this.slotIndexToCountImage.clear();
 
         slots.forEach((slot) => {
-            const index = slot.index;
-            const row = Math.floor(index / columns);
-            const col = index % columns;
+            const displayIndex = slot.index;
+            const row = Math.floor(displayIndex / columns);
+            const col = displayIndex % columns;
             const x = col * (slotSize + slotSpacing);
             const y = row * (slotSize + slotSpacing);
 
             const item = slot.item;
             if (!item) return;
 
-            this.slotIndexToItem.set(index, item);
-            this.slotIndexToStackCount.set(index, slot.count);
+            this.slotIndexToItem.set(displayIndex, item);
+            this.slotIndexToStackCount.set(displayIndex, slot.count);
 
-            if (this.filterCategory && item.category !== this.filterCategory) {
+            if (this.filterCategories && !this.filterCategories.includes(item.category)) {
                 return;
             }
 
@@ -493,10 +540,10 @@ export class InventorySlotsUI {
             icon.setScale(itemScale);
             icon.setInteractive();
             icon.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-                this.handleSlotPointerDown(index, pointer);
+                this.handleSlotPointerDown(displayIndex, pointer);
             });
             this.itemsContent.add(icon);
-            this.slotIndexToIcon.set(index, icon);
+            this.slotIndexToIcon.set(displayIndex, icon);
 
             const countText = String(slot.count);
             const countTextureKey = this.getCountTexture(countText);
@@ -506,7 +553,7 @@ export class InventorySlotsUI {
             const countY = y + slotSize - this.fontCharSize - countOffsetY;
             countImage.setPosition(Math.round(countX), Math.round(countY));
             this.itemsContent.add(countImage);
-            this.slotIndexToCountImage.set(index, countImage);
+            this.slotIndexToCountImage.set(displayIndex, countImage);
         });
     }
 
@@ -669,15 +716,17 @@ export class InventorySlotsUI {
         if (this.dragPointerId !== undefined && pointer.id !== this.dragPointerId) return;
 
         const fromIndex = this.dragStartIndex;
+        const fromSourceIndex = this.getSourceIndex(fromIndex);
         this.dragStartIndex = undefined;
         this.dragPointerId = undefined;
         this.dragStartX = undefined;
         this.dragStartY = undefined;
 
         const dropIndex = this.getNearestSlotIndex(pointer);
+        const dropSourceIndex = dropIndex !== undefined ? this.getSourceIndex(dropIndex) : undefined;
         if (this.dragGhost) {
             if (dropIndex !== undefined && dropIndex !== fromIndex) {
-                const handled = this.onSlotDragComplete?.(fromIndex, dropIndex, pointer) ?? false;
+                const handled = this.onSlotDragComplete?.(fromSourceIndex, dropSourceIndex, pointer) ?? false;
                 this.endDragVisual(!handled);
                 return;
             }
@@ -687,7 +736,7 @@ export class InventorySlotsUI {
                 return;
             }
 
-            const handled = this.onSlotDragComplete?.(fromIndex, undefined, pointer) ?? false;
+            const handled = this.onSlotDragComplete?.(fromSourceIndex, undefined, pointer) ?? false;
             this.endDragVisual(!handled);
             return;
         }
@@ -706,9 +755,9 @@ export class InventorySlotsUI {
         const item = this.slotIndexToItem.get(slotIndex);
         if (item) {
             const stackCount = this.slotIndexToStackCount.get(slotIndex);
-            this.onItemSelect?.(item, slotIndex, stackCount);
+            this.onItemSelect?.(item, this.getSourceIndex(slotIndex), stackCount);
         } else {
-            this.onItemSelect?.(null, slotIndex);
+            this.onItemSelect?.(null, this.getSourceIndex(slotIndex));
         }
     }
 
@@ -802,6 +851,17 @@ export class InventorySlotsUI {
         const x = col * step + slotSize / 2;
         const y = row * step + slotSize / 2;
         return { x, y };
+    }
+
+    private getSourceIndex(displayIndex: number): number {
+        return this.displayIndexToSlotIndex.get(displayIndex) ?? displayIndex;
+    }
+
+    private getDisplayIndex(sourceIndex: number): number | undefined {
+        if (this.filterCategories) {
+            return this.slotIndexToDisplayIndex.get(sourceIndex);
+        }
+        return this.slotIndexToDisplayIndex.get(sourceIndex) ?? sourceIndex;
     }
 
     private getCountTexture(text: string) {

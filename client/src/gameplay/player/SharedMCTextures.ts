@@ -105,8 +105,15 @@ export class SharedMCTextures {
                     // Create animation if it doesn't exist
                     if (!scene.anims.exists(animKey)) {
                         const frames: Phaser.Types.Animations.AnimationFrame[] = [];
-                        for (let i = 0; i < frameCount; i++) {
-                            frames.push({ key: textureKey, frame: i });
+                        const reversed = direction === 'W' || direction === 'NW' || direction === 'SW';
+                        if (reversed) {
+                            for (let i = frameCount - 1; i >= 0; i--) {
+                                frames.push({ key: textureKey, frame: i });
+                            }
+                        } else {
+                            for (let i = 0; i < frameCount; i++) {
+                                frames.push({ key: textureKey, frame: i });
+                            }
                         }
 
                         scene.anims.create({

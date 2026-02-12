@@ -16,11 +16,13 @@ import { InstanceRoom } from "./rooms/InstanceRoom";
 import authRoutes from "./routes/auth";
 import accountRoutes from "./routes/account";
 import inventoryRoutes from "./routes/inventory";
+import betaRoutes from "./routes/beta";
 import apiRoutes from "./routes";
 import stripeRoutes, { stripeWebhookHandler } from "./routes/stripe";
 import initPassport from "./config/passport";
 import { InstanceManager } from "./managers/InstanceManager";
 import { InventoryCache } from "./managers/InventoryCache";
+import { startBetaCampaignMonitor } from "./utils/betaCampaignMonitor";
 
 // Load environment variables from common locations
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
@@ -87,6 +89,7 @@ app.use("/api", apiRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/account", accountRoutes);
 app.use("/api/inventory", inventoryRoutes);
+app.use("/api/beta", betaRoutes);
 app.use("/api/stripe", stripeRoutes);
 
 // MongoDB connection
@@ -108,6 +111,8 @@ gameServer.define("game_room", GameRoom);
 // Initialize the instance manager with the game server
 const instanceManager = InstanceManager.getInstance();
 instanceManager.setGameServer(gameServer);
+
+startBetaCampaignMonitor(instanceManager);
 
 // Register InstanceRoom type for dynamic instance creation
 gameServer.define("instance", InstanceRoom);

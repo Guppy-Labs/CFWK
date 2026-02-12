@@ -191,16 +191,22 @@ export function getOcclusionAdjustedDepth(
     x: number,
     feetY: number,
     baseDepth: number,
-    respectElevatedLayers: boolean = false
+    respectElevatedLayers: boolean = false,
+    useOcclusionRegions: boolean = true
 ): number {
     let depth = baseDepth + feetY * 0.01;
     if (!occlusionManager) return depth;
 
-    const occlusionTags = occlusionManager.getOcclusionTagsAt(x, feetY, 4);
-    if (occlusionTags.size > 0) {
-        const minBase = occlusionManager.getMinBaseDepthForTags(occlusionTags);
-        depth = (minBase - 10) + (feetY * 0.01);
-    } else if (respectElevatedLayers) {
+    if (useOcclusionRegions) {
+        const occlusionTags = occlusionManager.getOcclusionTagsAt(x, feetY, 4);
+        if (occlusionTags.size > 0) {
+            const minBase = occlusionManager.getMinBaseDepthForTags(occlusionTags);
+            depth = (minBase - 10) + (feetY * 0.01);
+            return depth;
+        }
+    }
+
+    if (respectElevatedLayers) {
         const maxElevatedDepth = occlusionManager.getMaxElevatedLayerDepth();
         if (maxElevatedDepth !== null) {
             const frontDepth = (maxElevatedDepth + 1) + (feetY * 0.01);

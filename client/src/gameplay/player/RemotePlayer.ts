@@ -71,6 +71,9 @@ export type RemotePlayerConfig = {
     isChatOpen?: boolean; // Initial chat open/focused state
     isPremium?: boolean; // Shark tier badge
     groundLayers?: Phaser.Tilemaps.TilemapLayer[];
+    walkAnimSpeedMin?: number;
+    walkAnimSpeedMax?: number;
+    walkAnimSpeedMaxVelocity?: number;
     /** Custom animation key getter for per-player appearance - returns animation key for anim + direction */
     customAnimationKeyGetter?: (anim: string, direction: MCDirection) => string | undefined;
 };
@@ -112,6 +115,10 @@ export class RemotePlayer {
     private readonly scale = 1.2;
     private readonly hitboxWidth = 16;
     private readonly collidableHeight = 6;
+    private readonly walkFrameRate = 10;
+    private walkAnimSpeedMin = 6;
+    private walkAnimSpeedMax = 14;
+    private walkAnimSpeedMaxVelocity = 3.2;
 
     // Spawn effect
     private particles: PixelParticle[] = [];
@@ -145,6 +152,9 @@ export class RemotePlayer {
         this.baseDepth = config.depth;
         this.occlusionManager = config.occlusionManager;
         this.customAnimationKeyGetter = config.customAnimationKeyGetter;
+        this.walkAnimSpeedMin = config.walkAnimSpeedMin ?? this.walkAnimSpeedMin;
+        this.walkAnimSpeedMax = config.walkAnimSpeedMax ?? this.walkAnimSpeedMax;
+        this.walkAnimSpeedMaxVelocity = config.walkAnimSpeedMaxVelocity ?? this.walkAnimSpeedMaxVelocity;
         
         // Check for mobile device (Android, iOS, etc.)
         const os = this.scene.sys.game.device.os;
@@ -497,6 +507,8 @@ export class RemotePlayer {
         if (!this.sprite.frame) return;
 
         // Smooth interpolation to target position
+        const prevX = this.sprite.x;
+        const prevY = this.sprite.y;
         const dx = this.targetX - this.sprite.x;
         const dy = this.targetY - this.sprite.y;
         
@@ -507,6 +519,18 @@ export class RemotePlayer {
             this.sprite.x = this.targetX;
             this.sprite.y = this.targetY;
         }
+
+        const dtSec = Math.max(0.001, delta / 1000);
+        const movedX = this.sprite.x - prevX;
+        const movedY = this.sprite.y - prevY;
+        const speed = Math.hypot(movedX, movedY) / dtSec;
+        if (this.sprite.anims.currentAnim && this.currentAnim === 'walk') {
+            const t = Phaser.Math.Clamp(speed / this.walkAnimSpeedMaxVelocity, 0, 1);
+            const targetRate = Phaser.Math.Linear(this.walkAnimSpeedMin, this.walkAnimSpeedMax, t);
+            this.sprite.anims.timeScale = targetRate / this.walkFrameRate;
+        } else if (this.sprite.anims.currentAnim) {
+            this.sprite.anims.timeScale = 1;
+        }
         
         // Calculate depth with Y-sorting and occlusion awareness
         const feetY = this.sprite.getBottomLeft().y;
@@ -515,7 +539,8 @@ export class RemotePlayer {
             this.sprite.x,
             feetY,
             this.baseDepth,
-            true
+            true,
+            false
         );
         this.sprite.setDepth(depth);
         

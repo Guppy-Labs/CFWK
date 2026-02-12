@@ -4,6 +4,32 @@ import { Strategy as DiscordStrategy } from 'passport-discord';
 import User, { IUser } from '../models/User';
 import { ALLOWED_EMAILS } from './access';
 
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || '';
+const DISCORD_BOT_GUILD_ID = process.env.DISCORD_BOT_GUILD_ID || '';
+
+async function addUserToDiscordGuild(discordId: string, accessToken: string) {
+    if (!DISCORD_BOT_TOKEN || !DISCORD_BOT_GUILD_ID) return;
+    if (!accessToken) return;
+
+    try {
+        const response = await fetch(`https://discord.com/api/v10/guilds/${DISCORD_BOT_GUILD_ID}/members/${discordId}`, {
+            method: 'PUT',
+            headers: {
+                Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ access_token: accessToken })
+        });
+
+        if (!response.ok) {
+            const body = await response.text();
+            console.warn('[Discord] Failed to add member to guild', response.status, body);
+        }
+    } catch (err) {
+        console.warn('[Discord] Guild join error', err);
+    }
+}
+
 export default function initPassport() {
 passport.serializeUser((user: any, done) => {
   done(null, user.id);
@@ -82,7 +108,7 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
         clientID: process.env.DISCORD_CLIENT_ID,
         clientSecret: process.env.DISCORD_CLIENT_SECRET,
         callbackURL: process.env.DISCORD_CALLBACK_URL || "/api/auth/discord/callback",
-        scope: ['identify', 'email'],
+        scope: ['identify', 'email', 'guilds.join'],
         passReqToCallback: true
     }, async (req: any, accessToken, refreshToken, profile, done) => {
         try {
@@ -100,6 +126,7 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
 
                 user.discordId = profile.id;
                 await user.save();
+                await addUserToDiscordGuild(profile.id, accessToken);
                 return done(null, user);
             }
 
@@ -107,7 +134,10 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
             if (!email) return done(new Error("No email found from Discord"), undefined);
 
             let user = await User.findOne({ discordId: profile.id });
-            if (user) return done(null, user);
+            if (user) {
+                await addUserToDiscordGuild(profile.id, accessToken);
+                return done(null, user);
+            }
 
             user = await User.findOne({ email });
             if (user) {
@@ -133,6 +163,7 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
                 isVerified: true
             });
             await newUser.save();
+            await addUserToDiscordGuild(profile.id, accessToken);
             done(null, newUser);
         } catch (err) {
             done(err as Error, undefined);

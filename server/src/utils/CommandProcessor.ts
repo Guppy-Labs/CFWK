@@ -52,8 +52,6 @@ export class CommandProcessor {
                 return this.handleBroadcast(args, issuerName);
             case 'reboot':
                 return this.handleReboot(issuerName);
-            case 'limbo':
-                return await this.handleLimbo(args, issuerName);
             case 'give':
                 return await this.handleGive(args, issuerName);
             case 'drop':
@@ -220,22 +218,6 @@ export class CommandProcessor {
         return "Server rebooting...";
     }
 
-    private static async handleLimbo(args: string[], issuer: string): Promise<string> {
-        if (args.length < 1) return "Usage: /limbo [username]";
-        const targetName = args[0];
-        
-        const user = await this.getUserByUsername(targetName);
-        if (!user) return `User '${targetName}' not found.`;
-        if (user.permissions.includes('game.admin')) return "Cannot send an admin to limbo.";
-
-        // Emit event to send the player to limbo
-        InstanceManager.getInstance().events.emit('send_to_limbo', { 
-            userId: user._id.toString(),
-            reason: `You were sent to limbo by ${issuer}.`
-        });
-
-        return `User ${user.username} has been sent to limbo.`;
-    }
 
     private static async handleGive(args: string[], issuer: string): Promise<string> {
         if (args.length < 2) return "Usage: /give [username] [item id] [count]";

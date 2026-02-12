@@ -42,6 +42,9 @@ export interface MCAnimationConfig {
     walkFrameRate?: number;
     idleFrameRate?: number;
     runFrameRate?: number;
+    walkAnimSpeedMin?: number;
+    walkAnimSpeedMax?: number;
+    walkAnimSpeedMaxVelocity?: number;
     scale?: number;
 }
 
@@ -49,6 +52,9 @@ const DEFAULT_CONFIG: Required<MCAnimationConfig> = {
     walkFrameRate: 10,
     idleFrameRate: 6,
     runFrameRate: 12,
+    walkAnimSpeedMin: 4,
+    walkAnimSpeedMax: 18,
+    walkAnimSpeedMaxVelocity: 3.2,
     scale: 1.0
 };
 
@@ -163,10 +169,11 @@ export class MCAnimationController {
 
                 // Create the animation with explicit frame references
                 const frames: Phaser.Types.Animations.AnimationFrame[] = [];
-                for (let i = 0; i < frameCount; i++) {
+                const frameOrder = this.getFrameOrderForDirection(direction, frameCount);
+                for (const frameIndex of frameOrder) {
                     frames.push({
                         key: textureKey,
-                        frame: i
+                        frame: frameIndex
                     });
                 }
 
@@ -180,6 +187,22 @@ export class MCAnimationController {
         }
 
         this.animationsCreated = true;
+    }
+
+    private getFrameOrderForDirection(direction: MCDirection, frameCount: number): number[] {
+        const reversed = direction === 'W' || direction === 'NW' || direction === 'SW';
+        const frames: number[] = [];
+        if (reversed) {
+            for (let i = frameCount - 1; i >= 0; i--) {
+                frames.push(i);
+            }
+            return frames;
+        }
+
+        for (let i = 0; i < frameCount; i++) {
+            frames.push(i);
+        }
+        return frames;
     }
 
     /**
@@ -265,27 +288,13 @@ export class MCAnimationController {
             }
         }
 
-        // Adjust animation speed based on actual velocity
-        // This makes walking look slower and sprinting look faster
-        if (player.anims.currentAnim && newAnimation !== 'idle') {
-            const speed = actualSpeed;
-            // Map speed to timeScale: ~1.6 walk speed = 1.0, ~2.4 sprint = 1.5
-            // Minimum 0.5 for very slow movement, max 1.5 for sprinting
-            let timeScale = 1.0;
-            if (speed > 0.1) {
-                // Linear interpolation from walk (1.6) to sprint (2.4)
-                // walk = 1.0 timeScale, sprint = 1.5 timeScale
-                const walkSpeed = 1.6;
-                const sprintSpeed = 2.4;
-                const normalizedSpeed = (speed - walkSpeed) / (sprintSpeed - walkSpeed);
-                timeScale = 1.0 + (normalizedSpeed * 0.5); // 1.0 to 1.5
-                timeScale = Phaser.Math.Clamp(timeScale, 0.6, 1.6);
-            } else {
-                // Very slow/stopped - slow animation
-                timeScale = 0.6;
-            }
+        if (player.anims.currentAnim && newAnimation === 'walk') {
+            const walkSpeed = Math.max(0, actualSpeed);
+            const t = Phaser.Math.Clamp(walkSpeed / this.config.walkAnimSpeedMaxVelocity, 0, 1);
+            const targetRate = Phaser.Math.Linear(this.config.walkAnimSpeedMin, this.config.walkAnimSpeedMax, t);
+            const timeScale = targetRate / this.config.walkFrameRate;
             player.anims.timeScale = timeScale;
-        } else if (player.anims.currentAnim && newAnimation === 'idle') {
+        } else if (player.anims.currentAnim) {
             player.anims.timeScale = 1.0;
         }
     }

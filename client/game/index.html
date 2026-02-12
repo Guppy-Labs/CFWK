@@ -93,8 +93,8 @@
         }
 
         .game-navbar {
-            display: flex;
-            justify-content: space-between;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
             align-items: center;
             padding: 0.8rem 2rem;
             background-color: var(--mm-bg-panel);
@@ -112,9 +112,14 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
+            justify-self: center;
+        }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            justify-self: end;
         }
 
         .back-link {
@@ -154,6 +159,19 @@
             color: #fff3b0;
             border-color: #ffd54f;
             background: rgba(255, 215, 0, 0.2);
+        }
+
+        .beta-access-chip {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            padding: 0.35rem 0.7rem;
+            border: 1px solid rgba(102, 204, 255, 0.6);
+            background: rgba(102, 204, 255, 0.16);
+            color: #bfe9ff;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
         }
         
         #game-container {
@@ -614,7 +632,10 @@
     <nav class="game-navbar">
         <a href="/account" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back</a>
         <div class="nav-brand"><i class="fa-solid fa-gamepad"></i> CUTE FISH</div>
-        <a href="/upgrade" id="nav-upgrade-btn" class="nav-upgrade-btn" title="Upgrade to Shark" aria-label="Upgrade to Shark">★</a>
+        <div class="nav-right">
+            <div id="beta-access-chip" class="beta-access-chip"><i class="fa-solid fa-ticket"></i> Beta ends in --</div>
+            <a href="/upgrade" id="nav-upgrade-btn" class="nav-upgrade-btn" title="Upgrade to Shark" aria-label="Upgrade to Shark">★</a>
+        </div>
     </nav>
 
     <div id="game-container">

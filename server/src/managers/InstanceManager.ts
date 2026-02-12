@@ -84,14 +84,6 @@ export class InstanceManager {
             isPublic: true
         });
 
-        // Limbo - fallback location
-        this.registerLocation({
-            id: "limbo",
-            name: "Limbo",
-            mapFile: "limbo.tmj",
-            maxPlayers: 50,
-            isPublic: true
-        });
     }
 
     /**

@@ -78,6 +78,7 @@ export class InstanceRoom extends Room<InstanceState> {
     private afkCheckInterval?: ReturnType<typeof setInterval>;
     private droppedItemCleanupInterval?: ReturnType<typeof setInterval>;
     private fishingCasts = new Map<string, { depth: number; region: string; castAt: number; itemId?: string; clicksRequired?: number }>();
+    private lastActivityBySession = new Map<string, number>();
 
     onCreate(options: { instanceId: string; locationId: string; mapFile: string; maxPlayers: number }) {
         console.log(`[InstanceRoom] Creating room for instance: ${options.instanceId}`);
@@ -146,19 +147,15 @@ export class InstanceRoom extends Room<InstanceState> {
             });
         });
 
-        // Handle send to limbo command
-        this.instanceManager.events.on('send_to_limbo', (data: { userId: string, reason: string }) => {
-            try {
-                this.clients.forEach(client => {
-                    const player = this.state.players.get(client.sessionId);
-                    if (player && player.odcid === data.userId) {
-                        // Send the reason as the leave message (code 4004 = sent to limbo)
-                        client.leave(4004, data.reason);
-                    }
-                });
-            } catch (e) {
-                console.error("Error processing send_to_limbo:", e);
-            }
+        this.instanceManager.events.on('beta_kick', (data: { userIds: string[]; reason?: string }) => {
+            const idSet = new Set(data.userIds || []);
+            if (idSet.size === 0) return;
+            this.clients.forEach(client => {
+                const player = this.state.players.get(client.sessionId);
+                if (player && idSet.has(player.odcid)) {
+                    client.leave(4004, data.reason || 'Beta access ended');
+                }
+            });
         });
 
         this.instanceId = options.instanceId;
@@ -179,16 +176,31 @@ export class InstanceRoom extends Room<InstanceState> {
             this.updateWorldTime();
         }, 1000);
 
-        // Server-side AFK kick enforcement (authoritative)
+        // Server-side AFK enforcement (authoritative)
+        const afkWarnThresholdMs = 60000; // 1 minute before AFK state
         const afkKickThresholdMs = 300000; // 5 minutes base
         const premiumAfkKickThresholdMs = 1200000; // 20 minutes for Shark tier
         this.afkCheckInterval = setInterval(() => {
             const now = Date.now();
             this.clients.forEach(client => {
                 const player = this.state.players.get(client.sessionId);
-                if (!player || !player.isAfk || !player.afkSince) return;
+                if (!player) return;
+
+                const lastActivity = this.lastActivityBySession.get(client.sessionId) ?? now;
+                const idleMs = now - lastActivity;
                 const threshold = player.isPremium ? premiumAfkKickThresholdMs : afkKickThresholdMs;
-                if (now - player.afkSince >= threshold) {
+
+                if (idleMs >= afkWarnThresholdMs) {
+                    if (!player.isAfk) {
+                        player.isAfk = true;
+                        player.afkSince = lastActivity + afkWarnThresholdMs;
+                    }
+                } else if (player.isAfk) {
+                    player.isAfk = false;
+                    player.afkSince = 0;
+                }
+
+                if (idleMs >= threshold) {
                     console.log(`[InstanceRoom] AFK kick (server) for ${client.sessionId}`);
                     client.leave(4000, "AFK timeout");
                 }
@@ -208,6 +220,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle player input
         this.onMessage("input", (client, input: PlayerInput) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (player) {
                 const speed = 2;
@@ -226,6 +239,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle position sync (client sends authoritative position for now)
         this.onMessage("position", (client, data: { x: number; y: number }) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (player) {
                 player.x = data.x;
@@ -235,6 +249,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle animation sync
         this.onMessage("animation", (client, data: { anim: PlayerAnim; direction: number }) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (player) {
                 player.anim = data.anim;
@@ -248,14 +263,19 @@ export class InstanceRoom extends Room<InstanceState> {
         this.onMessage("afk", (client, data: { isAfk: boolean }) => {
             const player = this.state.players.get(client.sessionId);
             if (player) {
-                player.isAfk = data.isAfk;
-                player.afkSince = data.isAfk ? Date.now() : 0;
+                if (data.isAfk) {
+                    player.isAfk = true;
+                    player.afkSince = player.afkSince || Date.now();
+                } else {
+                    this.markActivity(client);
+                }
                 console.log(`[InstanceRoom] Player ${client.sessionId} AFK: ${data.isAfk}`);
             }
         });
 
         // Handle GUI open state
         this.onMessage("gui", (client, data: { isOpen: boolean }) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (player) {
                 player.isGuiOpen = data.isOpen;
@@ -264,6 +284,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle chat focus state
         this.onMessage("chatFocus", (client, data: { isOpen: boolean }) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (player) {
                 player.isChatOpen = data.isOpen;
@@ -272,6 +293,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle shove interactions
         this.onMessage("shove", (client, data: { targetSessionId: string }) => {
+            this.markActivity(client);
             const attacker = this.state.players.get(client.sessionId);
             const target = this.state.players.get(data.targetSessionId);
             
@@ -324,6 +346,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle shove attempts (animation sync even on miss)
         this.onMessage("shoveAttempt", (client, data: { targetSessionId: string }) => {
+            this.markActivity(client);
             this.broadcast("shoveAttempt", {
                 attackerSessionId: client.sessionId,
                 targetSessionId: data.targetSessionId
@@ -332,6 +355,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle fishing start (bubble sync)
         this.onMessage("fishing:start", (client, data: { rodItemId: string }) => {
+            this.markActivity(client);
             this.broadcast("fishing:start", {
                 sessionId: client.sessionId,
                 rodItemId: data?.rodItemId ?? null
@@ -340,6 +364,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle fishing stop (bubble sync)
         this.onMessage("fishing:stop", (client) => {
+            this.markActivity(client);
             this.broadcast("fishing:stop", {
                 sessionId: client.sessionId
             });
@@ -347,6 +372,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle fishing cast (server-side loot selection setup)
         this.onMessage("fishing:cast", (client, data: { depth?: number; region?: string }) => {
+            this.markActivity(client);
             const depthRaw = typeof data?.depth === 'number' ? data.depth : 1;
             const depth = Math.max(1, Math.min(12, depthRaw));
             const region = typeof data?.region === 'string' && data.region ? data.region : 'temperate';
@@ -355,6 +381,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle fishing hook (determine target item + required clicks)
         this.onMessage("fishing:hook", async (client) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (!player) return;
 
@@ -385,6 +412,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle fishing catch (award item if cast exists)
         this.onMessage("fishing:catch", async (client) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (!player) return;
 
@@ -418,6 +446,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle pickup item interactions
         this.onMessage("pickupItem", async (client, data: { droppedItemId: string }) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (!player) return;
 
@@ -455,6 +484,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle dropping items from player inventory
         this.onMessage("dropItem", async (client, data: { itemId: string; amount: number }) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (!player) return;
 
@@ -476,6 +506,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle inventory slot updates from client
         this.onMessage("inventory:set", async (client, data: { slots: { index: number; itemId: string | null; count: number }[] }) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (!player) return;
             if (!data || !Array.isArray(data.slots)) return;
@@ -503,6 +534,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle chat messages
         this.onMessage("chat", async (client, data: { message: string }) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             
             if (player && data.message) {
@@ -583,6 +615,17 @@ export class InstanceRoom extends Room<InstanceState> {
         this.state.droppedItems.set(drop.id, drop);
     }
 
+    private markActivity(client: Client) {
+        const now = Date.now();
+        this.lastActivityBySession.set(client.sessionId, now);
+
+        const player = this.state.players.get(client.sessionId);
+        if (player && player.isAfk) {
+            player.isAfk = false;
+            player.afkSince = 0;
+        }
+    }
+
     async onJoin(client: Client, options: { username?: string; odcid?: string }) {
         const odcid = options.odcid || client.sessionId;
         
@@ -606,6 +649,7 @@ export class InstanceRoom extends Room<InstanceState> {
         
         // --- Account Ban Check ---
         let isPremium = false;
+        let hasGameAccess = false;
         let userAppearance: string = ""; // JSON-encoded appearance
         if (odcid !== client.sessionId) {
             try {
@@ -619,6 +663,11 @@ export class InstanceRoom extends Room<InstanceState> {
 
                 if (user && Array.isArray(user.permissions)) {
                     isPremium = user.permissions.includes('premium.shark');
+                    hasGameAccess = user.permissions.includes('access.game');
+                }
+
+                if (user && user.betaAccessUntil && user.betaAccessUntil.getTime() > Date.now()) {
+                    hasGameAccess = true;
                 }
                 
                 // Load character appearance for remote player rendering (always include, use defaults if missing)
@@ -635,6 +684,11 @@ export class InstanceRoom extends Room<InstanceState> {
                 if (err.message && err.message.startsWith("ACCOUNT_BANNED|")) throw err;
                 console.error("Error checking ban status:", err);
             }
+        }
+
+        if (odcid !== client.sessionId && !hasGameAccess) {
+            console.log(`[InstanceRoom] Rejecting connection without access: ${odcid}`);
+            throw new Error("NO_ACCESS");
         }
         
         // Check for duplicate connection
@@ -665,6 +719,7 @@ export class InstanceRoom extends Room<InstanceState> {
         player.appearance = userAppearance; // Character customization data
         
         this.state.players.set(client.sessionId, player);
+        this.lastActivityBySession.set(client.sessionId, Date.now());
 
         // Send initial inventory to the client on join
         try {
@@ -676,6 +731,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle equipment updates from client
         this.onMessage("equipment:set", async (client, data: { equippedRodId: string | null }) => {
+            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (!player) return;
 
@@ -727,6 +783,7 @@ export class InstanceRoom extends Room<InstanceState> {
         
         this.state.players.delete(client.sessionId);
         this.fishingCasts.delete(client.sessionId);
+        this.lastActivityBySession.delete(client.sessionId);
         
         // Notify instance manager
         this.instanceManager.playerLeft(this.instanceId);

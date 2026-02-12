@@ -191,7 +191,9 @@ export class NPCManager {
             this.occlusionManager,
             sprite.x,
             feetY,
-            this.baseDepth + depthOffset
+            this.baseDepth + depthOffset,
+            false,
+            false
         );
         sprite.setDepth(depth);
     }
