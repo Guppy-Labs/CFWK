@@ -166,6 +166,17 @@ const adminCommandData = new SlashCommandBuilder()
         sub
             .setName('direct')
             .setDescription('Grant beta access to eligible users with linked Discord')
+    )
+    .addSubcommand((sub) =>
+        sub
+            .setName('direct-user')
+            .setDescription('Grant beta access to a specific Discord user')
+            .addUserOption((opt) =>
+                opt
+                    .setName('user')
+                    .setDescription('User to grant access to')
+                    .setRequired(true)
+            )
     );
 
 function parseDurationToMs(input: string): number {
@@ -318,7 +329,7 @@ async function syncDirectInvites(campaign: any) {
     return { granted, needsLink, dmFailed };
 }
 
-client.on('ready', async () => {
+client.once('clientReady', async () => {
     console.log(`[BetaBot] Logged in as ${client.user?.tag}`);
     setInterval(async () => {
         const campaign = await BetaCampaign.findOne({ active: true, endsAt: { $gt: new Date() } });
@@ -540,6 +551,8 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.reply({ content: 'This command must be run in the server.', ephemeral: true });
                 return;
             }
+
+            await interaction.deferReply({ ephemeral: true });
             let granted = 0;
             let needsLink = 0;
             let dmFailed = 0;
@@ -568,9 +581,51 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
-            await interaction.reply({
+            await interaction.editReply({
                 content: `Direct invite finished. Granted: ${granted}. Needs link: ${needsLink}. DM failures: ${dmFailed}.`,
-                ephemeral: true
+            });
+            return;
+        }
+
+        if (subcommand === 'direct-user') {
+            const campaign = await BetaCampaign.findOne({ active: true, endsAt: { $gt: new Date() } });
+            if (!campaign) {
+                await interaction.reply({ content: 'No active beta campaign found.', ephemeral: true });
+                return;
+            }
+
+            await interaction.deferReply({ ephemeral: true });
+
+            const targetUser = interaction.options.getUser('user', true);
+            const discordId = targetUser.id;
+            const user = await User.findOne({ discordId: String(discordId) });
+
+            let granted = 0;
+            let needsLink = 0;
+            let dmFailed = 0;
+
+            if (user) {
+                user.betaAccessUntil = campaign.endsAt;
+                await user.save();
+                granted = 1;
+                try {
+                    const dmTarget = await client.users.fetch(discordId);
+                    await dmTarget.send(buildLinkedEmbed(campaign.endsAt));
+                } catch {
+                    dmFailed = 1;
+                }
+            } else {
+                needsLink = 1;
+                try {
+                    const dmTarget = await client.users.fetch(discordId);
+                    await dmTarget.send(buildUnlinkedEmbed());
+                } catch {
+                    dmFailed = 1;
+                }
+            }
+
+            await interaction.editReply({
+                content: `Direct user invite finished. Granted: ${granted}. Needs link: ${needsLink}. DM failures: ${dmFailed}.`,
             });
             return;
         }

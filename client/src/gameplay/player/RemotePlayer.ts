@@ -140,6 +140,7 @@ export class RemotePlayer {
     private isChatOpen: boolean = false;
     private guiEffect?: GuiSwirlEffect;
     private nameplateYOffset: number = -36;
+    private destroyed: boolean = false;
 
     constructor(scene: Phaser.Scene, config: RemotePlayerConfig) {
         this.scene = scene;
@@ -362,6 +363,7 @@ export class RemotePlayer {
      * Update position from server state
      */
     setPosition(x: number, y: number) {
+        if (this.destroyed) return;
         const dx = x - this.targetX;
         const dy = y - this.targetY;
         
@@ -387,6 +389,7 @@ export class RemotePlayer {
      * Update animation state from server
      */
     setAnimation(anim: string, direction: number) {
+        if (this.destroyed) return;
         this.currentDirection = direction as Direction;
         this.currentAnim = anim;
         this.updateAnimation(this.currentAnim, this.currentDirection);
@@ -396,6 +399,7 @@ export class RemotePlayer {
      * Update the animation key getter after textures are generated
      */
     setCustomAnimationKeyGetter(getter?: (anim: string, direction: MCDirection) => string | undefined) {
+        if (this.destroyed) return;
         this.customAnimationKeyGetter = getter;
         this.updateAnimation(this.currentAnim, this.currentDirection);
     }
@@ -404,6 +408,7 @@ export class RemotePlayer {
      * Set AFK state from server
      */
     setAfk(isAfk: boolean, afkSince?: number) {
+        if (this.destroyed) return;
         const shouldUpdateAfkSince = isAfk && afkSince && afkSince > 0 && this.afkStartTime !== afkSince;
 
         if (this.isAfk !== isAfk) {
@@ -424,16 +429,19 @@ export class RemotePlayer {
     }
 
     setGuiOpen(isOpen: boolean) {
+        if (this.destroyed) return;
         this.isGuiOpen = isOpen;
         this.guiEffect?.setActive(isOpen || this.isChatOpen);
     }
 
     setChatOpen(isOpen: boolean) {
+        if (this.destroyed) return;
         this.isChatOpen = isOpen;
         this.guiEffect?.setActive(this.isGuiOpen || isOpen);
     }
 
     private updateAnimation(anim: string, direction: Direction) {
+        if (this.destroyed || !this.sprite || !this.sprite.anims) return;
         // Convert to MC direction
         const mcDir = DIRECTION_TO_MC[direction];
         
@@ -463,6 +471,7 @@ export class RemotePlayer {
     }
 
     private updateSpriteOrigin(anim: string, direction: MCDirection) {
+        if (this.destroyed || !this.sprite) return;
         const animType: MCAnimationType = anim === 'idle' || anim === 'walk' || anim === 'run' ? anim : 'walk';
         const dimensions = MC_FRAME_DIMENSIONS_BY_ANIM[animType][direction];
         const scaledWidth = dimensions.width * this.scale;
@@ -495,6 +504,7 @@ export class RemotePlayer {
      * Update every frame - interpolate position and particle effects
      */
     update(delta: number) {
+        if (this.destroyed || !this.sprite || !this.nameplate) return;
         // Update particle effects
         if (this.particles.length > 0) {
             this.updateParticles();
@@ -504,7 +514,7 @@ export class RemotePlayer {
         if (this.isSpawning && this.particles.length > 0) return;
 
         // Guard: skip update if sprite frame is not ready (texture still loading)
-        if (!this.sprite.frame) return;
+        if (!this.sprite.frame || !this.sprite.anims) return;
 
         // Smooth interpolation to target position
         const prevX = this.sprite.x;
@@ -602,6 +612,7 @@ export class RemotePlayer {
      * Update particle animation
      */
     private updateParticles() {
+        if (this.destroyed || !this.sprite || !this.nameplate) return;
         const elapsed = this.scene.time.now - this.spawnStartTime;
         const totalProgress = elapsed / this.spawnDuration;
 
@@ -696,7 +707,7 @@ export class RemotePlayer {
      * Play interact animation for this remote player
      */
     playInteractAnimation() {
-        if (!this.sprite || typeof (this.sprite as any).play !== 'function') return;
+        if (this.destroyed || !this.sprite || !this.sprite.anims || typeof (this.sprite as any).play !== 'function') return;
 
         const directionMap: { [key in Direction]: { name: string; flip: boolean } } = {
             [Direction.Down]: { name: 'down', flip: false },
@@ -722,6 +733,8 @@ export class RemotePlayer {
      * Destroy and clean up
      */
     destroy() {
+        if (this.destroyed) return;
+        this.destroyed = true;
         this.guiEffect?.destroy();
         this.waterSystem?.destroy();
         // Clean up any remaining particles

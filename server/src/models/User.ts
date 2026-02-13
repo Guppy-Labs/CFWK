@@ -1,5 +1,12 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE, DEFAULT_USER_SETTINGS, IUserSettings } from '@cfwk/shared';
+import {
+  ICharacterAppearance,
+  DEFAULT_CHARACTER_APPEARANCE,
+  DEFAULT_USER_SETTINGS,
+  IUserSettings,
+  DEFAULT_INVENTORY_SLOTS,
+  getItemDefinition
+} from '@cfwk/shared';
 
 // Re-export for convenience
 export { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE };
@@ -33,6 +40,76 @@ export interface IUser extends Document {
   premiumCurrentPeriodEnd?: Date;
   betaAccessUntil?: Date | null;
   settings?: IUserSettings;
+}
+
+type RawInventoryEntry = { index?: number; itemId?: string | null; count?: number };
+type NormalizedInventoryEntry = { index: number; itemId: string | null; count: number };
+
+function createEmptySlots(count: number): NormalizedInventoryEntry[] {
+  return Array.from({ length: count }, (_v, index) => ({ index, itemId: null, count: 0 }));
+}
+
+function getStackSize(itemId: string): number {
+  const def = getItemDefinition(itemId);
+  return def?.stackSize ?? 99;
+}
+
+function placeItemInSlots(slots: NormalizedInventoryEntry[], itemId: string, amount: number) {
+  const stackSize = getStackSize(itemId);
+  let remaining = amount;
+
+  for (const slot of slots) {
+    if (remaining <= 0) break;
+    if (slot.itemId !== itemId) continue;
+    if (slot.count >= stackSize) continue;
+
+    const canAdd = Math.min(stackSize - slot.count, remaining);
+    slot.count += canAdd;
+    remaining -= canAdd;
+  }
+
+  for (const slot of slots) {
+    if (remaining <= 0) break;
+    if (slot.itemId !== null) continue;
+
+    const toAdd = Math.min(stackSize, remaining);
+    slot.itemId = itemId;
+    slot.count = toAdd;
+    remaining -= toAdd;
+  }
+}
+
+function normalizeInventoryForSave(rawInventory: RawInventoryEntry[]): NormalizedInventoryEntry[] {
+  if (rawInventory.length === 0) return [];
+  const isLegacy = rawInventory.some((slot) => slot.index === undefined);
+
+  if (isLegacy) {
+    const slots = createEmptySlots(DEFAULT_INVENTORY_SLOTS);
+    for (const entry of rawInventory) {
+      const itemId = entry.itemId ?? null;
+      const count = Math.max(0, entry.count ?? 0);
+      if (!itemId || count <= 0) continue;
+      placeItemInSlots(slots, itemId, count);
+    }
+    return slots;
+  }
+
+  const slots: NormalizedInventoryEntry[] = rawInventory
+    .map((slot, index) => ({
+      index: slot.index ?? index,
+      itemId: slot.itemId ?? null,
+      count: Math.max(0, slot.count ?? 0)
+    }))
+    .sort((a, b) => a.index - b.index);
+
+  if (slots.length < DEFAULT_INVENTORY_SLOTS) {
+    const start = slots.length;
+    for (let i = start; i < DEFAULT_INVENTORY_SLOTS; i += 1) {
+      slots.push({ index: i, itemId: null, count: 0 });
+    }
+  }
+
+  return slots;
 }
 
 const UserSchema: Schema = new Schema({
@@ -115,6 +192,21 @@ const UserSchema: Schema = new Schema({
   }
 }, {
   timestamps: true
+});
+
+UserSchema.pre('validate', function (next) {
+  const doc = this as IUser;
+  if (!Array.isArray(doc.inventory) || doc.inventory.length === 0) {
+    next();
+    return;
+  }
+
+  const needsNormalize = doc.inventory.some((slot: RawInventoryEntry) => slot.index === undefined);
+  if (needsNormalize) {
+    doc.inventory = normalizeInventoryForSave(doc.inventory as RawInventoryEntry[]);
+  }
+
+  next();
 });
 
 export default mongoose.model<IUser>('User', UserSchema);

@@ -34,7 +34,7 @@ export class InventoryCache {
         }
 
         const rawInventory = (user.inventory || []) as any[];
-        const isLegacy = rawInventory.length > 0 && rawInventory[0].index === undefined;
+        const isLegacy = rawInventory.length > 0 && rawInventory.some((slot) => slot.index === undefined);
         const items = this.normalizeInventory(rawInventory);
         this.cache.set(userId, {
             items: [...items],
@@ -198,7 +198,7 @@ export class InventoryCache {
 
     private normalizeInventory(rawInventory: Array<{ itemId?: string; count?: number; index?: number }>): InventoryItem[] {
         // Detect legacy format (no index field)
-        const isLegacy = rawInventory.length > 0 && rawInventory[0].index === undefined;
+        const isLegacy = rawInventory.length > 0 && rawInventory.some((slot) => slot.index === undefined);
 
         if (isLegacy) {
             const slots = this.createEmptySlots(DEFAULT_INVENTORY_SLOTS);
