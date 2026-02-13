@@ -285,8 +285,8 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         file: 'assets/fish/tile227.png'
     },
     {
-        id: 'invested_vase',
-        name: 'Invested Vase',
+        id: 'infested_vase',
+        name: 'Infested Vase',
         category: 'Treasure',
         description: 'An ancient vase covered in barnacles. Could be valuable!',
         rarity: 'uncommon',

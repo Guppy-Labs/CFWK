@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
+import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE, DEFAULT_USER_SETTINGS, IUserSettings } from '@cfwk/shared';
 
 // Re-export for convenience
 export { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE };
@@ -32,6 +32,7 @@ export interface IUser extends Document {
   premiumTier?: 'shark' | null;
   premiumCurrentPeriodEnd?: Date;
   betaAccessUntil?: Date | null;
+  settings?: IUserSettings;
 }
 
 const UserSchema: Schema = new Schema({
@@ -95,7 +96,23 @@ const UserSchema: Schema = new Schema({
   premiumStatus: { type: String },
   premiumTier: { type: String, default: null },
   premiumCurrentPeriodEnd: { type: Date },
-  betaAccessUntil: { type: Date, default: null }
+  betaAccessUntil: { type: Date, default: null },
+  settings: {
+    type: {
+      audio: {
+        master: { type: Number, default: DEFAULT_USER_SETTINGS.audio.master },
+        music: { type: Number, default: DEFAULT_USER_SETTINGS.audio.music },
+        ambient: { type: Number, default: DEFAULT_USER_SETTINGS.audio.ambient },
+        players: { type: Number, default: DEFAULT_USER_SETTINGS.audio.players },
+        overlays: { type: Number, default: DEFAULT_USER_SETTINGS.audio.overlays },
+        subtitlesEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.audio.subtitlesEnabled },
+        stereoEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.audio.stereoEnabled }
+      }
+    },
+    default: () => ({
+      audio: { ...DEFAULT_USER_SETTINGS.audio }
+    })
+  }
 }, {
   timestamps: true
 });

@@ -12,6 +12,8 @@ export type NameplateConfig = {
     includeAfkTimer?: boolean;
     bgColor?: number;
     bgAlpha?: number;
+    textColor?: string;
+    hideBackground?: boolean;
 };
 
 export type NameplateResult = {
@@ -22,13 +24,13 @@ export type NameplateResult = {
 };
 
 export function createNameplate(config: NameplateConfig): NameplateResult {
-    const { scene, text, isPremium, fontSize, yOffset, depth, includeAfkTimer, bgColor, bgAlpha } = config;
+    const { scene, text, isPremium, fontSize, yOffset, depth, includeAfkTimer, bgColor, bgAlpha, textColor, hideBackground } = config;
 
     const padding = { x: 2, y: 1 };
     const nameText = scene.add.text(0, 0, text, {
         fontSize,
         fontFamily: 'Minecraft, monospace',
-        color: '#ffffff',
+        color: textColor ?? '#ffffff',
         resolution: 2
     }).setOrigin(0, 0.5);
 
@@ -50,9 +52,13 @@ export function createNameplate(config: NameplateConfig): NameplateResult {
     const bgWidth = textWidth + padding.x * 2;
     const bgHeight = textHeight + padding.y * 2;
 
-    const nameBg = scene.add.graphics();
-    nameBg.fillStyle(bgColor ?? 0x000000, bgAlpha ?? 0.6);
-    nameBg.fillRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight);
+    let nameBg: Phaser.GameObjects.Graphics | undefined;
+    const shouldShowBackground = !hideBackground && (bgAlpha ?? 0.6) > 0;
+    if (shouldShowBackground) {
+        nameBg = scene.add.graphics();
+        nameBg.fillStyle(bgColor ?? 0x000000, bgAlpha ?? 0.6);
+        nameBg.fillRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight);
+    }
 
     const afkTimerText = includeAfkTimer
         ? scene.add.text(0, -10, '', {
@@ -74,7 +80,7 @@ export function createNameplate(config: NameplateConfig): NameplateResult {
 
     const items: Phaser.GameObjects.GameObject[] = [];
     if (afkTimerText) items.push(afkTimerText);
-    items.push(nameBg);
+    if (nameBg) items.push(nameBg);
     if (iconText) items.push(iconText);
     items.push(nameText);
 
@@ -88,7 +94,7 @@ export function createNameplate(config: NameplateConfig): NameplateResult {
         afkTimerText,
         destroy: () => {
             container.destroy();
-            nameBg.destroy();
+            nameBg?.destroy();
             nameText.destroy();
             iconText?.destroy();
             afkTimerText?.destroy();

@@ -1,6 +1,6 @@
 import * as Colyseus from "colyseus.js";
 import { Config } from "../../config";
-import { IInstanceInfo, IJoinInstanceResponse, IInventoryResponse } from "@cfwk/shared";
+import { IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, ISettingsResponse, IUserSettings } from "@cfwk/shared";
 
 /**
  * NetworkManager - Handles all server communication for multiplayer.
@@ -26,6 +26,7 @@ export class NetworkManager {
     private wasConnected: boolean = false;
 
     private inventoryCache: IInventoryResponse | null = null;
+    private settingsCache: IUserSettings | null = null;
 
     private constructor() {
         this.client = new Colyseus.Client(Config.WS_URL);
@@ -95,6 +96,51 @@ export class NetworkManager {
             return data;
         } catch (error) {
             console.error('[NetworkManager] Error fetching inventory:', error);
+            return null;
+        }
+    }
+
+    async getSettings(): Promise<IUserSettings | null> {
+        try {
+            if (this.settingsCache) return this.settingsCache;
+            const response = await fetch('/api/settings', {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch settings: ${response.statusText}`);
+            }
+
+            const data: ISettingsResponse = await response.json();
+            this.settingsCache = data.settings;
+            return data.settings;
+        } catch (error) {
+            console.error('[NetworkManager] Error fetching settings:', error);
+            return null;
+        }
+    }
+
+    async updateSettings(settings: IUserSettings): Promise<IUserSettings | null> {
+        try {
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ settings })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to update settings: ${response.statusText}`);
+            }
+
+            const data: ISettingsResponse = await response.json();
+            this.settingsCache = data.settings;
+            return data.settings;
+        } catch (error) {
+            console.error('[NetworkManager] Error updating settings:', error);
             return null;
         }
     }

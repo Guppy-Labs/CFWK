@@ -17,6 +17,7 @@ import authRoutes from "./routes/auth";
 import accountRoutes from "./routes/account";
 import inventoryRoutes from "./routes/inventory";
 import betaRoutes from "./routes/beta";
+import settingsRoutes from "./routes/settings";
 import apiRoutes from "./routes";
 import stripeRoutes, { stripeWebhookHandler } from "./routes/stripe";
 import initPassport from "./config/passport";
@@ -90,6 +91,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/account", accountRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/beta", betaRoutes);
+app.use("/api/settings", settingsRoutes);
 app.use("/api/stripe", stripeRoutes);
 
 // MongoDB connection

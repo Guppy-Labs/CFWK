@@ -13,6 +13,7 @@ type BarVisual = {
     x: number;
     y: number;
     value: number;
+    visible: boolean;
 };
 
 export type FishingUiCallbacks = {
@@ -68,13 +69,14 @@ export class FishingUi {
     }
 
     create() {
-        this.stopButtonLabel = this.scene.add.text(0, 0, 'Stop Fishing', {
+        this.stopButtonLabel = this.scene.add.text(0, 0, 'Stop\nFishing', {
             fontFamily: 'Minecraft, monospace',
-            fontSize: '12px',
+            fontSize: '16px',
             color: '#f2e9dd'
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setAlign('center');
 
         this.stopButtonBg = this.scene.add.image(0, 0, 'ui-group-button-selected').setOrigin(0.5);
+        this.stopButtonBg.setAlpha(0.6);
         this.stopButton = this.scene.add.container(0, 0, [this.stopButtonBg, this.stopButtonLabel]);
         this.stopButton.setDepth(10);
 
@@ -129,12 +131,12 @@ export class FishingUi {
         const width = this.scene.scale.width;
         const frameX = width - this.frameMargin;
         const frameY = this.frameTopOffset;
-        const targetButtonWidth = Math.round(Math.max(140, this.stopButtonLabel.width + 30));
-        const targetButtonHeight = Math.max(18, Math.ceil(this.stopButtonLabel.height + 10));
+        const targetButtonWidth = Math.round(Math.max(120, this.stopButtonLabel.width + 22));
+        const targetButtonHeight = Math.max(38, Math.ceil(this.stopButtonLabel.height + 8));
         this.updateButtonTexture(targetButtonWidth, targetButtonHeight);
 
         this.stopButtonBg.setDisplaySize(targetButtonWidth, targetButtonHeight);
-        this.stopButtonLabel.setPosition(0, 0);
+        this.stopButtonLabel.setPosition(0, -3);
 
         const buttonX = frameX - targetButtonWidth / 2;
         const buttonY = frameY + targetButtonHeight / 2;
@@ -392,7 +394,8 @@ export class FishingUi {
             innerH: 1,
             x: 0,
             y: 0,
-            value: 0
+            value: 0,
+            visible: true
         };
     }
 
@@ -432,7 +435,7 @@ export class FishingUi {
         bar.value = Phaser.Math.Clamp(value, 0, 1);
         const fillWidth = Math.max(1, Math.round(bar.innerW * bar.value));
         const fillX = bar.x - bar.width / 2 + 4 - 1;
-        if (bar.value <= 0) {
+        if (!bar.visible || bar.value <= 0) {
             bar.fill.setVisible(false);
             bar.maskGraphics.clear();
             return;
@@ -447,8 +450,14 @@ export class FishingUi {
     }
 
     private setBarVisible(bar: BarVisual, visible: boolean) {
+        bar.visible = visible;
         bar.bg.setVisible(visible);
-        bar.fill.setVisible(visible);
+        if (!visible) {
+            bar.fill.setVisible(false);
+            bar.maskGraphics.clear();
+        } else {
+            this.setBarValue(bar, bar.value);
+        }
         bar.maskGraphics.setVisible(false);
     }
 }

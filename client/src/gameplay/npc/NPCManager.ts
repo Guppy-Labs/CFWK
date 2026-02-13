@@ -214,7 +214,8 @@ export class NPCManager {
             fontSize,
             yOffset: this.getNameplateYOffset(),
             depth: this.baseDepth + 1000,
-            bgColor: 0xb00000
+            textColor: '#000000',
+            hideBackground: true
         });
         return nameplate.container;
     }

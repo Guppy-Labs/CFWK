@@ -47,6 +47,7 @@ export class GameScene extends Phaser.Scene {
     private rodUseHandler?: () => void;
     private isFishingTransition = false;
     private fishingFadeTimer?: Phaser.Time.TimerEvent;
+    private fishingAutoFaceTimer?: Phaser.Time.TimerEvent;
 
     // Managers
     private mapLoader?: MapLoader;
@@ -133,7 +134,7 @@ export class GameScene extends Phaser.Scene {
         
         this.mcPlayerController?.setOcclusionManager(this.occlusionManager);
         this.mcPlayerController?.setOnFishingStart((rodItemId) => {
-            this.startFishingTransition(rodItemId);
+            this.startFishingWithAutoFacing(rodItemId);
         });
         
         // Initialize visual effects (Post-processing)
@@ -486,6 +487,8 @@ export class GameScene extends Phaser.Scene {
              }
              this.events.off('stop-audio', this.stopAllAudio, this);
              this.events.off('fishing:stop', this.stopFishing, this);
+                         this.fishingAutoFaceTimer?.remove(false);
+                         this.fishingAutoFaceTimer = undefined;
                this.npcManager?.destroy();
                          this.dialogueManager?.destroy();
         });
@@ -506,6 +509,34 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
+    private startFishingWithAutoFacing(rodItemId: string) {
+        if (this.isFishingTransition) return;
+
+        const player = this.getActivePlayer();
+        const target = player
+            ? this.waterSystem?.getNearestExposedWaterTileWorldPosition(player.x, player.y)
+            : undefined;
+
+        if (!player || !target) {
+            this.startFishingTransition(rodItemId);
+            return;
+        }
+
+        const desiredRotation = Math.atan2(target.y - player.y, target.x - player.x);
+        const rotationSeconds = this.mcPlayerController?.getRotationTimeTo(desiredRotation) ?? 0;
+        const rotationDelayMs = Math.ceil(rotationSeconds * 1000);
+
+        this.mcPlayerController?.setForcedFacingTarget(desiredRotation);
+        this.registry.set('inputBlocked', true);
+        this.mcPlayerController?.getMobileControls()?.setInputBlocked(true);
+
+        this.fishingAutoFaceTimer?.remove(false);
+        this.fishingAutoFaceTimer = this.time.delayedCall(rotationDelayMs, () => {
+            this.fishingAutoFaceTimer = undefined;
+            this.startFishingTransition(rodItemId);
+        });
+    }
+
     private startFishingTransition(rodItemId: string) {
         if (this.isFishingTransition) return;
         this.isFishingTransition = true;
@@ -516,23 +547,28 @@ export class GameScene extends Phaser.Scene {
             this.fishingFadeTimer.remove(false);
         }
 
-        this.fishingFadeTimer = this.time.delayedCall(2000, () => {
+        this.fishingFadeTimer = this.time.delayedCall(250, () => {
             this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+                this.mcPlayerController?.setForcedFacingTarget(undefined);
                 this.scene.launch('FishingScene', { rodItemId });
                 this.scene.pause();
             });
-            this.cameras.main.fadeOut(500, 0, 0, 0);
+            this.cameras.main.fadeOut(250, 0, 0, 0);
         });
     }
 
     private stopFishing() {
         this.isFishingTransition = false;
+        this.fishingAutoFaceTimer?.remove(false);
+        this.fishingAutoFaceTimer = undefined;
         this.fishingFadeTimer?.remove(false);
         this.fishingFadeTimer = undefined;
+        this.networkManager.sendFishingStop();
         this.mcPlayerController?.setFishingActive(false);
+        this.mcPlayerController?.setForcedFacingTarget(undefined);
         this.registry.set('inputBlocked', false);
         this.mcPlayerController?.getMobileControls()?.setInputBlocked(false);
-        this.cameras.main.fadeIn(300, 0, 0, 0);
+        this.cameras.main.fadeIn(220, 0, 0, 0);
     }
 
     /**
@@ -726,6 +762,15 @@ export class GameScene extends Phaser.Scene {
         if (this.debugOverlay?.isEnabled()) {
             const activeController = this.mcPlayerController;
             const mobileControls = activeController?.getMobileControls();
+            const playerBody = player?.body as MatterJS.BodyType | undefined;
+            const playerVelX = playerBody?.velocity?.x;
+            const playerVelY = playerBody?.velocity?.y;
+            const playerSpeed = playerVelX !== undefined && playerVelY !== undefined
+                ? Math.hypot(playerVelX, playerVelY)
+                : undefined;
+            const playerHeadingDeg = playerVelX !== undefined && playerVelY !== undefined && playerSpeed !== undefined && playerSpeed > 0.0001
+                ? Phaser.Math.RadToDeg(Math.atan2(playerVelY, playerVelX))
+                : undefined;
             // Gather extended debug info
             const extendedDebug: ExtendedDebugInfo = {
                 // Camera
@@ -736,8 +781,10 @@ export class GameScene extends Phaser.Scene {
                 // Player
                 playerX: player?.x,
                 playerY: player?.y,
-                playerVelX: (player?.body as MatterJS.BodyType)?.velocity?.x,
-                playerVelY: (player?.body as MatterJS.BodyType)?.velocity?.y,
+                playerVelX,
+                playerVelY,
+                playerSpeed,
+                playerHeadingDeg,
                 playerDepth: player?.depth,
                 isMoving: activeController?.getIsMoving(),
                 isSprinting: activeController?.getIsSprinting(),

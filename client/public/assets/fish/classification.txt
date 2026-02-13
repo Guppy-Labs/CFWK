@@ -15,7 +15,7 @@ sea-grass tile225.png
 boot tile226.png
 infested-boot tile227.png
 broken-bottle tile229.png
-invested-vase tile230.png
+infested-vase tile230.png
 ruined-chest tile236.png
 broken-specs tile241.png
 apple-core tile242.png

@@ -276,6 +276,82 @@ export class WaterSystem {
         return this.depthEffect?.getDepth() ?? 0;
     }
 
+    getNearestExposedWaterTileWorldPosition(originX: number, originY: number, maxSearchTiles: number = 64): Phaser.Math.Vector2 | undefined {
+        if (!this.waterLayer) return undefined;
+
+        const originTileX = this.waterLayer.worldToTileX(originX);
+        const originTileY = this.waterLayer.worldToTileY(originY);
+        if (originTileX === null || originTileY === null) return undefined;
+
+        const layerWidth = this.waterLayer.layer.width;
+        const layerHeight = this.waterLayer.layer.height;
+        const tileWidth = this.waterLayer.tilemap.tileWidth;
+        const tileHeight = this.waterLayer.tilemap.tileHeight;
+        const centerTileX = (layerWidth - 1) * 0.5;
+        const centerTileY = (layerHeight - 1) * 0.5;
+
+        for (let radius = 0; radius <= maxSearchTiles; radius++) {
+            let bestTileX: number | undefined;
+            let bestTileY: number | undefined;
+            let bestOutwardScore = Number.NEGATIVE_INFINITY;
+
+            const minX = Math.max(0, originTileX - radius);
+            const maxX = Math.min(layerWidth - 1, originTileX + radius);
+            const minY = Math.max(0, originTileY - radius);
+            const maxY = Math.min(layerHeight - 1, originTileY + radius);
+
+            for (let ty = minY; ty <= maxY; ty++) {
+                for (let tx = minX; tx <= maxX; tx++) {
+                    const onRing = Math.max(Math.abs(tx - originTileX), Math.abs(ty - originTileY)) === radius;
+                    if (!onRing) continue;
+                    if (!this.isExposedWaterTile(tx, ty)) continue;
+
+                    const outwardDx = tx - centerTileX;
+                    const outwardDy = ty - centerTileY;
+                    const outwardScore = outwardDx * outwardDx + outwardDy * outwardDy;
+
+                    if (outwardScore > bestOutwardScore) {
+                        bestOutwardScore = outwardScore;
+                        bestTileX = tx;
+                        bestTileY = ty;
+                    }
+                }
+            }
+
+            if (bestTileX !== undefined && bestTileY !== undefined) {
+                const wx = this.waterLayer.tileToWorldX(bestTileX) + tileWidth * 0.5;
+                const wy = this.waterLayer.tileToWorldY(bestTileY) + tileHeight * 0.5;
+                return new Phaser.Math.Vector2(wx, wy);
+            }
+        }
+
+        return undefined;
+    }
+
+    private isExposedWaterTile(tileX: number, tileY: number): boolean {
+        if (!this.waterLayer) return false;
+
+        const tile = this.waterLayer.getTileAt(tileX, tileY);
+        if (!tile || tile.index < 0) return false;
+
+        const neighbors = [
+            [tileX + 1, tileY],
+            [tileX - 1, tileY],
+            [tileX, tileY + 1],
+            [tileX, tileY - 1]
+        ];
+
+        for (const [nx, ny] of neighbors) {
+            const nTile = this.waterLayer.getTileAt(nx, ny);
+            const isNeighborWater = !!nTile && nTile.index >= 0;
+            if (!isNeighborWater) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Main update loop
      */

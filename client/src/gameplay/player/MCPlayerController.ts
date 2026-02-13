@@ -25,6 +25,8 @@ export type MCPlayerControllerConfig = {
     sprintSpeed?: number;
     accel?: number;
     drag?: number;
+    rotationRateMinDegPerSec?: number;
+    rotationRateMaxDegPerSec?: number;
     depth?: number;
     scale?: number;
     occlusionManager?: OcclusionManager | undefined;
@@ -56,6 +58,7 @@ export class MCPlayerController {
     private lastDiagonalReleaseTime: number | null = null;
     private wasDiagonalInput = false;
     private readonly diagonalReleaseLeewayMs = 150;
+    private forcedFacingTarget?: number;
 
     private stamina = 1;
     private isSprinting = false;
@@ -97,6 +100,8 @@ export class MCPlayerController {
             sprintSpeed: config.sprintSpeed ?? 3.2,
             accel: config.accel ?? 0.35,
             drag: config.drag ?? 0.5,
+            rotationRateMinDegPerSec: config.rotationRateMinDegPerSec ?? 180,
+            rotationRateMaxDegPerSec: config.rotationRateMaxDegPerSec ?? 540,
             depth: config.depth ?? 260,
             scale: config.scale ?? 1.2,
             occlusionManager: config.occlusionManager,
@@ -285,33 +290,55 @@ export class MCPlayerController {
 
         const movement = this.inputManager.getMovementInput(inputBlocked);
 
-        let targetVx = 0;
-        let targetVy = 0;
-        if (movement.moveUp) targetVy -= 1;
-        if (movement.moveDown) targetVy += 1;
-        if (movement.moveLeft) targetVx -= 1;
-        if (movement.moveRight) targetVx += 1;
+        let inputVx = 0;
+        let inputVy = 0;
+        if (movement.moveUp) inputVy -= 1;
+        if (movement.moveDown) inputVy += 1;
+        if (movement.moveLeft) inputVx -= 1;
+        if (movement.moveRight) inputVx += 1;
 
-        const len = Math.hypot(targetVx, targetVy);
+        const len = Math.hypot(inputVx, inputVy);
         if (len > 0) {
-            targetVx /= len;
-            targetVy /= len;
+            inputVx /= len;
+            inputVy /= len;
         }
 
-        const hasInput = len > 0;
+        const movementIntensity = Math.min(1, len);
+        const hasInput = movementIntensity > 0;
 
         const hasVertical = (movement.moveUp || movement.moveDown) && movement.moveUp !== movement.moveDown;
         const hasHorizontal = (movement.moveLeft || movement.moveRight) && movement.moveLeft !== movement.moveRight;
         const isDiagonalInput = hasVertical && hasHorizontal;
 
         if (isDiagonalInput) {
-            this.lastDiagonalAngle = Math.atan2(targetVy, targetVx);
+            this.lastDiagonalAngle = Math.atan2(inputVy, inputVx);
             this.lastDiagonalReleaseTime = null;
         } else if (this.wasDiagonalInput && !isDiagonalInput) {
             this.lastDiagonalReleaseTime = this.scene.time.now;
         }
         this.wasDiagonalInput = isDiagonalInput;
-        this.updateStamina(delta, movement.wantSprint, hasInput);
+        this.updateStamina(delta, movement.wantSprint, movementIntensity);
+
+        const body = this.player.body as MatterJS.BodyType;
+        const currentVx = body.velocity.x;
+        const currentVy = body.velocity.y;
+        const currentSpeed = Math.hypot(currentVx, currentVy);
+
+        const dt = delta / 1000;
+        const maxRotationStep = this.getCurrentRotationRateRadPerSec(currentSpeed) * dt;
+
+        if (this.forcedFacingTarget !== undefined) {
+            this.currentRotation = this.rotateToward(this.currentRotation, this.forcedFacingTarget, maxRotationStep);
+        } else if (hasInput) {
+            const desiredRotation = Math.atan2(inputVy, inputVx);
+            this.currentRotation = this.rotateToward(this.currentRotation, desiredRotation, maxRotationStep);
+        } else if (
+            this.lastDiagonalAngle !== undefined &&
+            this.lastDiagonalReleaseTime !== null &&
+            this.scene.time.now - this.lastDiagonalReleaseTime <= this.diagonalReleaseLeewayMs
+        ) {
+            this.currentRotation = this.rotateToward(this.currentRotation, this.lastDiagonalAngle, maxRotationStep);
+        }
 
         let speed = this.config.speed;
         if (this.isSprinting) {
@@ -319,12 +346,9 @@ export class MCPlayerController {
         }
         speed *= this.speedMultiplier;
 
-        targetVx *= speed;
-        targetVy *= speed;
-
-        const body = this.player.body as MatterJS.BodyType;
-        const currentVx = body.velocity.x;
-        const currentVy = body.velocity.y;
+        const targetSpeed = speed * movementIntensity;
+        const targetVx = hasInput ? Math.cos(this.currentRotation) * targetSpeed : 0;
+        const targetVy = hasInput ? Math.sin(this.currentRotation) * targetSpeed : 0;
         const { accel, drag } = this.config;
 
         let newVx = currentVx;
@@ -339,16 +363,6 @@ export class MCPlayerController {
         }
 
         this.player.setVelocity(newVx, newVy);
-
-        if (hasInput) {
-            this.currentRotation = Math.atan2(targetVy, targetVx);
-        } else if (
-            this.lastDiagonalAngle !== undefined &&
-            this.lastDiagonalReleaseTime !== null &&
-            this.scene.time.now - this.lastDiagonalReleaseTime <= this.diagonalReleaseLeewayMs
-        ) {
-            this.currentRotation = this.lastDiagonalAngle;
-        }
 
         this.animationController.setSprinting(this.isSprinting);
         this.animationController.update(this.player, targetVx, targetVy, this.currentRotation);
@@ -418,14 +432,15 @@ export class MCPlayerController {
         }
     }
 
-    private updateStamina(delta: number, wantSprint: boolean, hasInput: boolean) {
+    private updateStamina(delta: number, wantSprint: boolean, movementIntensity: number) {
         const dt = delta / 1000;
+        const clampedMovementIntensity = Phaser.Math.Clamp(movementIntensity, 0, 1);
 
         const canSprint = this.stamina > 0 && !this.isStaminaDepleted;
-        this.isSprinting = wantSprint && hasInput && canSprint;
+        this.isSprinting = wantSprint && clampedMovementIntensity > 0 && canSprint;
 
         if (this.isSprinting) {
-            this.stamina -= this.config.staminaDrainRate * dt;
+            this.stamina -= this.config.staminaDrainRate * dt * clampedMovementIntensity;
             this.staminaRegenTimer = this.config.staminaRegenDelay;
 
             if (this.stamina <= 0) {
@@ -446,6 +461,34 @@ export class MCPlayerController {
 
         this.stamina = Math.max(0, Math.min(this.config.maxStamina, this.stamina));
         this.scene.registry.set('stamina', this.stamina);
+    }
+
+    private rotateToward(current: number, target: number, maxStep: number): number {
+        const delta = Phaser.Math.Angle.Wrap(target - current);
+        if (Math.abs(delta) <= maxStep) {
+            return target;
+        }
+        return Phaser.Math.Angle.Wrap(current + Math.sign(delta) * maxStep);
+    }
+
+    private getCurrentRotationRateRadPerSec(velocityMagnitude?: number): number {
+        const minRateRad = Phaser.Math.DegToRad(this.config.rotationRateMinDegPerSec);
+        const maxRateRad = Phaser.Math.DegToRad(this.config.rotationRateMaxDegPerSec);
+
+        const speed = velocityMagnitude ?? this.getCurrentVelocityMagnitude();
+        const speedMultiplier = Math.max(0.1, this.speedMultiplier);
+        const minSpeed = this.config.speed * speedMultiplier;
+        const maxSpeed = this.config.sprintSpeed * speedMultiplier;
+        const speedRange = Math.max(0.01, maxSpeed - minSpeed);
+        const speedRatio = Phaser.Math.Clamp((speed - minSpeed) / speedRange, 0, 1);
+
+        return Phaser.Math.Linear(maxRateRad, minRateRad, speedRatio);
+    }
+
+    private getCurrentVelocityMagnitude(): number {
+        const body = this.player?.body as MatterJS.BodyType | undefined;
+        if (!body) return 0;
+        return Math.hypot(body.velocity.x || 0, body.velocity.y || 0);
     }
 
     private syncPositionIfNeeded() {
@@ -566,6 +609,21 @@ export class MCPlayerController {
         return this.stamina;
     }
 
+    setForcedFacingTarget(targetAngle?: number) {
+        if (targetAngle === undefined) {
+            this.forcedFacingTarget = undefined;
+            return;
+        }
+        this.forcedFacingTarget = Phaser.Math.Angle.Wrap(targetAngle);
+    }
+
+    getRotationTimeTo(targetAngle: number): number {
+        const wrappedTarget = Phaser.Math.Angle.Wrap(targetAngle);
+        const delta = Phaser.Math.Angle.Wrap(wrappedTarget - this.currentRotation);
+        const currentRate = this.getCurrentRotationRateRadPerSec();
+        return Math.abs(delta) / Math.max(0.0001, currentRate);
+    }
+
     showChat(message: string) {
         this.bubbleManager.showChat(message);
     }
@@ -611,6 +669,7 @@ export class MCPlayerController {
     }
 
     destroy() {
+        this.forcedFacingTarget = undefined;
         this.bubbleManager.destroy();
         this.inputManager.destroy();
         this.afkManager.destroy();

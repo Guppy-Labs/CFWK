@@ -147,6 +147,24 @@ export function startGame(userData: { _id: string; username: string; isPremium?:
 
     const game = new Phaser.Game(config);
     gameInstance = game;
+    game.sound.pauseOnBlur = false;
+
+    const resumeAudioIfNeeded = () => {
+        const soundManager = game.sound as any;
+        const audioContext = soundManager?.context as AudioContext | undefined;
+        if (audioContext?.state === 'suspended') {
+            audioContext.resume().catch(() => {
+                // Ignore browser-level autoplay/focus restrictions.
+            });
+        }
+    };
+
+    window.addEventListener('focus', resumeAudioIfNeeded);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            resumeAudioIfNeeded();
+        }
+    });
     // Loader is hidden by GameScene after map is fully loaded
 
     // Use ResizeObserver for robust resize detection

@@ -6,6 +6,7 @@ import { BookUI } from '../ui/BookUI';
 import { HeadbarUI } from '../ui/HeadbarUI';
 import { NetworkManager } from '../network/NetworkManager';
 import { InventoryChangeMonitor } from '../ui/InventoryChangeMonitor';
+import { SubtitleStack } from '../ui/SubtitleStack';
 import { ITEM_DEFINITIONS, getItemImagePath } from '@cfwk/shared';
 import { DialogueUI } from '../ui/DialogueUI';
 import type { DialogueRenderLine } from '../dialogue/DialogueTypes';
@@ -16,6 +17,7 @@ export class UIScene extends Phaser.Scene {
     private bookUI?: BookUI;
     private headbarUI?: HeadbarUI;
     private inventoryChangeMonitor?: InventoryChangeMonitor;
+    private subtitleStack?: SubtitleStack;
     private dialogueUI?: DialogueUI;
     private dialogueActive = false;
     private pendingDialogueAdvanceHandler?: () => void;
@@ -27,6 +29,8 @@ export class UIScene extends Phaser.Scene {
     private mobileMenuHandler?: () => void;
     private inventoryUpdateHandler?: (event: Event) => void;
     private nearWaterHandler?: (parent: any, value: boolean) => void;
+    private subtitleEventHandler?: (event: Event) => void;
+    private subtitlesEnabledChangedHandler?: (event: Event) => void;
     private networkManager = NetworkManager.getInstance();
     private cursorDefaultUrl?: string;
     private cursorHoverUrl?: string;
@@ -69,6 +73,11 @@ export class UIScene extends Phaser.Scene {
         this.load.image('ui-slot-select-4', '/ui/select/sel4.png');
         this.load.image('ui-scrollbar-track', '/ui/Bar07a.png');
         this.load.image('ui-scrollbar-thumb', '/ui/IconHandle03a.png');
+        this.load.image('ui-slider-track', '/ui/Bar01a.png');
+        this.load.image('ui-slider-fill', '/ui/Fill01a.png');
+        this.load.image('ui-slider-handle', '/ui/IconHandle02a.png');
+        this.load.image('ui-toggle-off', '/ui/Toggle07a.png');
+        this.load.image('ui-toggle-on', '/ui/Toggle07b.png');
         this.load.image('ui-hud-slot', '/ui/Slot02e.png');
         this.load.image('ui-hud-slot-filled', '/ui/Slot02b.png');
         this.load.image('ui-hud-heart', '/ui/IconHealth01a.png');
@@ -125,7 +134,29 @@ export class UIScene extends Phaser.Scene {
         this.bookUI = new BookUI(this);
         this.headbarUI = new HeadbarUI(this);
         this.inventoryChangeMonitor = new InventoryChangeMonitor(this);
+        this.subtitleStack = new SubtitleStack(this);
         this.dialogueUI = new DialogueUI(this);
+        this.networkManager.getSettings().then((settings) => {
+            if (!settings) return;
+            const gameScene = this.scene.get('GameScene') as { getAudioManager?: () => { applyUserAudioSettings?: (audio: any) => void } | undefined };
+            const audioManager = gameScene?.getAudioManager?.();
+            audioManager?.applyUserAudioSettings?.(settings.audio);
+            this.subtitleStack?.setEnabled(Boolean(settings.audio.subtitlesEnabled));
+        });
+        this.subtitleEventHandler = (event: Event) => {
+            const customEvent = event as CustomEvent<{ soundKey?: string; label?: string }>;
+            const soundKey = customEvent.detail?.soundKey;
+            const label = customEvent.detail?.label;
+            if (!soundKey || !label) return;
+            this.subtitleStack?.post(soundKey, label);
+        };
+        window.addEventListener('audio:subtitle', this.subtitleEventHandler as EventListener);
+
+        this.subtitlesEnabledChangedHandler = (event: Event) => {
+            const customEvent = event as CustomEvent<{ enabled?: boolean }>;
+            this.subtitleStack?.setEnabled(Boolean(customEvent.detail?.enabled));
+        };
+        window.addEventListener('audio:subtitles-enabled-changed', this.subtitlesEnabledChangedHandler as EventListener);
         if (this.pendingDialogueAdvanceHandler) {
             this.dialogueUI.setOnAdvance(this.pendingDialogueAdvanceHandler);
             this.pendingDialogueAdvanceHandler = undefined;
@@ -345,6 +376,12 @@ export class UIScene extends Phaser.Scene {
             if (this.nearWaterHandler) {
                 this.registry.events.off('changedata-nearWater', this.nearWaterHandler);
             }
+            if (this.subtitleEventHandler) {
+                window.removeEventListener('audio:subtitle', this.subtitleEventHandler as EventListener);
+            }
+            if (this.subtitlesEnabledChangedHandler) {
+                window.removeEventListener('audio:subtitles-enabled-changed', this.subtitlesEnabledChangedHandler as EventListener);
+            }
             window.removeEventListener('pointerdown', markActivity, { capture: true } as any);
             window.removeEventListener('mousedown', markActivity, { capture: true } as any);
             window.removeEventListener('touchstart', markActivity, { capture: true } as any);
@@ -354,6 +391,7 @@ export class UIScene extends Phaser.Scene {
             this.headbarUI?.destroy();
             this.playerHud?.destroy();
             this.inventoryChangeMonitor?.destroy();
+            this.subtitleStack?.destroy();
             this.dialogueUI?.destroy();
         });
     }
@@ -479,6 +517,7 @@ export class UIScene extends Phaser.Scene {
         this.headbarUI?.layout();
         this.playerHud?.layout();
         this.inventoryChangeMonitor?.layout();
+        this.subtitleStack?.layout();
         this.dialogueUI?.layout();
     }
 
@@ -505,6 +544,7 @@ export class UIScene extends Phaser.Scene {
     update(_time: number, delta: number) {
         this.playerHud?.update(delta);
         this.inventoryChangeMonitor?.update();
+        this.subtitleStack?.update();
 
         if (this.headbarUI) {
             this.headbarUI.update();

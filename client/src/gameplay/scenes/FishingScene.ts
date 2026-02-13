@@ -117,7 +117,8 @@ export class FishingScene extends Phaser.Scene {
 
     create() {
         this.cameras.main.setBackgroundColor('#0a1628');
-        this.cameras.main.fadeIn(500, 0, 0, 0);
+        this.cleanupFishingState();
+        this.cameras.main.fadeIn(220, 0, 0, 0);
 
         this.lightingManager = new LightingManager(this);
         this.perspective = new FishingPerspective(this);
@@ -243,10 +244,59 @@ export class FishingScene extends Phaser.Scene {
 
     private stopFishing() {
         this.markAfkActivity();
+        this.cleanupFishingState();
         const gameScene = this.scene.get('GameScene');
         gameScene?.events.emit('fishing:stop');
         this.scene.stop();
         this.scene.resume('GameScene');
+    }
+
+    private cleanupFishingState() {
+        this.isHoldingCast = false;
+        this.castHoldStart = 0;
+        this.castHoldDuration = 0;
+        this.pendingCastRelease = false;
+
+        this.biteTimer?.remove(false);
+        this.biteTimer = undefined;
+        this.biteWindowTimer?.remove(false);
+        this.biteWindowTimer = undefined;
+
+        this.castTossTween?.stop();
+        this.castTossTween = undefined;
+        this.castSettleTween?.stop();
+        this.castSettleTween = undefined;
+        this.reelInTween?.stop();
+        this.reelInTween = undefined;
+        this.rodThrowTween?.stop();
+        this.rodThrowTween = undefined;
+
+        this.tweens.killTweensOf(this);
+        if (this.caughtItemSprite) {
+            this.tweens.killTweensOf(this.caughtItemSprite);
+            this.caughtItemSprite.destroy();
+            this.caughtItemSprite = undefined;
+        }
+
+        this.castLineGraphics?.clear();
+        this.resetCast();
+        this.clearBite();
+
+        this.ui?.setCastBarVisible(false);
+        this.ui?.setBiteText('', false);
+        this.ui?.setBiteHint('', false);
+        this.ui?.setBiteBarsVisible(false);
+
+        this.isReelInAnimating = false;
+        this.isReelReturning = false;
+        this.castTossProgress = 0;
+        this.castSettleProgress = 1;
+        this.reelInProgress = 0;
+        this.reelInStart = undefined;
+        this.castLineEnd = undefined;
+        this.castLineBaseEnd = undefined;
+        this.setRodThrowPull(0);
+        this.biteActive = false;
     }
 
     private handleCastPress() {
@@ -677,6 +727,7 @@ export class FishingScene extends Phaser.Scene {
         const room = this.networkManager.getRoom();
         if (!room) return;
         room.onMessage('fishing:catchResult', (data: { itemId?: string }) => {
+            if (!this.sys.isActive()) return;
             if (!data?.itemId) {
                 this.resetCast();
                 return;
@@ -689,6 +740,7 @@ export class FishingScene extends Phaser.Scene {
         const room = this.networkManager.getRoom();
         if (!room) return;
         room.onMessage('fishing:hooked', (data: { itemId?: string; clicksRequired?: number }) => {
+            if (!this.sys.isActive()) return;
             if (!this.biteActive) return;
             if (!data?.itemId || !data?.clicksRequired) return;
             this.reelClicksNeeded = Math.max(1, Math.floor(data.clicksRequired));
@@ -828,6 +880,7 @@ export class FishingScene extends Phaser.Scene {
 
     shutdown() {
         this.scale.off('resize', this.onResize, this);
+        this.cleanupFishingState();
         if (this.scene.get('UIScene')) {
             const uiScene = this.scene.get('UIScene') as any;
             uiScene?.setHudVisible?.(true);

@@ -181,6 +181,38 @@ export interface IInventoryResponse {
   equippedRodId?: string | null;
 }
 
+// --- User Settings Types ---
+
+export interface IAudioSettings {
+  master: number;
+  music: number;
+  ambient: number;
+  players: number;
+  overlays: number;
+  subtitlesEnabled: boolean;
+  stereoEnabled: boolean;
+}
+
+export interface IUserSettings {
+  audio: IAudioSettings;
+}
+
+export interface ISettingsResponse {
+  settings: IUserSettings;
+}
+
+export const DEFAULT_USER_SETTINGS: IUserSettings = {
+  audio: {
+    master: 1,
+    music: 1,
+    ambient: 1,
+    players: 1,
+    overlays: 1,
+    subtitlesEnabled: false,
+    stereoEnabled: true
+  }
+};
+
 // Re-export WorldTime module
 export * from './WorldTime';
 export * from './items';

@@ -28,6 +28,8 @@ export interface ExtendedDebugInfo {
     playerY?: number;
     playerVelX?: number;
     playerVelY?: number;
+    playerSpeed?: number;
+    playerHeadingDeg?: number;
     playerDepth?: number;
     isMoving?: boolean;
     isSprinting?: boolean;
@@ -188,9 +190,18 @@ export class DebugOverlay {
         if (extendedDebug?.playerX !== undefined && extendedDebug?.playerY !== undefined) {
             const posStr = `Pos: (${extendedDebug.playerX.toFixed(0)}, ${extendedDebug.playerY.toFixed(0)})`;
             const velStr = extendedDebug.playerVelX !== undefined && extendedDebug.playerVelY !== undefined
-                ? ` Vel: (${extendedDebug.playerVelX.toFixed(1)}, ${extendedDebug.playerVelY.toFixed(1)})`
+                ? ` V: <${extendedDebug.playerVelX.toFixed(2)}, ${extendedDebug.playerVelY.toFixed(2)}>`
                 : '';
             lines.push(posStr + velStr);
+
+            if (
+                extendedDebug.playerSpeed !== undefined &&
+                extendedDebug.playerHeadingDeg !== undefined
+            ) {
+                lines.push(
+                    `|V|: ${extendedDebug.playerSpeed.toFixed(2)} | Heading: ${extendedDebug.playerHeadingDeg.toFixed(1)}°`
+                );
+            }
             
             // Movement state
             const moveState = extendedDebug.isMoving 

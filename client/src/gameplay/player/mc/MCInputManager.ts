@@ -32,6 +32,8 @@ export class MCInputManager {
     private fishingKey?: Phaser.Input.Keyboard.Key;
     private mobileControls?: MobileControls;
     private mobileInteractListener?: () => void;
+    private windowBlurHandler?: () => void;
+    private visibilityChangeHandler?: () => void;
 
     constructor(
         private readonly scene: Phaser.Scene,
@@ -71,6 +73,12 @@ export class MCInputManager {
         if (this.mobileInteractListener) {
             window.removeEventListener('mobile:interact', this.mobileInteractListener);
         }
+        if (this.windowBlurHandler) {
+            window.removeEventListener('blur', this.windowBlurHandler);
+        }
+        if (this.visibilityChangeHandler) {
+            document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+        }
         this.mobileControls?.destroy();
     }
 
@@ -97,5 +105,43 @@ export class MCInputManager {
             this.callbacks.onInteract();
         };
         window.addEventListener('mobile:interact', this.mobileInteractListener);
+
+        this.windowBlurHandler = () => this.resetInputState();
+        window.addEventListener('blur', this.windowBlurHandler);
+
+        this.visibilityChangeHandler = () => {
+            if (document.hidden) {
+                this.resetInputState();
+            }
+        };
+        document.addEventListener('visibilitychange', this.visibilityChangeHandler);
+    }
+
+    private resetInputState() {
+        const keyboard = this.scene.input.keyboard as any;
+        keyboard?.resetKeys?.();
+
+        const keys = [
+            this.cursors?.up,
+            this.cursors?.down,
+            this.cursors?.left,
+            this.cursors?.right,
+            this.wasd?.up,
+            this.wasd?.down,
+            this.wasd?.left,
+            this.wasd?.right,
+            this.shiftKey,
+            this.interactKey,
+            this.fishingKey
+        ];
+
+        for (const key of keys) {
+            if (!key) continue;
+            key.isDown = false;
+            key.isUp = true;
+            key.repeats = 0;
+        }
+
+        this.mobileControls?.setInputBlocked(false);
     }
 }

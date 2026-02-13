@@ -3,6 +3,7 @@ import { InventoryGroupsUI, GroupKey } from './inventory/InventoryGroupsUI';
 import { InventorySlotsUI, InventoryDisplayItem } from './inventory/InventorySlotsUI';
 import { InventoryItemDetailsUI, DEFAULT_ITEM_DETAILS_CONFIG } from './inventory/InventoryItemDetailsUI';
 import { EquipmentSlotsUI } from './inventory/EquipmentSlotsUI';
+import { SettingsTabUI } from './settings/SettingsTabUI';
 import { NetworkManager } from '../network/NetworkManager';
 import { InventorySlot, getItemDefinition, ItemDefinition, ItemCategory } from '@cfwk/shared';
 
@@ -28,6 +29,7 @@ export class BookUI {
     private inventorySlots: InventorySlotsUI;
     private inventoryDetails: InventoryItemDetailsUI;
     private equipmentSlots: EquipmentSlotsUI;
+    private settingsTab: SettingsTabUI;
     private activeTabLabel = 'Inventory';
     private inventorySlotsData: InventorySlot[] = [];
     private inventoryItems: Array<{ slot: InventorySlot; def: ItemDefinition; display: InventoryDisplayItem }> = [];
@@ -116,6 +118,7 @@ export class BookUI {
             bottomReservedHeight: 0
         });
         this.equipmentSlots = new EquipmentSlotsUI(this.scene, this.container);
+        this.settingsTab = new SettingsTabUI(this.scene, this.container);
         
         this.inventoryGroups.setOnGroupChange((group) => {
             if (this.activeTabLabel !== 'Inventory') return;
@@ -292,6 +295,7 @@ export class BookUI {
 
         this.createTabs();
         this.layout();
+        this.setGuiInputEnabled(false);
     }
 
     private getScale(): number {
@@ -337,6 +341,7 @@ export class BookUI {
         this.inventoryDetails.layout(leftPageLeftEdgeX, leftPageTopEdgeY, this.pageHeight, scale);
         this.inventorySlots.layout(leftPageLeftEdgeX, leftPageTopEdgeY, this.pageHeight, scale);
         this.equipmentSlots.layout(rightPageLeftEdgeX, rightPageTopEdgeY, this.pageHeight, scale);
+        this.settingsTab.layout(leftPageLeftEdgeX, leftPageTopEdgeY, rightPageLeftEdgeX, rightPageTopEdgeY, scale);
     }
 
     private createTabs() {
@@ -466,8 +471,10 @@ export class BookUI {
             this.updateTabTexture(tab);
         });
         const isInventory = label === 'Inventory';
+        const isSettings = label === 'Settings';
         this.inventoryGroups.setVisible(isInventory);
         this.equipmentSlots.setVisible(isInventory);
+        this.settingsTab.setVisible(isSettings);
         if (isInventory) {
             this.inventoryGroups.setActiveGroup('All', true);
             this.refreshInventory();
@@ -901,6 +908,7 @@ export class BookUI {
     open() {
         this.openState = true;
         this.container.setVisible(true);
+        this.setGuiInputEnabled(true);
         // Refresh layout and tab state to ensure everything is positioned and visible
         this.layout();
         this.setActiveTab(this.activeTabLabel);
@@ -909,6 +917,7 @@ export class BookUI {
     openToTab(tabLabel: string) {
         this.openState = true;
         this.container.setVisible(true);
+        this.setGuiInputEnabled(true);
         this.layout();
         this.setActiveTab(tabLabel);
     }
@@ -916,11 +925,34 @@ export class BookUI {
     close() {
         this.openState = false;
         this.container.setVisible(false);
+        this.inventoryGroups.setVisible(false);
+        this.inventorySlots.setVisible(false);
+        this.inventoryDetails.setVisible(false);
+        this.equipmentSlots.setVisible(false);
+        this.settingsTab.setVisible(false);
         this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
         this.equipmentSlots.clearSelection();
-        this.inventoryDetails.setVisible(false);
         this.inventorySlots.setBottomReservedHeight(0);
         this.pendingRodEquip = null;
+        this.pendingRodSlotIndex = null;
+        this.setGuiInputEnabled(false);
+    }
+
+    private setGuiInputEnabled(enabled: boolean) {
+        this.setContainerInputEnabled(this.container, enabled);
+    }
+
+    private setContainerInputEnabled(container: Phaser.GameObjects.Container, enabled: boolean) {
+        const children = container.list as Phaser.GameObjects.GameObject[];
+        for (const child of children) {
+            const inputHost = child as any;
+            if (inputHost.input) {
+                inputHost.input.enabled = enabled;
+            }
+            if (child instanceof Phaser.GameObjects.Container) {
+                this.setContainerInputEnabled(child, enabled);
+            }
+        }
     }
 
     private withSuppressedInventorySelection(action: () => void) {
@@ -949,6 +981,7 @@ export class BookUI {
             window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
             this.inventoryUpdateHandler = undefined;
         }
+        this.settingsTab?.destroy();
         this.container.destroy();
     }
 }

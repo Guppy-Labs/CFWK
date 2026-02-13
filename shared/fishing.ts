@@ -85,7 +85,7 @@ export const FISH_ASSET_MAP: Record<string, string> = {
     'boot': 'tile226.png',
     'infested_boot': 'tile227.png',
     'broken_bottle': 'tile229.png',
-    'invested_vase': 'tile230.png',
+    'infested_vase': 'tile230.png',
     'ruined_chest': 'tile236.png',
     'broken_specs': 'tile241.png',
     'apple_core': 'tile242.png',
@@ -139,7 +139,7 @@ export const TEMPERATE_LOOT: FishingLootEntry[] = [
     
     // Rare Junk / Treasure
     { itemId: 'infested_boot', weight: 20, minRod: null, bait: null, idealDepth: 15 },
-    { itemId: 'invested_vase', weight: 20, minRod: null, bait: null, idealDepth: 15 },
+    { itemId: 'infested_vase', weight: 20, minRod: null, bait: null, idealDepth: 15 },
     { itemId: 'ruined_chest', weight: 20, minRod: null, bait: null, idealDepth: 15 },
 ];
 
