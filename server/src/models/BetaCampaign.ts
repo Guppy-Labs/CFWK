@@ -8,6 +8,8 @@ export interface IBetaCampaign extends Document {
     accessUsers: string[];
     accessRoles: string[];
     createdBy: string;
+    targetIds?: string[];
+    targetsRefreshedAt?: Date;
     endedAt?: Date;
     endReason?: string;
     endProcessed?: boolean;
@@ -22,6 +24,8 @@ const BetaCampaignSchema: Schema = new Schema({
     accessUsers: { type: [String], default: [] },
     accessRoles: { type: [String], default: [] },
     createdBy: { type: String, required: true },
+    targetIds: { type: [String], default: [] },
+    targetsRefreshedAt: { type: Date },
     endedAt: { type: Date },
     endReason: { type: String },
     endProcessed: { type: Boolean, default: false },

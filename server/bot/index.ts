@@ -9,6 +9,7 @@ import {
     Routes,
     SlashCommandBuilder,
     ChatInputCommandInteraction,
+    Guild,
     GuildMember,
     PermissionFlagsBits,
     EmbedBuilder,
@@ -48,6 +49,7 @@ const client = new Client({
 const GAME_URL = 'https://dev.cutefishwithknives.com/game';
 const LINK_DISCORD_URL = 'https://dev.cutefishwithknives.com/api/account/link/discord';
 const DIRECT_SYNC_INTERVAL_MS = 15000;
+const warnedTargetCacheCampaigns = new Set<string>();
 
 const commandData = new SlashCommandBuilder()
     .setName('beta')
@@ -56,6 +58,11 @@ const commandData = new SlashCommandBuilder()
         sub
             .setName('join')
             .setDescription('Claim a beta code')
+    )
+    .addSubcommand((sub) =>
+        sub
+            .setName('update')
+            .setDescription('Refresh your beta access if you are eligible')
     );
 
 const adminCommandData = new SlashCommandBuilder()
@@ -106,6 +113,34 @@ const adminCommandData = new SlashCommandBuilder()
                 opt
                     .setName('user3')
                     .setDescription('User allowed to claim')
+                    .setRequired(false)
+            )
+    )
+    .addSubcommand((sub) =>
+        sub
+            .setName('refresh')
+            .setDescription('Refresh campaign targets from roles once')
+    )
+    .addSubcommand((sub) =>
+        sub
+            .setName('add')
+            .setDescription('Add users to the current campaign target list')
+            .addUserOption((opt) =>
+                opt
+                    .setName('user1')
+                    .setDescription('User to add')
+                    .setRequired(false)
+            )
+            .addUserOption((opt) =>
+                opt
+                    .setName('user2')
+                    .setDescription('User to add')
+                    .setRequired(false)
+            )
+            .addUserOption((opt) =>
+                opt
+                    .setName('user3')
+                    .setDescription('User to add')
                     .setRequired(false)
             )
     )
@@ -214,35 +249,49 @@ function buildEndedEmbed(endedAt: Date) {
     return { embeds: [embed] };
 }
 
-async function collectCampaignTargets(campaign: any) {
-    if (!client.guilds.cache.has(BOT_GUILD_ID)) {
-        await client.guilds.fetch(BOT_GUILD_ID).catch(() => undefined);
-    }
-    const guild = await client.guilds.fetch(BOT_GUILD_ID);
+function mergeUnique(existing: string[], additions: string[]) {
+    return Array.from(new Set([...(existing || []), ...(additions || [])]));
+}
 
+function getCampaignTargetIds(campaign: any): string[] {
+    if (Array.isArray(campaign.targetIds) && campaign.targetIds.length > 0) {
+        return campaign.targetIds as string[];
+    }
+    return Array.from(new Set((campaign.accessUsers || []) as string[]));
+}
+
+async function refreshCampaignTargets(campaign: any, guild: Guild) {
     const accessUsers = (campaign.accessUsers || []) as string[];
     const accessRoles = (campaign.accessRoles || []) as string[];
     const targetIds = new Set<string>(accessUsers);
 
     if (accessRoles.length > 0) {
-        try {
-            await guild.members.fetch();
-        } catch (err) {
-            console.warn('[BetaBot] Failed to fetch all guild members. Using cached role members only.', err);
-        }
+        await guild.members.fetch();
+        accessRoles.forEach((roleId: string) => {
+            const role = guild.roles.cache.get(roleId);
+            if (!role) return;
+            role.members.forEach((member) => targetIds.add(member.id));
+        });
     }
 
-    accessRoles.forEach((roleId: string) => {
-        const role = guild.roles.cache.get(roleId);
-        if (!role) return;
-        role.members.forEach((member) => targetIds.add(member.id));
-    });
-
-    return { guild, targetIds };
+    campaign.targetIds = Array.from(targetIds);
+    campaign.targetsRefreshedAt = new Date();
+    await campaign.save();
+    return campaign.targetIds as string[];
 }
 
 async function syncDirectInvites(campaign: any) {
-    const { targetIds } = await collectCampaignTargets(campaign);
+    const accessRoles = (campaign.accessRoles || []) as string[];
+    const targetIds = new Set<string>(getCampaignTargetIds(campaign));
+
+    if (accessRoles.length > 0 && targetIds.size === 0) {
+        const campaignId = String(campaign._id);
+        if (!warnedTargetCacheCampaigns.has(campaignId)) {
+            warnedTargetCacheCampaigns.add(campaignId);
+            console.warn('[BetaBot] Campaign targets not refreshed yet. Run /beta-admin refresh to include role members.');
+        }
+    }
+
     let granted = 0;
     let needsLink = 0;
     let dmFailed = 0;
@@ -286,7 +335,7 @@ client.on('ready', async () => {
 
         for (const campaign of endedCampaigns) {
             try {
-                const { targetIds } = await collectCampaignTargets(campaign);
+                const targetIds = new Set<string>(getCampaignTargetIds(campaign));
                 for (const discordId of targetIds) {
                     try {
                         const dmTarget = await client.users.fetch(discordId);
@@ -327,6 +376,10 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (subcommand === 'start') {
+            if (!interaction.inGuild() || !interaction.guild) {
+                await interaction.reply({ content: 'This command must be run in the server.', ephemeral: true });
+                return;
+            }
             const durationInput = interaction.options.getString('duration', true);
             const durationMs = parseDurationToMs(durationInput);
             if (durationMs <= 0) {
@@ -355,7 +408,7 @@ client.on('interactionCreate', async (interaction) => {
             const now = new Date();
             const endsAt = new Date(now.getTime() + durationMs);
 
-            await BetaCampaign.create({
+            const campaign = await BetaCampaign.create({
                 active: true,
                 startedAt: now,
                 endsAt,
@@ -366,6 +419,12 @@ client.on('interactionCreate', async (interaction) => {
                 endProcessed: false
             });
 
+            try {
+                await refreshCampaignTargets(campaign, interaction.guild);
+            } catch (err) {
+                console.warn('[BetaBot] Failed to refresh campaign targets on start.', err);
+            }
+
             const roleLabel = accessRoles.length ? accessRoles.map((id) => `<@&${id}>`).join(', ') : 'None';
             const userLabel = accessUsers.length ? accessUsers.map((id) => `<@${id}>`).join(', ') : 'None';
 
@@ -373,6 +432,55 @@ client.on('interactionCreate', async (interaction) => {
                 content: `Beta campaign started. Ends at <t:${Math.floor(endsAt.getTime() / 1000)}:f>.\nRoles: ${roleLabel}\nUsers: ${userLabel}`,
                 ephemeral: true
             });
+            return;
+        }
+
+        if (subcommand === 'refresh') {
+            const campaign = await BetaCampaign.findOne({ active: true, endsAt: { $gt: new Date() } });
+            if (!campaign) {
+                await interaction.reply({ content: 'No active beta campaign found.', ephemeral: true });
+                return;
+            }
+            if (!interaction.inGuild() || !interaction.guild) {
+                await interaction.reply({ content: 'This command must be run in the server.', ephemeral: true });
+                return;
+            }
+
+            try {
+                const targetIds = await refreshCampaignTargets(campaign, interaction.guild);
+                await interaction.reply({ content: `Campaign targets refreshed. Total targets: ${targetIds.length}.`, ephemeral: true });
+            } catch (err) {
+                await interaction.reply({ content: 'Failed to refresh campaign targets.', ephemeral: true });
+                console.warn('[BetaBot] Failed to refresh campaign targets.', err);
+            }
+            return;
+        }
+
+        if (subcommand === 'add') {
+            const campaign = await BetaCampaign.findOne({ active: true, endsAt: { $gt: new Date() } });
+            if (!campaign) {
+                await interaction.reply({ content: 'No active beta campaign found.', ephemeral: true });
+                return;
+            }
+
+            const additions = [
+                interaction.options.getUser('user1'),
+                interaction.options.getUser('user2'),
+                interaction.options.getUser('user3')
+            ].filter(Boolean).map((user) => user!.id);
+
+            if (additions.length === 0) {
+                await interaction.reply({ content: 'Provide at least one user to add.', ephemeral: true });
+                return;
+            }
+
+            campaign.accessUsers = mergeUnique(campaign.accessUsers || [], additions);
+            if (Array.isArray(campaign.targetIds)) {
+                campaign.targetIds = mergeUnique(campaign.targetIds, additions);
+            }
+            await campaign.save();
+
+            await interaction.reply({ content: `Added ${additions.length} user(s) to the campaign targets.`, ephemeral: true });
             return;
         }
 
@@ -436,7 +544,7 @@ client.on('interactionCreate', async (interaction) => {
             let needsLink = 0;
             let dmFailed = 0;
 
-            const { targetIds } = await collectCampaignTargets(campaign);
+            const targetIds = new Set<string>(getCampaignTargetIds(campaign));
             for (const discordId of targetIds) {
                 const user = await User.findOne({ discordId: String(discordId) });
                 if (user) {
@@ -472,7 +580,7 @@ client.on('interactionCreate', async (interaction) => {
 
     const subcommand = interaction.options.getSubcommand();
 
-    if (subcommand === 'join') {
+    if (subcommand === 'join' || subcommand === 'update') {
         const campaign = await BetaCampaign.findOne({ active: true, endsAt: { $gt: new Date() } });
         if (!campaign) {
             await interaction.reply({ content: 'No active beta campaign.', ephemeral: true });
@@ -493,6 +601,37 @@ client.on('interactionCreate', async (interaction) => {
 
         if (!isAllowed) {
             await interaction.reply({ content: 'You do not have access to this beta campaign.', ephemeral: true });
+            return;
+        }
+
+        if (subcommand === 'update') {
+            const user = await User.findOne({ discordId: interaction.user.id });
+            if (!user) {
+                try {
+                    await interaction.user.send(buildUnlinkedEmbed());
+                    await interaction.reply({ content: 'You need to link your Discord first. Check your DMs.', ephemeral: true });
+                } catch {
+                    await interaction.reply({ content: 'You need to link your Discord before beta access can be granted.', ephemeral: true });
+                }
+                return;
+            }
+
+            const needsGrant = !user.betaAccessUntil || user.betaAccessUntil.getTime() < campaign.endsAt.getTime();
+            if (!needsGrant) {
+                await interaction.reply({ content: 'Your beta access is already up to date.', ephemeral: true });
+                return;
+            }
+
+            user.betaAccessUntil = campaign.endsAt;
+            await user.save();
+
+            try {
+                await interaction.user.send(buildLinkedEmbed(campaign.endsAt));
+            } catch {
+                // Ignore DM failures
+            }
+
+            await interaction.reply({ content: 'Your beta access has been refreshed.', ephemeral: true });
             return;
         }
 
