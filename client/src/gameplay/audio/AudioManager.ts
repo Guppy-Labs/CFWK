@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { IAudioSettings } from '@cfwk/shared';
+import { LocaleManager } from '../i18n/LocaleManager';
 
 // ============================================================
 // AUDIO VOLUME CONFIGURATION - Tune these values as needed
@@ -119,25 +120,25 @@ export const MAP_AUDIO_CONFIGS: Record<string, MapAudioConfig> = {
     }
 };
 
-const SUBTITLE_LABELS: Record<string, string> = {
-    'ambient-ocean': 'Ocean waves',
-    'ambient-fire': 'Crackling fire',
-    'footstep-sand': 'Footsteps on sand',
-    'footstep-water': 'Footsteps in shallow water',
-    meow1: 'Meow',
-    meow2: 'Meow',
-    meow3: 'Meow',
-    meow4: 'Meow',
-    'rod-cast': 'Fishing rod cast',
-    'rod-reel': 'Fishing reel',
-    'water-splash': 'Water splash',
-    'bite-alert': 'Fishing bite alert',
-    'reel-click': 'Reel click',
-    'item-collected': 'Item collected',
-    'item-drop': 'Item dropped',
-    'item-skip': 'Item skipped',
-    'dialogue-click': 'Dialogue text',
-    'dialogue-next': 'Dialogue advance'
+const SUBTITLE_KEYS: Record<string, string> = {
+    'ambient-ocean': 'subtitles.ambientOcean',
+    'ambient-fire': 'subtitles.ambientFire',
+    'footstep-sand': 'subtitles.footstepSand',
+    'footstep-water': 'subtitles.footstepWater',
+    meow1: 'subtitles.meow',
+    meow2: 'subtitles.meow',
+    meow3: 'subtitles.meow',
+    meow4: 'subtitles.meow',
+    'rod-cast': 'subtitles.rodCast',
+    'rod-reel': 'subtitles.rodReel',
+    'water-splash': 'subtitles.waterSplash',
+    'bite-alert': 'subtitles.biteAlert',
+    'reel-click': 'subtitles.reelClick',
+    'item-collected': 'subtitles.itemCollected',
+    'item-drop': 'subtitles.itemDropped',
+    'item-skip': 'subtitles.itemSkipped',
+    'dialogue-click': 'subtitles.dialogueText',
+    'dialogue-next': 'subtitles.dialogueAdvance'
 };
 
 /**
@@ -151,6 +152,7 @@ const SUBTITLE_LABELS: Record<string, string> = {
  */
 export class AudioManager {
     private scene: Phaser.Scene;
+    private localeManager = LocaleManager.getInstance();
     
     // Music
     private currentMusic?: Phaser.Sound.BaseSound;
@@ -299,8 +301,9 @@ export class AudioManager {
 
     private emitSubtitle(soundKey: string) {
         if (!this.subtitlesEnabled) return;
-        const label = SUBTITLE_LABELS[soundKey];
-        if (!label) return;
+        const key = SUBTITLE_KEYS[soundKey];
+        if (!key) return;
+        const label = this.localeManager.t(key, undefined, soundKey);
 
         window.dispatchEvent(new CustomEvent('audio:subtitle', {
             detail: {

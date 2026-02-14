@@ -6,12 +6,13 @@
 import Phaser from 'phaser';
 import { SYSTEM_TILES, IInstanceInfo } from '@cfwk/shared';
 import { NetworkManager } from '../network/NetworkManager';
+import { LocaleManager } from '../i18n/LocaleManager';
 import { DisconnectModal } from '../../ui/DisconnectModal';
 import { currentUser, setLoaderText } from '../index';
 
 export class BootScene extends Phaser.Scene {
-    private instanceInfo: IInstanceInfo | null = null;
     private networkManager = NetworkManager.getInstance();
+    private localeManager = LocaleManager.getInstance();
 
     constructor() {
         super('BootScene');
@@ -38,7 +39,7 @@ export class BootScene extends Phaser.Scene {
 
     create() {
         // Update loader text (HTML loader is already visible)
-        setLoaderText(`Connecting...`);
+        setLoaderText(this.localeManager.t('scene.boot.connecting', undefined, 'Connecting...'));
 
         // Request instance from server
         this.requestInstance();
@@ -54,7 +55,6 @@ export class BootScene extends Phaser.Scene {
             const instance = await this.networkManager.requestInstance('lobby');
             if (!instance) return null;
             
-            this.instanceInfo = instance;
             // Pass user data when connecting
             const room = await this.networkManager.connectToInstance(
                 currentUser?.username || 'Guest',
@@ -107,7 +107,7 @@ export class BootScene extends Phaser.Scene {
 
             console.warn('[BootScene] Connection blocked: IP banned');
             DisconnectModal.show({
-                title: 'BANNED',
+                title: this.localeManager.t('scene.boot.bannedTitle', undefined, 'BANNED'),
                 message: banMessage,
                 showReconnect: false,
                 icon: 'ban'
@@ -129,7 +129,7 @@ export class BootScene extends Phaser.Scene {
 
             console.warn('[BootScene] Connection blocked: account banned');
             DisconnectModal.show({
-                title: 'ACCOUNT BANNED',
+                title: this.localeManager.t('scene.boot.accountBannedTitle', undefined, 'ACCOUNT BANNED'),
                 message: banMessage,
                 showReconnect: false,
                 icon: 'ban'
@@ -144,7 +144,7 @@ export class BootScene extends Phaser.Scene {
             const error = this.networkManager.getConnectionError();
             console.warn(`[BootScene] Instance request/connect failed${error ? ` (${error})` : ''}`);
             DisconnectModal.show({
-                title: 'Server Offline',
+                title: this.localeManager.t('scene.boot.offlineTitle', undefined, 'Server Offline'),
                 message: `The connection to the game server was lost${error ? ` (${error})` : ''}.<br>Please try again later.`,
                 icon: 'disconnect'
             });

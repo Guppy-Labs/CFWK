@@ -70,6 +70,7 @@ export class MCPlayerController {
     private lastSyncedY = 0;
     private lastSyncedAnim = '';
     private lastSyncedDirection = -1;
+    private lastSyncedSprinting = false;
     private syncTimer = 0;
     private readonly syncInterval = 50;
 
@@ -242,11 +243,12 @@ export class MCPlayerController {
         const x = Math.round(spawnX);
         const y = Math.round(spawnY - scaledCollidableHeight / 2);
         this.networkManager.sendPosition(x, y);
-        this.networkManager.sendAnimation(this.animationController.getAnimation(), this.animationController.getDirection());
+        this.networkManager.sendAnimation(this.animationController.getAnimation(), this.animationController.getDirection(), this.isSprinting);
         this.lastSyncedX = x;
         this.lastSyncedY = y;
         this.lastSyncedAnim = this.animationController.getAnimation();
         this.lastSyncedDirection = this.animationController.getDirection();
+        this.lastSyncedSprinting = this.isSprinting;
 
         return player;
     }
@@ -498,9 +500,10 @@ export class MCPlayerController {
         const y = Math.round(this.player.y);
         const anim = this.animationController.getAnimation();
         const direction = this.animationController.getDirection();
+        const isSprinting = this.isSprinting;
 
         const positionChanged = x !== this.lastSyncedX || y !== this.lastSyncedY;
-        const animChanged = anim !== this.lastSyncedAnim || direction !== this.lastSyncedDirection;
+        const animChanged = anim !== this.lastSyncedAnim || direction !== this.lastSyncedDirection || isSprinting !== this.lastSyncedSprinting;
 
         if (positionChanged) {
             this.networkManager.sendPosition(x, y);
@@ -509,9 +512,10 @@ export class MCPlayerController {
         }
 
         if (animChanged) {
-            this.networkManager.sendAnimation(anim, direction);
+            this.networkManager.sendAnimation(anim, direction, isSprinting);
             this.lastSyncedAnim = anim;
             this.lastSyncedDirection = direction;
+            this.lastSyncedSprinting = isSprinting;
         }
     }
 

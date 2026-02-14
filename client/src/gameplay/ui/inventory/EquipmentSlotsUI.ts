@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { InventoryDisplayItem } from './InventorySlotsUI';
 import { MobileControls } from '../MobileControls';
+import { LocaleManager } from '../../i18n/LocaleManager';
+import { BitmapFontRenderer } from '../BitmapFontRenderer';
 
 export type EquipmentSlotType = 'rod';
 
@@ -49,18 +51,10 @@ export class EquipmentSlotsUI {
 
     private readonly fontCharSize = 8;
     private readonly fontCharGap = 1;
-    private readonly fontMap = [
-        '                ',
-        '                ',
-        ' !"#$%&\'()*+,-./',
-        '0123456789:;<=>?',
-        '@ABCDEFGHIJKLMNO',
-        'PQRSTUVWXYZ[\\]^_',
-        '`abcdefghijklmno',
-        'pqrstuvwxyz{|}~ '
-    ];
-    private fontGlyphWidths = new Map<string, number>();
+    private readonly fontRenderer: BitmapFontRenderer;
     private labelTextureKey?: string;
+    private localeManager = LocaleManager.getInstance();
+    private localeChangedHandler?: (event: Event) => void;
 
     private config: Required<EquipmentSlotsConfig>;
 
@@ -72,6 +66,7 @@ export class EquipmentSlotsUI {
             offsetY: config.offsetY ?? 40,
             labelOffsetY: config.labelOffsetY ?? 10
         };
+        this.fontRenderer = new BitmapFontRenderer(this.scene, this.fontCharSize);
 
         this.container = this.scene.add.container(0, 0);
         parent.add(this.container);
@@ -81,9 +76,12 @@ export class EquipmentSlotsUI {
         this.container.add(this.rodSlot);
 
         // Create the label texture
-        this.labelTextureKey = this.createLabelTexture('Rod');
+        this.labelTextureKey = this.createLabelTexture(this.localeManager.t('inventory.equipment.rod', undefined, 'Rod'));
         this.rodLabel = this.scene.add.image(0, 0, this.labelTextureKey).setOrigin(0.5, 0);
         this.container.add(this.rodLabel);
+
+        this.localeChangedHandler = () => this.refreshLabel();
+        window.addEventListener('locale:changed', this.localeChangedHandler as EventListener);
 
         // Create selection indicators
         this.createSelectionIndicators();
@@ -444,9 +442,6 @@ export class EquipmentSlotsUI {
     }
 
     private createLabelTexture(text: string): string {
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-        
         const width = this.measureBitmapTextWidth(text);
         const height = this.fontCharSize;
 
@@ -455,20 +450,7 @@ export class EquipmentSlotsUI {
         canvas.height = height;
         const ctx = canvas.getContext('2d')!;
 
-        // Draw text
-        let cursorX = 0;
-        for (const ch of text) {
-            const pos = this.findGlyph(ch);
-            if (pos) {
-                const sx = pos.col * this.fontCharSize;
-                const sy = pos.row * this.fontCharSize;
-                ctx.drawImage(fontImage, sx, sy, this.fontCharSize, this.fontCharSize, cursorX, 0, this.fontCharSize, this.fontCharSize);
-                const glyphWidth = this.getGlyphWidth(fontImage, ch);
-                cursorX += glyphWidth + this.fontCharGap;
-            } else {
-                cursorX += this.fontCharSize + this.fontCharGap;
-            }
-        }
+        this.fontRenderer.drawText(ctx, text, 0, 0, { charGap: this.fontCharGap });
 
         // Tint text color (brownish to match UI)
         ctx.globalCompositeOperation = 'source-in';
@@ -480,73 +462,27 @@ export class EquipmentSlotsUI {
         return key;
     }
 
-    private findGlyph(ch: string) {
-        for (let row = 0; row < this.fontMap.length; row++) {
-            const col = this.fontMap[row].indexOf(ch);
-            if (col !== -1) return { row, col };
-        }
-        return null;
-    }
-
     private measureBitmapTextWidth(text: string): number {
-        if (!text.length) return 0;
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
-        let width = 0;
-        for (let i = 0; i < text.length; i++) {
-            const ch = text[i];
-            const glyphWidth = this.getGlyphWidth(fontImage, ch);
-            width += glyphWidth;
-            if (i < text.length - 1) width += this.fontCharGap;
-        }
-        return width;
+        return this.fontRenderer.measureTextWidth(text, { charGap: this.fontCharGap });
     }
 
-    private getGlyphWidth(fontImage: HTMLImageElement, ch: string): number {
-        if (this.fontGlyphWidths.has(ch)) {
-            return this.fontGlyphWidths.get(ch)!;
+    private refreshLabel() {
+        const nextText = this.localeManager.t('inventory.equipment.rod', undefined, 'Rod');
+        const nextKey = this.createLabelTexture(nextText);
+        const oldKey = this.labelTextureKey;
+        this.labelTextureKey = nextKey;
+        this.rodLabel.setTexture(nextKey);
+        if (oldKey && oldKey !== nextKey && this.scene.textures.exists(oldKey)) {
+            this.scene.textures.remove(oldKey);
         }
-
-        const pos = this.findGlyph(ch);
-        if (!pos) {
-            this.fontGlyphWidths.set(ch, this.fontCharSize);
-            return this.fontCharSize;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = this.fontCharSize;
-        canvas.height = this.fontCharSize;
-        const ctx = canvas.getContext('2d')!;
-
-        const sx = pos.col * this.fontCharSize;
-        const sy = pos.row * this.fontCharSize;
-        ctx.drawImage(fontImage, sx, sy, this.fontCharSize, this.fontCharSize, 0, 0, this.fontCharSize, this.fontCharSize);
-
-        const data = ctx.getImageData(0, 0, this.fontCharSize, this.fontCharSize).data;
-        let rightmost = -1;
-        for (let x = this.fontCharSize - 1; x >= 0; x--) {
-            let hasPixel = false;
-            for (let y = 0; y < this.fontCharSize; y++) {
-                const idx = (y * this.fontCharSize + x) * 4 + 3;
-                if (data[idx] > 0) {
-                    hasPixel = true;
-                    break;
-                }
-            }
-            if (hasPixel) {
-                rightmost = x;
-                break;
-            }
-        }
-
-        const width = Math.max(1, rightmost + 1);
-        this.fontGlyphWidths.set(ch, width);
-        return width;
     }
 
     destroy() {
         this.endDragVisual(false);
+        if (this.localeChangedHandler) {
+            window.removeEventListener('locale:changed', this.localeChangedHandler as EventListener);
+            this.localeChangedHandler = undefined;
+        }
         if (this.pointerMoveHandler) {
             this.scene.input.off('pointermove', this.pointerMoveHandler);
         }

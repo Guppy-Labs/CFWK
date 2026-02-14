@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { LocaleManager } from '../../i18n/LocaleManager';
+import { BitmapFontRenderer } from '../BitmapFontRenderer';
 
 export type GroupKey = 'All' | 'Gear' | 'Tools' | 'Fishing' | 'Food';
 
@@ -17,6 +19,8 @@ export class InventoryGroupsUI {
     private activeGroup: GroupKey = 'All';
     private onGroupChange?: (group: GroupKey) => void;
     private lastLayout?: { leftPageLeftEdgeX: number; leftPageTopEdgeY: number; scale: number };
+    private localeManager = LocaleManager.getInstance();
+    private localeChangedHandler?: (event: Event) => void;
 
     // Layout controls (tweak these for micro-adjustments)
     private groupOffsetX = 9;
@@ -27,17 +31,7 @@ export class InventoryGroupsUI {
 
     private readonly fontCharSize = 8;
     private readonly fontCharGap = 1;
-    private readonly fontMap = [
-        '                ',
-        '                ',
-        ' !"#$%&\'()*+,-./',
-        '0123456789:;<=>?',
-        '@ABCDEFGHIJKLMNO',
-        'PQRSTUVWXYZ[\\]^_',
-        '`abcdefghijklmno',
-        'pqrstuvwxyz{|}~ '
-    ];
-    private fontGlyphWidths = new Map<string, number>();
+    private readonly fontRenderer: BitmapFontRenderer;
     private labelTextureCounter = 0;
     private selectedLabel?: Phaser.GameObjects.Image;
     private selectedLabelKey?: string;
@@ -47,8 +41,12 @@ export class InventoryGroupsUI {
 
     constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container) {
         this.scene = scene;
+        this.fontRenderer = new BitmapFontRenderer(scene, this.fontCharSize);
         this.container = this.scene.add.container(0, 0);
         parent.add(this.container);
+
+        this.localeChangedHandler = () => this.refreshLabels();
+        window.addEventListener('locale:changed', this.localeChangedHandler as EventListener);
 
         this.createCards();
         this.setActiveGroup(this.activeGroup);
@@ -100,12 +98,12 @@ export class InventoryGroupsUI {
     }
 
     private createCards() {
-        const defs: Array<{ key: GroupKey; label: string }> = [
-            { key: 'All', label: 'All' },
-            { key: 'Gear', label: 'Gear' },
-            { key: 'Tools', label: 'Tools' },
-            { key: 'Fishing', label: 'Fishing' },
-            { key: 'Food', label: 'Food' }
+        const defs: Array<{ key: GroupKey; labelKey: string; fallbackLabel: string }> = [
+            { key: 'All', labelKey: 'inventory.groups.All', fallbackLabel: 'All' },
+            { key: 'Gear', labelKey: 'inventory.groups.Gear', fallbackLabel: 'Gear' },
+            { key: 'Tools', labelKey: 'inventory.groups.Tools', fallbackLabel: 'Tools' },
+            { key: 'Fishing', labelKey: 'inventory.groups.Fishing', fallbackLabel: 'Fishing' },
+            { key: 'Food', labelKey: 'inventory.groups.Food', fallbackLabel: 'Food' }
         ];
 
         defs.forEach((def) => {
@@ -122,14 +120,15 @@ export class InventoryGroupsUI {
 
             this.cards.push({
                 key: def.key,
-                label: def.label,
+                label: this.localeManager.t(def.labelKey, undefined, def.fallbackLabel),
                 container,
                 button,
                 icon
             });
         });
 
-        const labelTexture = this.createLabelTexture(this.activeGroup, false);
+        const activeLabel = this.localeManager.t(`inventory.groups.${this.activeGroup}`, undefined, this.activeGroup);
+        const labelTexture = this.createLabelTexture(activeLabel, false);
         this.selectedLabelKey = labelTexture;
         this.selectedLabel = this.scene.add.image(0, 0, labelTexture).setOrigin(0, 0);
         this.container.add(this.selectedLabel);
@@ -145,7 +144,8 @@ export class InventoryGroupsUI {
         });
 
         if (this.selectedLabel) {
-            const newLabelTexture = this.createLabelTexture(this.activeGroup, false);
+            const activeLabel = this.localeManager.t(`inventory.groups.${this.activeGroup}`, undefined, this.activeGroup);
+            const newLabelTexture = this.createLabelTexture(activeLabel, false);
             const oldKey = this.selectedLabelKey;
             this.selectedLabelKey = newLabelTexture;
             this.selectedLabel.setTexture(newLabelTexture);
@@ -159,6 +159,34 @@ export class InventoryGroupsUI {
         }
 
         this.onGroupChange?.(key);
+    }
+
+    refreshLabels() {
+        this.cards.forEach((card) => {
+            card.label = this.localeManager.t(`inventory.groups.${card.key}`, undefined, card.key);
+        });
+
+        if (this.selectedLabel) {
+            const newLabelTexture = this.createLabelTexture(this.localeManager.t(`inventory.groups.${this.activeGroup}`, undefined, this.activeGroup), false);
+            const oldKey = this.selectedLabelKey;
+            this.selectedLabelKey = newLabelTexture;
+            this.selectedLabel.setTexture(newLabelTexture);
+            if (oldKey && this.scene.textures.exists(oldKey)) {
+                this.scene.textures.remove(oldKey);
+            }
+        }
+
+        if (this.lastLayout) {
+            this.layout(this.lastLayout.leftPageLeftEdgeX, this.lastLayout.leftPageTopEdgeY, this.lastLayout.scale);
+        }
+    }
+
+    destroy() {
+        if (this.localeChangedHandler) {
+            window.removeEventListener('locale:changed', this.localeChangedHandler as EventListener);
+            this.localeChangedHandler = undefined;
+        }
+        this.container.destroy();
     }
 
     private getIconTexture(key: GroupKey, active: boolean): string {
@@ -183,9 +211,6 @@ export class InventoryGroupsUI {
     }
 
     private createLabelTexture(text: string, active: boolean) {
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
         const width = this.measureBitmapTextWidth(text);
         const height = this.fontCharSize;
         const color = active ? '#cfd8e5' : '#4b3435';
@@ -195,20 +220,7 @@ export class InventoryGroupsUI {
         canvas.height = height;
         const ctx = canvas.getContext('2d')!;
 
-        let cursorX = 0;
-        for (const ch of text) {
-            const pos = this.findGlyph(ch);
-            if (pos) {
-                const sx = pos.col * this.fontCharSize;
-                const sy = pos.row * this.fontCharSize;
-                ctx.drawImage(fontImage, sx, sy, this.fontCharSize, this.fontCharSize, cursorX, 0, this.fontCharSize, this.fontCharSize);
-
-                const glyphWidth = this.getGlyphWidth(fontImage, ch);
-                cursorX += glyphWidth + this.fontCharGap;
-            } else {
-                cursorX += this.fontCharSize + this.fontCharGap;
-            }
-        }
+        this.fontRenderer.drawText(ctx, text, 0, 0, { charGap: this.fontCharGap });
 
         ctx.globalCompositeOperation = 'source-in';
         ctx.fillStyle = color;
@@ -219,69 +231,7 @@ export class InventoryGroupsUI {
         return key;
     }
 
-    private findGlyph(ch: string) {
-        for (let row = 0; row < this.fontMap.length; row++) {
-            const col = this.fontMap[row].indexOf(ch);
-            if (col !== -1) return { row, col };
-        }
-        return null;
-    }
-
     private measureBitmapTextWidth(text: string): number {
-        if (!text.length) return 0;
-
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
-        let width = 0;
-        for (let i = 0; i < text.length; i++) {
-            const ch = text[i];
-            const glyphWidth = this.getGlyphWidth(fontImage, ch);
-            width += glyphWidth;
-            if (i < text.length - 1) width += this.fontCharGap;
-        }
-        return width;
-    }
-
-    private getGlyphWidth(fontImage: HTMLImageElement, ch: string): number {
-        if (this.fontGlyphWidths.has(ch)) {
-            return this.fontGlyphWidths.get(ch)!;
-        }
-
-        const pos = this.findGlyph(ch);
-        if (!pos) {
-            this.fontGlyphWidths.set(ch, this.fontCharSize);
-            return this.fontCharSize;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = this.fontCharSize;
-        canvas.height = this.fontCharSize;
-        const ctx = canvas.getContext('2d')!;
-
-        const sx = pos.col * this.fontCharSize;
-        const sy = pos.row * this.fontCharSize;
-        ctx.drawImage(fontImage, sx, sy, this.fontCharSize, this.fontCharSize, 0, 0, this.fontCharSize, this.fontCharSize);
-
-        const data = ctx.getImageData(0, 0, this.fontCharSize, this.fontCharSize).data;
-        let rightmost = -1;
-        for (let x = this.fontCharSize - 1; x >= 0; x--) {
-            let hasPixel = false;
-            for (let y = 0; y < this.fontCharSize; y++) {
-                const idx = (y * this.fontCharSize + x) * 4 + 3;
-                if (data[idx] > 0) {
-                    hasPixel = true;
-                    break;
-                }
-            }
-            if (hasPixel) {
-                rightmost = x;
-                break;
-            }
-        }
-
-        const width = Math.max(1, rightmost + 1);
-        this.fontGlyphWidths.set(ch, width);
-        return width;
+        return this.fontRenderer.measureTextWidth(text, { charGap: this.fontCharGap });
     }
 }

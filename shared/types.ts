@@ -193,15 +193,108 @@ export interface IAudioSettings {
   stereoEnabled: boolean;
 }
 
+export type VideoQualityPreset = 'low' | 'medium' | 'high' | 'custom';
+
+export interface IVideoSettings {
+  qualityPreset: VideoQualityPreset;
+  fullscreen: boolean;
+  visualEffectsEnabled: boolean;
+  seasonalEffectsEnabled: boolean;
+  bloomEnabled: boolean;
+  vignetteEnabled: boolean;
+  tiltShiftEnabled: boolean;
+  dustParticlesEnabled: boolean;
+}
+
+export type ControlActionKey =
+  | 'moveUp'
+  | 'moveLeft'
+  | 'moveDown'
+  | 'moveRight'
+  | 'sprint'
+  | 'interact'
+  | 'inventory'
+  | 'fish'
+  | 'playerList'
+  | 'chat'
+  | 'dialogueAdvance';
+
+export interface IControlsSettings {
+  moveUp: string | null;
+  moveLeft: string | null;
+  moveDown: string | null;
+  moveRight: string | null;
+  sprint: string | null;
+  interact: string | null;
+  inventory: string | null;
+  fish: string | null;
+  playerList: string | null;
+  chat: string | null;
+  dialogueAdvance: string | null;
+}
+
+export const CONTROL_ACTION_KEYS: ControlActionKey[] = [
+  'moveUp',
+  'moveLeft',
+  'moveDown',
+  'moveRight',
+  'sprint',
+  'interact',
+  'inventory',
+  'fish',
+  'playerList',
+  'chat',
+  'dialogueAdvance'
+];
+
 export interface IUserSettings {
+  language: string;
   audio: IAudioSettings;
+  video: IVideoSettings;
+  controls: IControlsSettings;
 }
 
 export interface ISettingsResponse {
   settings: IUserSettings;
 }
 
+export type PlayerStatKey = 'distanceWalked' | 'distanceRan' | 'timeOnlineMs' | 'catches' | 'npcInteractions';
+
+export interface IPlayerStats {
+  distanceWalked: number;
+  distanceRan: number;
+  timeOnlineMs: number;
+  catches: number;
+  npcInteractions: number;
+}
+
+export type IPlayerStatRanks = Partial<Record<PlayerStatKey, number | null>>;
+
+export interface IPlayerStatsResponse {
+  stats: IPlayerStats;
+  ranks: IPlayerStatRanks;
+}
+
+export type IPlayerStatsDelta = Partial<Record<PlayerStatKey, number>>;
+
+export const PLAYER_STAT_KEYS: PlayerStatKey[] = [
+  'distanceWalked',
+  'distanceRan',
+  'timeOnlineMs',
+  'catches',
+  'npcInteractions'
+];
+
+export const DEFAULT_PLAYER_STATS: IPlayerStats = {
+  distanceWalked: 0,
+  distanceRan: 0,
+  timeOnlineMs: 0,
+  catches: 0,
+  npcInteractions: 0
+};
+
 export const DEFAULT_USER_SETTINGS: IUserSettings = {
+  language: 'en_US',
   audio: {
     master: 1,
     music: 1,
@@ -210,6 +303,29 @@ export const DEFAULT_USER_SETTINGS: IUserSettings = {
     overlays: 1,
     subtitlesEnabled: false,
     stereoEnabled: true
+  },
+  video: {
+    qualityPreset: 'high',
+    fullscreen: false,
+    visualEffectsEnabled: true,
+    seasonalEffectsEnabled: true,
+    bloomEnabled: false,
+    vignetteEnabled: true,
+    tiltShiftEnabled: true,
+    dustParticlesEnabled: true
+  },
+  controls: {
+    moveUp: 'KeyW',
+    moveLeft: 'KeyA',
+    moveDown: 'KeyS',
+    moveRight: 'KeyD',
+    sprint: 'ShiftLeft',
+    interact: 'KeyF',
+    inventory: 'KeyE',
+    fish: 'KeyR',
+    playerList: 'Tab',
+    chat: 'KeyT',
+    dialogueAdvance: 'Space'
   }
 };
 

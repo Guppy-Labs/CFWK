@@ -1,6 +1,6 @@
 import * as Colyseus from "colyseus.js";
 import { Config } from "../../config";
-import { IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, ISettingsResponse, IUserSettings } from "@cfwk/shared";
+import { DEFAULT_USER_SETTINGS, IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, IPlayerStatsDelta, IPlayerStatsResponse, ISettingsResponse, PLAYER_STAT_KEYS, IUserSettings } from "@cfwk/shared";
 
 /**
  * NetworkManager - Handles all server communication for multiplayer.
@@ -27,6 +27,8 @@ export class NetworkManager {
 
     private inventoryCache: IInventoryResponse | null = null;
     private settingsCache: IUserSettings | null = null;
+    private statsCache: IPlayerStatsResponse | null = null;
+    private statsDeltaCallbacks: Array<(delta: IPlayerStatsDelta) => void> = [];
 
     private constructor() {
         this.client = new Colyseus.Client(Config.WS_URL);
@@ -121,6 +123,24 @@ export class NetworkManager {
         }
     }
 
+    getCachedSettings(): IUserSettings | null {
+        return this.settingsCache ? {
+            ...this.settingsCache,
+            audio: { ...this.settingsCache.audio },
+            video: { ...this.settingsCache.video },
+            controls: { ...(this.settingsCache.controls ?? DEFAULT_USER_SETTINGS.controls) }
+        } : null;
+    }
+
+    primeSettingsCache(settings: IUserSettings) {
+        this.settingsCache = {
+            ...settings,
+            audio: { ...settings.audio },
+            video: { ...settings.video },
+            controls: { ...(settings.controls ?? DEFAULT_USER_SETTINGS.controls) }
+        };
+    }
+
     async updateSettings(settings: IUserSettings): Promise<IUserSettings | null> {
         try {
             const response = await fetch('/api/settings', {
@@ -141,6 +161,27 @@ export class NetworkManager {
             return data.settings;
         } catch (error) {
             console.error('[NetworkManager] Error updating settings:', error);
+            return null;
+        }
+    }
+
+    async getPlayerStats(forceRefresh = false): Promise<IPlayerStatsResponse | null> {
+        try {
+            if (!forceRefresh && this.statsCache) return this.statsCache;
+            const response = await fetch('/api/stats', {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch stats: ${response.statusText}`);
+            }
+
+            const data: IPlayerStatsResponse = await response.json();
+            this.statsCache = data;
+            return data;
+        } catch (error) {
+            console.error('[NetworkManager] Error fetching stats:', error);
             return null;
         }
     }
@@ -238,6 +279,25 @@ export class NetworkManager {
             if (!data?.itemId) return;
             window.dispatchEvent(new CustomEvent('inventory:skip', { detail: data }));
         });
+
+        this.currentRoom.onMessage('stats:delta', (delta: IPlayerStatsDelta) => {
+            if (!delta || typeof delta !== 'object') return;
+
+            if (this.statsCache) {
+                const nextStats = { ...this.statsCache.stats };
+                PLAYER_STAT_KEYS.forEach((key) => {
+                    const change = delta[key];
+                    if (!Number.isFinite(change)) return;
+                    nextStats[key] = Math.max(0, nextStats[key] + Number(change));
+                });
+                this.statsCache = {
+                    ...this.statsCache,
+                    stats: nextStats
+                };
+            }
+
+            this.statsDeltaCallbacks.forEach((cb) => cb(delta));
+        });
         
         // Mark that we have an active connection
         this.wasConnected = true;
@@ -257,6 +317,16 @@ export class NetworkManager {
         };
     }
 
+    onPlayerStatsDelta(callback: (delta: IPlayerStatsDelta) => void): () => void {
+        this.statsDeltaCallbacks.push(callback);
+        return () => {
+            const index = this.statsDeltaCallbacks.indexOf(callback);
+            if (index > -1) {
+                this.statsDeltaCallbacks.splice(index, 1);
+            }
+        };
+    }
+
     /**
      * Send player position to the server
      */
@@ -269,9 +339,9 @@ export class NetworkManager {
     /**
      * Send player animation state to the server
      */
-    sendAnimation(anim: string, direction: number) {
+    sendAnimation(anim: string, direction: number, isSprinting?: boolean) {
         if (this.currentRoom) {
-            this.currentRoom.send("animation", { anim, direction });
+            this.currentRoom.send("animation", { anim, direction, isSprinting });
         }
     }
 
@@ -407,6 +477,12 @@ export class NetworkManager {
     sendFishingHook() {
         if (this.currentRoom) {
             this.currentRoom.send("fishing:hook", {});
+        }
+    }
+
+    sendNpcInteract(npcId: string) {
+        if (this.currentRoom) {
+            this.currentRoom.send('npc:interact', { npcId });
         }
     }
 

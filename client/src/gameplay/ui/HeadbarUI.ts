@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { calculateWorldTime, Season } from '@cfwk/shared';
 import { HeadbarTabList, TabListEntry } from './HeadbarTabList';
 import { MobileControls } from './MobileControls';
+import { LocaleManager } from '../i18n/LocaleManager';
+import { BitmapFontRenderer } from './BitmapFontRenderer';
 
 export type HeadbarConfig = {
     bannerTextureKey?: string;
@@ -38,6 +40,7 @@ export class HeadbarUI {
     private yearText: Phaser.GameObjects.Image;
 
     private config: Required<HeadbarConfig>;
+    private localeManager = LocaleManager.getInstance();
 
     private textureCounter = 0;
     private bannerTextureKey?: string;
@@ -59,17 +62,7 @@ export class HeadbarUI {
 
     // Font rendering
     private readonly fontCharSize = 8;
-    private readonly fontMap = [
-        '                ',
-        '                ',
-        ' !"#$%&\'()*+,-./',
-        '0123456789:;<=>?',
-        '@ABCDEFGHIJKLMNO',
-        'PQRSTUVWXYZ[\\]^_',
-        '`abcdefghijklmno',
-        'pqrstuvwxyz{|}~ '
-    ];
-    private fontGlyphWidths = new Map<string, number>();
+    private readonly fontRenderer: BitmapFontRenderer;
 
     // Layout dimensions
     private readonly iconSize = 64; // 32x32 scaled 2x
@@ -88,6 +81,7 @@ export class HeadbarUI {
 
     constructor(scene: Phaser.Scene, config: HeadbarConfig = {}) {
         this.scene = scene;
+        this.fontRenderer = new BitmapFontRenderer(scene, this.fontCharSize);
         this.config = {
             bannerTextureKey: config.bannerTextureKey ?? DEFAULT_HEADBAR_CONFIG.bannerTextureKey,
             textColor: config.textColor ?? DEFAULT_HEADBAR_CONFIG.textColor,
@@ -323,8 +317,13 @@ export class HeadbarUI {
 
     private calculateNormalBannerWidth(): number {
         const timeWidth = this.measureText(this.lastTimeStr || '12:00 AM');
-        const dateWidth = this.measureText(this.lastDateStr || 'Winter Day 1');
-        const yearWidth = this.measureText(this.lastYearStr || 'Year 1');
+        const fallbackDate = this.localeManager.t('headbar.datePattern', {
+            season: this.localeManager.t('headbar.season.winter', undefined, 'Winter'),
+            day: 1
+        }, 'Winter Day 1');
+        const fallbackYear = this.localeManager.t('headbar.yearPattern', { year: 1 }, 'Year 1');
+        const dateWidth = this.measureText(this.lastDateStr || fallbackDate);
+        const yearWidth = this.measureText(this.lastYearStr || fallbackYear);
         const maxTextWidth = Math.max(timeWidth, dateWidth, yearWidth);
         const contentWidth = this.iconPadding + this.iconSize + this.iconTextGap + maxTextWidth + this.textPaddingRight;
         return Math.max(this.bannerMinWidth, contentWidth);
@@ -338,11 +337,15 @@ export class HeadbarUI {
         const ampm = worldTime.hour < 12 ? 'AM' : 'PM';
         const timeStr = `${hour12}:${worldTime.minute.toString().padStart(2, '0')} ${ampm}`;
 
-        // Format date as "Season Day X"
-        const dateStr = `${worldTime.seasonName} Day ${worldTime.dayOfSeason}`;
+        // Format date as localized "Season Day X"
+        const seasonLabel = this.getSeasonLabel(worldTime.season);
+        const dateStr = this.localeManager.t('headbar.datePattern', {
+            season: seasonLabel,
+            day: worldTime.dayOfSeason
+        }, `${worldTime.seasonName} Day ${worldTime.dayOfSeason}`);
 
         // Format year
-        const yearStr = `Year ${worldTime.year}`;
+        const yearStr = this.localeManager.t('headbar.yearPattern', { year: worldTime.year }, `Year ${worldTime.year}`);
 
         // Update time text if changed
         if (timeStr !== this.lastTimeStr) {
@@ -381,6 +384,20 @@ export class HeadbarUI {
         if (worldTime.season !== this.currentSeason) {
             this.currentSeason = worldTime.season;
             this.seasonIcon.setTexture(SEASON_TEXTURE_KEYS[worldTime.season]);
+        }
+    }
+
+    private getSeasonLabel(season: Season): string {
+        switch (season) {
+            case Season.Winter:
+                return this.localeManager.t('headbar.season.winter', undefined, 'Winter');
+            case Season.Spring:
+                return this.localeManager.t('headbar.season.spring', undefined, 'Spring');
+            case Season.Summer:
+                return this.localeManager.t('headbar.season.summer', undefined, 'Summer');
+            case Season.Autumn:
+            default:
+                return this.localeManager.t('headbar.season.autumn', undefined, 'Autumn');
         }
     }
 
@@ -463,18 +480,6 @@ export class HeadbarUI {
         const rtKey = `__headbar_text_${this.textureCounter++}`;
         const canvas = document.createElement('canvas');
 
-        if (!this.scene.textures.exists('ui-font')) {
-            canvas.width = 1;
-            canvas.height = 1;
-            this.scene.textures.addCanvas(rtKey, canvas);
-            return rtKey;
-        }
-
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
-        this.buildFontGlyphWidths(fontImage);
-
         const width = this.measureText(text);
         const height = Math.floor(this.fontCharSize * this.textScale);
 
@@ -483,20 +488,10 @@ export class HeadbarUI {
         const ctx = canvas.getContext('2d')!;
         ctx.imageSmoothingEnabled = false;
 
-        // Draw text at scaled size
-        let x = 0;
-        for (const char of text) {
-            const pos = this.getCharPos(char);
-            if (pos) {
-                const glyphW = this.fontGlyphWidths.get(char) ?? this.fontCharSize;
-                const scaledGlyphW = Math.round(glyphW * this.textScale);
-                const scaledCharSize = Math.round(this.fontCharSize * this.textScale);
-                ctx.drawImage(fontImage, pos.x, pos.y, this.fontCharSize, this.fontCharSize, x, 0, scaledCharSize, scaledCharSize);
-                x += scaledGlyphW + this.scaledCharGap;
-            } else {
-                x += Math.round(this.fontCharSize * this.textScale) + this.scaledCharGap;
-            }
-        }
+        this.fontRenderer.drawText(ctx, text, 0, 0, {
+            scale: this.textScale,
+            charGap: this.scaledCharGap
+        });
 
         // Apply text color
         ctx.globalCompositeOperation = 'source-in';
@@ -508,55 +503,10 @@ export class HeadbarUI {
     }
 
     private measureText(text: string): number {
-        let width = 0;
-        for (const char of text) {
-            const glyphW = this.fontGlyphWidths.get(char) ?? this.fontCharSize;
-            width += Math.round(glyphW * this.textScale) + this.scaledCharGap;
-        }
-        return Math.max(0, width - this.scaledCharGap);
-    }
-
-    private buildFontGlyphWidths(fontImage: HTMLImageElement) {
-        if (this.fontGlyphWidths.size > 0) return;
-
-        const canvas = document.createElement('canvas');
-        canvas.width = fontImage.width;
-        canvas.height = fontImage.height;
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(fontImage, 0, 0);
-
-        for (let row = 0; row < this.fontMap.length; row++) {
-            for (let col = 0; col < this.fontMap[row].length; col++) {
-                const char = this.fontMap[row][col];
-                if (char === ' ') {
-                    this.fontGlyphWidths.set(char, 4);
-                    continue;
-                }
-                const gx = col * this.fontCharSize;
-                const gy = row * this.fontCharSize;
-                const imgData = ctx.getImageData(gx, gy, this.fontCharSize, this.fontCharSize);
-                let maxX = 0;
-                for (let y = 0; y < this.fontCharSize; y++) {
-                    for (let x = 0; x < this.fontCharSize; x++) {
-                        const idx = (y * this.fontCharSize + x) * 4;
-                        if (imgData.data[idx + 3] > 0) {
-                            maxX = Math.max(maxX, x);
-                        }
-                    }
-                }
-                this.fontGlyphWidths.set(char, maxX + 1);
-            }
-        }
-    }
-
-    private getCharPos(char: string): { x: number; y: number } | null {
-        for (let row = 0; row < this.fontMap.length; row++) {
-            const col = this.fontMap[row].indexOf(char);
-            if (col !== -1) {
-                return { x: col * this.fontCharSize, y: row * this.fontCharSize };
-            }
-        }
-        return null;
+        return this.fontRenderer.measureTextWidth(text, {
+            scale: this.textScale,
+            charGap: this.scaledCharGap
+        });
     }
 
     destroy() {

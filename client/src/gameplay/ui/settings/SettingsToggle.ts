@@ -45,4 +45,8 @@ export class SettingsToggle {
     getValue(): boolean {
         return this.value;
     }
+
+    getWidth(): number {
+        return this.toggle.width;
+    }
 }

@@ -10,6 +10,7 @@ import { SubtitleStack } from '../ui/SubtitleStack';
 import { ITEM_DEFINITIONS, getItemImagePath } from '@cfwk/shared';
 import { DialogueUI } from '../ui/DialogueUI';
 import type { DialogueRenderLine } from '../dialogue/DialogueTypes';
+import { KeybindManager } from '../input/KeybindManager';
 
 export class UIScene extends Phaser.Scene {
     private playerHud?: PlayerHud;
@@ -32,6 +33,7 @@ export class UIScene extends Phaser.Scene {
     private subtitleEventHandler?: (event: Event) => void;
     private subtitlesEnabledChangedHandler?: (event: Event) => void;
     private networkManager = NetworkManager.getInstance();
+    private keybindManager = KeybindManager.getInstance();
     private cursorDefaultUrl?: string;
     private cursorHoverUrl?: string;
     private hoverCount = 0;
@@ -92,8 +94,10 @@ export class UIScene extends Phaser.Scene {
         this.load.image('ui-menu', '/ui/Menu01a.png');
         this.load.image('ui-fullscreen', '/ui/Fullscreen01a.png');
         this.load.image('ui-exit-fullscreen', '/ui/ExitFullscreen01a.png');
-        this.load.image('ui-font', '/assets/font/game-font.png');
-        this.load.text('ui-font-map', '/assets/font/game-font.map.txt');
+        this.load.image('ui-font-ascii', '/assets/font/ascii.png');
+        this.load.image('ui-font-accented', '/assets/font/accented.png');
+        this.load.image('ui-font-nonlatin-european', '/assets/font/nonlatin_european.png');
+        this.load.json('ui-font-map', '/assets/font/map.json');
         this.load.image('ui-cursor-default', '/ui/Cursor03b.png');
         this.load.image('ui-cursor-hover', '/ui/Cursor03c.png');
         this.load.image('ui-dialogue-cursor', '/ui/Cursor03a.png');
@@ -231,25 +235,9 @@ export class UIScene extends Phaser.Scene {
             }
         });
 
-        const tabKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.TAB);
-        if (tabKey) {
-            tabKey.on('down', (event: KeyboardEvent) => {
-                // Don't show tablist while chat is focused
-                if (this.chat?.isChatFocused()) return;
-                if (this.registry.get('guiOpen') === true) return;
-                event.preventDefault();
-                this.headbarUI?.showTabList();
-            });
-            tabKey.on('up', (event: KeyboardEvent) => {
-                if (this.registry.get('guiOpen') === true) return;
-                event.preventDefault();
-                this.headbarUI?.hideTabList();
-            });
-        }
-
         // Intercept Tab at the window level to prevent default focus behavior
         this.tabKeyDownHandler = (event: KeyboardEvent) => {
-            if (event.key !== 'Tab') return;
+            if (!this.keybindManager.matchesActionEvent('playerList', event)) return;
             // Don't show tablist while chat is focused
             if (this.chat?.isChatFocused()) return;
             if (this.registry.get('guiOpen') === true) return;
@@ -257,7 +245,7 @@ export class UIScene extends Phaser.Scene {
             this.headbarUI?.showTabList();
         };
         this.tabKeyUpHandler = (event: KeyboardEvent) => {
-            if (event.key !== 'Tab') return;
+            if (!this.keybindManager.matchesActionEvent('playerList', event)) return;
             if (this.registry.get('guiOpen') === true) return;
             event.preventDefault();
             this.headbarUI?.hideTabList();
@@ -281,7 +269,7 @@ export class UIScene extends Phaser.Scene {
         // Toggle book UI with E
         this.bookKeyHandler = (event: KeyboardEvent) => {
             if (event.repeat) return;
-            if (event.key.toLowerCase() !== 'e') return;
+            if (!this.keybindManager.matchesActionEvent('inventory', event)) return;
             if (this.registry.get('inputBlocked') === true) return;
             if (this.chat?.isChatFocused()) return;
             event.preventDefault();

@@ -1,12 +1,13 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
-import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats } from "@cfwk/shared";
+import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { DEFAULT_INVENTORY_SLOTS } from "@cfwk/shared";
 import { CommandProcessor } from "../utils/CommandProcessor";
 import User from "../models/User";
 import BannedIP from "../models/BannedIP";
+import { PlayerStatsCache } from "../managers/PlayerStatsCache";
 
 /**
  * Player state for instance rooms
@@ -77,8 +78,13 @@ export class InstanceRoom extends Room<InstanceState> {
     private timeUpdateInterval?: ReturnType<typeof setInterval>;
     private afkCheckInterval?: ReturnType<typeof setInterval>;
     private droppedItemCleanupInterval?: ReturnType<typeof setInterval>;
+    private onlineTimeInterval?: ReturnType<typeof setInterval>;
+    private statsBroadcastInterval?: ReturnType<typeof setInterval>;
     private fishingCasts = new Map<string, { depth: number; region: string; castAt: number; itemId?: string; clicksRequired?: number }>();
     private lastActivityBySession = new Map<string, number>();
+    private lastPositionBySession = new Map<string, { x: number; y: number }>();
+    private sprintStateBySession = new Map<string, boolean>();
+    private pendingStatsDeltasBySession = new Map<string, IPlayerStatsDelta>();
 
     onCreate(options: { instanceId: string; locationId: string; mapFile: string; maxPlayers: number }) {
         console.log(`[InstanceRoom] Creating room for instance: ${options.instanceId}`);
@@ -218,6 +224,26 @@ export class InstanceRoom extends Room<InstanceState> {
             });
         }, 15000);
 
+        this.onlineTimeInterval = setInterval(() => {
+            this.clients.forEach((client) => {
+                const player = this.state.players.get(client.sessionId);
+                if (!player) return;
+
+                this.incrementStat(client, player, 'timeOnlineMs', 5000);
+            });
+        }, 5000);
+
+        this.statsBroadcastInterval = setInterval(() => {
+            this.clients.forEach((client) => {
+                const pending = this.pendingStatsDeltasBySession.get(client.sessionId);
+                if (!pending) return;
+                if (!this.hasAnyDelta(pending)) return;
+
+                client.send('stats:delta', pending);
+                this.pendingStatsDeltasBySession.set(client.sessionId, {});
+            });
+        }, 1000);
+
         // Handle player input
         this.onMessage("input", (client, input: PlayerInput) => {
             this.markActivity(client);
@@ -228,12 +254,6 @@ export class InstanceRoom extends Room<InstanceState> {
                 if (input.right) player.x += speed;
                 if (input.up) player.y -= speed;
                 if (input.down) player.y += speed;
-
-                if (input.left || input.right || input.up || input.down) {
-                    player.anim = 'walk';
-                } else {
-                    player.anim = 'idle';
-                }
             }
         });
 
@@ -242,19 +262,42 @@ export class InstanceRoom extends Room<InstanceState> {
             this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (player) {
+                const previous = this.lastPositionBySession.get(client.sessionId);
+                if (previous) {
+                    const dx = data.x - previous.x;
+                    const dy = data.y - previous.y;
+                    const movedDistance = Math.hypot(dx, dy);
+                    const maxAcceptedStep = 80;
+
+                    if (Number.isFinite(movedDistance) && movedDistance > 0 && movedDistance <= maxAcceptedStep) {
+                        const isSprinting = this.sprintStateBySession.get(client.sessionId) === true || player.anim === 'run';
+                        if (isSprinting) {
+                            this.incrementStat(client, player, 'distanceRan', movedDistance);
+                        } else {
+                            this.incrementStat(client, player, 'distanceWalked', movedDistance);
+                        }
+                    }
+                }
+
+                this.lastPositionBySession.set(client.sessionId, { x: data.x, y: data.y });
                 player.x = data.x;
                 player.y = data.y;
             }
         });
 
         // Handle animation sync
-        this.onMessage("animation", (client, data: { anim: PlayerAnim; direction: number }) => {
+        this.onMessage("animation", (client, data: { anim: PlayerAnim; direction: number; isSprinting?: boolean }) => {
             this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (player) {
                 player.anim = data.anim;
                 if (typeof data.direction === 'number') {
                     player.direction = data.direction;
+                }
+                if (typeof data.isSprinting === 'boolean') {
+                    this.sprintStateBySession.set(client.sessionId, data.isSprinting);
+                } else {
+                    this.sprintStateBySession.set(client.sessionId, data.anim === 'run');
                 }
             }
         });
@@ -426,6 +469,8 @@ export class InstanceRoom extends Room<InstanceState> {
             this.fishingCasts.delete(client.sessionId);
             if (!itemId) return;
 
+            this.incrementStat(client, player, 'catches', 1);
+
             const { items: currentSlots, equippedRodId: equippedRodIdFromState } = await InventoryCache.getInstance().getInventoryState(player.odcid);
             const stackSize = getItemDefinition(itemId)?.stackSize ?? 99;
             const hasStackSpace = currentSlots.some((slot) => slot.itemId === itemId && slot.count < stackSize);
@@ -442,6 +487,15 @@ export class InstanceRoom extends Room<InstanceState> {
             const slots = await InventoryCache.getInstance().addItem(player.odcid, itemId, 1);
             client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId: equippedRodIdFromState });
             client.send('fishing:catchResult', { itemId });
+        });
+
+        this.onMessage('npc:interact', (client, data: { npcId?: string }) => {
+            this.markActivity(client);
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+            if (!data || typeof data.npcId !== 'string' || !data.npcId.trim()) return;
+
+            this.incrementStat(client, player, 'npcInteractions', 1);
         });
 
         // Handle pickup item interactions
@@ -720,6 +774,8 @@ export class InstanceRoom extends Room<InstanceState> {
         
         this.state.players.set(client.sessionId, player);
         this.lastActivityBySession.set(client.sessionId, Date.now());
+        this.pendingStatsDeltasBySession.set(client.sessionId, {});
+        this.sprintStateBySession.set(client.sessionId, false);
 
         // Send initial inventory to the client on join
         try {
@@ -784,6 +840,9 @@ export class InstanceRoom extends Room<InstanceState> {
         this.state.players.delete(client.sessionId);
         this.fishingCasts.delete(client.sessionId);
         this.lastActivityBySession.delete(client.sessionId);
+        this.lastPositionBySession.delete(client.sessionId);
+        this.pendingStatsDeltasBySession.delete(client.sessionId);
+        this.sprintStateBySession.delete(client.sessionId);
         
         // Notify instance manager
         this.instanceManager.playerLeft(this.instanceId);
@@ -800,6 +859,37 @@ export class InstanceRoom extends Room<InstanceState> {
         if (this.droppedItemCleanupInterval) {
             clearInterval(this.droppedItemCleanupInterval);
         }
+        if (this.onlineTimeInterval) {
+            clearInterval(this.onlineTimeInterval);
+        }
+        if (this.statsBroadcastInterval) {
+            clearInterval(this.statsBroadcastInterval);
+        }
+    }
+
+    private getStatsUserId(client: Client, player: InstancePlayerSchema): string | null {
+        if (!player.odcid || player.odcid === client.sessionId) return null;
+        return player.odcid;
+    }
+
+    private incrementStat(client: Client, player: InstancePlayerSchema, key: PlayerStatKey, amount: number) {
+        if (!Number.isFinite(amount) || amount <= 0) return;
+
+        const statsUserId = this.getStatsUserId(client, player);
+        if (!statsUserId) return;
+
+        PlayerStatsCache.getInstance().incrementStat(statsUserId, key, amount);
+
+        const pending = this.pendingStatsDeltasBySession.get(client.sessionId) || {};
+        pending[key] = (pending[key] || 0) + amount;
+        this.pendingStatsDeltasBySession.set(client.sessionId, pending);
+    }
+
+    private hasAnyDelta(delta: IPlayerStatsDelta): boolean {
+        for (const key of PLAYER_STAT_KEYS) {
+            if ((delta[key] || 0) > 0) return true;
+        }
+        return false;
     }
 
     /**

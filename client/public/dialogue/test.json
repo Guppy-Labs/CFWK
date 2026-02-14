@@ -12,16 +12,19 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
+                    "textKey": "dialogue.npc.test.hasRod.0",
                     "text": "Hey! Nice timing, I was just polishing my knife."
                 },
                 {
                     "speaker": "player",
                     "emotion": "surprise",
+                    "textKey": "dialogue.npc.test.hasRod.1",
                     "text": "Uh, hi. Can I fish now?"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "angry",
+                    "textKey": "dialogue.npc.test.hasRod.2",
                     "text": "Hey now... I ALREADY GAVE YOU A ROD! NOW SCRAM!!!"
                 }
             ]
@@ -31,16 +34,19 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
+                    "textKey": "dialogue.npc.test.noRod.0",
                     "text": "Hey! Nice timing, I was just polishing my knife."
                 },
                 {
                     "speaker": "player",
                     "emotion": "surprise",
+                    "textKey": "dialogue.npc.test.noRod.1",
                     "text": "Uh, hi. Can I fish now?"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "sad",
+                    "textKey": "dialogue.npc.test.noRod.2",
                     "text": "Ugh, fine. But you better not mess up my fishing spot!"
                 }
             ],

@@ -22,16 +22,19 @@ import { VisualEffectsManager } from '../fx/VisualEffectsManager';
 import { SeasonalEffectsManager } from '../fx/SeasonalEffectsManager';
 import { WorldTimeManager } from '../time/WorldTimeManager';
 import { AudioManager } from '../audio/AudioManager';
+import { LocaleManager } from '../i18n/LocaleManager';
 import { DroppedItemManager } from '../items/DroppedItemManager';
 import { NPCManager } from '../npc/NPCManager';
 import { Toast } from '../../ui/Toast';
 import { DisconnectModal } from '../../ui/DisconnectModal';
 import { DialogueManager } from '../dialogue/DialogueManager';
 import type { UIScene } from './UIScene';
-import { IInstanceInfo, ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
+import { IInstanceInfo, ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE, DEFAULT_USER_SETTINGS, IVideoSettings } from '@cfwk/shared';
 import { NetworkManager } from '../network/NetworkManager';
 import { hideLoader, setLoaderText, currentUser } from '../index';
 import { SharedMCTextures } from '../player/SharedMCTextures';
+import { FullscreenManager } from '../ui/FullscreenManager';
+import { KeybindManager } from '../input/KeybindManager';
 
 interface GameSceneData {
     instance: IInstanceInfo;
@@ -40,6 +43,8 @@ interface GameSceneData {
 export class GameScene extends Phaser.Scene {
     private instanceInfo?: IInstanceInfo;
     private networkManager = NetworkManager.getInstance();
+    private keybindManager = KeybindManager.getInstance();
+    private localeManager = LocaleManager.getInstance();
     private worldTimeManager = WorldTimeManager.getInstance();
     private characterService = CharacterService.getInstance();
     private unsubscribeDisconnect?: () => void;
@@ -69,6 +74,7 @@ export class GameScene extends Phaser.Scene {
     private groundLayers?: Phaser.Tilemaps.TilemapLayer[];
     private fires: FireParticleSystem[] = [];
     private lastTablistSnapshot = '';
+    private currentVideoSettings: IVideoSettings = { ...DEFAULT_USER_SETTINGS.video };
     
     // Character appearance (fetched async)
     private characterAppearance: ICharacterAppearance = DEFAULT_CHARACTER_APPEARANCE;
@@ -143,6 +149,8 @@ export class GameScene extends Phaser.Scene {
         // Initialize seasonal effects (weather particles + color tints)
         this.seasonalEffectsManager = new SeasonalEffectsManager(this);
 
+        this.applyStartupSettings();
+
         // Launch UI Scene
         this.scene.launch('UIScene');
         const uiScene = this.scene.get('UIScene') as UIScene;
@@ -167,28 +175,28 @@ export class GameScene extends Phaser.Scene {
     private async initializeMCCharacterAndLoadMap() {
         try {
             // Update loader text
-            setLoaderText('Loading character...');
+            setLoaderText(this.localeManager.t('loader.loadingCharacter', undefined, 'Loading character...'));
             
             // Fetch character appearance from server
             this.characterAppearance = await this.characterService.fetchAppearance();
             console.log('[GameScene] Character appearance loaded:', this.characterAppearance);
             
             // Initialize MC controller (this composites all the sprite layers)
-            setLoaderText('Preparing character...');
+            setLoaderText(this.localeManager.t('loader.preparingCharacter', undefined, 'Preparing character...'));
             await this.mcPlayerController?.initialize(this.characterAppearance);
             console.log('[GameScene] MC character initialized');
             
             // Initialize shared MC textures for remote players
-            setLoaderText('Preparing world...');
+            setLoaderText(this.localeManager.t('loader.preparingWorld', undefined, 'Preparing world...'));
             await SharedMCTextures.getInstance().initialize(this);
             console.log('[GameScene] Shared MC textures initialized for remote players');
             
             // Now load the map
-            setLoaderText('Loading world...');
+            setLoaderText(this.localeManager.t('loader.loadingWorld', undefined, 'Loading world...'));
             this.loadMapLegacy();
         } catch (error) {
             console.error('[GameScene] Error initializing MC character:', error);
-            Toast.error('Failed to load character, using default');
+            Toast.error(this.localeManager.t('scene.game.characterFallback', undefined, 'Failed to load character, using default'));
             
             // Fall back to default appearance
             this.characterAppearance = DEFAULT_CHARACTER_APPEARANCE;
@@ -217,6 +225,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     private setupDebugToggle() {
+        this.registry.set('debugMenuActive', false);
+
         this.input.keyboard?.on('keydown-H', () => {
             // Ignore if chat is focused
             if (this.registry.get('chatFocused') === true) return;
@@ -224,6 +234,7 @@ export class GameScene extends Phaser.Scene {
             
             const shiftDown = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT)?.isDown ?? false;
             this.debugOverlay?.toggle(shiftDown);
+            this.registry.set('debugMenuActive', this.debugOverlay?.isEnabled() === true);
         });
 
         // Add toggle for visual effects (key 'V')
@@ -234,7 +245,10 @@ export class GameScene extends Phaser.Scene {
             const enabled = !this.registry.get('visualEffectsEnabled');
             this.registry.set('visualEffectsEnabled', enabled);
             this.visualEffectsManager?.setAllEffectsEnabled(enabled);
-            Toast.info(`Visual Effects: ${enabled ? 'ON' : 'OFF'}`, 2000);
+            const state = enabled
+                ? this.localeManager.t('system.on', undefined, 'ON')
+                : this.localeManager.t('system.off', undefined, 'OFF');
+            Toast.info(this.localeManager.t('scene.game.visualEffects', { state }, 'Visual Effects: {state}'), 2000);
         });
         
         // Add toggle for seasonal effects (key 'P')
@@ -245,7 +259,10 @@ export class GameScene extends Phaser.Scene {
             const enabled = !this.registry.get('seasonalEffectsEnabled');
             this.registry.set('seasonalEffectsEnabled', enabled);
             this.seasonalEffectsManager?.setEnabled(enabled);
-            Toast.info(`Seasonal Effects: ${enabled ? 'ON' : 'OFF'}`, 2000);
+            const state = enabled
+                ? this.localeManager.t('system.on', undefined, 'ON')
+                : this.localeManager.t('system.off', undefined, 'OFF');
+            Toast.info(this.localeManager.t('scene.game.seasonalEffects', { state }, 'Seasonal Effects: {state}'), 2000);
         });
         
         // Meow sound (key 'Z')
@@ -256,9 +273,34 @@ export class GameScene extends Phaser.Scene {
             this.audioManager?.playMeow();
         });
         
-        // Default to enabled
-        this.registry.set('visualEffectsEnabled', true);
-        this.registry.set('seasonalEffectsEnabled', true);
+        // Default to user settings until profile settings load
+        this.registry.set('visualEffectsEnabled', DEFAULT_USER_SETTINGS.video.visualEffectsEnabled);
+        this.registry.set('seasonalEffectsEnabled', DEFAULT_USER_SETTINGS.video.seasonalEffectsEnabled);
+    }
+
+    private applyStartupSettings() {
+        const cached = this.networkManager.getCachedSettings();
+        if (cached) {
+            this.keybindManager.hydrateFromSettings(cached);
+            this.localeManager.setLocale(cached.language || 'en_US');
+            this.audioManager?.applyUserAudioSettings?.(cached.audio);
+            this.applyUserVideoSettings({
+                ...cached.video,
+                fullscreen: FullscreenManager.isEnabled()
+            });
+            return;
+        }
+
+        void this.networkManager.getSettings().then((settings) => {
+            if (!settings) return;
+            this.keybindManager.hydrateFromSettings(settings);
+            this.localeManager.setLocale(settings.language || 'en_US');
+            this.audioManager?.applyUserAudioSettings?.(settings.audio);
+            this.applyUserVideoSettings({
+                ...settings.video,
+                fullscreen: FullscreenManager.isEnabled()
+            });
+        });
     }
 
     private showConnectionStatus() {
@@ -274,6 +316,27 @@ export class GameScene extends Phaser.Scene {
 
     getAudioManager(): AudioManager | undefined {
         return this.audioManager;
+    }
+
+    applyUserVideoSettings(video: IVideoSettings) {
+        this.currentVideoSettings = { ...video };
+
+        this.registry.set('visualEffectsEnabled', video.visualEffectsEnabled);
+        this.registry.set('seasonalEffectsEnabled', video.seasonalEffectsEnabled);
+
+        this.visualEffectsManager?.setBloomEnabled(video.bloomEnabled);
+        this.visualEffectsManager?.setVignetteEnabled(video.vignetteEnabled);
+        this.visualEffectsManager?.setTiltShiftEnabled(video.tiltShiftEnabled);
+        this.visualEffectsManager?.setAllEffectsEnabled(video.visualEffectsEnabled);
+
+        this.seasonalEffectsManager?.setEnabled(video.seasonalEffectsEnabled);
+        this.dustParticles?.setEnabled(video.dustParticlesEnabled);
+
+        void FullscreenManager.setEnabled(video.fullscreen);
+    }
+
+    getCurrentVideoSettings(): IVideoSettings {
+        return { ...this.currentVideoSettings };
     }
 
     getPlayerPosition(): { x: number; y: number } | null {
@@ -329,6 +392,7 @@ export class GameScene extends Phaser.Scene {
 
             // Initialize dust particle system for player
             this.dustParticles = new DustParticleSystem(this, player, map);
+            this.dustParticles.setEnabled(this.currentVideoSettings.dustParticlesEnabled);
 
             // Initialize water system (splash, footprints, depth effects)
             this.waterSystem = new WaterSystem(this, player, groundLayers);
@@ -358,6 +422,7 @@ export class GameScene extends Phaser.Scene {
         // Initialize seasonal effects with current season
         this.seasonalEffectsManager?.initialize();
         this.seasonalEffectsManager?.setInitialSeason(this.worldTimeManager.getTime().season);
+        this.applyUserVideoSettings(this.currentVideoSettings);
 
         // Initialize audio (music and ambient sounds for this map)
         const mapFile = this.instanceInfo?.mapFile || 'lobby.tmj';
@@ -444,8 +509,8 @@ export class GameScene extends Phaser.Scene {
 
             if (code === 4003) {
                 DisconnectModal.show({
-                    title: 'BANNED',
-                    message: 'You have been banned from Cute Fish With Knives.',
+                    title: this.localeManager.t('scene.game.bannedTitle', undefined, 'BANNED'),
+                    message: this.localeManager.t('scene.game.bannedMessage', undefined, 'You have been banned from Cute Fish With Knives.'),
                     showReconnect: false,
                     icon: 'ban'
                 });
@@ -454,8 +519,8 @@ export class GameScene extends Phaser.Scene {
 
             if (code === 4000) {
                 DisconnectModal.show({
-                    title: 'AFK Timeout',
-                    message: 'You were disconnected for being idle. Reconnect when you are ready to play.',
+                    title: this.localeManager.t('scene.game.afkTitle', undefined, 'AFK Timeout'),
+                    message: this.localeManager.t('scene.game.afkMessage', undefined, 'You were disconnected for being idle. Reconnect when you are ready to play.'),
                     icon: 'afk',
                     onReconnect: () => {
                         this.scene.stop('UIScene');
@@ -466,7 +531,7 @@ export class GameScene extends Phaser.Scene {
             }
 
             DisconnectModal.show({
-                title: 'Server Offline',
+                title: this.localeManager.t('scene.game.offlineTitle', undefined, 'Server Offline'),
                 message: `The connection to the game server was lost${detail}.<br>Please try again later.`,
                 icon: 'disconnect',
                 onReconnect: () => {

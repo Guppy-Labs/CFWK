@@ -11,8 +11,12 @@ export class VisualEffectsManager {
     // FX references for runtime adjustment
     private bloom?: Phaser.FX.Bloom;
     private vignette?: Phaser.FX.Vignette;
-    private tiltShift?: Phaser.FX.TiltShift;
+    private tiltShift?: Phaser.FX.Bokeh;
     private colorMatrix?: Phaser.FX.ColorMatrix;
+    private effectsMasterEnabled = true;
+    private bloomEnabled = false;
+    private vignetteEnabled = true;
+    private tiltShiftEnabled = true;
 
     // Configuration - carefully tuned for pixel art RPG aesthetic
     private readonly config = {
@@ -51,69 +55,10 @@ export class VisualEffectsManager {
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
         this.camera = scene.cameras.main;
-
-        this.setupEffects();
-    }
-
-    private setupEffects() {
-        // Ensure we have WebGL and postFX available
-        if (!this.camera.postFX) {
-            console.warn('PostFX not available - WebGL required for visual effects');
-            return;
-        }
-
-        // === BLOOM ===
-        // Creates a soft glow around bright pixels, giving warmth to lights and highlights
-        // Particularly nice for torchlight, water reflections, etc.
-        if (this.config.bloom.enabled) {
-            const b = this.config.bloom;
-            this.bloom = this.camera.postFX.addBloom(
-                b.color,
-                b.offsetX,
-                b.offsetY,
-                b.blurStrength,
-                b.strength,
-                b.steps
-            );
-        }
-
-        // === VIGNETTE ===
-        // Darkens the screen edges, drawing focus to the center
-        // Creates a natural "tunnel vision" that keeps attention on the player
-        if (this.config.vignette.enabled) {
-            const v = this.config.vignette;
-            this.vignette = this.camera.postFX.addVignette(
-                v.x,
-                v.y,
-                v.radius,
-                v.strength
-            );
-        }
-
-        // === TILT SHIFT ===
-        // Simulates a shallow depth-of-field effect
-        // Creates a "miniature/diorama" look that works beautifully with pixel art
-        // Focus band is horizontal through center, edges blur vertically
-        if (this.config.tiltShift.enabled) {
-            const t = this.config.tiltShift;
-            this.tiltShift = this.camera.postFX.addTiltShift(
-                t.radius,
-                t.amount,
-                t.contrast,
-                t.blurX,
-                t.blurY,
-                t.strength
-            );
-        }
-
-        // === COLOR GRADING ===
-        // Subtle color adjustments to make the world feel more vibrant
-        if (this.config.colorGrade.enabled) {
-            const c = this.config.colorGrade;
-            this.colorMatrix = this.camera.postFX.addColorMatrix();
-            this.colorMatrix.saturate(c.saturation, true);
-            this.colorMatrix.contrast(c.contrast, true);
-        }
+        this.bloomEnabled = this.config.bloom.enabled;
+        this.vignetteEnabled = this.config.vignette.enabled;
+        this.tiltShiftEnabled = this.config.tiltShift.enabled;
+        this.syncAllEffects();
     }
 
     /**
@@ -158,25 +103,151 @@ export class VisualEffectsManager {
      * Toggle individual effects
      */
     setBloomEnabled(enabled: boolean) {
-        if (this.bloom) this.bloom.active = enabled;
+        this.bloomEnabled = enabled;
+        this.syncBloomEffect();
     }
 
     setVignetteEnabled(enabled: boolean) {
-        if (this.vignette) this.vignette.active = enabled;
+        this.vignetteEnabled = enabled;
+        this.syncVignetteEffect();
     }
 
     setTiltShiftEnabled(enabled: boolean) {
-        if (this.tiltShift) this.tiltShift.active = enabled;
+        this.tiltShiftEnabled = enabled;
+        this.syncTiltShiftEffect();
     }
 
     /**
      * Master toggle for all effects
      */
     setAllEffectsEnabled(enabled: boolean) {
-        this.setBloomEnabled(enabled);
-        this.setVignetteEnabled(enabled);
-        this.setTiltShiftEnabled(enabled);
-        if (this.colorMatrix) this.colorMatrix.active = enabled;
+        this.effectsMasterEnabled = enabled;
+        this.syncAllEffects();
+    }
+
+    getEffectsState() {
+        return {
+            visualEffectsEnabled: this.effectsMasterEnabled,
+            bloomEnabled: this.bloomEnabled,
+            vignetteEnabled: this.vignetteEnabled,
+            tiltShiftEnabled: this.tiltShiftEnabled
+        };
+    }
+
+    private syncAllEffects() {
+        this.syncBloomEffect();
+        this.syncVignetteEffect();
+        this.syncTiltShiftEffect();
+        this.syncColorGradeEffect();
+    }
+
+    private syncBloomEffect() {
+        if (!this.camera.postFX) return;
+        const shouldEnable = this.effectsMasterEnabled && this.bloomEnabled;
+
+        if (!shouldEnable) {
+            if (this.bloom) {
+                this.camera.postFX.remove(this.bloom);
+                this.bloom = undefined;
+            }
+            return;
+        }
+
+        if (this.bloom) return;
+
+        const b = this.config.bloom;
+        try {
+            this.bloom = this.camera.postFX.addBloom(
+                b.color,
+                b.offsetX,
+                b.offsetY,
+                b.blurStrength,
+                b.strength,
+                b.steps
+            );
+        } catch (error) {
+            console.warn('[VisualEffectsManager] Failed to create bloom effect:', error);
+            this.bloomEnabled = false;
+        }
+    }
+
+    private syncVignetteEffect() {
+        if (!this.camera.postFX) return;
+        const shouldEnable = this.effectsMasterEnabled && this.vignetteEnabled;
+
+        if (!shouldEnable) {
+            if (this.vignette) {
+                this.camera.postFX.remove(this.vignette);
+                this.vignette = undefined;
+            }
+            return;
+        }
+
+        if (this.vignette) return;
+
+        const v = this.config.vignette;
+        try {
+            this.vignette = this.camera.postFX.addVignette(
+                v.x,
+                v.y,
+                v.radius,
+                v.strength
+            );
+        } catch (error) {
+            console.warn('[VisualEffectsManager] Failed to create vignette effect:', error);
+            this.vignetteEnabled = false;
+        }
+    }
+
+    private syncTiltShiftEffect() {
+        if (!this.camera.postFX) return;
+        const shouldEnable = this.effectsMasterEnabled && this.tiltShiftEnabled;
+
+        if (!shouldEnable) {
+            if (this.tiltShift) {
+                this.camera.postFX.remove(this.tiltShift);
+                this.tiltShift = undefined;
+            }
+            return;
+        }
+
+        if (this.tiltShift) return;
+
+        const t = this.config.tiltShift;
+        try {
+            this.tiltShift = this.camera.postFX.addTiltShift(
+                t.radius,
+                t.amount,
+                t.contrast,
+                t.blurX,
+                t.blurY,
+                t.strength
+            );
+        } catch (error) {
+            console.warn('[VisualEffectsManager] Failed to create tilt-shift effect:', error);
+            this.tiltShiftEnabled = false;
+        }
+    }
+
+    private syncColorGradeEffect() {
+        if (!this.camera.postFX) return;
+        const shouldEnable = this.effectsMasterEnabled && this.config.colorGrade.enabled;
+
+        if (!shouldEnable) {
+            if (this.colorMatrix) this.colorMatrix.active = false;
+            return;
+        }
+
+        if (this.colorMatrix) {
+            this.colorMatrix.active = true;
+            return;
+        }
+
+        const c = this.config.colorGrade;
+        this.colorMatrix = this.camera.postFX.addColorMatrix();
+        this.colorMatrix.saturate(c.saturation, true);
+        this.colorMatrix.contrast(c.contrast, true);
+        this.colorMatrix.active = true;
     }
 
     /**

@@ -3,6 +3,7 @@ import { TEST_NPC_DEFINITION } from './defs/TestNpc';
 export type NPCDefinition = {
     id: string;
     name: string;
+    nameKey?: string;
     idleTexturePath: string;
     frameWidth: number;
     frameHeight: number;

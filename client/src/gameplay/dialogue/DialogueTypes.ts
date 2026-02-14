@@ -11,8 +11,10 @@ export type DialogueEmotion =
 export type DialogueLine = {
     speaker: DialogueSpeaker;
     text: string;
+    textKey?: string;
     emotion?: DialogueEmotion;
     name?: string;
+    nameKey?: string;
 };
 
 export type DialogueCheck = {

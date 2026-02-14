@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { IInventoryResponse, InventorySlot, getItemDefinition } from '@cfwk/shared';
 import { AudioManager } from '../audio/AudioManager';
+import { getLocalizedItemName } from '../i18n/itemLocale';
 
 type IndicatorType = 'entry' | 'exit' | 'skip';
 
@@ -225,7 +226,7 @@ export class InventoryChangeMonitor {
     }
 
     private updateIndicatorText(indicator: InventoryIndicator) {
-        const itemName = getItemDefinition(indicator.itemId)?.name ?? indicator.itemId;
+        const itemName = getLocalizedItemName(indicator.itemId, getItemDefinition(indicator.itemId)?.name ?? indicator.itemId);
         const symbol = indicator.type === 'entry' ? '+' : indicator.type === 'exit' ? '-' : '!';
         indicator.text.setText(`${symbol} ${itemName} x${indicator.quantity}`);
         indicator.text.setPosition(this.paddingX, this.indicatorHeight / 2);

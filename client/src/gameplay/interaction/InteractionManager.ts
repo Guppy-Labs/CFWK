@@ -317,6 +317,7 @@ export class InteractionManager {
 
     private executeNpcTalk(npcId: string): boolean {
         console.log(`[InteractionManager] NPC interaction triggered: ${npcId}`);
+        this.networkManager.sendNpcInteract(npcId);
         window.dispatchEvent(new CustomEvent('npc:interact', {
             detail: { npcId, npcName: this.currentInteraction?.npcName }
         }));

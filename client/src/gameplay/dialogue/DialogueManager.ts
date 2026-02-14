@@ -12,6 +12,7 @@ import type { UIScene } from '../scenes/UIScene';
 import type { GameScene } from '../scenes/GameScene';
 import { NetworkManager } from '../network/NetworkManager';
 import type { IInventoryResponse } from '@cfwk/shared';
+import { LocaleManager } from '../i18n/LocaleManager';
 
 type NpcInteractionDetail = {
     npcId: string;
@@ -21,6 +22,7 @@ type NpcInteractionDetail = {
 export class DialogueManager {
     private repository = new DialogueRepository();
     private networkManager = NetworkManager.getInstance();
+    private localeManager = LocaleManager.getInstance();
     private currentDialogue?: DialogueData;
     private currentIndex = 0;
     private active = false;
@@ -123,13 +125,22 @@ export class DialogueManager {
 
         const speaker = line.speaker;
         const npcInfo = this.npcId ? this.gameScene.getNpcPosition(this.npcId) : null;
-        const name = line.name ?? (speaker === 'npc' ? (this.npcName ?? npcInfo?.name ?? '???') : 'You');
+        const npcNameFallback = this.npcName ?? npcInfo?.name ?? this.localeManager.t('dialogue.unknownSpeaker', undefined, '???');
+        const defaultSpeakerName = speaker === 'npc'
+            ? (this.npcId ? this.localeManager.t(`npc.${this.npcId}.name`, undefined, npcNameFallback) : npcNameFallback)
+            : this.localeManager.t('dialogue.playerName', undefined, 'You');
+        const rawName = line.nameKey
+            ? this.localeManager.t(line.nameKey, undefined, line.name ?? defaultSpeakerName)
+            : (line.name ?? defaultSpeakerName);
+        const localizedText = line.textKey
+            ? this.localeManager.t(line.textKey, undefined, line.text)
+            : line.text;
         const emotion = (line.emotion ?? (speaker === 'npc' ? 'happy' : 'happy')) as DialogueEmotion;
 
         const renderLine: DialogueRenderLine = {
             speaker,
-            name,
-            text: line.text,
+            name: rawName,
+            text: localizedText,
             emotion,
             npcId: speaker === 'npc' ? this.npcId : undefined
         };

@@ -5,6 +5,7 @@ export const TIM_NAME = 'Tim';
 export const TEST_NPC_DEFINITION: NPCDefinition = {
     id: 'test',
     name: TIM_NAME,
+    nameKey: 'npc.test.name',
     idleTexturePath: '/assets/npc/test/idle.png',
     frameWidth: 16,
     frameHeight: 25,

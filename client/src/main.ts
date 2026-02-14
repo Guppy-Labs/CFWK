@@ -1,5 +1,7 @@
 import { startGame, setLoaderText } from './gameplay';
 import { ErrorModal } from './ui/ErrorModal';
+import { LocaleManager } from './gameplay/i18n/LocaleManager';
+import { bootstrapLocale } from './gameplay/i18n/localeBootstrap';
 
 function isIgnorableClientError(err: unknown): boolean {
     const message =
@@ -48,7 +50,9 @@ function formatRemaining(ms: number): string {
 // Auth check
 async function checkAuth() {
     try {
-        setLoaderText('Authenticating...');
+        await bootstrapLocale({ fetchFromServer: true });
+        const localeManager = LocaleManager.getInstance();
+        setLoaderText(localeManager.t('loader.authenticating', undefined, 'Authenticating...'));
         
         const res = await fetch('/api/auth/me');
         if (!res.ok) {
@@ -85,7 +89,7 @@ async function checkAuth() {
             setInterval(updateChip, 60000);
         }
 
-        setLoaderText('Initializing game...');
+        setLoaderText(localeManager.t('loader.initializingGame', undefined, 'Initializing game...'));
         
         // Update the upgrade button based on premium status
         updateUpgradeButton(data.user);

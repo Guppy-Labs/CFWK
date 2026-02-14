@@ -5,6 +5,7 @@ import { ChatMessages } from './chat/ChatMessages';
 import { ChatInput } from './chat/ChatInput';
 import { ChatMobileInput } from './chat/ChatMobileInput';
 import type { ChatMessage, CommandSpec } from './chat/types';
+import { KeybindManager } from '../input/KeybindManager';
 
 export type { ChatMessage } from './chat/types';
 
@@ -19,6 +20,7 @@ export class Chat {
 
     private onSendMessage?: (message: string) => void;
     private onFocusChange?: (focused: boolean) => void;
+    private keybindManager = KeybindManager.getInstance();
 
     private readonly padding = 10;
     private readonly width = 320;
@@ -193,9 +195,10 @@ export class Chat {
 
     handleKeyDown(event: KeyboardEvent): boolean {
         if (!this.isFocused) {
-            if (event.key === 't' || event.key === 'T' || event.key === '/') {
+            if (this.keybindManager.matchesActionEvent('chat', event)) {
                 event.preventDefault();
-                if (event.key === '/') {
+                const chatCode = this.keybindManager.getBinding('chat');
+                if (chatCode === 'Slash') {
                     this.input.setCurrentInput('/', false);
                 }
                 this.focus();

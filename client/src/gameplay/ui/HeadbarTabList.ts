@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { LocaleManager } from '../i18n/LocaleManager';
+import { BitmapFontRenderer } from './BitmapFontRenderer';
 
 export type TabListEntry = {
     name: string;
@@ -34,6 +36,8 @@ export class HeadbarTabList {
     private playerImages: Phaser.GameObjects.Image[] = [];
     private players: TabListEntry[] = [];
     private config: Required<HeadbarTabListConfig>;
+    private localeManager = LocaleManager.getInstance();
+    private localeChangedHandler?: (event: Event) => void;
 
     private textureCounter = 0;
     private headerTextureKey?: string;
@@ -41,30 +45,24 @@ export class HeadbarTabList {
 
     // Font rendering (shared with HeadbarUI)
     private readonly fontCharSize = 8;
-    private readonly fontMap = [
-        '                ',
-        '                ',
-        ' !"#$%&\'()*+,-./',
-        '0123456789:;<=>?',
-        '@ABCDEFGHIJKLMNO',
-        'PQRSTUVWXYZ[\\]^_',
-        '`abcdefghijklmno',
-        'pqrstuvwxyz{|}~ '
-    ];
-    private fontGlyphWidths = new Map<string, number>();
+    private readonly fontRenderer: BitmapFontRenderer;
     private readonly textScale = 1.5;
     private readonly scaledCharGap = 2;
 
     constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container, config: HeadbarTabListConfig = {}) {
         this.scene = scene;
+        this.fontRenderer = new BitmapFontRenderer(scene, this.fontCharSize);
         this.config = {
             textColor: config.textColor ?? DEFAULT_CONFIG.textColor,
             localPlayerColor: config.localPlayerColor ?? DEFAULT_CONFIG.localPlayerColor,
-            headerText: config.headerText ?? DEFAULT_CONFIG.headerText,
+            headerText: this.localeManager.t('headbar.playersOnline', undefined, config.headerText ?? DEFAULT_CONFIG.headerText),
             rowHeight: config.rowHeight ?? DEFAULT_CONFIG.rowHeight,
             paddingX: config.paddingX ?? DEFAULT_CONFIG.paddingX,
             paddingTop: config.paddingTop ?? DEFAULT_CONFIG.paddingTop
         };
+
+        this.localeChangedHandler = () => this.refreshLocaleText();
+        window.addEventListener('locale:changed', this.localeChangedHandler as EventListener);
 
         this.container = this.scene.add.container(0, 0);
         this.container.setAlpha(0);
@@ -154,21 +152,23 @@ export class HeadbarTabList {
         }
     }
 
+    private refreshLocaleText() {
+        const nextHeader = this.localeManager.t('headbar.playersOnline', undefined, DEFAULT_CONFIG.headerText);
+        if (nextHeader === this.config.headerText) return;
+
+        this.config.headerText = nextHeader;
+        const oldKey = this.headerTextureKey;
+        this.headerTextureKey = this.createTextTexture(this.config.headerText, this.config.textColor);
+        this.headerImage.setTexture(this.headerTextureKey);
+
+        if (oldKey && oldKey !== this.headerTextureKey && this.scene.textures.exists(oldKey)) {
+            this.scene.textures.remove(oldKey);
+        }
+    }
+
     private createTextTexture(text: string, color: string): string {
         const rtKey = `__headbar_tablist_${this.textureCounter++}`;
         const canvas = document.createElement('canvas');
-
-        if (!this.scene.textures.exists('ui-font')) {
-            canvas.width = 1;
-            canvas.height = 1;
-            this.scene.textures.addCanvas(rtKey, canvas);
-            return rtKey;
-        }
-
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
-        this.buildFontGlyphWidths(fontImage);
 
         const width = this.measureText(text);
         const height = Math.floor(this.fontCharSize * this.textScale);
@@ -178,20 +178,10 @@ export class HeadbarTabList {
         const ctx = canvas.getContext('2d')!;
         ctx.imageSmoothingEnabled = false;
 
-        // Draw text at scaled size
-        let x = 0;
-        for (const char of text) {
-            const pos = this.getCharPos(char);
-            if (pos) {
-                const glyphW = this.fontGlyphWidths.get(char) ?? this.fontCharSize;
-                const scaledGlyphW = Math.round(glyphW * this.textScale);
-                const scaledCharSize = Math.round(this.fontCharSize * this.textScale);
-                ctx.drawImage(fontImage, pos.x, pos.y, this.fontCharSize, this.fontCharSize, x, 0, scaledCharSize, scaledCharSize);
-                x += scaledGlyphW + this.scaledCharGap;
-            } else {
-                x += Math.round(this.fontCharSize * this.textScale) + this.scaledCharGap;
-            }
-        }
+        this.fontRenderer.drawText(ctx, text, 0, 0, {
+            scale: this.textScale,
+            charGap: this.scaledCharGap
+        });
 
         // Apply text color
         ctx.globalCompositeOperation = 'source-in';
@@ -203,65 +193,18 @@ export class HeadbarTabList {
     }
 
     private measureText(text: string): number {
-        // Ensure glyph widths are built
-        if (this.fontGlyphWidths.size === 0 && this.scene.textures.exists('ui-font')) {
-            const fontTexture = this.scene.textures.get('ui-font');
-            const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-            this.buildFontGlyphWidths(fontImage);
-        }
-
-        let width = 0;
-        for (const char of text) {
-            const glyphW = this.fontGlyphWidths.get(char) ?? this.fontCharSize;
-            width += Math.round(glyphW * this.textScale) + this.scaledCharGap;
-        }
-        return Math.max(0, width - this.scaledCharGap);
-    }
-
-    private buildFontGlyphWidths(fontImage: HTMLImageElement) {
-        if (this.fontGlyphWidths.size > 0) return;
-
-        const canvas = document.createElement('canvas');
-        canvas.width = fontImage.width;
-        canvas.height = fontImage.height;
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(fontImage, 0, 0);
-
-        for (let row = 0; row < this.fontMap.length; row++) {
-            for (let col = 0; col < this.fontMap[row].length; col++) {
-                const char = this.fontMap[row][col];
-                if (char === ' ') {
-                    this.fontGlyphWidths.set(char, 4);
-                    continue;
-                }
-                const gx = col * this.fontCharSize;
-                const gy = row * this.fontCharSize;
-                const imgData = ctx.getImageData(gx, gy, this.fontCharSize, this.fontCharSize);
-                let maxX = 0;
-                for (let y = 0; y < this.fontCharSize; y++) {
-                    for (let x = 0; x < this.fontCharSize; x++) {
-                        const idx = (y * this.fontCharSize + x) * 4;
-                        if (imgData.data[idx + 3] > 0) {
-                            maxX = Math.max(maxX, x);
-                        }
-                    }
-                }
-                this.fontGlyphWidths.set(char, maxX + 1);
-            }
-        }
-    }
-
-    private getCharPos(char: string): { x: number; y: number } | null {
-        for (let row = 0; row < this.fontMap.length; row++) {
-            const col = this.fontMap[row].indexOf(char);
-            if (col !== -1) {
-                return { x: col * this.fontCharSize, y: row * this.fontCharSize };
-            }
-        }
-        return null;
+        return this.fontRenderer.measureTextWidth(text, {
+            scale: this.textScale,
+            charGap: this.scaledCharGap
+        });
     }
 
     destroy() {
+        if (this.localeChangedHandler) {
+            window.removeEventListener('locale:changed', this.localeChangedHandler as EventListener);
+            this.localeChangedHandler = undefined;
+        }
+
         if (this.headerTextureKey && this.scene.textures.exists(this.headerTextureKey)) {
             this.scene.textures.remove(this.headerTextureKey);
         }

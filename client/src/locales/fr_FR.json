@@ -1,0 +1,307 @@
+{
+	"settings": {
+		"tab": {
+			"inventory": "Inventaire",
+			"finbook": "Carnet de pêche",
+			"settings": "Paramètres"
+		},
+		"header": "Paramètres",
+		"actionsHeader": "Actions",
+		"section": {
+			"Language": "Langue",
+			"Sounds": "Son",
+			"Video": "Vidéo",
+			"Controls": "Commandes",
+			"Online": "En ligne",
+			"Accessibility": "Accessibilité",
+			"Statistics": "Statistiques"
+		},
+		"action": {
+			"Invite to Server": "Inviter sur le serveur",
+			"Report Bugs": "Signaler des bugs"
+		},
+		"placeholder": "Section bientôt disponible",
+		"sounds": {
+			"master": "Principal",
+			"music": "Musique",
+			"ambient": "Ambiance",
+			"players": "Joueurs",
+			"overlays": "Superpositions",
+			"subtitlesEnabled": "Sous-titres",
+			"stereoEnabled": "Stéréo"
+		},
+		"video": {
+			"qualityPreset": "Qualité",
+			"qualityLow": "Faible",
+			"qualityMedium": "Moyenne",
+			"qualityHigh": "Élevée",
+			"qualityCustom": "Personnalisée",
+			"fullscreen": "Plein écran",
+			"visualEffectsEnabled": "Effets visuels",
+			"seasonalEffectsEnabled": "Effets saisonniers",
+			"bloomEnabled": "Lueur",
+			"vignetteEnabled": "Vignettage",
+			"tiltShiftEnabled": "Tilt-shift",
+			"dustParticlesEnabled": "Particules de poussière"
+		},
+		"controls": {
+			"title": "Commandes",
+			"idleHint": "Cliquez une touche pour la réassigner",
+			"captureHint": "Appuyez sur une touche, Échap pour annuler, Retour arrière pour vider",
+			"listening": "Appuyez...",
+			"unbound": "Non assignée",
+			"resetAll": "Réinitialiser",
+			"conflict": "Déjà utilisée par {action}",
+			"action": {
+				"moveUp": "Marcher haut",
+				"moveLeft": "Marcher gauche",
+				"moveDown": "Marcher bas",
+				"moveRight": "Marcher droite",
+				"sprint": "Sprinter",
+				"interact": "Interagir",
+				"inventory": "Inventaire",
+				"fish": "Pêcher",
+				"playerList": "Liste des joueurs",
+				"chat": "Chat",
+				"dialogueAdvance": "Avancer le dialogue"
+			}
+		},
+		"stats": {
+			"distanceWalked": "Marché",
+			"distanceRan": "Couru",
+			"timeOnlineMs": "En ligne",
+			"catches": "Prises",
+			"npcInteractions": "Interactions",
+			"meters": "{value} m"
+		},
+		"language": {
+			"title": "Langue",
+			"current": "Actuel : {name}",
+			"localeNames": {
+				"en_US": "Anglais (US)",
+				"es_ES": "Espagnol",
+				"fr_FR": "Français",
+				"te_ST": "Débogage"
+			}
+		}
+	},
+	"inventory": {
+		"groups": {
+			"All": "Tous",
+			"Gear": "Équipement",
+			"Tools": "Outils",
+			"Fishing": "Pêche",
+			"Food": "Nourriture"
+		},
+		"details": {
+			"drop": "Jeter"
+		},
+		"equipment": {
+			"rod": "Canne"
+		}
+	},
+	"headbar": {
+		"playersOnline": "Joueurs en ligne",
+		"datePattern": "{season} Jour {day}",
+		"yearPattern": "Année {year}",
+		"season": {
+			"winter": "Hiver",
+			"spring": "Printemps",
+			"summer": "Été",
+			"autumn": "Automne"
+		}
+	},
+	"loader": {
+		"authenticating": "Authentification...",
+		"initializingGame": "Initialisation du jeu...",
+		"loadingCharacter": "Chargement du personnage...",
+		"preparingCharacter": "Préparation du personnage...",
+		"preparingWorld": "Préparation du monde...",
+		"loadingWorld": "Chargement du monde..."
+	},
+	"subtitles": {
+		"ambientOcean": "Vagues de l'océan",
+		"ambientFire": "Feu qui crépite",
+		"footstepSand": "Pas sur le sable",
+		"footstepWater": "Pas dans l'eau peu profonde",
+		"meow": "Miaou",
+		"rodCast": "Lancer de canne à pêche",
+		"rodReel": "Moulinage de canne à pêche",
+		"waterSplash": "Éclaboussure",
+		"biteAlert": "Alerte de morsure",
+		"reelClick": "Clic du moulinet",
+		"itemCollected": "Objet ramassé",
+		"itemDropped": "Objet jeté",
+		"itemSkipped": "Objet ignoré",
+		"dialogueText": "Texte de dialogue",
+		"dialogueAdvance": "Avancement du dialogue"
+	},
+	"fishing": {
+		"buttons": {
+			"stopFishing": "Arrêter\nla pêche",
+			"cast": "Lancer",
+			"reel": "Mouliner"
+		},
+		"biteMessages": {
+			"rodShaking": "Votre canne tremble !",
+			"somethingHooked": "Quelque chose a mordu !",
+			"fishFighting": "Un poisson se débat !",
+			"gotBite": "Vous avez une touche !",
+			"lineTugging": "La ligne tire !"
+		},
+		"biteHint": "Cliquez encore {clicks} fois en {seconds} secondes !",
+		"caughtItem": "Vous avez attrapé {item} !"
+	},
+	"npc": {
+		"test": {
+			"name": "Tim"
+		}
+	},
+	"dialogue": {
+		"playerName": "Vous",
+		"unknownSpeaker": "???",
+		"action": {
+			"skip": "passer",
+			"continue": "continuer"
+		},
+		"prompt": {
+			"tapToAction": "Touchez pour {action}",
+			"keyToAction": " pour {action}",
+			"or": " ou "
+		},
+		"npc": {
+			"test": {
+				"hasRod": {
+					"0": "Hé ! Tu tombes bien, j'étais justement en train d'aiguiser mon couteau.",
+					"1": "Euh, salut. Je peux pêcher maintenant ?",
+					"2": "Hé dis donc... JE T'AI DÉJÀ DONNÉ UNE CANNE ! MAINTENANT DÉGAGE !!!"
+				},
+				"noRod": {
+					"0": "Hé ! Tu tombes bien, j'étais justement en train d'aiguiser mon couteau.",
+					"1": "Euh, salut. Je peux pêcher maintenant ?",
+					"2": "Pff, d'accord. Mais tu ferais mieux de ne pas gâcher mon coin de pêche !"
+				}
+			}
+		}
+	},
+	"items": {
+		"goldenberries": {
+			"name": "Baies dorées",
+			"description": "Une baie rare et sucrée qui redonne de la vitalité."
+		},
+		"tuna": {
+			"name": "Thon",
+			"description": "Un thon commun. Délicieux lorsqu'il est bien préparé."
+		},
+		"mackerel": {
+			"name": "Maquereau",
+			"description": "Un maquereau élégant aux écailles scintillantes."
+		},
+		"cod": {
+			"name": "Morue",
+			"description": "Une morue dodue, fréquente dans les eaux tempérées."
+		},
+		"salmon": {
+			"name": "Saumon",
+			"description": "Un saumon rose, apprécié pour sa saveur riche."
+		},
+		"catfish": {
+			"name": "Poisson-chat",
+			"description": "Un poisson-chat moustachu qui rôde dans les eaux profondes."
+		},
+		"fat_tuna": {
+			"name": "Gros thon",
+			"description": "Un thon exceptionnellement dodu. Il vaut plus que sa version normale."
+		},
+		"fat_mackerel": {
+			"name": "Gros maquereau",
+			"description": "Un maquereau trapu avec davantage de chair."
+		},
+		"fat_cod": {
+			"name": "Grosse morue",
+			"description": "Une morue énorme, quelle prise !"
+		},
+		"fat_salmon": {
+			"name": "Gros saumon",
+			"description": "Un saumon bien dodu, plein de saveur."
+		},
+		"fat_catfish": {
+			"name": "Gros poisson-chat",
+			"description": "Un poisson-chat massif. Ses moustaches sont impressionnantes."
+		},
+		"coho_salmon": {
+			"name": "Saumon coho",
+			"description": "Un magnifique saumon coho avec des marques argentées distinctives."
+		},
+		"rickety_rod": {
+			"name": "Canne branlante",
+			"description": "Une canne usée, maintenue par l'espoir et une ficelle."
+		},
+		"fisherman_rod": {
+			"name": "Canne du pêcheur",
+			"description": "Une canne fiable utilisée par des pêcheurs expérimentés."
+		},
+		"sea_grass": {
+			"name": "Herbe marine",
+			"description": "Une touffe d'herbe marine. Pas très utile."
+		},
+		"boot": {
+			"name": "Vieille botte",
+			"description": "Une botte détrempée. Quelqu'un l'a perdue il y a longtemps."
+		},
+		"broken_bottle": {
+			"name": "Bouteille cassée",
+			"description": "Des éclats de bouteille en verre cassée. À manipuler avec précaution."
+		},
+		"apple_core": {
+			"name": "Trognon de pomme",
+			"description": "Les restes du casse-croûte de quelqu'un. Étrangement frais."
+		},
+		"trash_bag": {
+			"name": "Sac-poubelle",
+			"description": "Un sac-poubelle trempé. Qui jette ça dans l'eau ?"
+		},
+		"sea_pickle": {
+			"name": "Cornichon de mer",
+			"description": "Un cornichon de mer bioluminescent. Plutôt mignon, en fait."
+		},
+		"broken_specs": {
+			"name": "Lunettes cassées",
+			"description": "Les lunettes perdues de quelqu'un. Cette personne ne doit plus pouvoir lire."
+		},
+		"infested_boot": {
+			"name": "Botte infestée",
+			"description": "Une vieille botte devenue le foyer de mystérieuses créatures marines."
+		},
+		"infested_vase": {
+			"name": "Vase infesté",
+			"description": "Un vase ancien couvert de balanes. Il pourrait avoir de la valeur !"
+		},
+		"ruined_chest": {
+			"name": "Coffre en ruine",
+			"description": "Un coffre au trésor gorgé d'eau. La plupart du contenu a pourri."
+		}
+	},
+	"system": {
+		"on": "ACTIVÉ",
+		"off": "DÉSACTIVÉ"
+	},
+	"scene": {
+		"game": {
+			"characterFallback": "Échec du chargement du personnage, utilisation du modèle par défaut",
+			"visualEffects": "Effets visuels : {state}",
+			"seasonalEffects": "Effets saisonniers : {state}",
+			"bannedTitle": "BANNI",
+			"bannedMessage": "Vous avez été banni de Cute Fish With Knives.",
+			"afkTitle": "Expiration AFK",
+			"afkMessage": "Vous avez été déconnecté pour inactivité. Reconnectez-vous lorsque vous êtes prêt à jouer.",
+			"offlineTitle": "Serveur hors ligne"
+		},
+		"boot": {
+			"connecting": "Connexion...",
+			"bannedTitle": "BANNI",
+			"accountBannedTitle": "COMPTE BANNI",
+			"offlineTitle": "Serveur hors ligne"
+		}
+	}
+}

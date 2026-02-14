@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { LocaleManager } from '../i18n/LocaleManager';
 
 export type TabListEntry = {
     name: string;
@@ -12,6 +13,8 @@ export class TabList {
     private titleText: Phaser.GameObjects.Text;
     private playerTexts: Phaser.GameObjects.Text[] = [];
     private players: TabListEntry[] = [];
+    private localeManager = LocaleManager.getInstance();
+    private localeChangedHandler?: (event: Event) => void;
 
     private readonly padding = 12;
     private readonly rowHeight = 20;
@@ -25,7 +28,7 @@ export class TabList {
         this.background = this.scene.add.rectangle(0, 0, this.minWidth, 100, 0x000000, 0.6);
         this.background.setOrigin(0.5, 0.5);
 
-        this.titleText = this.scene.add.text(0, 0, 'Players Online', {
+        this.titleText = this.scene.add.text(0, 0, this.localeManager.t('headbar.playersOnline', undefined, 'Players Online'), {
             fontFamily: 'Minecraft, monospace',
             fontSize: '16px',
             color: '#ffffff'
@@ -34,6 +37,12 @@ export class TabList {
         this.container = this.scene.add.container(0, 0, [this.background, this.titleText]);
         this.container.setDepth(10000);
         this.container.setVisible(false);
+
+        this.localeChangedHandler = () => {
+            this.titleText.setText(this.localeManager.t('headbar.playersOnline', undefined, 'Players Online'));
+            this.render();
+        };
+        window.addEventListener('locale:changed', this.localeChangedHandler as EventListener);
 
         // Initial render to set correct position and size
         this.render();
@@ -59,6 +68,18 @@ export class TabList {
 
     hide() {
         this.container.setVisible(false);
+    }
+
+    destroy() {
+        if (this.localeChangedHandler) {
+            window.removeEventListener('locale:changed', this.localeChangedHandler as EventListener);
+            this.localeChangedHandler = undefined;
+        }
+
+        this.clearPlayerTexts();
+        this.titleText.destroy();
+        this.background.destroy();
+        this.container.destroy();
     }
 
     private clearPlayerTexts() {

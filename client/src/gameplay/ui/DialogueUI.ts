@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import { MobileControls } from './MobileControls';
 import type { DialogueRenderLine } from '../dialogue/DialogueTypes';
+import { LocaleManager } from '../i18n/LocaleManager';
+import { BitmapFontRenderer } from './BitmapFontRenderer';
+import { KeybindManager } from '../input/KeybindManager';
 
 export class DialogueUI {
     private scene: Phaser.Scene;
@@ -23,9 +26,10 @@ export class DialogueUI {
     private textPosX = 0;
     private textPosY = 0;
     private indicatorTextureKey?: string;
-    private fKey?: Phaser.Input.Keyboard.Key;
-    private fKeyHandler?: () => void;
+    private advanceKeyDownHandler?: (event: KeyboardEvent) => void;
     private typedLetterCount = 0;
+    private localeManager = LocaleManager.getInstance();
+    private keybindManager = KeybindManager.getInstance();
 
     private contentTextureKey?: string;
     private nameTextureKey?: string;
@@ -33,23 +37,11 @@ export class DialogueUI {
     private textTextureKey?: string;
     private textureCounter = 0;
 
-    private fontGlyphWidths = new Map<string, number>();
+    private readonly fontRenderer: BitmapFontRenderer;
 
     private readonly fontCharSize = 8;
     private readonly fontCharGap = 1;
     private readonly lineGap = 2;
-    private readonly defaultFontMap = [
-        '                ',
-        '                ',
-        ' !"#$%&\'()*+,-./',
-        '0123456789:;<=>?',
-        '@ABCDEFGHIJKLMNO',
-        'PQRSTUVWXYZ[\\]^_',
-        '`abcdefghijklmno',
-        'pqrstuvwxyz{|}~ '
-    ];
-    private fontMap = [...this.defaultFontMap];
-    private fontMapLoaded = false;
 
     private readonly depth = 15000;
     private readonly uiScale = 4;
@@ -73,6 +65,7 @@ export class DialogueUI {
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
+        this.fontRenderer = new BitmapFontRenderer(scene, this.fontCharSize);
         this.container = this.scene.add.container(0, 0);
         this.container.setDepth(this.depth);
         this.container.setScrollFactor(0);
@@ -117,19 +110,14 @@ export class DialogueUI {
             this.nameTextImage
         ]);
 
-        this.fKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F);
-        this.fKeyHandler = (event?: unknown) => {
+        this.advanceKeyDownHandler = (event: KeyboardEvent) => {
             if (!this.container.visible) return;
-            if (event && typeof (event as KeyboardEvent).preventDefault === 'function') {
-                (event as KeyboardEvent).preventDefault();
-            }
-            if (event && typeof (event as KeyboardEvent).stopPropagation === 'function') {
-                (event as KeyboardEvent).stopPropagation();
-            }
+            if (!this.keybindManager.matchesActionEvent('dialogueAdvance', event)) return;
+            event.preventDefault();
+            event.stopPropagation();
             this.handleAdvanceClick();
-            this.fKey?.reset();
         };
-        this.fKey?.on('down', this.fKeyHandler as any);
+        window.addEventListener('keydown', this.advanceKeyDownHandler, { capture: true });
 
         this.setVisible(false);
     }
@@ -230,8 +218,9 @@ export class DialogueUI {
     destroy() {
         this.stopTyping();
         this.clearGeneratedTextures();
-        if (this.fKey && this.fKeyHandler) {
-            this.fKey.off('down', this.fKeyHandler);
+        if (this.advanceKeyDownHandler) {
+            window.removeEventListener('keydown', this.advanceKeyDownHandler, { capture: true } as AddEventListenerOptions);
+            this.advanceKeyDownHandler = undefined;
         }
         this.container.destroy();
         this.hitArea.destroy();
@@ -306,15 +295,19 @@ export class DialogueUI {
 
     private updateIndicatorText() {
         if (!this.currentLine) return;
-        const actionText = this.isTyping ? 'skip' : 'continue';
+        const actionText = this.isTyping
+            ? this.localeManager.t('dialogue.action.skip', undefined, 'skip')
+            : this.localeManager.t('dialogue.action.continue', undefined, 'continue');
         const isMobile = MobileControls.isMobileDevice();
         if (isMobile) {
-            const text = `Tap to ${actionText}`;
-            const key = this.createIndicatorTexture(text, false);
+            const text = this.localeManager.t('dialogue.prompt.tapToAction', { action: actionText }, `Tap to ${actionText}`);
+            const key = this.createIndicatorTexture(text);
             this.setIndicatorTexture(key);
         } else {
-            const text = ` to ${actionText}`;
-            const key = this.createIndicatorTexture(text, true);
+            const trailingText = this.localeManager.t('dialogue.prompt.keyToAction', { action: actionText }, ` to ${actionText}`);
+            const keyLabel = this.keybindManager.getDisplayLabel('dialogueAdvance');
+            const text = `${keyLabel}${trailingText}`;
+            const key = this.createIndicatorTexture(text);
             this.setIndicatorTexture(key);
         }
     }
@@ -345,29 +338,12 @@ export class DialogueUI {
         this.indicatorImage.setTexture(key);
     }
 
-    private createIndicatorTexture(trailingText: string, includeIcons: boolean) {
-        this.ensureFontMapLoaded();
+    private createIndicatorTexture(text: string) {
         const textColor = '#000000';
-        const textScale = this.textScale;
-        const iconScale = Math.max(1, Math.round(textScale / 2) + 1);
-
-        const segments: Array<{ type: 'text' | 'icon'; value: string; width: number; height: number; canvas?: HTMLCanvasElement }>=[];
-
-        if (includeIcons) {
-            const cursorKey = 'ui-dialogue-cursor';
-            const cursorSize = this.getIconSize(cursorKey, 8, 13, iconScale);
-            segments.push({ type: 'icon', value: cursorKey, width: cursorSize.width, height: cursorSize.height });
-
-            const orCanvas = this.renderTextCanvas(' or ', textColor);
-            segments.push({ type: 'text', value: ' or ', width: orCanvas.width, height: orCanvas.height, canvas: orCanvas });
-
-            const fKey = 'ui-hud-key-f';
-            const fSize = this.getIconSize(fKey, 9, 9, iconScale);
-            segments.push({ type: 'icon', value: fKey, width: fSize.width, height: fSize.height });
-        }
-
-        const trailingCanvas = this.renderTextCanvas(trailingText, textColor);
-        segments.push({ type: 'text', value: trailingText, width: trailingCanvas.width, height: trailingCanvas.height, canvas: trailingCanvas });
+        const textCanvas = this.renderTextCanvas(text, textColor);
+        const segments: Array<{ type: 'text'; width: number; height: number; canvas: HTMLCanvasElement }> = [
+            { type: 'text', width: textCanvas.width, height: textCanvas.height, canvas: textCanvas }
+        ];
 
         const totalWidth = segments.reduce((sum, seg) => sum + seg.width, 0);
         const totalHeight = Math.max(...segments.map((seg) => seg.height));
@@ -381,13 +357,7 @@ export class DialogueUI {
         let cursorX = 0;
         segments.forEach((seg) => {
             const y = Math.round((totalHeight - seg.height) / 2);
-            if (seg.type === 'text' && seg.canvas) {
-                ctx.drawImage(seg.canvas, cursorX, y);
-            } else if (seg.type === 'icon') {
-                const texture = this.scene.textures.get(seg.value);
-                const image = texture.getSourceImage() as HTMLImageElement;
-                ctx.drawImage(image, 0, 0, image.width, image.height, cursorX, y, seg.width, seg.height);
-            }
+            ctx.drawImage(seg.canvas, cursorX, y);
             cursorX += seg.width;
         });
 
@@ -397,10 +367,7 @@ export class DialogueUI {
     }
 
     private renderTextCanvas(text: string, color: string) {
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
         const scaledCharSize = this.fontCharSize * this.textScale;
-        const scaledCharGap = this.fontCharGap * this.textScale;
         const width = Math.max(1, this.measureBitmapTextWidth(text));
         const height = scaledCharSize;
 
@@ -410,35 +377,16 @@ export class DialogueUI {
         const ctx = canvas.getContext('2d')!;
         ctx.imageSmoothingEnabled = false;
 
-        let x = 0;
-        for (const ch of text) {
-            const pos = this.findGlyph(ch);
-            if (pos) {
-                const sx = pos.col * this.fontCharSize;
-                const sy = pos.row * this.fontCharSize;
-                ctx.drawImage(fontImage, sx, sy, this.fontCharSize, this.fontCharSize, x, 0, scaledCharSize, scaledCharSize);
-                const glyphWidth = this.getGlyphWidth(fontImage, ch);
-                x += glyphWidth * this.textScale + scaledCharGap;
-            } else {
-                x += scaledCharSize + scaledCharGap;
-            }
-        }
+        this.fontRenderer.drawText(ctx, text, 0, 0, {
+            scale: this.textScale,
+            charGap: this.fontCharGap * this.textScale
+        });
 
         ctx.globalCompositeOperation = 'source-in';
         ctx.fillStyle = color;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         return canvas;
-    }
-
-    private getIconSize(textureKey: string, fallbackWidth: number, fallbackHeight: number, scale: number) {
-        if (!this.scene.textures.exists(textureKey)) {
-            return { width: fallbackWidth * scale, height: fallbackHeight * scale };
-        }
-        const image = this.scene.textures.get(textureKey).getSourceImage() as HTMLImageElement;
-        const width = image?.width ?? fallbackWidth;
-        const height = image?.height ?? fallbackHeight;
-        return { width: width * scale, height: height * scale };
     }
 
     private setContentTexture(width: number, height: number) {
@@ -512,10 +460,6 @@ export class DialogueUI {
     }
 
     private createTextTexture(lines: string[], maxWidth: number, color: string) {
-        this.ensureFontMapLoaded();
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
         const height = this.getScaledLineHeight(lines.length);
         const canvas = document.createElement('canvas');
         canvas.width = Math.max(1, maxWidth);
@@ -524,24 +468,14 @@ export class DialogueUI {
         ctx.imageSmoothingEnabled = false;
 
         const scaledCharSize = this.fontCharSize * this.textScale;
-        const scaledCharGap = this.fontCharGap * this.textScale;
         const scaledLineGap = this.lineGap * this.textScale;
 
         let y = 0;
         lines.forEach((line) => {
-            let x = 0;
-            for (const ch of line) {
-                const pos = this.findGlyph(ch);
-                if (pos) {
-                    const sx = pos.col * this.fontCharSize;
-                    const sy = pos.row * this.fontCharSize;
-                    ctx.drawImage(fontImage, sx, sy, this.fontCharSize, this.fontCharSize, x, y, scaledCharSize, scaledCharSize);
-                    const glyphWidth = this.getGlyphWidth(fontImage, ch);
-                    x += glyphWidth * this.textScale + scaledCharGap;
-                } else {
-                    x += scaledCharSize + scaledCharGap;
-                }
-            }
+            this.fontRenderer.drawText(ctx, line, 0, y, {
+                scale: this.textScale,
+                charGap: this.fontCharGap * this.textScale
+            });
             y += scaledCharSize + scaledLineGap;
         });
 
@@ -575,94 +509,16 @@ export class DialogueUI {
     }
 
     private measureBitmapTextWidth(text: string): number {
-        if (!text.length) return 0;
-
-        this.ensureFontMapLoaded();
-
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
-        let width = 0;
-        for (let i = 0; i < text.length; i++) {
-            const ch = text[i];
-            const glyphWidth = this.getGlyphWidth(fontImage, ch);
-            width += glyphWidth * this.textScale;
-            if (i < text.length - 1) width += this.fontCharGap * this.textScale;
-        }
-        return width;
+        return this.fontRenderer.measureTextWidth(text, {
+            scale: this.textScale,
+            charGap: this.fontCharGap * this.textScale
+        });
     }
 
     private getScaledLineHeight(lineCount: number) {
         const scaledCharSize = this.fontCharSize * this.textScale;
         const scaledLineGap = this.lineGap * this.textScale;
         return lineCount * scaledCharSize + Math.max(0, lineCount - 1) * scaledLineGap;
-    }
-
-    private findGlyph(ch: string) {
-        this.ensureFontMapLoaded();
-        for (let row = 0; row < this.fontMap.length; row++) {
-            const col = this.fontMap[row].indexOf(ch);
-            if (col !== -1) return { row, col };
-        }
-        return null;
-    }
-
-    private ensureFontMapLoaded() {
-        if (this.fontMapLoaded) return;
-        this.fontMapLoaded = true;
-        const mapText = this.scene.cache.text.get('ui-font-map') as string | undefined;
-        if (!mapText) return;
-        const rawLines = mapText.split(/\r?\n/);
-        if (rawLines.length === 0) return;
-        const lines = rawLines.map((line, index) => {
-            if (index === 0) {
-                return line.replace(/^\uFEFF/, '');
-            }
-            return line;
-        });
-        this.fontMap = lines;
-    }
-
-    private getGlyphWidth(fontImage: HTMLImageElement, ch: string): number {
-        if (this.fontGlyphWidths.has(ch)) {
-            return this.fontGlyphWidths.get(ch)!;
-        }
-
-        const pos = this.findGlyph(ch);
-        if (!pos) {
-            this.fontGlyphWidths.set(ch, this.fontCharSize);
-            return this.fontCharSize;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = this.fontCharSize;
-        canvas.height = this.fontCharSize;
-        const ctx = canvas.getContext('2d')!;
-
-        const sx = pos.col * this.fontCharSize;
-        const sy = pos.row * this.fontCharSize;
-        ctx.drawImage(fontImage, sx, sy, this.fontCharSize, this.fontCharSize, 0, 0, this.fontCharSize, this.fontCharSize);
-
-        const data = ctx.getImageData(0, 0, this.fontCharSize, this.fontCharSize).data;
-        let rightmost = -1;
-        for (let x = this.fontCharSize - 1; x >= 0; x--) {
-            let hasPixel = false;
-            for (let y = 0; y < this.fontCharSize; y++) {
-                const idx = (y * this.fontCharSize + x) * 4 + 3;
-                if (data[idx] > 0) {
-                    hasPixel = true;
-                    break;
-                }
-            }
-            if (hasPixel) {
-                rightmost = x;
-                break;
-            }
-        }
-
-        const width = Math.max(1, rightmost + 1);
-        this.fontGlyphWidths.set(ch, width);
-        return width;
     }
 
     private getScaledSourceKey(key: string, scale: number) {

@@ -112,6 +112,7 @@ export class DebugOverlay {
             this.timeText.setOrigin(0, 0); // Top-left alignment
             this.timeText.setScrollFactor(0); // Fixed to camera
             this.timeText.setDepth(9999); // Very high depth to ensure visibility
+            this.timeText.setVisible(false);
         }
 
         this.graphics.setVisible(this.enabled && !this.textOnly);
@@ -136,7 +137,11 @@ export class DebugOverlay {
         waterDebug?: WaterDebugInfo,
         extendedDebug?: ExtendedDebugInfo
     ) {
-        if (!this.graphics || !this.enabled) return;
+        if (!this.enabled) {
+            this.timeText?.setVisible(false);
+            return;
+        }
+        if (!this.graphics) return;
         this.graphics.clear();
         this.uiGraphics?.clear();
 

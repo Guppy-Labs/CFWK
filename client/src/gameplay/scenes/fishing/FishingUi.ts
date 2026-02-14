@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { LocaleManager } from '../../i18n/LocaleManager';
 
 type BarVisual = {
     bg: Phaser.GameObjects.Image;
@@ -53,6 +54,7 @@ export class FishingUi {
     private readonly biteTextSize = 36;
     private readonly biteHintSize = 18;
     private readonly biteTextPadding = 24;
+    private localeManager = LocaleManager.getInstance();
 
     constructor(private readonly scene: Phaser.Scene, private readonly callbacks: FishingUiCallbacks) {}
 
@@ -69,7 +71,7 @@ export class FishingUi {
     }
 
     create() {
-        this.stopButtonLabel = this.scene.add.text(0, 0, 'Stop\nFishing', {
+        this.stopButtonLabel = this.scene.add.text(0, 0, this.localeManager.t('fishing.buttons.stopFishing', undefined, 'Stop\nFishing'), {
             fontFamily: 'Minecraft, monospace',
             fontSize: '16px',
             color: '#f2e9dd'
@@ -83,7 +85,7 @@ export class FishingUi {
         this.stopButtonBg.setInteractive({ useHandCursor: false });
         this.stopButtonBg.on('pointerdown', () => this.callbacks.onStop());
 
-        this.castButtonLabel = this.scene.add.text(0, 0, 'Cast', {
+        this.castButtonLabel = this.scene.add.text(0, 0, this.localeManager.t('fishing.buttons.cast', undefined, 'Cast'), {
             fontFamily: 'Minecraft, monospace',
             fontSize: '18px',
             color: '#f2e9dd'
@@ -250,7 +252,7 @@ export class FishingUi {
             duration: 500,
             ease: 'Sine.out',
             onComplete: () => {
-                this.setCastButtonLabel('Cast');
+                this.setCastButtonLabel(this.localeManager.t('fishing.buttons.cast', undefined, 'Cast'));
                 this.castButtonFadeTween = this.scene.tweens.add({
                     targets: this.castButton,
                     alpha: 1,

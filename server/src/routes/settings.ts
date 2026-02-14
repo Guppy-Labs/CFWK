@@ -1,6 +1,6 @@
 import express from 'express';
 import User from '../models/User';
-import { DEFAULT_USER_SETTINGS, IAudioSettings, IUserSettings } from '@cfwk/shared';
+import { CONTROL_ACTION_KEYS, DEFAULT_USER_SETTINGS, IAudioSettings, IControlsSettings, IUserSettings, IVideoSettings, VideoQualityPreset } from '@cfwk/shared';
 
 const router = express.Router();
 
@@ -26,8 +26,52 @@ const normalizeAudio = (audio: any, fallback: IAudioSettings): IAudioSettings =>
     stereoEnabled: typeof audio?.stereoEnabled === 'boolean' ? audio.stereoEnabled : fallback.stereoEnabled
 });
 
+const normalizeQualityPreset = (value: any, fallback: VideoQualityPreset): VideoQualityPreset => {
+    if (value === 'low' || value === 'medium' || value === 'high' || value === 'custom') {
+        return value;
+    }
+    return fallback;
+};
+
+const normalizeVideo = (video: any, fallback: IVideoSettings): IVideoSettings => ({
+    qualityPreset: normalizeQualityPreset(video?.qualityPreset, fallback.qualityPreset),
+    fullscreen: typeof video?.fullscreen === 'boolean' ? video.fullscreen : fallback.fullscreen,
+    visualEffectsEnabled: typeof video?.visualEffectsEnabled === 'boolean' ? video.visualEffectsEnabled : fallback.visualEffectsEnabled,
+    seasonalEffectsEnabled: typeof video?.seasonalEffectsEnabled === 'boolean' ? video.seasonalEffectsEnabled : fallback.seasonalEffectsEnabled,
+    bloomEnabled: typeof video?.bloomEnabled === 'boolean' ? video.bloomEnabled : fallback.bloomEnabled,
+    vignetteEnabled: typeof video?.vignetteEnabled === 'boolean' ? video.vignetteEnabled : fallback.vignetteEnabled,
+    tiltShiftEnabled: typeof video?.tiltShiftEnabled === 'boolean' ? video.tiltShiftEnabled : fallback.tiltShiftEnabled,
+    dustParticlesEnabled: typeof video?.dustParticlesEnabled === 'boolean' ? video.dustParticlesEnabled : fallback.dustParticlesEnabled
+});
+
+const normalizeControlCode = (value: any, fallback: string | null): string | null => {
+    if (value === null) return null;
+    if (typeof value !== 'string') return fallback;
+
+    const code = value.trim();
+    if (!code) return fallback;
+    if (code.length > 32) return fallback;
+
+    return code;
+};
+
+const normalizeControls = (controls: any, fallback: IControlsSettings): IControlsSettings => {
+    const next: IControlsSettings = { ...fallback };
+
+    for (const action of CONTROL_ACTION_KEYS) {
+        next[action] = normalizeControlCode(controls?.[action], fallback[action]);
+    }
+
+    return next;
+};
+
 const normalizeSettings = (settings: any, fallback: IUserSettings): IUserSettings => ({
-    audio: normalizeAudio(settings?.audio, fallback.audio)
+    language: typeof settings?.language === 'string' && settings.language.trim().length > 0
+        ? settings.language.trim()
+        : fallback.language,
+    audio: normalizeAudio(settings?.audio, fallback.audio),
+    video: normalizeVideo(settings?.video, fallback.video),
+    controls: normalizeControls(settings?.controls, fallback.controls)
 });
 
 router.get('/', async (req, res) => {

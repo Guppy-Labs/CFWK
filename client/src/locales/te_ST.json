@@ -1,0 +1,190 @@
+{
+  "debug": "-----",
+  "inventory": {
+    "equipment": {
+      "rod": "-----"
+    }
+  },
+  "headbar": {
+    "playersOnline": "-----",
+    "datePattern": "----- {season} ----- {day}",
+    "yearPattern": "----- {year}",
+    "season": {
+      "winter": "-----",
+      "spring": "-----",
+      "summer": "-----",
+      "autumn": "-----"
+    }
+  },
+  "loader": {
+    "authenticating": "-----",
+    "initializingGame": "-----",
+    "loadingCharacter": "-----",
+    "preparingCharacter": "-----",
+    "preparingWorld": "-----",
+    "loadingWorld": "-----"
+  },
+  "subtitles": {
+    "ambientOcean": "-----",
+    "ambientFire": "-----",
+    "footstepSand": "-----",
+    "footstepWater": "-----",
+    "meow": "-----",
+    "rodCast": "-----",
+    "rodReel": "-----",
+    "waterSplash": "-----",
+    "biteAlert": "-----",
+    "reelClick": "-----",
+    "itemCollected": "-----",
+    "itemDropped": "-----",
+    "itemSkipped": "-----",
+    "dialogueText": "-----",
+    "dialogueAdvance": "-----"
+  },
+  "fishing": {
+    "buttons": {
+      "stopFishing": "-----",
+      "cast": "-----",
+      "reel": "-----"
+    },
+    "biteMessages": {
+      "rodShaking": "-----",
+      "somethingHooked": "-----",
+      "fishFighting": "-----",
+      "gotBite": "-----",
+      "lineTugging": "-----"
+    },
+    "biteHint": "----- {clicks} ----- {seconds} -----",
+    "caughtItem": "----- {item}!"
+  },
+  "npc": {
+    "test": {
+      "name": "-----"
+    }
+  },
+  "dialogue": {
+    "playerName": "-----",
+    "unknownSpeaker": "-----",
+    "action": {
+      "skip": "-----",
+      "continue": "-----"
+    },
+    "prompt": {
+      "tapToAction": "----- {action}",
+      "keyToAction": " ----- {action}",
+      "or": " ----- "
+    },
+    "npc": {
+      "test": {
+        "hasRod": {
+          "0": "-----",
+          "1": "-----",
+          "2": "-----"
+        },
+        "noRod": {
+          "0": "-----",
+          "1": "-----",
+          "2": "-----"
+        }
+      }
+    }
+  },
+  "items": {
+    "goldenberries": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "tuna": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "mackerel": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "cod": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "salmon": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "catfish": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "fat_tuna": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "fat_mackerel": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "fat_cod": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "fat_salmon": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "fat_catfish": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "coho_salmon": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "rickety_rod": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "fisherman_rod": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "sea_grass": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "boot": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "broken_bottle": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "apple_core": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "trash_bag": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "sea_pickle": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "broken_specs": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "infested_boot": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "infested_vase": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "ruined_chest": {
+      "name": "-----",
+      "description": "-----"
+    }
+  }
+}

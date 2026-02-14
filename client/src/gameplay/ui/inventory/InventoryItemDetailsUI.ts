@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { LocaleManager } from '../../i18n/LocaleManager';
+import { BitmapFontRenderer } from '../BitmapFontRenderer';
 
 export type InventoryItemDetailsConfig = {
     width?: number;
@@ -61,6 +63,8 @@ export class InventoryItemDetailsUI {
     private dropButtonHeight = 0;
     private onDrop?: (itemId: string, amount: number, slotIndex: number) => void;
     private currentItem?: { itemId: string; amount: number; slotIndex: number };
+    private localeManager = LocaleManager.getInstance();
+    private localeChangedHandler?: (event: Event) => void;
 
     private labelTextureCounter = 0;
     private dividerTextureCounter = 0;
@@ -72,17 +76,7 @@ export class InventoryItemDetailsUI {
 
     private readonly fontCharSize = 8;
     private readonly fontCharGap = 1;
-    private readonly fontMap = [
-        '                ',
-        '                ',
-        ' !"#$%&\'()*+,-./',
-        '0123456789:;<=>?',
-        '@ABCDEFGHIJKLMNO',
-        'PQRSTUVWXYZ[\\]^_',
-        '`abcdefghijklmno',
-        'pqrstuvwxyz{|}~ '
-    ];
-    private fontGlyphWidths = new Map<string, number>();
+    private readonly fontRenderer: BitmapFontRenderer;
 
     private config: Required<InventoryItemDetailsConfig>;
 
@@ -104,6 +98,7 @@ export class InventoryItemDetailsUI {
             descriptionTextColor: config.descriptionTextColor ?? DEFAULT_ITEM_DETAILS_CONFIG.descriptionTextColor,
             amountTextColor: config.amountTextColor ?? DEFAULT_ITEM_DETAILS_CONFIG.amountTextColor
         };
+        this.fontRenderer = new BitmapFontRenderer(this.scene, this.fontCharSize);
 
         this.container = this.scene.add.container(0, 0);
         parent.add(this.container);
@@ -124,8 +119,9 @@ export class InventoryItemDetailsUI {
         this.descriptionTextureKey = this.createTextTexture('', this.config.width - this.config.descriptionOffsetX * 2);
         this.descriptionImage = this.scene.add.image(0, 0, this.descriptionTextureKey).setOrigin(0, 0);
 
-        const dropLabelWidth = Math.max(1, this.measureBitmapTextWidth('Drop'));
-        this.dropLabelTextureKey = this.createTextTexture('Drop', dropLabelWidth, false, '#f2e9dd');
+        const dropLabel = this.localeManager.t('inventory.details.drop', undefined, 'Drop');
+        const dropLabelWidth = Math.max(1, this.measureBitmapTextWidth(dropLabel));
+        this.dropLabelTextureKey = this.createTextTexture(dropLabel, dropLabelWidth, false, '#f2e9dd');
         this.dropButtonLabel = this.scene.add.image(0, 0, this.dropLabelTextureKey).setOrigin(0.5, 0.5);
         this.dropButtonBg = this.scene.add.image(0, 0, 'ui-group-button-selected').setOrigin(0.5, 0.5);
         this.dropButton = this.scene.add.container(0, 0, [this.dropButtonBg, this.dropButtonLabel]);
@@ -136,6 +132,9 @@ export class InventoryItemDetailsUI {
 
         this.container.add([this.frame, this.divider, this.nameImage, this.amountImage, this.descriptionImage, this.dropButton]);
         this.container.setVisible(false);
+
+        this.localeChangedHandler = () => this.refreshLocalizedLabels();
+        window.addEventListener('locale:changed', this.localeChangedHandler as EventListener);
     }
 
     setOnDrop(callback?: (itemId: string, amount: number, slotIndex: number) => void) {
@@ -223,6 +222,18 @@ export class InventoryItemDetailsUI {
         const x = leftPadding + targetWidth / 2;
         const y = this.config.height - targetHeight / 2 - 6;
         this.dropButton.setPosition(x, y);
+    }
+
+    private refreshLocalizedLabels() {
+        const dropLabel = this.localeManager.t('inventory.details.drop', undefined, 'Drop');
+        const dropLabelWidth = Math.max(1, this.measureBitmapTextWidth(dropLabel));
+        const newKey = this.createTextTexture(dropLabel, dropLabelWidth, false, '#f2e9dd');
+        const oldKey = this.dropLabelTextureKey;
+        this.dropLabelTextureKey = newKey;
+        this.dropButtonLabel.setTexture(newKey);
+        if (oldKey && this.scene.textures.exists(oldKey)) {
+            this.scene.textures.remove(oldKey);
+        }
     }
 
     private updateDropButtonTexture(width: number, height: number) {
@@ -350,17 +361,7 @@ export class InventoryItemDetailsUI {
         this.onDrop?.(this.currentItem.itemId, this.currentItem.amount, this.currentItem.slotIndex);
     }
 
-    private getTextureWidth(textureKey?: string) {
-        if (!textureKey || !this.scene.textures.exists(textureKey)) return 0;
-        const texture = this.scene.textures.get(textureKey);
-        const image = texture.getSourceImage() as HTMLImageElement;
-        return image.width ?? 0;
-    }
-
     private createTextTexture(text: string, maxWidth: number, wrap = false, color?: string) {
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
         const lines = wrap ? this.wrapText(text, maxWidth) : [text];
         const lineHeights = lines.length * this.fontCharSize + Math.max(0, lines.length - 1) * 2;
 
@@ -371,20 +372,7 @@ export class InventoryItemDetailsUI {
 
         let y = 0;
         lines.forEach((line) => {
-            let x = 0;
-            for (const ch of line) {
-                const pos = this.findGlyph(ch);
-                if (pos) {
-                    const sx = pos.col * this.fontCharSize;
-                    const sy = pos.row * this.fontCharSize;
-                    ctx.drawImage(fontImage, sx, sy, this.fontCharSize, this.fontCharSize, x, y, this.fontCharSize, this.fontCharSize);
-
-                    const glyphWidth = this.getGlyphWidth(fontImage, ch);
-                    x += glyphWidth + this.fontCharGap;
-                } else {
-                    x += this.fontCharSize + this.fontCharGap;
-                }
-            }
+            this.fontRenderer.drawText(ctx, line, 0, y, { charGap: this.fontCharGap });
             y += this.fontCharSize + 2;
         });
 
@@ -417,69 +405,15 @@ export class InventoryItemDetailsUI {
         return lines;
     }
 
-    private findGlyph(ch: string) {
-        for (let row = 0; row < this.fontMap.length; row++) {
-            const col = this.fontMap[row].indexOf(ch);
-            if (col !== -1) return { row, col };
+    destroy() {
+        if (this.localeChangedHandler) {
+            window.removeEventListener('locale:changed', this.localeChangedHandler as EventListener);
+            this.localeChangedHandler = undefined;
         }
-        return null;
+        this.container.destroy();
     }
 
     private measureBitmapTextWidth(text: string): number {
-        if (!text.length) return 0;
-
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
-        let width = 0;
-        for (let i = 0; i < text.length; i++) {
-            const ch = text[i];
-            const glyphWidth = this.getGlyphWidth(fontImage, ch);
-            width += glyphWidth;
-            if (i < text.length - 1) width += this.fontCharGap;
-        }
-        return width;
-    }
-
-    private getGlyphWidth(fontImage: HTMLImageElement, ch: string): number {
-        if (this.fontGlyphWidths.has(ch)) {
-            return this.fontGlyphWidths.get(ch)!;
-        }
-
-        const pos = this.findGlyph(ch);
-        if (!pos) {
-            this.fontGlyphWidths.set(ch, this.fontCharSize);
-            return this.fontCharSize;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = this.fontCharSize;
-        canvas.height = this.fontCharSize;
-        const ctx = canvas.getContext('2d')!;
-
-        const sx = pos.col * this.fontCharSize;
-        const sy = pos.row * this.fontCharSize;
-        ctx.drawImage(fontImage, sx, sy, this.fontCharSize, this.fontCharSize, 0, 0, this.fontCharSize, this.fontCharSize);
-
-        const data = ctx.getImageData(0, 0, this.fontCharSize, this.fontCharSize).data;
-        let rightmost = -1;
-        for (let x = this.fontCharSize - 1; x >= 0; x--) {
-            let hasPixel = false;
-            for (let y = 0; y < this.fontCharSize; y++) {
-                const idx = (y * this.fontCharSize + x) * 4 + 3;
-                if (data[idx] > 0) {
-                    hasPixel = true;
-                    break;
-                }
-            }
-            if (hasPixel) {
-                rightmost = x;
-                break;
-            }
-        }
-
-        const width = Math.max(1, rightmost + 1);
-        this.fontGlyphWidths.set(ch, width);
-        return width;
+        return this.fontRenderer.measureTextWidth(text, { charGap: this.fontCharGap });
     }
 }

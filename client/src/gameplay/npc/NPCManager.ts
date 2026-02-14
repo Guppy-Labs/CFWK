@@ -4,6 +4,7 @@ import { LightingManager } from '../fx/LightingManager';
 import { OcclusionManager } from '../map/OcclusionManager';
 import { createNameplate, getOcclusionAdjustedDepth } from '../player/PlayerVisualUtils';
 import { getNpcDefinition } from './NPCRegistry';
+import { LocaleManager } from '../i18n/LocaleManager';
 
 type NPCPoint = {
     id: string;
@@ -43,12 +44,16 @@ export class NPCManager {
     private lightingManager?: LightingManager;
     private tileSize = 32;
     private npcs: NPCInstance[] = [];
+    private localeManager = LocaleManager.getInstance();
+    private localeChangedHandler?: (event: Event) => void;
 
     constructor(scene: Phaser.Scene, config: NPCManagerConfig) {
         this.scene = scene;
         this.baseDepth = config.baseDepth;
         this.occlusionManager = config.occlusionManager;
         this.lightingManager = config.lightingManager;
+        this.localeChangedHandler = () => this.refreshNpcNames();
+        window.addEventListener('locale:changed', this.localeChangedHandler as EventListener);
     }
 
     loadAndSpawnFromMap(map: Phaser.Tilemaps.Tilemap) {
@@ -83,6 +88,10 @@ export class NPCManager {
     }
 
     destroy() {
+        if (this.localeChangedHandler) {
+            window.removeEventListener('locale:changed', this.localeChangedHandler as EventListener);
+            this.localeChangedHandler = undefined;
+        }
         this.npcs.forEach((npc) => {
             npc.sprite.destroy();
             npc.nameplate.destroy();
@@ -161,12 +170,13 @@ export class NPCManager {
             this.applyDepth(sprite, depthOffset);
             sprite.play(animKey);
 
-            const nameplate = this.createNpcNameplate(def.name);
+            const localizedName = this.localeManager.t(def.nameKey ?? `npc.${def.id}.name`, undefined, def.name);
+            const nameplate = this.createNpcNameplate(localizedName);
             nameplate.setPosition(sprite.x, sprite.y + this.getNameplateYOffset());
 
             this.npcs.push({
                 id: def.id,
-                name: def.name,
+                name: localizedName,
                 sprite,
                 nameplate,
                 nameplateYOffset: this.getNameplateYOffset(),
@@ -174,6 +184,20 @@ export class NPCManager {
                 depthOffset,
                 interactionRangePx: def.interactionRangeTiles * this.tileSize
             });
+        });
+    }
+
+    private refreshNpcNames() {
+        this.npcs.forEach((npc) => {
+            const def = getNpcDefinition(npc.id);
+            const fallback = def?.name ?? npc.name;
+            const localized = this.localeManager.t(def?.nameKey ?? `npc.${npc.id}.name`, undefined, fallback);
+            if (localized === npc.name) return;
+
+            npc.name = localized;
+            npc.nameplate.destroy();
+            npc.nameplate = this.createNpcNameplate(localized);
+            npc.nameplate.setPosition(npc.sprite.x, npc.sprite.y + npc.nameplateYOffset);
         });
     }
 

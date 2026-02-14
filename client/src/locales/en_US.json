@@ -1,0 +1,307 @@
+{
+  "settings": {
+    "tab": {
+      "inventory": "Inventory",
+      "finbook": "Finbook",
+      "settings": "Settings"
+    },
+    "header": "Settings",
+    "actionsHeader": "Actions",
+    "section": {
+      "Language": "Language",
+      "Sounds": "Sounds",
+      "Video": "Video",
+      "Controls": "Controls",
+      "Online": "Online",
+      "Accessibility": "Accessibility",
+      "Statistics": "Statistics"
+    },
+    "action": {
+      "Invite to Server": "Invite to Server",
+      "Report Bugs": "Report Bugs"
+    },
+    "placeholder": "Section coming soon",
+    "sounds": {
+      "master": "Master",
+      "music": "Music",
+      "ambient": "Ambient",
+      "players": "Players",
+      "overlays": "Overlays",
+      "subtitlesEnabled": "Subtitles",
+      "stereoEnabled": "Stereo"
+    },
+    "video": {
+      "qualityPreset": "Quality Preset",
+      "qualityLow": "Low",
+      "qualityMedium": "Medium",
+      "qualityHigh": "High",
+      "qualityCustom": "Custom",
+      "fullscreen": "Fullscreen",
+      "visualEffectsEnabled": "Visual Effects",
+      "seasonalEffectsEnabled": "Seasonal",
+      "bloomEnabled": "Bloom",
+      "vignetteEnabled": "Vignette",
+      "tiltShiftEnabled": "Tilt Shift",
+      "dustParticlesEnabled": "Dust Particles"
+    },
+    "controls": {
+      "title": "Controls",
+      "idleHint": "Click a key slot to rebind",
+      "captureHint": "Press any key, Esc to cancel, Backspace to clear",
+      "listening": "Press key...",
+      "unbound": "Unbound",
+      "resetAll": "Reset All",
+      "conflict": "Already used by {action}",
+      "action": {
+        "moveUp": "Walk Up",
+        "moveLeft": "Walk Left",
+        "moveDown": "Walk Down",
+        "moveRight": "Walk Right",
+        "sprint": "Sprint",
+        "interact": "Interact",
+        "inventory": "Inventory",
+        "fish": "Fish",
+        "playerList": "Player List",
+        "chat": "Chat",
+        "dialogueAdvance": "Dialogue Advance"
+      }
+    },
+    "stats": {
+      "distanceWalked": "Walked",
+      "distanceRan": "Ran",
+      "timeOnlineMs": "Online",
+      "catches": "Catches",
+      "npcInteractions": "Interactions",
+      "meters": "{value} m"
+    },
+    "language": {
+      "title": "Language",
+      "current": "Current: {name}",
+      "localeNames": {
+        "en_US": "English (US)",
+        "es_ES": "Spanish",
+        "fr_FR": "French",
+        "te_ST": "Debug"
+      }
+    }
+  },
+  "inventory": {
+    "groups": {
+      "All": "All",
+      "Gear": "Gear",
+      "Tools": "Tools",
+      "Fishing": "Fishing",
+      "Food": "Food"
+    },
+    "details": {
+      "drop": "Drop"
+    },
+    "equipment": {
+      "rod": "Rod"
+    }
+  },
+  "headbar": {
+    "playersOnline": "Players Online",
+    "datePattern": "{season} Day {day}",
+    "yearPattern": "Year {year}",
+    "season": {
+      "winter": "Winter",
+      "spring": "Spring",
+      "summer": "Summer",
+      "autumn": "Autumn"
+    }
+  },
+  "loader": {
+    "authenticating": "Authenticating...",
+    "initializingGame": "Initializing game...",
+    "loadingCharacter": "Loading character...",
+    "preparingCharacter": "Preparing character...",
+    "preparingWorld": "Preparing world...",
+    "loadingWorld": "Loading world..."
+  },
+  "subtitles": {
+    "ambientOcean": "Ocean waves",
+    "ambientFire": "Crackling fire",
+    "footstepSand": "Footsteps on sand",
+    "footstepWater": "Footsteps in shallow water",
+    "meow": "Meow",
+    "rodCast": "Fishing rod cast",
+    "rodReel": "Fishing reel",
+    "waterSplash": "Water splash",
+    "biteAlert": "Fishing bite alert",
+    "reelClick": "Reel click",
+    "itemCollected": "Item collected",
+    "itemDropped": "Item dropped",
+    "itemSkipped": "Item skipped",
+    "dialogueText": "Dialogue text",
+    "dialogueAdvance": "Dialogue advance"
+  },
+  "fishing": {
+    "buttons": {
+      "stopFishing": "Stop\nFishing",
+      "cast": "Cast",
+      "reel": "Reel"
+    },
+    "biteMessages": {
+      "rodShaking": "Your rod is shaking!",
+      "somethingHooked": "Something's hooked!",
+      "fishFighting": "A fish is fighting!",
+      "gotBite": "You got a bite!",
+      "lineTugging": "The line is tugging!"
+    },
+    "biteHint": "Click {clicks} more times in {seconds} seconds!",
+    "caughtItem": "Caught {item}!"
+  },
+  "npc": {
+    "test": {
+      "name": "Tim"
+    }
+  },
+  "dialogue": {
+    "playerName": "You",
+    "unknownSpeaker": "???",
+    "action": {
+      "skip": "skip",
+      "continue": "continue"
+    },
+    "prompt": {
+      "tapToAction": "Tap to {action}",
+      "keyToAction": " to {action}",
+      "or": " or "
+    },
+    "npc": {
+      "test": {
+        "hasRod": {
+          "0": "Hey! Nice timing, I was just polishing my knife.",
+          "1": "Uh, hi. Can I fish now?",
+          "2": "Hey now... I ALREADY GAVE YOU A ROD! NOW SCRAM!!!"
+        },
+        "noRod": {
+          "0": "Hey! Nice timing, I was just polishing my knife.",
+          "1": "Uh, hi. Can I fish now?",
+          "2": "Ugh, fine. But you better not mess up my fishing spot!"
+        }
+      }
+    }
+  },
+  "items": {
+    "goldenberries": {
+      "name": "Golden Berries",
+      "description": "A rare, sweet berry that restores vitality."
+    },
+    "tuna": {
+      "name": "Tuna",
+      "description": "A common tuna fish. Delicious when prepared properly."
+    },
+    "mackerel": {
+      "name": "Mackerel",
+      "description": "A sleek mackerel with shimmering scales."
+    },
+    "cod": {
+      "name": "Cod",
+      "description": "A plump cod fish, common in temperate waters."
+    },
+    "salmon": {
+      "name": "Salmon",
+      "description": "A pink salmon, prized for its rich flavor."
+    },
+    "catfish": {
+      "name": "Catfish",
+      "description": "A whiskered catfish that lurks in deeper waters."
+    },
+    "fat_tuna": {
+      "name": "Fat Tuna",
+      "description": "An exceptionally plump tuna. Worth more than its regular counterpart."
+    },
+    "fat_mackerel": {
+      "name": "Fat Mackerel",
+      "description": "A chunky mackerel with extra meat."
+    },
+    "fat_cod": {
+      "name": "Fat Cod",
+      "description": "An oversized cod, quite the catch!"
+    },
+    "fat_salmon": {
+      "name": "Fat Salmon",
+      "description": "A hefty salmon bursting with flavor."
+    },
+    "fat_catfish": {
+      "name": "Fat Catfish",
+      "description": "A massive catfish. Its whiskers are impressively long."
+    },
+    "coho_salmon": {
+      "name": "Coho Salmon",
+      "description": "A beautiful coho salmon with distinctive silver markings."
+    },
+    "rickety_rod": {
+      "name": "Rickety Rod",
+      "description": "A worn fishing rod held together with hope and string."
+    },
+    "fisherman_rod": {
+      "name": "Fisherman's Rod",
+      "description": "A reliable fishing rod used by experienced anglers."
+    },
+    "sea_grass": {
+      "name": "Sea Grass",
+      "description": "A clump of sea grass. Not particularly useful."
+    },
+    "boot": {
+      "name": "Old Boot",
+      "description": "A waterlogged boot. Someone lost this ages ago."
+    },
+    "broken_bottle": {
+      "name": "Broken Bottle",
+      "description": "Shards of a broken glass bottle. Handle with care."
+    },
+    "apple_core": {
+      "name": "Apple Core",
+      "description": "The remains of someone's snack. Very fresh, oddly."
+    },
+    "trash_bag": {
+      "name": "Trash Bag",
+      "description": "A soggy trash bag. Who throws these in the water?"
+    },
+    "sea_pickle": {
+      "name": "Sea Pickle",
+      "description": "A bioluminescent sea pickle. Kinda cute, actually."
+    },
+    "broken_specs": {
+      "name": "Broken Spectacles",
+      "description": "Someone's lost glasses. They probably can't read now."
+    },
+    "infested_boot": {
+      "name": "Infested Boot",
+      "description": "An old boot now home to mysterious sea creatures."
+    },
+    "infested_vase": {
+      "name": "Infested Vase",
+      "description": "An ancient vase covered in barnacles. Could be valuable!"
+    },
+    "ruined_chest": {
+      "name": "Ruined Chest",
+      "description": "A waterlogged treasure chest. Most contents have rotted away."
+    }
+  },
+  "system": {
+    "on": "ON",
+    "off": "OFF"
+  },
+  "scene": {
+    "game": {
+      "characterFallback": "Failed to load character, using default",
+      "visualEffects": "Visual Effects: {state}",
+      "seasonalEffects": "Seasonal Effects: {state}",
+      "bannedTitle": "BANNED",
+      "bannedMessage": "You have been banned from Cute Fish With Knives.",
+      "afkTitle": "AFK Timeout",
+      "afkMessage": "You were disconnected for being idle. Reconnect when you are ready to play.",
+      "offlineTitle": "Server Offline"
+    },
+    "boot": {
+      "connecting": "Connecting...",
+      "bannedTitle": "BANNED",
+      "accountBannedTitle": "ACCOUNT BANNED",
+      "offlineTitle": "Server Offline"
+    }
+  }
+}

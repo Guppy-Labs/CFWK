@@ -5,9 +5,13 @@ import { InventoryItemDetailsUI, DEFAULT_ITEM_DETAILS_CONFIG } from './inventory
 import { EquipmentSlotsUI } from './inventory/EquipmentSlotsUI';
 import { SettingsTabUI } from './settings/SettingsTabUI';
 import { NetworkManager } from '../network/NetworkManager';
+import { LocaleManager } from '../i18n/LocaleManager';
+import { getLocalizedItemDescription, getLocalizedItemName } from '../i18n/itemLocale';
 import { InventorySlot, getItemDefinition, ItemDefinition, ItemCategory } from '@cfwk/shared';
+import { BitmapFontRenderer } from './BitmapFontRenderer';
 
 type TabItem = {
+    key: 'Inventory' | 'Finbook' | 'Settings';
     label: string;
     active: boolean;
     width: number;
@@ -30,11 +34,13 @@ export class BookUI {
     private inventoryDetails: InventoryItemDetailsUI;
     private equipmentSlots: EquipmentSlotsUI;
     private settingsTab: SettingsTabUI;
-    private activeTabLabel = 'Inventory';
+    private activeTabLabel: 'Inventory' | 'Finbook' | 'Settings' = 'Inventory';
     private inventorySlotsData: InventorySlot[] = [];
     private inventoryItems: Array<{ slot: InventorySlot; def: ItemDefinition; display: InventoryDisplayItem }> = [];
     private networkManager = NetworkManager.getInstance();
+    private localeManager = LocaleManager.getInstance();
     private inventoryUpdateHandler?: (event: Event) => void;
+    private localeChangedHandler?: (event: Event) => void;
     
     // Track if we're in "rod equip" mode (selected a rod from inventory)
     private pendingRodEquip: InventoryDisplayItem | null = null;
@@ -56,20 +62,11 @@ export class BookUI {
     private readonly tabOffsetX = 5;
     private readonly fontCharSize = 8;
     private readonly fontCharGap = 1;
-    private readonly fontMap = [
-        '                ',
-        '                ',
-        ' !"#$%&\'()*+,-./',
-        '0123456789:;<=>?',
-        '@ABCDEFGHIJKLMNO',
-        'PQRSTUVWXYZ[\\]^_',
-        '`abcdefghijklmno',
-        'pqrstuvwxyz{|}~ '
-    ];
-    private fontGlyphWidths = new Map<string, number>();
+    private readonly fontRenderer: BitmapFontRenderer;
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
+        this.fontRenderer = new BitmapFontRenderer(scene, this.fontCharSize);
 
         this.cover = this.scene.add.image(0, 0, 'ui-book-cover');
         this.leftPage = this.scene.add.image(0, 0, 'ui-book-page-left');
@@ -96,6 +93,10 @@ export class BookUI {
             this.applyInventoryUpdate(slots, equippedRodId);
         };
         window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+        this.localeChangedHandler = () => {
+            this.refreshTabLabels();
+        };
+        window.addEventListener('locale:changed', this.localeChangedHandler as EventListener);
 
         this.inventoryGroups = new InventoryGroupsUI(this.scene, this.container);
         this.inventoryDetails = new InventoryItemDetailsUI(this.scene, this.container, {
@@ -106,7 +107,7 @@ export class BookUI {
             frameTextureKey: DEFAULT_ITEM_DETAILS_CONFIG.frameTextureKey,
             dividerTextureKey: DEFAULT_ITEM_DETAILS_CONFIG.dividerTextureKey
         });
-        this.inventoryDetails.setOnDrop((itemId, amount, slotIndex) => {
+        this.inventoryDetails.setOnDrop((itemId, amount, _slotIndex) => {
             this.networkManager.sendDropItem(itemId, amount);
             this.inventoryDetails.setItem(null);
             this.inventorySlots.setBottomReservedHeight(0);
@@ -341,14 +342,15 @@ export class BookUI {
         this.inventoryDetails.layout(leftPageLeftEdgeX, leftPageTopEdgeY, this.pageHeight, scale);
         this.inventorySlots.layout(leftPageLeftEdgeX, leftPageTopEdgeY, this.pageHeight, scale);
         this.equipmentSlots.layout(rightPageLeftEdgeX, rightPageTopEdgeY, this.pageHeight, scale);
-        this.settingsTab.layout(leftPageLeftEdgeX, leftPageTopEdgeY, rightPageLeftEdgeX, rightPageTopEdgeY, scale);
+        this.settingsTab.layout(leftPageLeftEdgeX, leftPageTopEdgeY, rightPageLeftEdgeX, rightPageTopEdgeY, this.pageHeight, scale);
     }
 
     private createTabs() {
-        const labels = ['Inventory', 'Finbook', 'Settings'];
-        labels.forEach((label, index) => {
+        const tabKeys: Array<'Inventory' | 'Finbook' | 'Settings'> = ['Inventory', 'Finbook', 'Settings'];
+        tabKeys.forEach((tabKey, index) => {
+            const label = this.getTabLabel(tabKey);
             const active = index === 0;
-            const tab = this.buildTab(label, active);
+            const tab = this.buildTab(tabKey, label, active);
             this.tabsContainer.add(tab.container);
             this.tabs.push(tab);
         });
@@ -376,7 +378,7 @@ export class BookUI {
         });
     }
 
-    private buildTab(label: string, active: boolean): TabItem {
+    private buildTab(key: 'Inventory' | 'Finbook' | 'Settings', label: string, active: boolean): TabItem {
         const textWidth = this.measureBitmapTextWidth(label);
         const width = Math.max(this.tabMinWidth, textWidth + this.tabPaddingLeft + this.tabPaddingRight);
 
@@ -393,9 +395,10 @@ export class BookUI {
         const container = this.scene.add.container(0, 0, [img]);
 
         img.setInteractive({ useHandCursor: true });
-        img.on('pointerdown', () => this.setActiveTab(label));
+        img.on('pointerdown', () => this.setActiveTab(key));
 
         return {
+            key,
             label,
             active,
             width,
@@ -429,9 +432,6 @@ export class BookUI {
         const srcTexture = this.scene.textures.get(key);
         const srcImage = srcTexture.getSourceImage() as HTMLImageElement;
 
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
         // Draw the 9 parts at 1:1 pixel ratio
         // Top row
         ctx.drawImage(srcImage, 0, 0, border, border, 0, 0, border, border);
@@ -453,7 +453,7 @@ export class BookUI {
             const textX = Math.max(this.tabPaddingLeft, width - this.tabPaddingRight - textWidth);
             const textY = Math.floor((height - this.fontCharSize) / 2);
             const textColor = active ? '#a17f74' : '#4b3435';
-            this.drawBitmapText(ctx, fontImage, label, textX, textY, textColor);
+            this.drawBitmapText(ctx, label, textX, textY, textColor);
         }
 
         // Add the composited canvas as a texture
@@ -462,10 +462,10 @@ export class BookUI {
         return rtKey;
     }
 
-    private setActiveTab(label: string) {
+    private setActiveTab(label: 'Inventory' | 'Finbook' | 'Settings') {
         this.activeTabLabel = label;
         this.tabs.forEach((tab) => {
-            const shouldBeActive = tab.label === label;
+            const shouldBeActive = tab.key === label;
             if (tab.active === shouldBeActive) return;
             tab.active = shouldBeActive;
             this.updateTabTexture(tab);
@@ -488,6 +488,23 @@ export class BookUI {
             this.inventorySlots.setBottomReservedHeight(0);
             this.pendingRodEquip = null;
         }
+    }
+
+    private refreshTabLabels() {
+        this.tabs.forEach((tab) => {
+            tab.label = this.getTabLabel(tab.key);
+            const textWidth = this.measureBitmapTextWidth(tab.label);
+            tab.width = Math.max(this.tabMinWidth, textWidth + this.tabPaddingLeft + this.tabPaddingRight);
+            this.updateTabTexture(tab);
+        });
+
+        this.layout();
+    }
+
+    private getTabLabel(tabKey: 'Inventory' | 'Finbook' | 'Settings') {
+        if (tabKey === 'Inventory') return this.localeManager.t('settings.tab.inventory', undefined, 'Inventory');
+        if (tabKey === 'Finbook') return this.localeManager.t('settings.tab.finbook', undefined, 'Finbook');
+        return this.localeManager.t('settings.tab.settings', undefined, 'Settings');
     }
 
     private updateTabTexture(tab: TabItem) {
@@ -532,8 +549,8 @@ export class BookUI {
                 if (!def) return null;
                 const display: InventoryDisplayItem = {
                     id: def.id,
-                    name: def.name,
-                    description: def.description,
+                    name: getLocalizedItemName(def.id, def.name),
+                    description: getLocalizedItemDescription(def.id, def.description),
                     count: slot.count,
                     stackSize: def.stackSize,
                     iconKey: `item-${def.id}-18`,
@@ -618,8 +635,8 @@ export class BookUI {
     private createDisplayItem(def: ItemDefinition, count: number): InventoryDisplayItem {
         return {
             id: def.id,
-            name: def.name,
-            description: def.description,
+            name: getLocalizedItemName(def.id, def.name),
+            description: getLocalizedItemDescription(def.id, def.description),
             count,
             stackSize: def.stackSize,
             iconKey: `item-${def.id}-18`,
@@ -784,8 +801,8 @@ export class BookUI {
 
         const display: InventoryDisplayItem = {
             id: def.id,
-            name: def.name,
-            description: def.description,
+            name: getLocalizedItemName(def.id, def.name),
+            description: getLocalizedItemDescription(def.id, def.description),
             count: 1,
             stackSize: def.stackSize,
             iconKey: `item-${def.id}-18`,
@@ -802,7 +819,6 @@ export class BookUI {
 
     private drawBitmapText(
         ctx: CanvasRenderingContext2D,
-        fontImage: HTMLImageElement,
         text: string,
         x: number,
         y: number,
@@ -816,20 +832,7 @@ export class BookUI {
         tempCanvas.height = charSize;
         const tempCtx = tempCanvas.getContext('2d')!;
 
-        let cursorX = 0;
-        for (const ch of text) {
-            const pos = this.findGlyph(ch);
-            if (pos) {
-                const sx = pos.col * charSize;
-                const sy = pos.row * charSize;
-                tempCtx.drawImage(fontImage, sx, sy, charSize, charSize, cursorX, 0, charSize, charSize);
-
-                const glyphWidth = this.getGlyphWidth(fontImage, ch);
-                cursorX += glyphWidth + this.fontCharGap;
-            } else {
-                cursorX += charSize + this.fontCharGap;
-            }
-        }
+        this.fontRenderer.drawText(tempCtx, text, 0, 0, { charGap: this.fontCharGap });
 
         tempCtx.globalCompositeOperation = 'source-in';
         tempCtx.fillStyle = color;
@@ -838,71 +841,8 @@ export class BookUI {
         ctx.drawImage(tempCanvas, x, y);
     }
 
-    private findGlyph(ch: string) {
-        for (let row = 0; row < this.fontMap.length; row++) {
-            const col = this.fontMap[row].indexOf(ch);
-            if (col !== -1) return { row, col };
-        }
-        return null;
-    }
-
     private measureBitmapTextWidth(text: string): number {
-        if (!text.length) return 0;
-
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
-        let width = 0;
-        for (let i = 0; i < text.length; i++) {
-            const ch = text[i];
-            const glyphWidth = this.getGlyphWidth(fontImage, ch);
-            width += glyphWidth;
-            if (i < text.length - 1) width += this.fontCharGap;
-        }
-        return width;
-    }
-
-    private getGlyphWidth(fontImage: HTMLImageElement, ch: string): number {
-        if (this.fontGlyphWidths.has(ch)) {
-            return this.fontGlyphWidths.get(ch)!;
-        }
-
-        const pos = this.findGlyph(ch);
-        if (!pos) {
-            this.fontGlyphWidths.set(ch, this.fontCharSize);
-            return this.fontCharSize;
-        }
-
-        const charSize = this.fontCharSize;
-        const canvas = document.createElement('canvas');
-        canvas.width = charSize;
-        canvas.height = charSize;
-        const ctx = canvas.getContext('2d')!;
-
-        const sx = pos.col * charSize;
-        const sy = pos.row * charSize;
-        ctx.drawImage(fontImage, sx, sy, charSize, charSize, 0, 0, charSize, charSize);
-
-        const data = ctx.getImageData(0, 0, charSize, charSize).data;
-        let rightmost = -1;
-        for (let x = charSize - 1; x >= 0; x--) {
-            let hasPixel = false;
-            for (let y = 0; y < charSize; y++) {
-                const idx = (y * charSize + x) * 4 + 3;
-                if (data[idx] > 0) {
-                    hasPixel = true;
-                    break;
-                }
-            }
-            if (hasPixel) {
-                rightmost = x;
-                break;
-            }
-        }
-
-        const width = Math.max(1, rightmost + 1);
-        this.fontGlyphWidths.set(ch, width);
-        return width;
+        return this.fontRenderer.measureTextWidth(text, { charGap: this.fontCharGap });
     }
 
     open() {
@@ -914,7 +854,7 @@ export class BookUI {
         this.setActiveTab(this.activeTabLabel);
     }
 
-    openToTab(tabLabel: string) {
+    openToTab(tabLabel: 'Inventory' | 'Finbook' | 'Settings') {
         this.openState = true;
         this.container.setVisible(true);
         this.setGuiInputEnabled(true);
@@ -981,6 +921,12 @@ export class BookUI {
             window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
             this.inventoryUpdateHandler = undefined;
         }
+        if (this.localeChangedHandler) {
+            window.removeEventListener('locale:changed', this.localeChangedHandler as EventListener);
+            this.localeChangedHandler = undefined;
+        }
+        this.inventoryGroups?.destroy();
+        this.inventoryDetails?.destroy();
         this.settingsTab?.destroy();
         this.container.destroy();
     }

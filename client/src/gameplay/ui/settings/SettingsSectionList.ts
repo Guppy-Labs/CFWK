@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { SettingsFont } from './SettingsFont';
+import { BitmapFontRenderer } from '../BitmapFontRenderer';
 
-export type SettingsSectionKey = 'Language' | 'Sounds' | 'Video' | 'Controls' | 'Online' | 'Accessibility';
-export type SettingsActionKey = 'Invite to Server' | 'Report Bugs' | 'Statistics';
+export type SettingsSectionKey = 'Language' | 'Sounds' | 'Video' | 'Controls' | 'Online' | 'Accessibility' | 'Statistics';
+export type SettingsActionKey = 'Invite to Server' | 'Report Bugs';
 
 type SettingsButton = {
     label: string;
@@ -13,6 +14,10 @@ type SettingsButton = {
     active: boolean;
     type: 'section' | 'action';
     key: SettingsSectionKey | SettingsActionKey;
+};
+
+type SettingsSectionListConfig = {
+    resolveLabel?: (key: string, fallback: string) => string;
 };
 
 export class SettingsSectionList {
@@ -26,6 +31,8 @@ export class SettingsSectionList {
     private onAction?: (action: SettingsActionKey) => void;
     private headerImage?: Phaser.GameObjects.Image;
     private actionHeaderImage?: Phaser.GameObjects.Image;
+    private resolveLabel?: (key: string, fallback: string) => string;
+    private bitmapFont: BitmapFontRenderer;
 
     private readonly buttonHeight = 12;
     private readonly buttonBorder = 3;
@@ -40,9 +47,11 @@ export class SettingsSectionList {
 
     private textureCounter = 0;
 
-    constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container) {
+    constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container, config?: SettingsSectionListConfig) {
         this.scene = scene;
         this.font = new SettingsFont(scene);
+        this.bitmapFont = new BitmapFontRenderer(scene, 8);
+        this.resolveLabel = config?.resolveLabel;
         this.container = this.scene.add.container(0, 0);
         parent.add(this.container);
 
@@ -61,6 +70,12 @@ export class SettingsSectionList {
 
     setOnAction(callback?: (action: SettingsActionKey) => void) {
         this.onAction = callback;
+    }
+
+    refreshLabels() {
+        this.rebuildHeaders();
+        this.sectionButtons.forEach((button) => this.refreshButton(button));
+        this.actionButtons.forEach((button) => this.refreshButton(button));
     }
 
     setActiveSection(section: SettingsSectionKey, force = false, emit = true) {
@@ -109,18 +124,28 @@ export class SettingsSectionList {
     }
 
     private createHeaders() {
-        const headerKey = this.font.createTextTexture('Settings', '#4b3435');
+        const headerKey = this.font.createTextTexture(this.text('settings.header', 'Settings'), '#4b3435');
         this.headerImage = this.scene.add.image(0, 0, headerKey).setOrigin(0, 0);
         this.container.add(this.headerImage);
 
-        const actionKey = this.font.createTextTexture('Actions', '#4b3435');
+        const actionKey = this.font.createTextTexture(this.text('settings.actionsHeader', 'Actions'), '#4b3435');
         this.actionHeaderImage = this.scene.add.image(0, 0, actionKey).setOrigin(0, 0);
         this.container.add(this.actionHeaderImage);
     }
 
+    private rebuildHeaders() {
+        if (this.headerImage) {
+            this.headerImage.setTexture(this.font.createTextTexture(this.text('settings.header', 'Settings'), '#4b3435'));
+        }
+
+        if (this.actionHeaderImage) {
+            this.actionHeaderImage.setTexture(this.font.createTextTexture(this.text('settings.actionsHeader', 'Actions'), '#4b3435'));
+        }
+    }
+
     private createButtons() {
-        const sections: SettingsSectionKey[] = ['Language', 'Sounds', 'Video', 'Controls', 'Online', 'Accessibility'];
-        const actions: SettingsActionKey[] = ['Invite to Server', 'Report Bugs', 'Statistics'];
+        const sections: SettingsSectionKey[] = ['Language', 'Sounds', 'Video', 'Controls', 'Online', 'Accessibility', 'Statistics'];
+        const actions: SettingsActionKey[] = ['Invite to Server', 'Report Bugs'];
 
         sections.forEach((label) => {
             const button = this.buildButton(label, label === this.activeSection, 'section');
@@ -134,10 +159,11 @@ export class SettingsSectionList {
     }
 
     private buildButton(label: SettingsSectionKey | SettingsActionKey, active: boolean, type: 'section' | 'action'): SettingsButton {
-        const textWidth = this.font.measureBitmapTextWidth(label);
+        const displayLabel = this.getDisplayLabel(label, type);
+        const textWidth = this.font.measureBitmapTextWidth(displayLabel);
         const width = Math.max(this.buttonMinWidth, textWidth + this.buttonPaddingLeft + this.buttonPaddingRight);
 
-        const textureKey = this.createButtonTexture(label, active, width, this.buttonHeight, type);
+        const textureKey = this.createButtonTexture(displayLabel, active, width, this.buttonHeight, type);
         const image = this.scene.add.image(0, 0, textureKey).setOrigin(0, 0);
         const container = this.scene.add.container(0, 0, [image]);
         this.container.add(container);
@@ -152,7 +178,7 @@ export class SettingsSectionList {
         });
 
         return {
-            label,
+            label: displayLabel,
             container,
             image,
             textureKey,
@@ -164,9 +190,29 @@ export class SettingsSectionList {
     }
 
     private updateButtonTexture(button: SettingsButton) {
+        button.label = this.getDisplayLabel(button.key, button.type);
         const textureKey = this.createButtonTexture(button.label, button.active, button.width, this.buttonHeight, button.type);
         button.textureKey = textureKey;
         button.image.setTexture(textureKey);
+    }
+
+    private refreshButton(button: SettingsButton) {
+        button.label = this.getDisplayLabel(button.key, button.type);
+        const textWidth = this.font.measureBitmapTextWidth(button.label);
+        button.width = Math.max(this.buttonMinWidth, textWidth + this.buttonPaddingLeft + this.buttonPaddingRight);
+        this.updateButtonTexture(button);
+    }
+
+    private getDisplayLabel(key: SettingsSectionKey | SettingsActionKey, type: 'section' | 'action'): string {
+        if (type === 'section') {
+            return this.text(`settings.section.${key}`, key);
+        }
+
+        return this.text(`settings.action.${key}`, key);
+    }
+
+    private text(key: string, fallback: string): string {
+        return this.resolveLabel ? this.resolveLabel(key, fallback) : fallback;
     }
 
     private createButtonTexture(label: string, active: boolean, width: number, height: number, type: 'section' | 'action'): string {
@@ -187,9 +233,6 @@ export class SettingsSectionList {
 
         const srcTexture = this.scene.textures.get(key);
         const srcImage = srcTexture.getSourceImage() as HTMLImageElement;
-        const fontTexture = this.scene.textures.get('ui-font');
-        const fontImage = fontTexture.getSourceImage() as HTMLImageElement;
-
         ctx.drawImage(srcImage, 0, 0, border, border, 0, 0, border, border);
         ctx.drawImage(srcImage, border, 0, centerSrcW, border, border, 0, centerW, border);
         ctx.drawImage(srcImage, srcW - border, 0, border, border, border + centerW, 0, border, border);
@@ -208,14 +251,14 @@ export class SettingsSectionList {
             : Math.max(this.buttonPaddingLeft, width - this.buttonPaddingRight - textWidth);
         const textY = Math.floor((height - 8) / 2);
         const textColor = type === 'action' ? '#a17f74' : (active ? '#a17f74' : '#4b3435');
-        const textCanvas = this.renderTextCanvas(fontImage, label, textColor);
+        const textCanvas = this.renderTextCanvas(label, textColor);
         ctx.drawImage(textCanvas, textX, textY);
 
         this.scene.textures.addCanvas(rtKey, canvas);
         return rtKey;
     }
 
-    private renderTextCanvas(fontImage: HTMLImageElement, text: string, color: string) {
+    private renderTextCanvas(text: string, color: string) {
         const width = Math.max(1, this.font.measureBitmapTextWidth(text));
         const height = 8;
         const canvas = document.createElement('canvas');
@@ -223,19 +266,7 @@ export class SettingsSectionList {
         canvas.height = height;
         const ctx = canvas.getContext('2d')!;
 
-        let cursorX = 0;
-        for (const ch of text) {
-            const pos = this.findGlyph(ch);
-            if (pos) {
-                const sx = pos.col * 8;
-                const sy = pos.row * 8;
-                ctx.drawImage(fontImage, sx, sy, 8, 8, cursorX, 0, 8, 8);
-                const glyphWidth = this.font.measureBitmapTextWidth(ch);
-                cursorX += glyphWidth + 1;
-            } else {
-                cursorX += 9;
-            }
-        }
+        this.bitmapFont.drawText(ctx, text, 0, 0, { charGap: 1 });
 
         ctx.globalCompositeOperation = 'source-in';
         ctx.fillStyle = color;
@@ -251,21 +282,4 @@ export class SettingsSectionList {
         return source.height || image.height || 0;
     }
 
-    private findGlyph(ch: string) {
-        const map = [
-            '                ',
-            '                ',
-            ' !"#$%&\'()*+,-./',
-            '0123456789:;<=>?',
-            '@ABCDEFGHIJKLMNO',
-            'PQRSTUVWXYZ[\\]^_',
-            '`abcdefghijklmno',
-            'pqrstuvwxyz{|}~ '
-        ];
-        for (let row = 0; row < map.length; row++) {
-            const col = map[row].indexOf(ch);
-            if (col !== -1) return { row, col };
-        }
-        return null;
-    }
 }

@@ -4,6 +4,7 @@ import { CharacterService } from './gameplay/player/CharacterService';
 import { DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
 import { renderCharacterPreview } from './skin/CharacterPreview';
 import { getUsernameValidationError, normalizeUsername } from './utils/username';
+import { bootstrapLocale } from './gameplay/i18n/localeBootstrap';
 
 const usernameInput = document.getElementById('username-input') as HTMLInputElement;
 const saveUsernameBtn = document.getElementById('save-username-btn') as HTMLButtonElement;
@@ -218,6 +219,7 @@ if (betaCodeInput) {
 // --- Fetch User Data ---
 async function init() {
     try {
+        await bootstrapLocale({ fetchFromServer: true });
         const res = await fetch('/api/auth/me');
         if (!res.ok) window.location.href = '/login';
         const data = await res.json();

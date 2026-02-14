@@ -4,6 +4,8 @@ import { LightingManager } from '../fx/LightingManager';
 import { WorldTimeManager } from '../time/WorldTimeManager';
 import { NetworkManager } from '../network/NetworkManager';
 import { AudioManager } from '../audio/AudioManager';
+import { LocaleManager } from '../i18n/LocaleManager';
+import { getLocalizedItemName } from '../i18n/itemLocale';
 import { FishingUi } from './fishing/FishingUi';
 import { FishingPerspective } from './fishing/FishingPerspective';
 import { FishingRodView } from './fishing/FishingRodView';
@@ -23,6 +25,7 @@ export class FishingScene extends Phaser.Scene {
     private guiOpenHandler?: (_parent: any, value: boolean) => void;
     private debugToggleHandler?: (event: KeyboardEvent) => void;
     private networkManager = NetworkManager.getInstance();
+    private localeManager = LocaleManager.getInstance();
 
     private readonly waterBreathCycleSeconds = 2.8;
     private readonly waterBreathRangePx = 6;
@@ -48,12 +51,12 @@ export class FishingScene extends Phaser.Scene {
     private reelClicksNeeded = 10;
     private readonly baseBiteDelayMinMs = 4000;
     private readonly baseBiteDelayMaxMs = 12000;
-    private readonly biteMessages = [
-        'Your rod is shaking!',
-        "Something's hooked!",
-        'A fish is fighting!',
-        'You got a bite!',
-        'The line is tugging!'
+    private readonly biteMessageKeys = [
+        'fishing.biteMessages.rodShaking',
+        'fishing.biteMessages.somethingHooked',
+        'fishing.biteMessages.fishFighting',
+        'fishing.biteMessages.gotBite',
+        'fishing.biteMessages.lineTugging'
     ];
 
     private readonly lineFinalSagMin = 50;
@@ -217,6 +220,7 @@ export class FishingScene extends Phaser.Scene {
             const shiftDown = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT)?.isDown ?? false;
             const gameScene = this.scene.get('GameScene') as any;
             gameScene?.debugOverlay?.toggle(shiftDown);
+            this.registry.set('debugMenuActive', gameScene?.debugOverlay?.isEnabled?.() === true);
         };
 
         this.input.keyboard?.on('keydown-H', this.debugToggleHandler, this);
@@ -347,7 +351,7 @@ export class FishingScene extends Phaser.Scene {
     private startCast() {
         this.casted = true;
         this.pendingCastRelease = false;
-        this.ui?.setCastButtonLabel('Reel');
+        this.ui?.setCastButtonLabel(this.localeManager.t('fishing.buttons.reel', undefined, 'Reel'));
         this.playRodCastSound();
         this.ui?.setCastBarVisible(false);
 
@@ -414,7 +418,7 @@ export class FishingScene extends Phaser.Scene {
         this.caughtItemSprite?.destroy();
         this.caughtItemSprite = undefined;
         if (updateButtonLabel) {
-            this.ui?.setCastButtonLabel('Cast');
+            this.ui?.setCastButtonLabel(this.localeManager.t('fishing.buttons.cast', undefined, 'Cast'));
         }
         this.clearBite();
     }
@@ -465,7 +469,8 @@ export class FishingScene extends Phaser.Scene {
         this.cameras.main.shake(160, 0.004);
         this.startBiteAlert();
 
-        const message = this.biteMessages[Phaser.Math.Between(0, this.biteMessages.length - 1)];
+        const biteMessageKey = this.biteMessageKeys[Phaser.Math.Between(0, this.biteMessageKeys.length - 1)];
+        const message = this.localeManager.t(biteMessageKey, undefined, 'You got a bite!');
         const color = this.getBiteTextColor();
         this.ui?.setBiteText(message, true);
         this.ui?.setBiteHint('', true);
@@ -526,7 +531,10 @@ export class FishingScene extends Phaser.Scene {
     private updateBiteHint(remainingMs: number) {
         const clicksLeft = Math.max(0, this.reelClicksNeeded - this.reelClicks);
         const secondsLeft = Math.max(0, remainingMs / 1000);
-        const text = `Click ${clicksLeft} more times in ${secondsLeft.toFixed(1)} seconds!`;
+        const text = this.localeManager.t('fishing.biteHint', {
+            clicks: clicksLeft,
+            seconds: secondsLeft.toFixed(1)
+        }, `Click ${clicksLeft} more times in ${secondsLeft.toFixed(1)} seconds!`);
         this.ui?.setBiteHint(text, true);
         this.ui?.setBiteTextColor(this.getBiteTextColor());
     }
@@ -732,6 +740,10 @@ export class FishingScene extends Phaser.Scene {
                 this.resetCast();
                 return;
             }
+            const itemName = getLocalizedItemName(data.itemId, data.itemId);
+            const catchText = this.localeManager.t('fishing.caughtItem', { item: itemName }, `Caught ${itemName}!`);
+            this.ui?.setBiteText(catchText, true);
+            this.ui?.setBiteHint('', false);
             this.playCatchAnimation(data.itemId);
         });
     }

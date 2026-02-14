@@ -5,7 +5,9 @@ import {
   DEFAULT_USER_SETTINGS,
   IUserSettings,
   DEFAULT_INVENTORY_SLOTS,
-  getItemDefinition
+  getItemDefinition,
+  IPlayerStats,
+  DEFAULT_PLAYER_STATS
 } from '@cfwk/shared';
 
 // Re-export for convenience
@@ -40,6 +42,7 @@ export interface IUser extends Document {
   premiumCurrentPeriodEnd?: Date;
   betaAccessUntil?: Date | null;
   settings?: IUserSettings;
+  playerStats?: IPlayerStats;
 }
 
 type RawInventoryEntry = { index?: number; itemId?: string | null; count?: number };
@@ -176,6 +179,7 @@ const UserSchema: Schema = new Schema({
   betaAccessUntil: { type: Date, default: null },
   settings: {
     type: {
+      language: { type: String, default: DEFAULT_USER_SETTINGS.language },
       audio: {
         master: { type: Number, default: DEFAULT_USER_SETTINGS.audio.master },
         music: { type: Number, default: DEFAULT_USER_SETTINGS.audio.music },
@@ -184,15 +188,57 @@ const UserSchema: Schema = new Schema({
         overlays: { type: Number, default: DEFAULT_USER_SETTINGS.audio.overlays },
         subtitlesEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.audio.subtitlesEnabled },
         stereoEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.audio.stereoEnabled }
+      },
+      video: {
+        qualityPreset: { type: String, default: DEFAULT_USER_SETTINGS.video.qualityPreset },
+        fullscreen: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.fullscreen },
+        visualEffectsEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.visualEffectsEnabled },
+        seasonalEffectsEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.seasonalEffectsEnabled },
+        bloomEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.bloomEnabled },
+        vignetteEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.vignetteEnabled },
+        tiltShiftEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.tiltShiftEnabled },
+        dustParticlesEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.dustParticlesEnabled }
+      },
+      controls: {
+        moveUp: { type: String, default: DEFAULT_USER_SETTINGS.controls.moveUp },
+        moveLeft: { type: String, default: DEFAULT_USER_SETTINGS.controls.moveLeft },
+        moveDown: { type: String, default: DEFAULT_USER_SETTINGS.controls.moveDown },
+        moveRight: { type: String, default: DEFAULT_USER_SETTINGS.controls.moveRight },
+        sprint: { type: String, default: DEFAULT_USER_SETTINGS.controls.sprint },
+        interact: { type: String, default: DEFAULT_USER_SETTINGS.controls.interact },
+        inventory: { type: String, default: DEFAULT_USER_SETTINGS.controls.inventory },
+        fish: { type: String, default: DEFAULT_USER_SETTINGS.controls.fish },
+        playerList: { type: String, default: DEFAULT_USER_SETTINGS.controls.playerList },
+        chat: { type: String, default: DEFAULT_USER_SETTINGS.controls.chat },
+        dialogueAdvance: { type: String, default: DEFAULT_USER_SETTINGS.controls.dialogueAdvance }
       }
     },
     default: () => ({
-      audio: { ...DEFAULT_USER_SETTINGS.audio }
+      language: DEFAULT_USER_SETTINGS.language,
+      audio: { ...DEFAULT_USER_SETTINGS.audio },
+      video: { ...DEFAULT_USER_SETTINGS.video },
+      controls: { ...DEFAULT_USER_SETTINGS.controls }
     })
+  },
+  playerStats: {
+    type: {
+      distanceWalked: { type: Number, default: DEFAULT_PLAYER_STATS.distanceWalked },
+      distanceRan: { type: Number, default: DEFAULT_PLAYER_STATS.distanceRan },
+      timeOnlineMs: { type: Number, default: DEFAULT_PLAYER_STATS.timeOnlineMs },
+      catches: { type: Number, default: DEFAULT_PLAYER_STATS.catches },
+      npcInteractions: { type: Number, default: DEFAULT_PLAYER_STATS.npcInteractions }
+    },
+    default: () => ({ ...DEFAULT_PLAYER_STATS })
   }
 }, {
   timestamps: true
 });
+
+UserSchema.index({ 'playerStats.distanceWalked': -1 });
+UserSchema.index({ 'playerStats.distanceRan': -1 });
+UserSchema.index({ 'playerStats.timeOnlineMs': -1 });
+UserSchema.index({ 'playerStats.catches': -1 });
+UserSchema.index({ 'playerStats.npcInteractions': -1 });
 
 UserSchema.pre('validate', function (next) {
   const doc = this as IUser;
