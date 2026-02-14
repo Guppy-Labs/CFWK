@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { MobileControls } from './MobileControls';
-import type { DialogueRenderLine } from '../dialogue/DialogueTypes';
+import type { DialogueRenderLine, DialogueRenderOption } from '../dialogue/DialogueTypes';
 import { LocaleManager } from '../i18n/LocaleManager';
 import { BitmapFontRenderer } from './BitmapFontRenderer';
 import { KeybindManager } from '../input/KeybindManager';
@@ -18,6 +18,7 @@ export class DialogueUI {
 
     private currentLine?: DialogueRenderLine;
     private onAdvance?: () => void;
+    private onOptionSelect?: (optionId: string) => void;
     private typeTimer?: Phaser.Time.TimerEvent;
     private isTyping = false;
     private fullText = '';
@@ -36,6 +37,10 @@ export class DialogueUI {
     private nameTextTextureKey?: string;
     private textTextureKey?: string;
     private textureCounter = 0;
+    private optionContainer: Phaser.GameObjects.Container;
+    private optionHitAreas: Phaser.GameObjects.Rectangle[] = [];
+    private selectedOptionIndex = 0;
+    private optionTextureKeys: string[] = [];
 
     private readonly fontRenderer: BitmapFontRenderer;
 
@@ -62,6 +67,12 @@ export class DialogueUI {
     private readonly typeIntervalMs = 28;
     private readonly indicatorPadding = 7;
     private readonly indicatorNudge = 1;
+    private readonly optionGap = 1;
+    private readonly optionPaddingX = 7;
+    private readonly optionPaddingY = 4;
+    private readonly optionBorder = 4;
+    private readonly optionBaseWidth = 60;
+    private readonly optionPromptGap = 5;
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
@@ -101,17 +112,35 @@ export class DialogueUI {
         this.portraitImage.setOrigin(0.5, 1);
         this.portraitImage.setScrollFactor(0);
 
+        this.optionContainer = this.scene.add.container(0, 0);
+        this.optionContainer.setScrollFactor(0);
+
         this.container.add([
             this.portraitImage,
             this.nameImage,
             this.contentImage,
             this.textImage,
+            this.optionContainer,
             this.indicatorImage,
             this.nameTextImage
         ]);
 
         this.advanceKeyDownHandler = (event: KeyboardEvent) => {
             if (!this.container.visible) return;
+            if (this.hasOptions() && !this.isTyping) {
+                if (this.keybindManager.matchesActionEvent('moveUp', event)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.cycleOption(-1);
+                    return;
+                }
+                if (this.keybindManager.matchesActionEvent('moveDown', event)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.cycleOption(1);
+                    return;
+                }
+            }
             if (!this.keybindManager.matchesActionEvent('dialogueAdvance', event)) return;
             event.preventDefault();
             event.stopPropagation();
@@ -126,10 +155,22 @@ export class DialogueUI {
         this.onAdvance = handler;
     }
 
+    setOnOptionSelect(handler?: (optionId: string) => void) {
+        this.onOptionSelect = handler;
+    }
+
     showLine(line: DialogueRenderLine) {
         this.currentLine = line;
+        this.selectedOptionIndex = 0;
         this.setVisible(true);
-        this.startTyping(line.text);
+        if (line.options && line.options.length > 0) {
+            this.stopTyping();
+            this.fullText = line.text;
+            this.visibleText = line.text;
+            this.isTyping = false;
+        } else {
+            this.startTyping(line.text);
+        }
         this.layout();
         this.updateIndicatorText();
     }
@@ -143,10 +184,12 @@ export class DialogueUI {
         this.container.setVisible(visible);
         this.hitArea.setVisible(visible);
         this.indicatorImage.setVisible(visible);
+        this.optionContainer.setVisible(visible);
         if (visible) {
             this.hitArea.setInteractive({ useHandCursor: true });
         } else {
             this.hitArea.disableInteractive();
+            this.clearOptionRows();
         }
     }
 
@@ -163,60 +206,80 @@ export class DialogueUI {
         const textMaxWidth = Math.max(1, contentWidth - scaledPaddingX * 2);
         this.textMaxWidth = textMaxWidth;
         const fullLines = this.wrapText(this.fullText || this.currentLine.text, textMaxWidth);
+        const options = this.currentLine.options ?? [];
+        const hasOptions = options.length > 0;
+        const optionWidth = this.getOptionRowWidth(options, textMaxWidth);
+        const optionsHeight = this.measureOptionsHeight(options, optionWidth);
         const textHeight = this.getScaledLineHeight(fullLines.length);
-        const contentHeight = Math.max(scaledMinContentHeight, textHeight + scaledPaddingY * 2);
+        const textBlockHeight = hasOptions
+            ? textHeight + scaledPaddingY
+            : textHeight + scaledPaddingY * 2;
+        const contentHeight = Math.max(scaledMinContentHeight, textBlockHeight);
+        const totalContentHeight = contentHeight + optionsHeight;
 
         const contentX = Math.round(this.marginX);
-        const contentY = Math.round(viewHeight - this.marginBottom - contentHeight);
+        const contentY = Math.round(viewHeight - this.marginBottom - totalContentHeight);
 
-        this.setContentTexture(contentWidth, contentHeight);
+        this.setContentTexture(contentWidth, totalContentHeight);
         this.contentImage.setPosition(contentX, contentY);
 
         this.textPosX = contentX + scaledPaddingX;
         this.textPosY = contentY + scaledPaddingY;
         this.setVisibleText(this.visibleText);
+        const optionsStartY = hasOptions
+            ? this.textPosY + textHeight + this.optionPromptGap * this.uiScale
+            : contentY + contentHeight;
+        this.renderOptions(options, contentX + scaledPaddingX, optionsStartY, optionWidth);
 
         const nameText = this.currentLine.name;
         const scaledNamePaddingX = this.namePaddingX * this.uiScale;
         const nameWidth = Math.max(29 * this.uiScale, this.measureBitmapTextWidth(nameText) + scaledNamePaddingX * 2);
         const nameHeight = 12 * this.uiScale;
-        this.setNameTexture(nameWidth, nameHeight);
+        const hideSpeakerVisuals = Boolean(this.currentLine.hideSpeakerVisuals);
+        this.nameImage.setVisible(!hideSpeakerVisuals);
+        this.nameTextImage.setVisible(!hideSpeakerVisuals);
+        this.portraitImage.setVisible(!hideSpeakerVisuals);
 
-        const nameInset = this.nameInset * this.uiScale;
-        const rawNameX = this.currentLine.speaker === 'player'
-            ? contentX + nameInset
-            : contentX + contentWidth - nameWidth - nameInset;
-        const nameX = Phaser.Math.Clamp(rawNameX, contentX + nameInset, contentX + contentWidth - nameWidth - nameInset);
-        const nameY = contentY - this.namePeek * this.uiScale;
-        this.nameImage.setPosition(nameX, nameY);
+        if (!hideSpeakerVisuals) {
+            this.setNameTexture(nameWidth, nameHeight);
 
-        const nameTextKey = this.createTextTexture([nameText], nameWidth - scaledNamePaddingX * 2, '#000000');
-        this.setNameTextTexture(nameTextKey);
-        this.nameTextImage.setPosition(nameX + scaledNamePaddingX, nameY + this.nameTextOffsetY * this.uiScale);
+            const nameInset = this.nameInset * this.uiScale;
+            const rawNameX = this.currentLine.speaker === 'player'
+                ? contentX + nameInset
+                : contentX + contentWidth - nameWidth - nameInset;
+            const nameX = Phaser.Math.Clamp(rawNameX, contentX + nameInset, contentX + contentWidth - nameWidth - nameInset);
+            const nameY = contentY - this.namePeek * this.uiScale;
+            this.nameImage.setPosition(nameX, nameY);
 
-        const portraitKey = this.getPortraitTextureKey(this.currentLine);
-        this.portraitImage.setVisible(Boolean(portraitKey && this.scene.textures.exists(portraitKey)));
-        if (portraitKey && this.scene.textures.exists(portraitKey)) {
-            this.portraitImage.setTexture(portraitKey);
-            const source = this.scene.textures.get(portraitKey).getSourceImage() as HTMLImageElement;
-            const targetHeight = Math.min(220, viewHeight * 0.45);
-            const scale = targetHeight / Math.max(1, source.height);
-            this.portraitImage.setScale(scale);
-            const portraitInset = this.portraitSideInset * this.uiScale;
-            const portraitX = this.currentLine.speaker === 'player'
-                ? contentX + contentWidth - portraitInset
-                : contentX + portraitInset;
-            const portraitY = contentY + this.portraitBottomInset * this.uiScale;
-            this.portraitImage.setPosition(portraitX, portraitY);
+            const nameTextKey = this.createTextTexture([nameText], nameWidth - scaledNamePaddingX * 2, '#000000');
+            this.setNameTextTexture(nameTextKey);
+            this.nameTextImage.setPosition(nameX + scaledNamePaddingX, nameY + this.nameTextOffsetY * this.uiScale);
+
+            const portraitKey = this.getPortraitTextureKey(this.currentLine);
+            this.portraitImage.setVisible(Boolean(portraitKey && this.scene.textures.exists(portraitKey)));
+            if (portraitKey && this.scene.textures.exists(portraitKey)) {
+                this.portraitImage.setTexture(portraitKey);
+                const source = this.scene.textures.get(portraitKey).getSourceImage() as HTMLImageElement;
+                const targetHeight = Math.min(220, viewHeight * 0.45);
+                const scale = targetHeight / Math.max(1, source.height);
+                this.portraitImage.setScale(scale);
+                const portraitInset = this.portraitSideInset * this.uiScale;
+                const portraitX = this.currentLine.speaker === 'player'
+                    ? contentX + contentWidth - portraitInset
+                    : contentX + portraitInset;
+                const portraitY = contentY + this.portraitBottomInset * this.uiScale;
+                this.portraitImage.setPosition(portraitX, portraitY);
+            }
         }
 
-        this.updateIndicator(contentX, contentY, contentWidth, contentHeight);
+        this.updateIndicator(contentX, contentY, contentWidth, totalContentHeight);
 
         this.hitArea.setSize(viewWidth, viewHeight);
     }
 
     destroy() {
         this.stopTyping();
+        this.clearOptionRows();
         this.clearGeneratedTextures();
         if (this.advanceKeyDownHandler) {
             window.removeEventListener('keydown', this.advanceKeyDownHandler, { capture: true } as AddEventListenerOptions);
@@ -228,6 +291,14 @@ export class DialogueUI {
 
     private handleAdvanceClick() {
         if (!this.container.visible || !this.currentLine) return;
+        if (this.hasOptions()) {
+            if (this.isTyping) {
+                this.finishTyping();
+                return;
+            }
+            this.submitSelectedOption();
+            return;
+        }
         if (this.isTyping) {
             this.finishTyping();
             return;
@@ -295,6 +366,24 @@ export class DialogueUI {
 
     private updateIndicatorText() {
         if (!this.currentLine) return;
+        if (this.hasOptions()) {
+            const isMobile = MobileControls.isMobileDevice();
+            if (isMobile) {
+                const text = this.localeManager.t('dialogue.prompt.tapToChoose', undefined, 'Tap an option');
+                const key = this.createIndicatorTexture(text);
+                this.setIndicatorTexture(key);
+                return;
+            }
+
+            const chooseText = this.localeManager.t('dialogue.prompt.chooseOption', undefined, 'Select option');
+            const upLabel = this.keybindManager.getDisplayLabel('moveUp');
+            const downLabel = this.keybindManager.getDisplayLabel('moveDown');
+            const advanceLabel = this.keybindManager.getDisplayLabel('dialogueAdvance');
+            const text = `${upLabel}/${downLabel} ${chooseText} • ${advanceLabel} confirm`;
+            const key = this.createIndicatorTexture(text);
+            this.setIndicatorTexture(key);
+            return;
+        }
         const actionText = this.isTyping
             ? this.localeManager.t('dialogue.action.skip', undefined, 'skip')
             : this.localeManager.t('dialogue.action.continue', undefined, 'continue');
@@ -562,9 +651,129 @@ export class DialogueUI {
                 this.scene.textures.remove(key);
             }
         });
+        this.optionTextureKeys.forEach((key) => {
+            if (this.scene.textures.exists(key)) {
+                this.scene.textures.remove(key);
+            }
+        });
+        this.optionTextureKeys = [];
         this.contentTextureKey = undefined;
         this.nameTextureKey = undefined;
         this.nameTextTextureKey = undefined;
         this.textTextureKey = undefined;
+        this.indicatorTextureKey = undefined;
+    }
+
+    private hasOptions() {
+        return Boolean(this.currentLine?.options && this.currentLine.options.length > 0);
+    }
+
+    private getOptionRowWidth(options: DialogueRenderOption[], maxAllowedWidth: number) {
+        if (options.length === 0) return maxAllowedWidth;
+
+        const scaledPaddingX = this.optionPaddingX * this.uiScale;
+        const minWidth = this.optionBaseWidth * this.uiScale;
+        const longest = options.reduce((maxWidth, option) => {
+            const width = this.measureBitmapTextWidth(`▶ ${option.text}`);
+            return Math.max(maxWidth, width);
+        }, 0);
+
+        const desired = longest + scaledPaddingX * 2;
+        return Phaser.Math.Clamp(desired, minWidth, maxAllowedWidth);
+    }
+
+    private measureOptionsHeight(options: DialogueRenderOption[], rowWidth: number) {
+        if (options.length === 0) return 0;
+        const gap = this.optionGap * this.uiScale;
+        const scaledPaddingX = this.optionPaddingX * this.uiScale;
+        const scaledPaddingY = this.optionPaddingY * this.uiScale;
+        const textWidth = Math.max(1, rowWidth - scaledPaddingX * 2);
+        return options.reduce((sum, option, index) => {
+            const lineCount = this.wrapText(`▶ ${option.text}`, textWidth).length;
+            const rowHeight = this.getScaledLineHeight(Math.max(1, lineCount)) + scaledPaddingY * 2;
+            return sum + rowHeight + (index > 0 ? gap : 0);
+        }, 0);
+    }
+
+    private renderOptions(options: DialogueRenderOption[], x: number, startY: number, rowWidth: number) {
+        this.clearOptionRows();
+        if (options.length === 0) return;
+
+        const scaledGap = this.optionGap * this.uiScale;
+        const scaledPaddingX = this.optionPaddingX * this.uiScale;
+        const scaledPaddingY = this.optionPaddingY * this.uiScale;
+        const textWidth = Math.max(1, rowWidth - scaledPaddingX * 2);
+        let y = startY;
+
+        options.forEach((option, index) => {
+            const isSelected = index === this.selectedOptionIndex;
+            const textPrefix = isSelected ? '▶ ' : '  ';
+            const displayText = `${textPrefix}${option.text}`;
+            const wrapped = this.wrapText(displayText, textWidth);
+            const rowHeight = this.getScaledLineHeight(Math.max(1, wrapped.length)) + scaledPaddingY * 2;
+            const border = this.optionBorder * this.uiScale;
+            const rowKey = this.createNineSliceTexture('ui-dialogue-option', rowWidth, rowHeight, border, border);
+            this.optionTextureKeys.push(rowKey);
+
+            const rowImage = this.scene.add.image(x, y, rowKey);
+            rowImage.setOrigin(0, 0);
+            rowImage.setAlpha(isSelected ? 1 : 0.9);
+            rowImage.setScrollFactor(0);
+            this.optionContainer.add(rowImage);
+
+            const textLines = wrapped;
+            const textKey = this.createTextTexture(textLines, textWidth, '#000000');
+            this.optionTextureKeys.push(textKey);
+            const textImage = this.scene.add.image(x + scaledPaddingX, y + scaledPaddingY, textKey);
+            textImage.setOrigin(0, 0);
+            textImage.setScrollFactor(0);
+            this.optionContainer.add(textImage);
+
+            const hitArea = this.scene.add.rectangle(x, y, rowWidth, rowHeight, 0x000000, 0);
+            hitArea.setOrigin(0, 0);
+            hitArea.setScrollFactor(0);
+            hitArea.setDepth(this.depth + 1);
+            hitArea.setInteractive({ useHandCursor: true });
+            hitArea.on('pointerdown', () => {
+                this.selectedOptionIndex = index;
+                this.layout();
+                this.submitSelectedOption();
+            });
+            this.optionHitAreas.push(hitArea);
+
+            y += rowHeight;
+            if (index < options.length - 1) {
+                y += scaledGap;
+            }
+        });
+    }
+
+    private clearOptionRows() {
+        this.optionHitAreas.forEach((area) => area.destroy());
+        this.optionHitAreas = [];
+        this.optionContainer.removeAll(true);
+        this.optionTextureKeys.forEach((key) => {
+            if (this.scene.textures.exists(key)) {
+                this.scene.textures.remove(key);
+            }
+        });
+        this.optionTextureKeys = [];
+    }
+
+    private cycleOption(delta: number) {
+        const options = this.currentLine?.options ?? [];
+        if (options.length === 0) return;
+        const next = (this.selectedOptionIndex + delta + options.length) % options.length;
+        this.selectedOptionIndex = next;
+        this.layout();
+        this.updateIndicatorText();
+    }
+
+    private submitSelectedOption() {
+        const options = this.currentLine?.options ?? [];
+        if (options.length === 0) return;
+        const selected = options[this.selectedOptionIndex];
+        if (!selected) return;
+        this.onOptionSelect?.(selected.id);
     }
 }

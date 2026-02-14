@@ -167,19 +167,35 @@
     "prompt": {
       "tapToAction": "Tap to {action}",
       "keyToAction": " to {action}",
+      "tapToChoose": "Tap an option",
+      "chooseOption": "Select option",
       "or": " or "
     },
     "npc": {
       "test": {
-        "hasRod": {
-          "0": "Hey! Nice timing, I was just polishing my knife.",
-          "1": "Uh, hi. Can I fish now?",
-          "2": "Hey now... I ALREADY GAVE YOU A ROD! NOW SCRAM!!!"
+        "greeting": {
+          "0": "Hey! Nice timing, I was just polishing my knife."
         },
-        "noRod": {
-          "0": "Hey! Nice timing, I was just polishing my knife.",
-          "1": "Uh, hi. Can I fish now?",
-          "2": "Ugh, fine. But you better not mess up my fishing spot!"
+        "choice": {
+          "prompt": "How should I respond?",
+          "hello": "Hello!!!",
+          "askRod": "Can I get a fishing rod?"
+        },
+        "hello": {
+          "hasRod": {
+            "0": "Good to see you already geared up. Go reel in something sharp!"
+          },
+          "noRod": {
+            "0": "Well hello there! You look unarmed. Take this fishing rod."
+          }
+        },
+        "askRod": {
+          "hasRod": {
+            "0": "Hey now... I ALREADY GAVE YOU A ROD! NOW SCRAM!!!"
+          },
+          "noRod": {
+            "0": "Ugh, fine. But you better not mess up my fishing spot!"
+          }
         }
       }
     }

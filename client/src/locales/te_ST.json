@@ -72,19 +72,35 @@
     "prompt": {
       "tapToAction": "----- {action}",
       "keyToAction": " ----- {action}",
+      "tapToChoose": "-----",
+      "chooseOption": "-----",
       "or": " ----- "
     },
     "npc": {
       "test": {
-        "hasRod": {
-          "0": "-----",
-          "1": "-----",
-          "2": "-----"
+        "greeting": {
+          "0": "-----"
         },
-        "noRod": {
-          "0": "-----",
-          "1": "-----",
-          "2": "-----"
+        "choice": {
+          "prompt": "-----",
+          "hello": "-----",
+          "askRod": "-----"
+        },
+        "hello": {
+          "hasRod": {
+            "0": "-----"
+          },
+          "noRod": {
+            "0": "-----"
+          }
+        },
+        "askRod": {
+          "hasRod": {
+            "0": "-----"
+          },
+          "noRod": {
+            "0": "-----"
+          }
         }
       }
     }

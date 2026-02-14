@@ -5,7 +5,9 @@ import type {
     DialogueAction,
     DialogueCheck,
     DialogueFork,
-    DialogueLine
+    DialogueLine,
+    DialogueOption,
+    DialogueOptionBranch
 } from './DialogueTypes';
 import { DialogueRepository } from './DialogueRepository';
 import type { UIScene } from '../scenes/UIScene';
@@ -52,6 +54,9 @@ export class DialogueManager {
         this.uiScene.setDialogueAdvanceHandler(() => {
             void this.advance();
         });
+        this.uiScene.setDialogueOptionHandler((optionId: string) => {
+            void this.selectOption(optionId);
+        });
     }
 
     destroy() {
@@ -74,8 +79,8 @@ export class DialogueManager {
         const resolved = await this.resolveDialogue(dialogue);
         if (!resolved.lines.length) return;
 
-        this.currentDialogue = { ...dialogue, lines: resolved.lines };
-        this.pendingActions = resolved.actions;
+        this.currentDialogue = { ...dialogue, lines: this.cloneLines(resolved.lines) };
+        this.pendingActions = this.cloneActions(resolved.actions);
         this.currentIndex = 0;
         this.active = true;
         this.npcId = npcId;
@@ -136,13 +141,21 @@ export class DialogueManager {
             ? this.localeManager.t(line.textKey, undefined, line.text)
             : line.text;
         const emotion = (line.emotion ?? (speaker === 'npc' ? 'happy' : 'happy')) as DialogueEmotion;
+        const options = line.options?.map((option) => ({
+            id: option.id,
+            text: option.textKey
+                ? this.localeManager.t(option.textKey, undefined, option.text)
+                : option.text
+        }));
 
         const renderLine: DialogueRenderLine = {
             speaker,
             name: rawName,
             text: localizedText,
             emotion,
-            npcId: speaker === 'npc' ? this.npcId : undefined
+            npcId: speaker === 'npc' ? this.npcId : undefined,
+            options,
+            hideSpeakerVisuals: line.hideSpeakerVisuals ?? Boolean(line.options && line.options.length > 0)
         };
 
         if (this.hasShownLine) {
@@ -187,6 +200,87 @@ export class DialogueManager {
         }
 
         return false;
+    }
+
+    private async checkOptionBranch(branch: DialogueOptionBranch): Promise<boolean> {
+        if (!branch.checks || branch.checks.length === 0) return true;
+        for (const check of branch.checks) {
+            const passed = await this.evaluateCheck(check);
+            if (!passed) return false;
+        }
+        return true;
+    }
+
+    private async resolveOption(option: DialogueOption): Promise<{ lines: DialogueLine[]; actions: DialogueAction[] }> {
+        if (option.branches && option.branches.length > 0) {
+            for (const branch of option.branches) {
+                const passed = await this.checkOptionBranch(branch);
+                if (passed) {
+                    return {
+                        lines: branch.lines ?? option.lines ?? [],
+                        actions: branch.actions ?? option.actions ?? []
+                    };
+                }
+            }
+        }
+
+        return {
+            lines: option.lines ?? [],
+            actions: option.actions ?? []
+        };
+    }
+
+    private cloneLines(lines: DialogueLine[]): DialogueLine[] {
+        return lines.map((line) => ({
+            ...line,
+            options: line.options?.map((option) => ({
+                ...option,
+                lines: option.lines ? this.cloneLines(option.lines) : undefined,
+                actions: option.actions ? this.cloneActions(option.actions) : undefined,
+                branches: option.branches?.map((branch) => ({
+                    ...branch,
+                    checks: branch.checks ? branch.checks.map((check) => ({ ...check })) : undefined,
+                    lines: branch.lines ? this.cloneLines(branch.lines) : undefined,
+                    actions: branch.actions ? this.cloneActions(branch.actions) : undefined
+                }))
+            }))
+        }));
+    }
+
+    private cloneActions(actions: DialogueAction[]): DialogueAction[] {
+        return actions.map((action) => ({ ...action }));
+    }
+
+    private async selectOption(optionId: string) {
+        if (!this.active || !this.currentDialogue) return;
+        const lines = this.currentDialogue.lines ?? [];
+        const line = lines[this.currentIndex];
+        if (!line?.options || line.options.length === 0) return;
+
+        const selected = line.options.find((option) => option.id === optionId);
+        if (!selected) return;
+
+        const selectedText = selected.textKey
+            ? this.localeManager.t(selected.textKey, undefined, selected.text)
+            : selected.text;
+
+        lines[this.currentIndex] = {
+            ...line,
+            text: selectedText,
+            textKey: undefined,
+            options: undefined,
+            hideSpeakerVisuals: false
+        };
+
+        const resolved = await this.resolveOption(selected);
+        if (resolved.lines.length > 0) {
+            lines.splice(this.currentIndex + 1, 0, ...resolved.lines);
+        }
+        if (resolved.actions.length > 0) {
+            this.pendingActions.push(...resolved.actions);
+        }
+
+        this.renderCurrentLine();
     }
 
     private async hasInventoryItem(itemId: string): Promise<boolean> {

@@ -1,61 +1,99 @@
 {
     "id": "test",
-    "forks": [
+    "lines": [
         {
-            "checks": [
-                {
-                    "type": "hasItem",
-                    "itemId": "rickety_rod"
-                }
-            ],
-            "lines": [
-                {
-                    "speaker": "npc",
-                    "emotion": "happy",
-                    "textKey": "dialogue.npc.test.hasRod.0",
-                    "text": "Hey! Nice timing, I was just polishing my knife."
-                },
-                {
-                    "speaker": "player",
-                    "emotion": "surprise",
-                    "textKey": "dialogue.npc.test.hasRod.1",
-                    "text": "Uh, hi. Can I fish now?"
-                },
-                {
-                    "speaker": "npc",
-                    "emotion": "angry",
-                    "textKey": "dialogue.npc.test.hasRod.2",
-                    "text": "Hey now... I ALREADY GAVE YOU A ROD! NOW SCRAM!!!"
-                }
-            ]
+            "speaker": "npc",
+            "emotion": "happy",
+            "textKey": "dialogue.npc.test.greeting.0",
+            "text": "Hey! Nice timing, I was just polishing my knife."
         },
         {
-            "lines": [
+            "speaker": "player",
+            "emotion": "surprise",
+            "textKey": "dialogue.npc.test.choice.prompt",
+            "text": "How should I respond?",
+            "options": [
                 {
-                    "speaker": "npc",
-                    "emotion": "happy",
-                    "textKey": "dialogue.npc.test.noRod.0",
-                    "text": "Hey! Nice timing, I was just polishing my knife."
+                    "id": "hello",
+                    "textKey": "dialogue.npc.test.choice.hello",
+                    "text": "Hello!!!",
+                    "branches": [
+                        {
+                            "checks": [
+                                {
+                                    "type": "hasItem",
+                                    "itemId": "rickety_rod"
+                                }
+                            ],
+                            "lines": [
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "happy",
+                                    "textKey": "dialogue.npc.test.hello.hasRod.0",
+                                    "text": "Good to see you already geared up. Go reel in something sharp!"
+                                }
+                            ]
+                        },
+                        {
+                            "lines": [
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "happy",
+                                    "textKey": "dialogue.npc.test.hello.noRod.0",
+                                    "text": "Well hello there! You look unarmed. Take this fishing rod."
+                                }
+                            ],
+                            "actions": [
+                                {
+                                    "type": "giveItem",
+                                    "itemId": "rickety_rod",
+                                    "amount": 1,
+                                    "ifMissing": true
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
-                    "speaker": "player",
-                    "emotion": "surprise",
-                    "textKey": "dialogue.npc.test.noRod.1",
-                    "text": "Uh, hi. Can I fish now?"
-                },
-                {
-                    "speaker": "npc",
-                    "emotion": "sad",
-                    "textKey": "dialogue.npc.test.noRod.2",
-                    "text": "Ugh, fine. But you better not mess up my fishing spot!"
-                }
-            ],
-            "actions": [
-                {
-                    "type": "giveItem",
-                    "itemId": "rickety_rod",
-                    "amount": 1,
-                    "ifMissing": true
+                    "id": "askRod",
+                    "textKey": "dialogue.npc.test.choice.askRod",
+                    "text": "Can I get a fishing rod?",
+                    "branches": [
+                        {
+                            "checks": [
+                                {
+                                    "type": "hasItem",
+                                    "itemId": "rickety_rod"
+                                }
+                            ],
+                            "lines": [
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "angry",
+                                    "textKey": "dialogue.npc.test.askRod.hasRod.0",
+                                    "text": "Hey now... I ALREADY GAVE YOU A ROD! NOW SCRAM!!!"
+                                }
+                            ]
+                        },
+                        {
+                            "lines": [
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "sad",
+                                    "textKey": "dialogue.npc.test.askRod.noRod.0",
+                                    "text": "Ugh, fine. But you better not mess up my fishing spot!"
+                                }
+                            ],
+                            "actions": [
+                                {
+                                    "type": "giveItem",
+                                    "itemId": "rickety_rod",
+                                    "amount": 1,
+                                    "ifMissing": true
+                                }
+                            ]
+                        }
+                    ]
                 }
             ]
         }

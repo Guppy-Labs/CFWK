@@ -167,19 +167,35 @@
 		"prompt": {
 			"tapToAction": "Toca para {action}",
 			"keyToAction": " para {action}",
+			"tapToChoose": "Toca una opción",
+			"chooseOption": "Selecciona opción",
 			"or": " o "
 		},
 		"npc": {
 			"test": {
-				"hasRod": {
-					"0": "¡Eh! Llegas justo a tiempo, estaba afilando mi cuchillo.",
-					"1": "Eh, hola. ¿Ya puedo pescar?",
-					"2": "Pero bueno... ¡SI YA TE DI UNA CAÑA! ¡AHORA LÁRGATE!"
+				"greeting": {
+					"0": "¡Eh! Llegas justo a tiempo, estaba afilando mi cuchillo."
 				},
-				"noRod": {
-					"0": "¡Eh! Llegas justo a tiempo, estaba afilando mi cuchillo.",
-					"1": "Eh, hola. ¿Ya puedo pescar?",
-					"2": "Uf, está bien. ¡Pero más te vale no estropear mi zona de pesca!"
+				"choice": {
+					"prompt": "¿Cómo debería responder?",
+					"hello": "¡¡¡Hola!!!",
+					"askRod": "¿Me puedes dar una caña de pescar?"
+				},
+				"hello": {
+					"hasRod": {
+						"0": "Me alegra verte ya preparado. ¡Ve y pesca algo afilado!"
+					},
+					"noRod": {
+						"0": "¡Bueno, hola! Te veo desarmado. Toma esta caña de pescar."
+					}
+				},
+				"askRod": {
+					"hasRod": {
+						"0": "Pero bueno... ¡SI YA TE DI UNA CAÑA! ¡AHORA LÁRGATE!"
+					},
+					"noRod": {
+						"0": "Uf, está bien. ¡Pero más te vale no estropear mi zona de pesca!"
+					}
 				}
 			}
 		}

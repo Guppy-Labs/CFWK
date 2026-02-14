@@ -22,6 +22,7 @@ export class UIScene extends Phaser.Scene {
     private dialogueUI?: DialogueUI;
     private dialogueActive = false;
     private pendingDialogueAdvanceHandler?: () => void;
+    private pendingDialogueOptionHandler?: (optionId: string) => void;
     private tabKeyDownHandler?: (event: KeyboardEvent) => void;
     private tabKeyUpHandler?: (event: KeyboardEvent) => void;
     private chatKeyHandler?: (event: KeyboardEvent) => void;
@@ -103,6 +104,7 @@ export class UIScene extends Phaser.Scene {
         this.load.image('ui-dialogue-cursor', '/ui/Cursor03a.png');
         this.load.image('ui-dialogue-content', '/ui/dialogue/content.png');
         this.load.image('ui-dialogue-name', '/ui/dialogue/name.png');
+        this.load.image('ui-dialogue-option', '/ui/Frame08a.png');
         this.load.image('dialogue-char-test-angry', '/ui/dialogue/chars/test/angry.png');
         this.load.image('dialogue-char-test-disgust', '/ui/dialogue/chars/test/disgust.png');
         this.load.image('dialogue-char-test-fear', '/ui/dialogue/chars/test/fear.png');
@@ -164,6 +166,10 @@ export class UIScene extends Phaser.Scene {
         if (this.pendingDialogueAdvanceHandler) {
             this.dialogueUI.setOnAdvance(this.pendingDialogueAdvanceHandler);
             this.pendingDialogueAdvanceHandler = undefined;
+        }
+        if (this.pendingDialogueOptionHandler) {
+            this.dialogueUI.setOnOptionSelect(this.pendingDialogueOptionHandler);
+            this.pendingDialogueOptionHandler = undefined;
         }
         this.playerHud.setOnRodUse(() => {
             window.dispatchEvent(new CustomEvent('hud:rod-use'));
@@ -393,6 +399,14 @@ export class UIScene extends Phaser.Scene {
             this.dialogueUI.setOnAdvance(handler);
         } else {
             this.pendingDialogueAdvanceHandler = handler;
+        }
+    }
+
+    setDialogueOptionHandler(handler: (optionId: string) => void) {
+        if (this.dialogueUI) {
+            this.dialogueUI.setOnOptionSelect(handler);
+        } else {
+            this.pendingDialogueOptionHandler = handler;
         }
     }
 

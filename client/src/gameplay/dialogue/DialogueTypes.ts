@@ -15,6 +15,8 @@ export type DialogueLine = {
     emotion?: DialogueEmotion;
     name?: string;
     nameKey?: string;
+    options?: DialogueOption[];
+    hideSpeakerVisuals?: boolean;
 };
 
 export type DialogueCheck = {
@@ -36,6 +38,21 @@ export type DialogueFork = {
     actions?: DialogueAction[];
 };
 
+export type DialogueOptionBranch = {
+    checks?: DialogueCheck[];
+    lines?: DialogueLine[];
+    actions?: DialogueAction[];
+};
+
+export type DialogueOption = {
+    id: string;
+    text: string;
+    textKey?: string;
+    lines?: DialogueLine[];
+    actions?: DialogueAction[];
+    branches?: DialogueOptionBranch[];
+};
+
 export type DialogueData = {
     id: string;
     lines?: DialogueLine[];
@@ -49,4 +66,11 @@ export type DialogueRenderLine = {
     text: string;
     emotion: DialogueEmotion;
     npcId?: string;
+    options?: DialogueRenderOption[];
+    hideSpeakerVisuals?: boolean;
+};
+
+export type DialogueRenderOption = {
+    id: string;
+    text: string;
 };

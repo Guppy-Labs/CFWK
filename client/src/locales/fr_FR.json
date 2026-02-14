@@ -167,19 +167,35 @@
 		"prompt": {
 			"tapToAction": "Touchez pour {action}",
 			"keyToAction": " pour {action}",
+			"tapToChoose": "Touchez une option",
+			"chooseOption": "Choisir option",
 			"or": " ou "
 		},
 		"npc": {
 			"test": {
-				"hasRod": {
-					"0": "Hé ! Tu tombes bien, j'étais justement en train d'aiguiser mon couteau.",
-					"1": "Euh, salut. Je peux pêcher maintenant ?",
-					"2": "Hé dis donc... JE T'AI DÉJÀ DONNÉ UNE CANNE ! MAINTENANT DÉGAGE !!!"
+				"greeting": {
+					"0": "Hé ! Tu tombes bien, j'étais justement en train d'aiguiser mon couteau."
 				},
-				"noRod": {
-					"0": "Hé ! Tu tombes bien, j'étais justement en train d'aiguiser mon couteau.",
-					"1": "Euh, salut. Je peux pêcher maintenant ?",
-					"2": "Pff, d'accord. Mais tu ferais mieux de ne pas gâcher mon coin de pêche !"
+				"choice": {
+					"prompt": "Comment devrais-je répondre ?",
+					"hello": "Bonjour !!!",
+					"askRod": "Je peux avoir une canne à pêche ?"
+				},
+				"hello": {
+					"hasRod": {
+						"0": "Content de voir que tu es déjà équipé. Va ferrer quelque chose de tranchant !"
+					},
+					"noRod": {
+						"0": "Eh bien bonjour ! Tu as l'air sans équipement. Prends cette canne à pêche."
+					}
+				},
+				"askRod": {
+					"hasRod": {
+						"0": "Hé dis donc... JE T'AI DÉJÀ DONNÉ UNE CANNE ! MAINTENANT DÉGAGE !!!"
+					},
+					"noRod": {
+						"0": "Pff, d'accord. Mais tu ferais mieux de ne pas gâcher mon coin de pêche !"
+					}
 				}
 			}
 		}
