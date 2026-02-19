@@ -76,13 +76,7 @@
     },
     "language": {
       "title": "Language",
-      "current": "Current: {name}",
-      "localeNames": {
-        "en_US": "English (US)",
-        "es_ES": "Spanish",
-        "fr_FR": "French",
-        "te_ST": "Debug"
-      }
+      "current": "Current: {name}"
     }
   },
   "inventory": {

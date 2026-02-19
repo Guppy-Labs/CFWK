@@ -10,6 +10,13 @@ export type LocaleInfo = {
     displayName: string;
 };
 
+const NATIVE_LOCALE_DISPLAY_NAMES: Record<string, string> = {
+    en_US: 'English (US)',
+    es_ES: 'Español',
+    fr_FR: 'Français',
+    te_ST: 'Debug'
+};
+
 export class LocaleManager {
     private static instance: LocaleManager;
     static readonly STORAGE_KEY = 'cfwk_locale';
@@ -62,7 +69,7 @@ export class LocaleManager {
             .sort((a, b) => a.localeCompare(b))
             .map((code) => ({
                 code,
-                displayName: this.t(`settings.language.localeNames.${code}`, undefined, code)
+                displayName: NATIVE_LOCALE_DISPLAY_NAMES[code] ?? code
             }));
     }
 

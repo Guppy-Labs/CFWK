@@ -377,6 +377,10 @@ export class GameScene extends Phaser.Scene {
 
     private onMapLoaded(map: Phaser.Tilemaps.Tilemap, groundLayers: Phaser.Tilemaps.TilemapLayer[]) {
         this.groundLayers = groundLayers;
+        // Pass lighting manager to local player (available now after map load)
+        if (this.lightingManager) {
+            this.mcPlayerController?.setLightingManager(this.lightingManager);
+        }
         // Spawn player using active controller
         let player: Phaser.Physics.Matter.Sprite | undefined;
         
@@ -646,29 +650,25 @@ export class GameScene extends Phaser.Scene {
         room.onMessage("shove", (data: {
             attackerSessionId: string;
             targetSessionId: string;
-            targetForceX: number;
-            targetForceY: number;
-            attackerForceX: number;
-            attackerForceY: number;
         }) => {
             const mySessionId = this.networkManager.getSessionId();
-            const player = this.getActivePlayer();
-            
-            if (!player) return;
 
-            // Apply force if we're the target
             if (data.targetSessionId === mySessionId) {
-                this.applyShoveForce(player, data.targetForceX, data.targetForceY);
-                this.mcPlayerController?.playInteractAnimation();
+                // We are the victim — camera shake, walk anim handled by impulse
+                this.cameras.main.shake(80, 0.0015);
                 console.log('[GameScene] We got shoved!');
             } else {
                 const remoteTarget = this.remotePlayerManager?.getPlayers().get(data.targetSessionId);
-                remoteTarget?.playInteractAnimation();
+                // Victim gets shove walk animation (forward/backward relative to facing)
+                remoteTarget?.startShoveState(600);
+
+                // Apply shove hit effect when we are the attacker (local validation)
+                if (data.attackerSessionId === mySessionId) {
+                    remoteTarget?.playShoveEffect();
+                }
             }
-            
-            // Apply counter-force if we're the attacker
+
             if (data.attackerSessionId === mySessionId) {
-                this.applyShoveForce(player, data.attackerForceX, data.attackerForceY);
                 console.log('[GameScene] We shoved someone!');
             }
         });
@@ -709,31 +709,6 @@ export class GameScene extends Phaser.Scene {
             }
             this.remotePlayerManager?.showFishingBubble(data.sessionId, data.rodItemId);
         });
-    }
-
-    /**
-     * Apply a shove force to a physics sprite
-     */
-    private applyShoveForce(sprite: Phaser.Physics.Matter.Sprite, forceX: number, forceY: number) {
-        // Matter.js uses setVelocity for impulse-like behavior
-        // We add to existing velocity for more natural feel
-        const body = sprite.body as MatterJS.BodyType;
-        if (!body) return;
-        
-        const currentVx = body.velocity.x || 0;
-        const currentVy = body.velocity.y || 0;
-        
-        // Apply as a velocity impulse (scaled down since force values are in pixels)
-        const impulseScale = 0.03; // Reduced from 0.05 for gentler shove
-        sprite.setVelocity(
-            currentVx + forceX * impulseScale,
-            currentVy + forceY * impulseScale
-        );
-        
-        // Enforce containment immediately after shove to prevent going through walls
-        if (this.collisionManager) {
-            this.collisionManager.enforceContainment(sprite);
-        }
     }
 
     update(_time: number, delta: number) {

@@ -76,13 +76,7 @@
 		},
 		"language": {
 			"title": "Idioma",
-			"current": "Actual: {name}",
-			"localeNames": {
-				"en_US": "Inglés (EE. UU.)",
-				"es_ES": "Español",
-				"fr_FR": "Francés",
-				"te_ST": "Depuración"
-			}
+			"current": "Actual: {name}"
 		}
 	},
 	"inventory": {

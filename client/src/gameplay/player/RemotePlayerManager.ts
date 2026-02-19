@@ -82,6 +82,7 @@ export class RemotePlayerManager {
                     direction: player.direction || 0,
                     depth: this.config.playerFrontDepth,
                     occlusionManager: this.config.occlusionManager,
+                    lightingManager: this.config.lightingManager,
                     skipSpawnEffect: !this.initialSyncComplete, // Skip effect for existing players
                     isAfk: player.isAfk || false,
                     afkSince: player.afkSince || 0,
@@ -154,7 +155,7 @@ export class RemotePlayerManager {
                 }
                 const remote = this.remotePlayers.get(sessionId);
                 if (remote) {
-                    remote.setPosition(player.x, player.y);
+                    remote.setPosition(player.x, player.y, player.moveTs || Date.now());
                     remote.setAnimation(player.anim || 'idle', player.direction || 0);
                     remote.setAfk(player.isAfk || false, player.afkSince || 0);
                     remote.setGuiOpen(player.isGuiOpen || false);

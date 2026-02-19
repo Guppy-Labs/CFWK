@@ -76,13 +76,7 @@
 		},
 		"language": {
 			"title": "Langue",
-			"current": "Actuel : {name}",
-			"localeNames": {
-				"en_US": "Anglais (US)",
-				"es_ES": "Espagnol",
-				"fr_FR": "Français",
-				"te_ST": "Débogage"
-			}
+			"current": "Actuel : {name}"
 		}
 	},
 	"inventory": {

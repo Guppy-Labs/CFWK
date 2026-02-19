@@ -288,6 +288,9 @@ export class MCAnimationController {
             }
         }
 
+        // Ensure forward playback during normal movement
+        player.anims.forward = true;
+
         if (player.anims.currentAnim && newAnimation === 'walk') {
             const walkSpeed = Math.max(0, actualSpeed);
             const t = Phaser.Math.Clamp(walkSpeed / this.config.walkAnimSpeedMaxVelocity, 0, 1);
@@ -296,6 +299,53 @@ export class MCAnimationController {
             player.anims.timeScale = timeScale;
         } else if (player.anims.currentAnim) {
             player.anims.timeScale = 1.0;
+        }
+    }
+
+    /**
+     * Update animation during a shove (external force).
+     * Preserves facing direction, plays walk forward or backward depending on
+     * whether the body velocity aligns with the direction the player faces.
+     * Animation speed is proportional to actual velocity.
+     */
+    updateShove(player: Phaser.Physics.Matter.Sprite) {
+        if (!this.animationsCreated || !this.compositorResult) return;
+
+        const bodyVel = player.body?.velocity as MatterJS.Vector;
+        if (!bodyVel) return;
+
+        const speed = Math.hypot(bodyVel.x, bodyVel.y);
+
+        // Keep current direction unchanged — force walk animation
+        const dirString = INDEX_TO_DIRECTION[this.currentDirection];
+        const animKey = this.getAnimationKey('walk', dirString);
+
+        player.setFlipX(false);
+
+        const dimensions = MC_FRAME_DIMENSIONS_BY_ANIM['walk'][dirString];
+        const scale = this.config.scale;
+        player.setDisplaySize(dimensions.width * scale, dimensions.height * scale);
+
+        if (this.currentAnimation !== 'walk' || player.anims.currentAnim?.key !== animKey) {
+            this.currentAnimation = 'walk';
+            if (this.scene.anims.exists(animKey)) {
+                player.play(animKey, true);
+            }
+        }
+
+        if (speed > 0.05) {
+            // Dot product of velocity with facing direction
+            const facingX = Math.cos(this.currentRotation);
+            const facingY = Math.sin(this.currentRotation);
+            const dot = bodyVel.x * facingX + bodyVel.y * facingY;
+
+            player.anims.forward = dot >= 0;
+
+            const t = Phaser.Math.Clamp(speed / this.config.walkAnimSpeedMaxVelocity, 0, 1);
+            const targetRate = Phaser.Math.Linear(this.config.walkAnimSpeedMin, this.config.walkAnimSpeedMax, t);
+            player.anims.timeScale = targetRate / this.config.walkFrameRate;
+        } else {
+            player.anims.timeScale = 0;
         }
     }
 

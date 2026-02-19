@@ -3,8 +3,10 @@ import { OcclusionManager } from '../map/OcclusionManager';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 import { SharedMCTextures } from './SharedMCTextures';
 import { WaterSystem } from '../fx/water/WaterSystem';
+import { PlayerShadow } from './PlayerShadow';
 import { createChatBubble, createIconBubble, createNameplate, getOcclusionAdjustedDepth } from './PlayerVisualUtils';
 import { MCAnimationType, MC_FRAME_DIMENSIONS_BY_ANIM } from '@cfwk/shared';
+import type { LightingManager } from '../fx/LightingManager';
 
 /**
  * MCDirection type for MC character system
@@ -37,6 +39,20 @@ const DIRECTION_TO_MC: Record<Direction, MCDirection> = {
     [Direction.UpLeft]: 'NW',
     [Direction.Left]: 'W',
     [Direction.DownLeft]: 'SW'
+};
+
+/**
+ * Unit vectors for each facing direction (used for shove forward/backward detection)
+ */
+const DIRECTION_VECTORS: Record<Direction, { x: number; y: number }> = {
+    [Direction.Down]:      { x:  0,     y:  1     },
+    [Direction.DownRight]: { x:  0.707, y:  0.707 },
+    [Direction.Right]:     { x:  1,     y:  0     },
+    [Direction.UpRight]:   { x:  0.707, y: -0.707 },
+    [Direction.Up]:        { x:  0,     y: -1     },
+    [Direction.UpLeft]:    { x: -0.707, y: -0.707 },
+    [Direction.Left]:      { x: -1,     y:  0     },
+    [Direction.DownLeft]:  { x: -0.707, y:  0.707 }
 };
 
 
@@ -74,6 +90,7 @@ export type RemotePlayerConfig = {
     walkAnimSpeedMin?: number;
     walkAnimSpeedMax?: number;
     walkAnimSpeedMaxVelocity?: number;
+    lightingManager?: LightingManager;
     /** Custom animation key getter for per-player appearance - returns animation key for anim + direction */
     customAnimationKeyGetter?: (anim: string, direction: MCDirection) => string | undefined;
 };
@@ -111,6 +128,9 @@ export class RemotePlayer {
 
     // Interpolation
     private readonly interpSpeed = 0.25;
+    private readonly interpolationDelayMs = 100;
+    private readonly interpolationBufferMax = 40;
+    private interpolationBuffer: Array<{ time: number; x: number; y: number }> = [];
     private readonly chatBubbleGap = 10;
     private readonly scale = 1.2;
     private readonly hitboxWidth = 16;
@@ -141,6 +161,12 @@ export class RemotePlayer {
     private guiEffect?: GuiSwirlEffect;
     private nameplateYOffset: number = -36;
     private destroyed: boolean = false;
+    private isPlayingInteract: boolean = false;
+    private shadow?: PlayerShadow;
+    private lightingManager?: LightingManager;
+    /** Timestamp (scene.time.now) until which shove animation overrides normal anim */
+    private shovedUntil: number = 0;
+    private shoveParticles: { gfx: Phaser.GameObjects.Graphics; vx: number; vy: number; x: number; y: number; life: number; maxLife: number; size: number; color: number }[] = [];
 
     constructor(scene: Phaser.Scene, config: RemotePlayerConfig) {
         this.scene = scene;
@@ -152,6 +178,7 @@ export class RemotePlayer {
         this.currentDirection = config.direction as Direction;
         this.baseDepth = config.depth;
         this.occlusionManager = config.occlusionManager;
+        this.lightingManager = config.lightingManager;
         this.customAnimationKeyGetter = config.customAnimationKeyGetter;
         this.walkAnimSpeedMin = config.walkAnimSpeedMin ?? this.walkAnimSpeedMin;
         this.walkAnimSpeedMax = config.walkAnimSpeedMax ?? this.walkAnimSpeedMax;
@@ -169,6 +196,11 @@ export class RemotePlayer {
         
         this.createSprite(config.x, config.y, config.skipSpawnEffect);
         this.createNameplate(config.skipSpawnEffect, fontSize);
+        this.shadow = new PlayerShadow(this.scene, this.sprite, this.lightingManager);
+        // Hide shadow during spawn particle effect
+        if (!config.skipSpawnEffect) {
+            this.shadow.setVisible(false);
+        }
         this.currentAnim = 'idle';
         this.updateAnimation(this.currentAnim, this.currentDirection);
 
@@ -362,13 +394,21 @@ export class RemotePlayer {
     /**
      * Update position from server state
      */
-    setPosition(x: number, y: number) {
+    setPosition(x: number, y: number, serverTime?: number) {
         if (this.destroyed) return;
         const dx = x - this.targetX;
         const dy = y - this.targetY;
         
         this.targetX = x;
         this.targetY = y;
+        this.interpolationBuffer.push({
+            time: Number.isFinite(serverTime) ? Number(serverTime) : Date.now(),
+            x,
+            y
+        });
+        if (this.interpolationBuffer.length > this.interpolationBufferMax) {
+            this.interpolationBuffer.splice(0, this.interpolationBuffer.length - this.interpolationBufferMax);
+        }
 
         // If spawning, also update particle targets so they fly to the correct position
         if (this.isSpawning && this.particles.length > 0) {
@@ -442,6 +482,7 @@ export class RemotePlayer {
 
     private updateAnimation(anim: string, direction: Direction) {
         if (this.destroyed || !this.sprite || !this.sprite.anims) return;
+        if (this.isPlayingInteract) return;
         // Convert to MC direction
         const mcDir = DIRECTION_TO_MC[direction];
         
@@ -510,36 +551,88 @@ export class RemotePlayer {
             this.updateParticles();
         }
 
+        // Update shove dirt particles
+        if (this.shoveParticles.length > 0) {
+            this.updateShoveParticles(delta);
+        }
+
         // Don't update position while spawning
         if (this.isSpawning && this.particles.length > 0) return;
 
         // Guard: skip update if sprite frame is not ready (texture still loading)
         if (!this.sprite.frame || !this.sprite.anims) return;
 
-        // Smooth interpolation to target position
+        // Buffered interpolation at renderTime = now - interpolationDelayMs.
         const prevX = this.sprite.x;
         const prevY = this.sprite.y;
-        const dx = this.targetX - this.sprite.x;
-        const dy = this.targetY - this.sprite.y;
-        
-        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-            this.sprite.x += dx * this.interpSpeed;
-            this.sprite.y += dy * this.interpSpeed;
+        const renderTime = Date.now() - this.interpolationDelayMs;
+
+        if (this.interpolationBuffer.length >= 2) {
+            while (this.interpolationBuffer.length >= 2 && this.interpolationBuffer[1].time <= renderTime) {
+                this.interpolationBuffer.shift();
+            }
+
+            const first = this.interpolationBuffer[0];
+            const second = this.interpolationBuffer[1] || first;
+            const span = Math.max(1, second.time - first.time);
+            const t = Phaser.Math.Clamp((renderTime - first.time) / span, 0, 1);
+            this.sprite.x = Phaser.Math.Linear(first.x, second.x, t);
+            this.sprite.y = Phaser.Math.Linear(first.y, second.y, t);
         } else {
-            this.sprite.x = this.targetX;
-            this.sprite.y = this.targetY;
+            const dx = this.targetX - this.sprite.x;
+            const dy = this.targetY - this.sprite.y;
+
+            if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+                this.sprite.x += dx * this.interpSpeed;
+                this.sprite.y += dy * this.interpSpeed;
+            } else {
+                this.sprite.x = this.targetX;
+                this.sprite.y = this.targetY;
+            }
         }
 
         const dtSec = Math.max(0.001, delta / 1000);
         const movedX = this.sprite.x - prevX;
         const movedY = this.sprite.y - prevY;
         const speed = Math.hypot(movedX, movedY) / dtSec;
-        if (this.sprite.anims.currentAnim && this.currentAnim === 'walk') {
-            const t = Phaser.Math.Clamp(speed / this.walkAnimSpeedMaxVelocity, 0, 1);
-            const targetRate = Phaser.Math.Linear(this.walkAnimSpeedMin, this.walkAnimSpeedMax, t);
-            this.sprite.anims.timeScale = targetRate / this.walkFrameRate;
-        } else if (this.sprite.anims.currentAnim) {
-            this.sprite.anims.timeScale = 1;
+
+        const inShoveState = this.scene.time.now < this.shovedUntil;
+
+        if (inShoveState) {
+            // During shove: force walk animation, preserve facing direction,
+            // play forward/backward based on velocity vs facing
+            const walkDir = DIRECTION_TO_MC[this.currentDirection];
+            let animKey: string | undefined;
+            if (this.customAnimationKeyGetter) {
+                animKey = this.customAnimationKeyGetter('walk', walkDir);
+            }
+            if (!animKey) animKey = `mc-walk-${walkDir}`;
+
+            if (this.scene.anims.exists(animKey) && this.sprite.anims.currentAnim?.key !== animKey) {
+                this.sprite.setFlipX(false);
+                this.sprite.play(animKey, true);
+            }
+
+            if (speed > 0.3) {
+                const facing = DIRECTION_VECTORS[this.currentDirection];
+                const dot = movedX * facing.x + movedY * facing.y;
+                this.sprite.anims.forward = dot >= 0;
+                const t = Phaser.Math.Clamp(speed / this.walkAnimSpeedMaxVelocity, 0, 1);
+                const targetRate = Phaser.Math.Linear(this.walkAnimSpeedMin, this.walkAnimSpeedMax, t);
+                this.sprite.anims.timeScale = targetRate / this.walkFrameRate;
+            } else {
+                this.sprite.anims.timeScale = 0;
+            }
+        } else {
+            // Normal animation speed handling
+            this.sprite.anims.forward = true;
+            if (this.sprite.anims.currentAnim && this.currentAnim === 'walk') {
+                const t = Phaser.Math.Clamp(speed / this.walkAnimSpeedMaxVelocity, 0, 1);
+                const targetRate = Phaser.Math.Linear(this.walkAnimSpeedMin, this.walkAnimSpeedMax, t);
+                this.sprite.anims.timeScale = targetRate / this.walkFrameRate;
+            } else if (this.sprite.anims.currentAnim) {
+                this.sprite.anims.timeScale = 1;
+            }
         }
         
         // Calculate depth with Y-sorting and occlusion awareness
@@ -575,6 +668,9 @@ export class RemotePlayer {
         }
 
         this.waterSystem?.update(delta);
+
+        // Update shadow
+        this.shadow?.update();
     }
 
     /**
@@ -668,12 +764,42 @@ export class RemotePlayer {
                 this.nameplate.setAlpha(alpha);
                 this.afkAlpha = alpha;
                 this.isSpawning = false;
+                // Show shadow now that spawn effect is done
+                this.shadow?.setVisible(true);
             } else {
                 // Despawn complete - call callback
                 if (this.onDespawnComplete) {
                     this.onDespawnComplete();
                 }
             }
+        }
+    }
+
+    /**
+     * Update shove dirt particles (simple physics with gravity + fade)
+     */
+    private updateShoveParticles(delta: number) {
+        const dtSec = Math.min(delta / 1000, 0.05);
+        const gravity = 120;
+
+        for (let i = this.shoveParticles.length - 1; i >= 0; i--) {
+            const p = this.shoveParticles[i];
+            p.life += delta;
+            if (p.life >= p.maxLife) {
+                p.gfx.destroy();
+                this.shoveParticles.splice(i, 1);
+                continue;
+            }
+
+            p.vy += gravity * dtSec;
+            p.x += p.vx * dtSec;
+            p.y += p.vy * dtSec;
+
+            const t = p.life / p.maxLife;
+            const alpha = 1 - t * t; // ease-in fade out
+            p.gfx.clear();
+            p.gfx.fillStyle(p.color, alpha);
+            p.gfx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
         }
     }
 
@@ -723,9 +849,66 @@ export class RemotePlayer {
         const { name, flip } = directionMap[this.currentDirection];
         const animKey = `player-interact-${name}`;
 
+        if (!this.scene.anims.exists(animKey)) return;
+
+        this.isPlayingInteract = true;
         this.sprite.setFlipX(flip);
-        if (this.scene.anims.exists(animKey)) {
-            this.sprite.play(animKey, true);
+        this.sprite.play(animKey, true);
+
+        this.sprite.once('animationcomplete', () => {
+            this.isPlayingInteract = false;
+            this.sprite.setFlipX(false);
+            this.updateAnimation(this.currentAnim, this.currentDirection);
+        });
+    }
+
+    /**
+     * Play shove hit effect: red tint flash + dirt-like particles
+     */
+    /**
+     * Start shove animation state — forces walk forward/backward for the given duration
+     */
+    startShoveState(durationMs: number) {
+        this.shovedUntil = this.scene.time.now + durationMs;
+    }
+
+    playShoveEffect() {
+        if (this.destroyed || !this.sprite) return;
+
+        // Red tint flash
+        this.sprite.setTint(0xff4444);
+        this.scene.time.delayedCall(120, () => {
+            if (!this.destroyed && this.sprite) {
+                this.sprite.clearTint();
+            }
+        });
+
+        // Dirt-like particles burst from the sprite's feet
+        const cx = this.sprite.x;
+        const cy = this.sprite.getBottomCenter().y;
+        const dirtColors = [0x8B6914, 0xA0804A, 0x6B4F1A, 0x9C7C38, 0xBFA66A];
+        const count = 8 + Math.floor(Math.random() * 5); // 8-12 particles
+
+        for (let i = 0; i < count; i++) {
+            const gfx = this.scene.add.graphics();
+            gfx.setDepth(this.sprite.depth - 1);
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 20 + Math.random() * 50;
+            const size = 1 + Math.random() * 2;
+            const color = dirtColors[Math.floor(Math.random() * dirtColors.length)];
+            const maxLife = 200 + Math.random() * 250;
+
+            this.shoveParticles.push({
+                gfx,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed - 30 - Math.random() * 20, // bias upward
+                x: cx + (Math.random() - 0.5) * 8,
+                y: cy + (Math.random() - 0.5) * 4,
+                life: 0,
+                maxLife,
+                size,
+                color
+            });
         }
     }
 
@@ -742,6 +925,10 @@ export class RemotePlayer {
             particle.graphics.destroy();
         }
         this.particles = [];
+        for (const p of this.shoveParticles) {
+            p.gfx.destroy();
+        }
+        this.shoveParticles = [];
         
         if (this.chatBubble) {
             this.chatBubble.destroy();
@@ -756,6 +943,7 @@ export class RemotePlayer {
             this.fishingTimer.remove(false);
         }
 
+        this.shadow?.destroy();
         this.sprite.destroy();
         this.nameplate.destroy();
     }

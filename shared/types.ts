@@ -20,11 +20,61 @@ export interface PlayerInput {
     action: boolean; // Space bar for casting/reeling
 }
 
+export type MovementAuthorityMode = 'soft-client' | 'hard-server';
+
+export interface MovementInputState {
+  up: boolean;
+  down: boolean;
+  left: boolean;
+  right: boolean;
+  sprint: boolean;
+}
+
+export interface ClientMovementFrame {
+  seq: number;
+  clientTime: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  speedMultiplier: number;
+  input: MovementInputState;
+  anim: PlayerAnim;
+  direction: number;
+}
+
+export interface ServerMovementReconcile {
+  seqAck: number;
+  serverTick: number;
+  serverTime: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  authority: MovementAuthorityMode;
+  hardOverride: boolean;
+  errorDistance: number;
+  reason?: string;
+}
+
+export interface ServerMovementImpulse {
+  sourceSessionId: string;
+  vx: number;
+  vy: number;
+  durationMs: number;
+  authority: 'hard-server';
+  serverTick: number;
+  serverTime: number;
+}
+
 export type PlayerAnim = 'idle' | 'walk' | 'run' | 'cast' | 'reel';
 
 export interface IPlayer {
     x: number;
     y: number;
+  vx?: number;
+  vy?: number;
+  moveTs?: number;
     anim: PlayerAnim;
     isFishing: boolean;
     username: string;

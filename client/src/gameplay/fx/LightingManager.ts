@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { WorldTimeState, DAYLIGHT_HOURS, Season } from '@cfwk/shared';
+import { WorldTimeState, DAYLIGHT_HOURS } from '@cfwk/shared';
 
 /**
  * Manages dynamic lighting for the game
@@ -247,6 +247,30 @@ export class LightingManager {
             Math.floor(255 * b)
         );
         this.scene.lights.setAmbientColor(this.ambientColor.color);
+    }
+
+    /**
+     * Get effective light influence at a world position (0-1).
+     * Combines ambient brightness with nearby point light contributions.
+     * Used by PlayerShadow to scale shadow alpha based on lighting.
+     */
+    getLightInfluenceAt(x: number, y: number): number {
+        let influence = this.getAmbientBrightness();
+
+        // Add contributions from nearby point lights
+        this.lights.forEach((light) => {
+            const dx = x - light.x;
+            const dy = y - light.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const radius = light.radius;
+            if (dist < radius) {
+                // Quadratic falloff within radius
+                const t = 1 - dist / radius;
+                influence += light.intensity * t * t;
+            }
+        });
+
+        return Phaser.Math.Clamp(influence, 0, 1);
     }
 
     /**

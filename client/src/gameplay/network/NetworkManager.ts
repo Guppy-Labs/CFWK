@@ -1,6 +1,6 @@
 import * as Colyseus from "colyseus.js";
 import { Config } from "../../config";
-import { DEFAULT_USER_SETTINGS, IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, IPlayerStatsDelta, IPlayerStatsResponse, ISettingsResponse, PLAYER_STAT_KEYS, IUserSettings } from "@cfwk/shared";
+import { DEFAULT_USER_SETTINGS, IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, IPlayerStatsDelta, IPlayerStatsResponse, ISettingsResponse, PLAYER_STAT_KEYS, IUserSettings, ClientMovementFrame } from "@cfwk/shared";
 
 /**
  * NetworkManager - Handles all server communication for multiplayer.
@@ -336,6 +336,12 @@ export class NetworkManager {
         }
     }
 
+    sendMovementFrame(frame: ClientMovementFrame) {
+        if (this.currentRoom) {
+            this.currentRoom.send('movement:frame', frame);
+        }
+    }
+
     /**
      * Send player animation state to the server
      */
@@ -422,7 +428,7 @@ export class NetworkManager {
      */
     sendShove(targetSessionId: string) {
         if (this.currentRoom) {
-            this.currentRoom.send("shove", { targetSessionId });
+            this.currentRoom.send("shove", { targetSessionId, clientTime: Date.now() });
         }
     }
 

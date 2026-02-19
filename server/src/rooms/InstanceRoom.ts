@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
-import { PlayerInput, IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS } from "@cfwk/shared";
+import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { DEFAULT_INVENTORY_SLOTS } from "@cfwk/shared";
@@ -15,6 +15,9 @@ import { PlayerStatsCache } from "../managers/PlayerStatsCache";
 export class InstancePlayerSchema extends Schema implements IPlayer {
     @type("number") x: number = 0;
     @type("number") y: number = 0;
+    @type("number") vx: number = 0;
+    @type("number") vy: number = 0;
+    @type("number") moveTs: number = 0;
     @type("string") anim: PlayerAnim = 'idle';
     @type("boolean") isFishing: boolean = false;
     @type("string") username: string = "";
@@ -66,6 +69,36 @@ export class InstanceState extends Schema {
     @type(WorldTimeSchema) worldTime = new WorldTimeSchema();
 }
 
+type PositionSnapshot = {
+    tick: number;
+    time: number;
+    x: number;
+    y: number;
+};
+
+type RuntimeMovementState = {
+    lastSeq: number;
+    lastClientTime: number;
+    lastServerTime: number;
+    vx: number;
+    vy: number;
+    input: MovementInputState;
+    hardAuthorityUntil: number;
+    impulseVx: number;
+    impulseVy: number;
+    impulseActiveUntil: number;
+};
+
+const WALK_SPEED = 96;
+const SPRINT_SPEED = 192;
+const ACCEL = 0.35;
+const DRAG = 0.5;
+const MAX_STEP_DT_MS = 120;
+const HISTORY_SIZE = 120;
+const SOFT_DISCREPANCY = 18;
+const HARD_DISCREPANCY = 60;
+const RECONCILE_INTERVAL_MS = 80;
+
 /**
  * InstanceRoom - A Colyseus room representing a game world instance.
  * 
@@ -82,7 +115,10 @@ export class InstanceRoom extends Room<InstanceState> {
     private statsBroadcastInterval?: ReturnType<typeof setInterval>;
     private fishingCasts = new Map<string, { depth: number; region: string; castAt: number; itemId?: string; clicksRequired?: number }>();
     private lastActivityBySession = new Map<string, number>();
-    private lastPositionBySession = new Map<string, { x: number; y: number }>();
+    private movementRuntimeBySession = new Map<string, RuntimeMovementState>();
+    private positionHistoryBySession = new Map<string, PositionSnapshot[]>();
+    private lastReconcileSentAtBySession = new Map<string, number>();
+    private movementTick: number = 0;
     private sprintStateBySession = new Map<string, boolean>();
     private pendingStatsDeltasBySession = new Map<string, IPlayerStatsDelta>();
 
@@ -244,45 +280,42 @@ export class InstanceRoom extends Room<InstanceState> {
             });
         }, 1000);
 
-        // Handle player input
-        this.onMessage("input", (client, input: PlayerInput) => {
+        this.setSimulationInterval((deltaTime) => {
+            this.stepHardAuthorityMotion(deltaTime);
+        }, 1000 / 30);
+
+        this.onMessage("movement:frame", (client, frame: ClientMovementFrame) => {
             this.markActivity(client);
-            const player = this.state.players.get(client.sessionId);
-            if (player) {
-                const speed = 2;
-                if (input.left) player.x -= speed;
-                if (input.right) player.x += speed;
-                if (input.up) player.y -= speed;
-                if (input.down) player.y += speed;
-            }
+            this.handleMovementFrame(client, frame);
         });
 
-        // Handle position sync (client sends authoritative position for now)
+        // Compatibility path during rollout: treat plain position as a hard override request.
         this.onMessage("position", (client, data: { x: number; y: number }) => {
             this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
-            if (player) {
-                const previous = this.lastPositionBySession.get(client.sessionId);
-                if (previous) {
-                    const dx = data.x - previous.x;
-                    const dy = data.y - previous.y;
-                    const movedDistance = Math.hypot(dx, dy);
-                    const maxAcceptedStep = 80;
+            if (!player) return;
 
-                    if (Number.isFinite(movedDistance) && movedDistance > 0 && movedDistance <= maxAcceptedStep) {
-                        const isSprinting = this.sprintStateBySession.get(client.sessionId) === true || player.anim === 'run';
-                        if (isSprinting) {
-                            this.incrementStat(client, player, 'distanceRan', movedDistance);
-                        } else {
-                            this.incrementStat(client, player, 'distanceWalked', movedDistance);
-                        }
-                    }
-                }
-
-                this.lastPositionBySession.set(client.sessionId, { x: data.x, y: data.y });
-                player.x = data.x;
-                player.y = data.y;
-            }
+            const runtime = this.ensureRuntimeState(client, player);
+            runtime.lastSeq += 1;
+            const syntheticFrame: ClientMovementFrame = {
+                seq: runtime.lastSeq,
+                clientTime: Date.now(),
+                x: Number(data?.x) || player.x,
+                y: Number(data?.y) || player.y,
+                vx: player.vx || 0,
+                vy: player.vy || 0,
+                speedMultiplier: 1,
+                input: {
+                    up: false,
+                    down: false,
+                    left: false,
+                    right: false,
+                    sprint: false
+                },
+                anim: player.anim,
+                direction: player.direction
+            };
+            this.handleMovementFrame(client, syntheticFrame);
         });
 
         // Handle animation sync
@@ -335,7 +368,7 @@ export class InstanceRoom extends Room<InstanceState> {
         });
 
         // Handle shove interactions
-        this.onMessage("shove", (client, data: { targetSessionId: string }) => {
+        this.onMessage("shove", (client, data: { targetSessionId: string; clientTime?: number }) => {
             this.markActivity(client);
             const attacker = this.state.players.get(client.sessionId);
             const target = this.state.players.get(data.targetSessionId);
@@ -351,9 +384,20 @@ export class InstanceRoom extends Room<InstanceState> {
                 return;
             }
             
-            // Calculate distance between players
-            const dx = target.x - attacker.x;
-            const dy = target.y - attacker.y;
+            const now = Date.now();
+            const latencyMs = Number.isFinite(data?.clientTime) ? this.clampNumber(now - Number(data.clientTime), 0, 250) : 0;
+            const rewindTime = now - latencyMs;
+            const rewoundAttacker = this.getSnapshotAtTime(client.sessionId, rewindTime);
+            const rewoundTarget = this.getSnapshotAtTime(data.targetSessionId, rewindTime);
+
+            const attackerX = rewoundAttacker?.x ?? attacker.x;
+            const attackerY = rewoundAttacker?.y ?? attacker.y;
+            const targetX = rewoundTarget?.x ?? target.x;
+            const targetY = rewoundTarget?.y ?? target.y;
+
+            // Calculate distance between players (lag-compensated)
+            const dx = targetX - attackerX;
+            const dy = targetY - attackerY;
             const distance = Math.hypot(dx, dy);
             
             // Server-side validation: max 60px for shove to work
@@ -368,20 +412,16 @@ export class InstanceRoom extends Room<InstanceState> {
             const dirX = dx / length;
             const dirY = dy / length;
             
-            // Shove force (impulse velocity)
-            const shoveForce = 60; // pixels to move target
-            const knockbackForce = 8; // counter-force on attacker
-            
-            // Broadcast shove event to all clients
+            // External impulse on target only.
+            const shoveVelocity = 300;
+            const impulseDurationMs = 180;
+
+            this.applyServerImpulse(data.targetSessionId, dirX * shoveVelocity, dirY * shoveVelocity, impulseDurationMs, client.sessionId);
+
+            // Broadcast interaction event for animation/effects.
             this.broadcast("shove", {
                 attackerSessionId: client.sessionId,
-                targetSessionId: data.targetSessionId,
-                // Force applied to target (pushed away from attacker)
-                targetForceX: dirX * shoveForce,
-                targetForceY: dirY * shoveForce,
-                // Small counter-force on attacker (pushed back slightly)
-                attackerForceX: -dirX * knockbackForce,
-                attackerForceY: -dirY * knockbackForce
+                targetSessionId: data.targetSessionId
             });
             
             console.log(`[InstanceRoom] ${attacker.username} shoved ${target.username}`);
@@ -771,11 +811,30 @@ export class InstanceRoom extends Room<InstanceState> {
         player.odcid = odcid; // Use odcid for consistent coloring
         player.direction = 0; // Facing down
         player.appearance = userAppearance; // Character customization data
+        player.moveTs = Date.now();
         
         this.state.players.set(client.sessionId, player);
         this.lastActivityBySession.set(client.sessionId, Date.now());
         this.pendingStatsDeltasBySession.set(client.sessionId, {});
         this.sprintStateBySession.set(client.sessionId, false);
+        this.movementRuntimeBySession.set(client.sessionId, {
+            lastSeq: 0,
+            lastClientTime: 0,
+            lastServerTime: Date.now(),
+            vx: 0,
+            vy: 0,
+            input: { up: false, down: false, left: false, right: false, sprint: false },
+            hardAuthorityUntil: 0,
+            impulseVx: 0,
+            impulseVy: 0,
+            impulseActiveUntil: 0
+        });
+        this.positionHistoryBySession.set(client.sessionId, [{
+            tick: this.movementTick,
+            time: Date.now(),
+            x: player.x,
+            y: player.y
+        }]);
 
         // Send initial inventory to the client on join
         try {
@@ -840,9 +899,11 @@ export class InstanceRoom extends Room<InstanceState> {
         this.state.players.delete(client.sessionId);
         this.fishingCasts.delete(client.sessionId);
         this.lastActivityBySession.delete(client.sessionId);
-        this.lastPositionBySession.delete(client.sessionId);
         this.pendingStatsDeltasBySession.delete(client.sessionId);
         this.sprintStateBySession.delete(client.sessionId);
+        this.movementRuntimeBySession.delete(client.sessionId);
+        this.positionHistoryBySession.delete(client.sessionId);
+        this.lastReconcileSentAtBySession.delete(client.sessionId);
         
         // Notify instance manager
         this.instanceManager.playerLeft(this.instanceId);
@@ -865,6 +926,366 @@ export class InstanceRoom extends Room<InstanceState> {
         if (this.statsBroadcastInterval) {
             clearInterval(this.statsBroadcastInterval);
         }
+    }
+
+    private stepHardAuthorityMotion(deltaTimeMs: number) {
+        const now = Date.now();
+        const dtSec = this.clampNumber(deltaTimeMs / 1000, 0.001, 0.12);
+
+        this.clients.forEach((client) => {
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+
+            const runtime = this.movementRuntimeBySession.get(client.sessionId);
+            if (!runtime) return;
+            if (now >= runtime.hardAuthorityUntil) return;
+
+            const prevX = player.x;
+            const prevY = player.y;
+
+            runtime.vx *= 0.9;
+            runtime.vy *= 0.9;
+            player.x += runtime.vx * dtSec;
+            player.y += runtime.vy * dtSec;
+            player.vx = runtime.vx;
+            player.vy = runtime.vy;
+            player.moveTs = now;
+
+            const movedDistance = Math.hypot(player.x - prevX, player.y - prevY);
+            if (movedDistance > 0.01) {
+                const isSprinting = this.sprintStateBySession.get(client.sessionId) === true || player.anim === 'run';
+                if (isSprinting) {
+                    this.incrementStat(client, player, 'distanceRan', movedDistance);
+                } else {
+                    this.incrementStat(client, player, 'distanceWalked', movedDistance);
+                }
+            }
+
+            this.movementTick += 1;
+            this.recordPositionSnapshot(client.sessionId, player.x, player.y, now);
+            this.sendMovementReconcile(client, player, runtime.lastSeq, 'hard-server', false, 0, 'external-force');
+        });
+    }
+
+    private ensureRuntimeState(client: Client, player: InstancePlayerSchema): RuntimeMovementState {
+        const existing = this.movementRuntimeBySession.get(client.sessionId);
+        if (existing) return existing;
+
+        const runtime: RuntimeMovementState = {
+            lastSeq: 0,
+            lastClientTime: 0,
+            lastServerTime: Date.now(),
+            vx: player.vx || 0,
+            vy: player.vy || 0,
+            input: { up: false, down: false, left: false, right: false, sprint: false },
+            hardAuthorityUntil: 0,
+            impulseVx: 0,
+            impulseVy: 0,
+            impulseActiveUntil: 0
+        };
+        this.movementRuntimeBySession.set(client.sessionId, runtime);
+        return runtime;
+    }
+
+    private sanitizeMovementInput(input?: Partial<MovementInputState>): MovementInputState {
+        return {
+            up: input?.up === true,
+            down: input?.down === true,
+            left: input?.left === true,
+            right: input?.right === true,
+            sprint: input?.sprint === true
+        };
+    }
+
+    private predictKinematicStep(
+        baseX: number,
+        baseY: number,
+        baseVx: number,
+        baseVy: number,
+        input: MovementInputState,
+        dtSec: number,
+        speedMultiplier = 1
+    ) {
+        let moveX = 0;
+        let moveY = 0;
+        if (input.left) moveX -= 1;
+        if (input.right) moveX += 1;
+        if (input.up) moveY -= 1;
+        if (input.down) moveY += 1;
+
+        const len = Math.hypot(moveX, moveY);
+        if (len > 0) {
+            moveX /= len;
+            moveY /= len;
+        }
+
+        const speed = input.sprint ? SPRINT_SPEED : WALK_SPEED;
+        const speedScale = this.clampNumber(speedMultiplier, 0.35, 1.2);
+        const targetVx = moveX * speed * speedScale;
+        const targetVy = moveY * speed * speedScale;
+
+        let nextVx = baseVx;
+        let nextVy = baseVy;
+        if (len > 0) {
+            nextVx = baseVx + (targetVx - baseVx) * ACCEL;
+            nextVy = baseVy + (targetVy - baseVy) * ACCEL;
+        } else {
+            nextVx = baseVx * (1 - DRAG);
+            nextVy = baseVy * (1 - DRAG);
+        }
+
+        return {
+            x: baseX + nextVx * dtSec,
+            y: baseY + nextVy * dtSec,
+            vx: nextVx,
+            vy: nextVy
+        };
+    }
+
+    private handleMovementFrame(client: Client, frame: ClientMovementFrame) {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+
+        const runtime = this.ensureRuntimeState(client, player);
+        if (!Number.isFinite(frame?.seq) || frame.seq <= runtime.lastSeq) {
+            return;
+        }
+
+        const now = Date.now();
+        const input = this.sanitizeMovementInput(frame.input);
+        const speedMultiplier = Number.isFinite(frame.speedMultiplier) ? frame.speedMultiplier : 1;
+        const dtMs = this.clampNumber(now - runtime.lastServerTime, 8, MAX_STEP_DT_MS);
+        const dtSec = dtMs / 1000;
+
+        const expected = this.predictKinematicStep(player.x, player.y, runtime.vx, runtime.vy, input, dtSec, speedMultiplier);
+
+        // Additive impulse: incorporate decaying impulse into position prediction
+        const hasActiveImpulse = now < runtime.impulseActiveUntil &&
+            (Math.abs(runtime.impulseVx) > 0.5 || Math.abs(runtime.impulseVy) > 0.5);
+        const inputOnlyVx = expected.vx;
+        const inputOnlyVy = expected.vy;
+        if (hasActiveImpulse) {
+            expected.x += runtime.impulseVx * dtSec;
+            expected.y += runtime.impulseVy * dtSec;
+            // Time-based decay matching client's per-frame 0.88 at 60fps
+            const decayFactor = Math.pow(0.88, dtMs / 16.667);
+            runtime.impulseVx *= decayFactor;
+            runtime.impulseVy *= decayFactor;
+            if (Math.abs(runtime.impulseVx) < 0.5) runtime.impulseVx = 0;
+            if (Math.abs(runtime.impulseVy) < 0.5) runtime.impulseVy = 0;
+        }
+
+        const clientX = Number.isFinite(frame.x) ? frame.x : expected.x;
+        const clientY = Number.isFinite(frame.y) ? frame.y : expected.y;
+        const clientVx = Number.isFinite(frame.vx) ? frame.vx : expected.vx;
+        const clientVy = Number.isFinite(frame.vy) ? frame.vy : expected.vy;
+
+        const errorDistance = Math.hypot(clientX - expected.x, clientY - expected.y);
+        // Widen thresholds during impulse to tolerate decay timing differences
+        const softThreshold = hasActiveImpulse ? SOFT_DISCREPANCY * 3 : SOFT_DISCREPANCY;
+        const hardThreshold = hasActiveImpulse ? HARD_DISCREPANCY * 2.5 : HARD_DISCREPANCY;
+        const isSpawnBootstrap = runtime.lastSeq === 0 && player.x === 0 && player.y === 0 && frame.seq === 1;
+
+        let nextX = expected.x;
+        let nextY = expected.y;
+        let nextVx = expected.vx;
+        let nextVy = expected.vy;
+        let authority: ServerMovementReconcile['authority'] = 'soft-client';
+        let hardOverride = false;
+        let reason = 'soft-accept';
+
+        if (isSpawnBootstrap) {
+            nextX = clientX;
+            nextY = clientY;
+            nextVx = clientVx;
+            nextVy = clientVy;
+            authority = 'soft-client';
+            reason = 'spawn-bootstrap';
+        } else if (errorDistance <= softThreshold) {
+            nextX = clientX;
+            nextY = clientY;
+            nextVx = clientVx;
+            nextVy = clientVy;
+            authority = 'soft-client';
+            reason = 'soft-accept';
+        } else if (errorDistance <= hardThreshold) {
+            nextX = this.lerpNumber(expected.x, clientX, 0.35);
+            nextY = this.lerpNumber(expected.y, clientY, 0.35);
+            nextVx = this.lerpNumber(expected.vx, clientVx, 0.35);
+            nextVy = this.lerpNumber(expected.vy, clientVy, 0.35);
+            authority = 'soft-client';
+            reason = 'soft-correct';
+        } else {
+            authority = 'hard-server';
+            hardOverride = true;
+            reason = 'speed-clamp';
+        }
+
+        const prevX = player.x;
+        const prevY = player.y;
+
+        player.x = nextX;
+        player.y = nextY;
+        player.vx = nextVx;
+        player.vy = nextVy;
+        player.moveTs = now;
+
+        runtime.vx = hasActiveImpulse ? inputOnlyVx : nextVx;
+        runtime.vy = hasActiveImpulse ? inputOnlyVy : nextVy;
+        runtime.input = input;
+        runtime.lastSeq = frame.seq;
+        runtime.lastClientTime = Number.isFinite(frame.clientTime) ? frame.clientTime : now;
+        runtime.lastServerTime = now;
+
+        const isSprintingNow = input.sprint || frame.anim === 'run';
+        this.sprintStateBySession.set(client.sessionId, isSprintingNow);
+
+        const movedDistance = Math.hypot(nextX - prevX, nextY - prevY);
+        if (movedDistance > 0.01) {
+            if (isSprintingNow) {
+                this.incrementStat(client, player, 'distanceRan', movedDistance);
+            } else {
+                this.incrementStat(client, player, 'distanceWalked', movedDistance);
+            }
+        }
+
+        if (typeof frame.anim === 'string') {
+            player.anim = frame.anim;
+        }
+        if (typeof frame.direction === 'number') {
+            player.direction = frame.direction;
+        }
+
+        this.movementTick += 1;
+        this.recordPositionSnapshot(client.sessionId, nextX, nextY, now);
+        this.sendMovementReconcile(client, player, frame.seq, authority, hardOverride, errorDistance, reason);
+    }
+
+    private sendMovementReconcile(
+        client: Client,
+        player: InstancePlayerSchema,
+        seqAck: number,
+        authority: ServerMovementReconcile['authority'],
+        hardOverride: boolean,
+        errorDistance: number,
+        reason?: string
+    ) {
+        const now = Date.now();
+        const lastSentAt = this.lastReconcileSentAtBySession.get(client.sessionId) || 0;
+        if (!hardOverride && now - lastSentAt < RECONCILE_INTERVAL_MS) {
+            return;
+        }
+
+        const payload: ServerMovementReconcile = {
+            seqAck,
+            serverTick: this.movementTick,
+            serverTime: now,
+            x: player.x,
+            y: player.y,
+            vx: player.vx,
+            vy: player.vy,
+            authority,
+            hardOverride,
+            errorDistance,
+            reason
+        };
+        client.send('movement:reconcile', payload);
+        this.lastReconcileSentAtBySession.set(client.sessionId, now);
+    }
+
+    private recordPositionSnapshot(sessionId: string, x: number, y: number, time: number) {
+        const history = this.positionHistoryBySession.get(sessionId) || [];
+        history.push({ tick: this.movementTick, time, x, y });
+        if (history.length > HISTORY_SIZE) {
+            history.splice(0, history.length - HISTORY_SIZE);
+        }
+        this.positionHistoryBySession.set(sessionId, history);
+    }
+
+    private getSnapshotAtTime(sessionId: string, timestamp: number): PositionSnapshot | null {
+        const history = this.positionHistoryBySession.get(sessionId);
+        if (!history || history.length === 0) return null;
+
+        if (timestamp <= history[0].time) {
+            return history[0];
+        }
+
+        const last = history[history.length - 1];
+        if (timestamp >= last.time) {
+            return last;
+        }
+
+        for (let i = 1; i < history.length; i += 1) {
+            const prev = history[i - 1];
+            const next = history[i];
+            if (timestamp < prev.time || timestamp > next.time) continue;
+
+            const span = Math.max(1, next.time - prev.time);
+            const t = this.clampNumber((timestamp - prev.time) / span, 0, 1);
+            return {
+                tick: next.tick,
+                time: timestamp,
+                x: this.lerpNumber(prev.x, next.x, t),
+                y: this.lerpNumber(prev.y, next.y, t)
+            };
+        }
+
+        return last;
+    }
+
+    private applyServerImpulse(sessionId: string, vx: number, vy: number, durationMs: number, sourceSessionId: string) {
+        const player = this.state.players.get(sessionId);
+        if (!player) return;
+
+        const now = Date.now();
+
+        const runtime = this.movementRuntimeBySession.get(sessionId) || {
+            lastSeq: 0,
+            lastClientTime: 0,
+            lastServerTime: now,
+            vx: player.vx || 0,
+            vy: player.vy || 0,
+            input: { up: false, down: false, left: false, right: false, sprint: false },
+            hardAuthorityUntil: 0,
+            impulseVx: 0,
+            impulseVy: 0,
+            impulseActiveUntil: 0
+        };
+        this.movementRuntimeBySession.set(sessionId, runtime);
+
+        runtime.impulseVx += vx;
+        runtime.impulseVy += vy;
+        runtime.impulseActiveUntil = Math.max(runtime.impulseActiveUntil, now + durationMs + 500);
+        runtime.lastServerTime = now;
+
+        player.moveTs = now;
+
+        this.movementTick += 1;
+        this.recordPositionSnapshot(sessionId, player.x, player.y, now);
+
+        const targetClient = this.clients.find((entry) => entry.sessionId === sessionId);
+        if (targetClient) {
+            targetClient.send('movement:impulse', {
+                sourceSessionId,
+                vx,
+                vy,
+                durationMs,
+                authority: 'soft-client',
+                serverTick: this.movementTick,
+                serverTime: now
+            });
+        }
+    }
+
+    private clampNumber(value: number, min: number, max: number): number {
+        if (value < min) return min;
+        if (value > max) return max;
+        return value;
+    }
+
+    private lerpNumber(a: number, b: number, t: number): number {
+        const alpha = this.clampNumber(t, 0, 1);
+        return a + (b - a) * alpha;
     }
 
     private getStatsUserId(client: Client, player: InstancePlayerSchema): string | null {

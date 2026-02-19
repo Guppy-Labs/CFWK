@@ -15,7 +15,8 @@ import { DroppedItemManager } from '../items/DroppedItemManager';
 import { RemotePlayerManager } from './RemotePlayerManager';
 import { OcclusionManager } from '../map/OcclusionManager';
 import type { NPCManager } from '../npc/NPCManager';
-import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
+import type { LightingManager } from '../fx/LightingManager';
+import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE, ClientMovementFrame, ServerMovementReconcile, ServerMovementImpulse } from '@cfwk/shared';
 import { MCInputManager } from './mc/MCInputManager';
 import { MCBubbleManager } from './mc/MCBubbleManager';
 import { MCAfkManager } from './mc/MCAfkManager';
@@ -66,13 +67,25 @@ export class MCPlayerController {
     private isStaminaDepleted = false;
 
     private networkManager = NetworkManager.getInstance();
-    private lastSyncedX = 0;
-    private lastSyncedY = 0;
-    private lastSyncedAnim = '';
-    private lastSyncedDirection = -1;
-    private lastSyncedSprinting = false;
+    private movementSeq = 0;
+    private pendingMovementSeqs: number[] = [];
+    private correctionOffsetX = 0;
+    private correctionOffsetY = 0;
     private syncTimer = 0;
     private readonly syncInterval = 50;
+    private readonly hardRubberbandThreshold = 48;
+    private readonly PHYSICS_FPS = 60;
+    private readonly IMPULSE_DECAY = 0.88;
+    private networkMovementHandlersAttached = false;
+    private impulseVx = 0;
+    private impulseVy = 0;
+    private lastMovementInput = {
+        up: false,
+        down: false,
+        left: false,
+        right: false,
+        sprint: false
+    };
 
     private interactionManager: InteractionManager;
     private interactionLockUntil = 0;
@@ -83,6 +96,7 @@ export class MCPlayerController {
 
     private speedMultiplier = 1.0;
     private _occlusionManager?: OcclusionManager;
+    private _lightingManager?: LightingManager;
 
     private readonly hitboxWidth = 16;
     private readonly collidableHeight = 6;
@@ -237,18 +251,13 @@ export class MCPlayerController {
 
         this.player = player;
 
-        this.shadow = new PlayerShadow(this.scene, player);
+        this.shadow = new PlayerShadow(this.scene, player, this._lightingManager);
         this.createLocalNameplate();
+        this.attachNetworkMovementHandlers();
 
         const x = Math.round(spawnX);
         const y = Math.round(spawnY - scaledCollidableHeight / 2);
-        this.networkManager.sendPosition(x, y);
-        this.networkManager.sendAnimation(this.animationController.getAnimation(), this.animationController.getDirection(), this.isSprinting);
-        this.lastSyncedX = x;
-        this.lastSyncedY = y;
-        this.lastSyncedAnim = this.animationController.getAnimation();
-        this.lastSyncedDirection = this.animationController.getDirection();
-        this.lastSyncedSprinting = this.isSprinting;
+        this.sendMovementFrame(x, y, 0, 0);
 
         return player;
     }
@@ -271,14 +280,12 @@ export class MCPlayerController {
             this.localNameplate.setPosition(this.player.x, this.player.y + this.nameplateYOffset);
         }
 
-        if (this.scene.time.now < this.interactionLockUntil) {
-            return;
-        }
+        const interactionLocked = this.scene.time.now < this.interactionLockUntil;
 
         const guiOpen = this.scene.registry.get('guiOpen') === true;
         const chatFocused = this.scene.registry.get('chatFocused') === true;
         const transitionBlocked = this.scene.registry.get('inputBlocked') === true;
-        const inputBlocked = guiOpen || chatFocused || transitionBlocked;
+        const inputBlocked = guiOpen || chatFocused || transitionBlocked || interactionLocked;
 
         if (!inputBlocked) {
             const actionPresses = this.inputManager.getActionPresses();
@@ -291,6 +298,13 @@ export class MCPlayerController {
         }
 
         const movement = this.inputManager.getMovementInput(inputBlocked);
+        this.lastMovementInput = {
+            up: movement.moveUp,
+            down: movement.moveDown,
+            left: movement.moveLeft,
+            right: movement.moveRight,
+            sprint: movement.wantSprint
+        };
 
         let inputVx = 0;
         let inputVy = 0;
@@ -364,10 +378,31 @@ export class MCPlayerController {
             newVy = currentVy * (1 - drag);
         }
 
+        // Additive impulse from external forces (shoves) — decays naturally per frame
+        newVx += this.impulseVx;
+        newVy += this.impulseVy;
+        this.impulseVx *= this.IMPULSE_DECAY;
+        this.impulseVy *= this.IMPULSE_DECAY;
+        if (Math.abs(this.impulseVx) < 0.01) this.impulseVx = 0;
+        if (Math.abs(this.impulseVy) < 0.01) this.impulseVy = 0;
+
         this.player.setVelocity(newVx, newVy);
 
-        this.animationController.setSprinting(this.isSprinting);
-        this.animationController.update(this.player, targetVx, targetVy, this.currentRotation);
+        if (Math.abs(this.correctionOffsetX) > 0.01 || Math.abs(this.correctionOffsetY) > 0.01) {
+            const applyX = this.correctionOffsetX * 0.2;
+            const applyY = this.correctionOffsetY * 0.2;
+            this.player.setPosition(this.player.x + applyX, this.player.y + applyY);
+            this.correctionOffsetX -= applyX;
+            this.correctionOffsetY -= applyY;
+        }
+
+        const hasActiveImpulse = Math.abs(this.impulseVx) > 0.05 || Math.abs(this.impulseVy) > 0.05;
+        if (hasActiveImpulse && !hasInput) {
+            this.animationController.updateShove(this.player);
+        } else {
+            this.animationController.setSprinting(this.isSprinting);
+            this.animationController.update(this.player, targetVx, targetVy, this.currentRotation);
+        }
 
         this.updateSpriteOriginForDirection();
 
@@ -390,7 +425,13 @@ export class MCPlayerController {
         this.syncTimer += delta;
         if (this.syncTimer >= this.syncInterval) {
             this.syncTimer = 0;
-            this.syncPositionIfNeeded();
+            const bodyAfter = this.player.body as MatterJS.BodyType;
+            this.syncMovementFrame(
+                Math.round(this.player.x),
+                Math.round(this.player.y),
+                bodyAfter.velocity.x || 0,
+                bodyAfter.velocity.y || 0
+            );
         }
 
         if (hasInput) {
@@ -493,30 +534,85 @@ export class MCPlayerController {
         return Math.hypot(body.velocity.x || 0, body.velocity.y || 0);
     }
 
-    private syncPositionIfNeeded() {
-        if (!this.player) return;
+    private syncMovementFrame(x: number, y: number, vx: number, vy: number) {
+        const frame: ClientMovementFrame = {
+            seq: ++this.movementSeq,
+            clientTime: Date.now(),
+            x,
+            y,
+            vx: vx * this.PHYSICS_FPS,
+            vy: vy * this.PHYSICS_FPS,
+            speedMultiplier: this.speedMultiplier,
+            input: {
+                up: this.lastMovementInput.up,
+                down: this.lastMovementInput.down,
+                left: this.lastMovementInput.left,
+                right: this.lastMovementInput.right,
+                sprint: this.lastMovementInput.sprint
+            },
+            anim: this.animationController.getAnimation(),
+            direction: this.animationController.getDirection()
+        };
 
-        const x = Math.round(this.player.x);
-        const y = Math.round(this.player.y);
-        const anim = this.animationController.getAnimation();
-        const direction = this.animationController.getDirection();
-        const isSprinting = this.isSprinting;
-
-        const positionChanged = x !== this.lastSyncedX || y !== this.lastSyncedY;
-        const animChanged = anim !== this.lastSyncedAnim || direction !== this.lastSyncedDirection || isSprinting !== this.lastSyncedSprinting;
-
-        if (positionChanged) {
-            this.networkManager.sendPosition(x, y);
-            this.lastSyncedX = x;
-            this.lastSyncedY = y;
+        this.pendingMovementSeqs.push(frame.seq);
+        if (this.pendingMovementSeqs.length > 120) {
+            this.pendingMovementSeqs.splice(0, this.pendingMovementSeqs.length - 120);
         }
 
-        if (animChanged) {
-            this.networkManager.sendAnimation(anim, direction, isSprinting);
-            this.lastSyncedAnim = anim;
-            this.lastSyncedDirection = direction;
-            this.lastSyncedSprinting = isSprinting;
+        this.networkManager.sendMovementFrame(frame);
+    }
+
+    private sendMovementFrame(x: number, y: number, vx: number, vy: number) {
+        this.syncMovementFrame(x, y, vx, vy);
+        this.networkManager.sendAnimation(this.animationController.getAnimation(), this.animationController.getDirection(), this.isSprinting);
+    }
+
+    private attachNetworkMovementHandlers() {
+        if (this.networkMovementHandlersAttached) return;
+        const room = this.networkManager.getRoom();
+        if (!room) return;
+
+        room.onMessage('movement:reconcile', (data: ServerMovementReconcile) => {
+            this.handleMovementReconcile(data);
+        });
+
+        room.onMessage('movement:impulse', (data: ServerMovementImpulse) => {
+            this.handleServerImpulse(data);
+        });
+
+        this.networkMovementHandlersAttached = true;
+    }
+
+    private handleMovementReconcile(data: ServerMovementReconcile) {
+        if (!this.player?.body) return;
+        if (!data || typeof data.seqAck !== 'number') return;
+
+        this.pendingMovementSeqs = this.pendingMovementSeqs.filter((seq) => seq > data.seqAck);
+
+        const dx = data.x - this.player.x;
+        const dy = data.y - this.player.y;
+        const error = Math.hypot(dx, dy);
+
+        if (data.hardOverride || error >= this.hardRubberbandThreshold) {
+            const toLocal = 1 / this.PHYSICS_FPS;
+            this.player.setPosition(data.x, data.y);
+            this.player.setVelocity(data.vx * toLocal, data.vy * toLocal);
+            this.correctionOffsetX = 0;
+            this.correctionOffsetY = 0;
+            return;
         }
+
+        if (error > 0.2) {
+            this.correctionOffsetX += dx * 0.5;
+            this.correctionOffsetY += dy * 0.5;
+        }
+    }
+
+    private handleServerImpulse(data: ServerMovementImpulse) {
+        if (!this.player?.body) return;
+        const toLocal = 1 / this.PHYSICS_FPS;
+        this.impulseVx += data.vx * toLocal;
+        this.impulseVy += data.vy * toLocal;
     }
 
     private setupCollisionTracking() {
@@ -593,6 +689,10 @@ export class MCPlayerController {
 
     setOcclusionManager(manager: OcclusionManager) {
         this._occlusionManager = manager;
+    }
+
+    setLightingManager(manager: LightingManager) {
+        this._lightingManager = manager;
     }
 
     getMobileControls() {
