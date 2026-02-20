@@ -37,9 +37,20 @@ export interface ExtendedDebugInfo {
     
     // Fire POIs
     firePositions?: { x: number; y: number }[];
+
+    // Entity hitboxes
+    npcHitboxes?: Array<{ x: number; y: number; width: number; height: number }>;
+    aiNpcHitboxes?: Array<{ x: number; y: number; width: number; height: number }>;
     
     // Generated border
     generatedBorder?: { x: number; y: number }[];
+
+    // Nav / A* grid
+    navGrid?: {
+        cellSize: number;
+        widthPx: number;
+        heightPx: number;
+    };
     
     // Network
     isConnected?: boolean;
@@ -148,6 +159,9 @@ export class DebugOverlay {
         if (!this.textOnly) {
             this.drawOccluders(occluderRegions);
             this.drawColliders(collisionBodies);
+            this.drawNavGrid(extendedDebug?.navGrid);
+            this.drawNpcHitboxes(extendedDebug?.npcHitboxes);
+            this.drawAiNpcHitboxes(extendedDebug?.aiNpcHitboxes);
             this.drawZoomRegions(extendedDebug?.zoomRegions);
             this.drawFirePositions(extendedDebug?.firePositions);
             this.drawGeneratedBorder(extendedDebug?.generatedBorder);
@@ -387,6 +401,30 @@ export class DebugOverlay {
         });
     }
 
+    private drawNavGrid(navGrid?: { cellSize: number; widthPx: number; heightPx: number }) {
+        if (!navGrid) return;
+        const cellSize = Math.max(1, Math.floor(navGrid.cellSize));
+        const widthPx = Math.max(0, Math.floor(navGrid.widthPx));
+        const heightPx = Math.max(0, Math.floor(navGrid.heightPx));
+        if (widthPx === 0 || heightPx === 0) return;
+
+        this.graphics!.lineStyle(1, 0xffffff, 0.14);
+
+        for (let x = 0; x <= widthPx; x += cellSize) {
+            this.graphics!.beginPath();
+            this.graphics!.moveTo(x, 0);
+            this.graphics!.lineTo(x, heightPx);
+            this.graphics!.strokePath();
+        }
+
+        for (let y = 0; y <= heightPx; y += cellSize) {
+            this.graphics!.beginPath();
+            this.graphics!.moveTo(0, y);
+            this.graphics!.lineTo(widthPx, y);
+            this.graphics!.strokePath();
+        }
+    }
+
     private drawSpawnPoint(spawnPoint?: Phaser.Math.Vector2) {
         if (!spawnPoint) return;
 
@@ -421,6 +459,28 @@ export class DebugOverlay {
         this.graphics!.moveTo(bottomLeft.x, bottomLeft.y);
         this.graphics!.lineTo(bottomRight.x, bottomRight.y);
         this.graphics!.strokePath();
+    }
+
+    private drawNpcHitboxes(hitboxes?: Array<{ x: number; y: number; width: number; height: number }>) {
+        if (!hitboxes || hitboxes.length === 0) return;
+
+        this.graphics!.lineStyle(1.5, 0x22d3ee, 0.95);
+        this.graphics!.fillStyle(0x22d3ee, 0.18);
+        hitboxes.forEach((box) => {
+            this.graphics!.fillRect(box.x, box.y, box.width, box.height);
+            this.graphics!.strokeRect(box.x, box.y, box.width, box.height);
+        });
+    }
+
+    private drawAiNpcHitboxes(hitboxes?: Array<{ x: number; y: number; width: number; height: number }>) {
+        if (!hitboxes || hitboxes.length === 0) return;
+
+        this.graphics!.lineStyle(1.5, 0xff4a4a, 1);
+        this.graphics!.fillStyle(0xff4a4a, 0.2);
+        hitboxes.forEach((box) => {
+            this.graphics!.fillRect(box.x, box.y, box.width, box.height);
+            this.graphics!.strokeRect(box.x, box.y, box.width, box.height);
+        });
     }
 
     private drawJoystickDebug(debug?: JoystickDebugInfo) {

@@ -67,6 +67,54 @@ export interface ServerMovementImpulse {
   serverTime: number;
 }
 
+export type AINpcAnim = 'idle' | 'walk';
+
+export type AINpcKind = 'evil_tim';
+
+export type AINpcControllerId = 'general-enemy';
+
+export interface IAiNpcHitbox {
+  width: number;
+  height: number;
+  collidableHeight: number;
+}
+
+export interface IAiNpcState {
+  id: string;
+  kind: AINpcKind;
+  controllerId: AINpcControllerId;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  moveTs: number;
+  direction: number;
+  anim: AINpcAnim;
+  tint: number;
+  hitbox: IAiNpcHitbox;
+  pathDebug?: string;
+}
+
+export interface IGeneralEnemyControllerConfig {
+  speedPxPerSecond: number;
+  idleCheckFrequencyTicks: number;
+  idleMoveChance: number;
+  idleMoveRangeMinMeters: number;
+  idleMoveRangeMaxMeters: number;
+  chaseRangeMeters: number;
+  pathRecomputeFrequencyTicks: number;
+}
+
+export const DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG: IGeneralEnemyControllerConfig = {
+  speedPxPerSecond: 74,
+  idleCheckFrequencyTicks: 100,
+  idleMoveChance: 0.4,
+  idleMoveRangeMinMeters: 2,
+  idleMoveRangeMaxMeters: 4,
+  chaseRangeMeters: 20,
+  pathRecomputeFrequencyTicks: 5
+};
+
 export type PlayerAnim = 'idle' | 'walk' | 'run' | 'cast' | 'reel';
 
 export interface IPlayer {

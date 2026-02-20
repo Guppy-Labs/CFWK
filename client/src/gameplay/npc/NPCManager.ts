@@ -115,6 +115,19 @@ export class NPCManager {
         return { x: npc.sprite.x, y: npc.sprite.y, name: npc.name };
     }
 
+    getDebugHitboxes(): Array<{ x: number; y: number; width: number; height: number }> {
+        return this.npcs.map((npc) => {
+            const width = Math.max(1, npc.sprite.displayWidth);
+            const height = 6;
+            return {
+                x: npc.sprite.x - (width / 2),
+                y: npc.sprite.y - height,
+                width,
+                height
+            };
+        });
+    }
+
     private getNpcPoints(map: Phaser.Tilemaps.Tilemap): NPCPoint[] {
         const points: NPCPoint[] = [];
         const objectLayers = map.objects as TiledObjectLayer[];

@@ -13,6 +13,7 @@ import { OcclusionManager } from '../map/OcclusionManager';
 import { MCPlayerController } from '../player/MCPlayerController';
 import { CharacterService } from '../player/CharacterService';
 import { RemotePlayerManager } from '../player/RemotePlayerManager';
+import { AINpcManager } from '../ai/AINpcManager';
 import { DebugOverlay, ExtendedDebugInfo } from '../debug/DebugOverlay';
 import { DustParticleSystem } from '../fx/DustParticleSystem';
 import { FireParticleSystem } from '../fx/FireParticleSystem';
@@ -61,6 +62,7 @@ export class GameScene extends Phaser.Scene {
     private mcPlayerController?: MCPlayerController;
     private cameraController?: CameraController;
     private remotePlayerManager?: RemotePlayerManager;
+    private aiNpcManager?: AINpcManager;
     private droppedItemManager?: DroppedItemManager;
     private npcManager?: NPCManager;
     private debugOverlay?: DebugOverlay;
@@ -461,6 +463,14 @@ export class GameScene extends Phaser.Scene {
         });
         this.remotePlayerManager.initialize();
 
+        this.aiNpcManager = new AINpcManager(this, {
+            baseDepth: this.playerFrontDepth,
+            occlusionManager: this.occlusionManager,
+            lightingManager: this.lightingManager,
+            groundLayers: this.groundLayers
+        });
+        this.aiNpcManager.initialize();
+
         this.droppedItemManager = new DroppedItemManager(this, {
             occlusionManager: this.occlusionManager,
             baseDepth: this.playerFrontDepth - 40
@@ -791,6 +801,10 @@ export class GameScene extends Phaser.Scene {
 
         // Update remote players
         this.remotePlayerManager?.update(delta);
+        this.aiNpcManager?.update(delta);
+
+        const debugEnabled = this.debugOverlay?.isEnabled() === true;
+        this.aiNpcManager?.drawDebugPaths(debugEnabled);
 
         // Update dropped item fade
         this.droppedItemManager?.update();
@@ -799,9 +813,10 @@ export class GameScene extends Phaser.Scene {
         this.updateTablistRegistry();
 
         // Update debug overlay
-        if (this.debugOverlay?.isEnabled()) {
+        if (debugEnabled) {
             const activeController = this.mcPlayerController;
             const mobileControls = activeController?.getMobileControls();
+            const activeMap = this.mapLoader?.getMap();
             const playerBody = player?.body as MatterJS.BodyType | undefined;
             const playerVelX = playerBody?.velocity?.x;
             const playerVelY = playerBody?.velocity?.y;
@@ -832,6 +847,19 @@ export class GameScene extends Phaser.Scene {
                 
                 // Fire POIs
                 firePositions: this.fires.map(f => f.getPosition()),
+
+                // NPC hitboxes
+                npcHitboxes: this.npcManager?.getDebugHitboxes(),
+                aiNpcHitboxes: this.aiNpcManager?.getDebugHitboxes(),
+
+                // Nav / A* grid (matches server default from map tile size)
+                navGrid: activeMap
+                    ? {
+                        cellSize: Math.max(8, Math.floor((activeMap.tileWidth || 32) / 4)),
+                        widthPx: activeMap.widthInPixels,
+                        heightPx: activeMap.heightInPixels
+                    }
+                    : undefined,
                 
                 // Network
                 isConnected: this.networkManager.isConnected(),
@@ -848,7 +876,7 @@ export class GameScene extends Phaser.Scene {
                 generatedBorder: this.collisionManager?.getGeneratedBorderPolygon(),
             };
             
-            this.debugOverlay.draw(
+            this.debugOverlay?.draw(
                 this.collisionManager?.getBodies() || [],
                 this.occlusionManager?.getRegions() || [],
                 activeController?.getSpawnPoint(),
@@ -881,6 +909,7 @@ export class GameScene extends Phaser.Scene {
     shutdown() {
         this.audioManager?.destroy();
         this.remotePlayerManager?.destroy();
+        this.aiNpcManager?.destroy();
         this.droppedItemManager?.destroy();
         this.fires.forEach(fire => fire.destroy());
         this.fires = [];

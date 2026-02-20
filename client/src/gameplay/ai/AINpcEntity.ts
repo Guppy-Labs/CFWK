@@ -1,0 +1,209 @@
+import Phaser from 'phaser';
+import { IAiNpcHitbox, IAiNpcState } from '@cfwk/shared';
+import { createNameplate, getOcclusionAdjustedDepth } from '../player/PlayerVisualUtils';
+import { OcclusionManager } from '../map/OcclusionManager';
+import { LightingManager } from '../fx/LightingManager';
+import { WaterSystem } from '../fx/water/WaterSystem';
+import { PlayerShadow } from '../player/PlayerShadow';
+import { AINpcVisualDefinition } from './AINpcRegistry';
+
+export type AINpcEntityConfig = {
+    definition: AINpcVisualDefinition;
+    state: IAiNpcState;
+    baseDepth: number;
+    occlusionManager?: OcclusionManager;
+    lightingManager?: LightingManager;
+    groundLayers?: Phaser.Tilemaps.TilemapLayer[];
+};
+
+export class AINpcEntity {
+    private scene: Phaser.Scene;
+    private definition: AINpcVisualDefinition;
+    private sprite: Phaser.GameObjects.Sprite;
+    private nameplate: Phaser.GameObjects.Container;
+    private targetX: number;
+    private targetY: number;
+    private targetAnim: string;
+    private targetDirection: number;
+    private baseDepth: number;
+    private occlusionManager?: OcclusionManager;
+    private debugPath: Array<{ x: number; y: number }> = [];
+    private hitbox: IAiNpcHitbox;
+    private waterSystem?: WaterSystem;
+    private shadow?: PlayerShadow;
+
+    constructor(scene: Phaser.Scene, config: AINpcEntityConfig) {
+        this.scene = scene;
+        this.definition = config.definition;
+        this.targetX = config.state.x;
+        this.targetY = config.state.y;
+        this.targetAnim = config.state.anim;
+        this.targetDirection = Number.isFinite(config.state.direction) ? config.state.direction : 0;
+        this.baseDepth = config.baseDepth;
+        this.occlusionManager = config.occlusionManager;
+        this.hitbox = {
+            width: config.state.hitbox?.width ?? this.definition.frameWidth,
+            height: config.state.hitbox?.height ?? this.definition.frameHeight,
+            collidableHeight: config.state.hitbox?.collidableHeight ?? 6
+        };
+
+        const textureKey = this.getTextureKey('idle');
+
+        this.sprite = this.scene.add.sprite(config.state.x, config.state.y, textureKey, 0);
+        this.applySpriteOrigin();
+        this.sprite.setTint(config.state.tint || 0xffffff);
+        config.lightingManager?.enableLightingOn(this.sprite);
+
+        this.applyAnimationByMotion(0, 0, 16);
+        this.nameplate = createNameplate({
+            scene: this.scene,
+            text: this.definition.name,
+            fontSize: this.isMobile() ? '10px' : '6px',
+            yOffset: this.isMobile() ? -42 : -36,
+            depth: this.baseDepth + 1000,
+            textColor: '#000000',
+            hideBackground: true
+        }).container;
+
+        if (config.groundLayers && config.groundLayers.length > 0) {
+            this.waterSystem = new WaterSystem(this.scene, this.sprite, config.groundLayers);
+        }
+
+        this.shadow = new PlayerShadow(this.scene, this.sprite, config.lightingManager);
+
+        this.applyDepth();
+    }
+
+    updateFromState(nextState: IAiNpcState) {
+        this.targetX = nextState.x;
+        this.targetY = nextState.y;
+        this.targetAnim = nextState.anim;
+        this.targetDirection = Number.isFinite(nextState.direction) ? nextState.direction : this.targetDirection;
+        this.sprite.setTint(nextState.tint || 0xffffff);
+        this.hitbox = {
+            width: nextState.hitbox?.width ?? this.hitbox.width,
+            height: nextState.hitbox?.height ?? this.hitbox.height,
+            collidableHeight: nextState.hitbox?.collidableHeight ?? this.hitbox.collidableHeight
+        };
+        this.applySpriteOrigin();
+        this.debugPath = this.parseDebugPath(nextState.pathDebug);
+    }
+
+    update(delta: number) {
+        const prevX = this.sprite.x;
+        const prevY = this.sprite.y;
+        const alpha = Phaser.Math.Clamp(delta / 100, 0.08, 0.35);
+        this.sprite.x = Phaser.Math.Linear(this.sprite.x, this.targetX, alpha);
+        this.sprite.y = Phaser.Math.Linear(this.sprite.y, this.targetY, alpha);
+
+        const movedX = this.sprite.x - prevX;
+        const movedY = this.sprite.y - prevY;
+        this.applyAnimationByMotion(movedX, movedY, delta);
+
+        this.applyDepth();
+        this.nameplate.setPosition(this.sprite.x, this.sprite.y + (this.isMobile() ? -42 : -36));
+        this.nameplate.setDepth(this.baseDepth + 1000);
+
+        this.waterSystem?.update(delta);
+        this.shadow?.update();
+    }
+
+    destroy() {
+        this.waterSystem?.destroy();
+        this.shadow?.destroy();
+        this.sprite.destroy();
+        this.nameplate.destroy();
+    }
+
+    getDebugPath(): Array<{ x: number; y: number }> {
+        return this.debugPath;
+    }
+
+    getPosition(): { x: number; y: number } {
+        return { x: this.sprite.x, y: this.sprite.y };
+    }
+
+    getDebugHitbox(): { x: number; y: number; width: number; height: number } {
+        const width = Math.max(1, this.hitbox.width);
+        const height = Math.max(1, this.hitbox.collidableHeight || this.hitbox.height);
+        return {
+            x: this.sprite.x - (width / 2),
+            y: this.sprite.y - (height / 2),
+            width,
+            height
+        };
+    }
+
+    private getTextureKey(state: 'idle' | 'walk'): string {
+        return `ai-npc-${this.definition.kind}-${state}-sheet`;
+    }
+
+    private getAnimKey(state: 'idle' | 'walk', direction: number): string {
+        return `ai-npc-${this.definition.kind}-${state}-d${direction}`;
+    }
+
+    private applyDepth() {
+        const feetY = this.sprite.getBottomLeft().y;
+        const depth = getOcclusionAdjustedDepth(
+            this.occlusionManager,
+            this.sprite.x,
+            feetY,
+            this.baseDepth,
+            false,
+            false
+        );
+        this.sprite.setDepth(depth);
+    }
+
+    private parseDebugPath(rawPath?: string): Array<{ x: number; y: number }> {
+        if (!rawPath || rawPath.trim().length === 0) return [];
+        return rawPath
+            .split(';')
+            .map((segment) => {
+                const [xRaw, yRaw] = segment.split(',');
+                const x = Number(xRaw);
+                const y = Number(yRaw);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                return { x, y };
+            })
+            .filter((point): point is { x: number; y: number } => point !== null);
+    }
+
+    private applyAnimationByMotion(movedX: number, movedY: number, deltaMs: number) {
+        const dtSec = Math.max(0.001, deltaMs / 1000);
+        const speed = Math.hypot(movedX, movedY) / dtSec;
+        const isMoving = speed > 0.35 || this.targetAnim === 'walk';
+        const direction = ((Math.round(this.targetDirection) % 8) + 8) % 8;
+        const state: 'idle' | 'walk' = isMoving ? 'walk' : 'idle';
+        const animKey = this.getAnimKey(state, direction);
+
+        const shouldMirror = direction === 5 || direction === 6 || direction === 7;
+        this.sprite.setFlipX(shouldMirror);
+
+        if (this.sprite.anims.currentAnim?.key !== animKey) {
+            this.sprite.play(animKey, true);
+        }
+
+        if (this.sprite.anims.currentAnim && state === 'walk') {
+            const t = Phaser.Math.Clamp(speed / this.definition.walkAnimSpeedMaxVelocity, 0, 1);
+            const targetRate = Phaser.Math.Linear(this.definition.walkAnimSpeedMin, this.definition.walkAnimSpeedMax, t);
+            this.sprite.anims.timeScale = targetRate / this.definition.walkFrameRate;
+            this.sprite.anims.forward = true;
+        } else if (this.sprite.anims.currentAnim) {
+            this.sprite.anims.timeScale = 1;
+            this.sprite.anims.forward = true;
+        }
+    }
+
+    private applySpriteOrigin() {
+        const collidableHeight = Math.max(1, this.hitbox.collidableHeight || this.hitbox.height);
+        const frameHeight = Math.max(1, this.definition.frameHeight);
+        const originY = 1 - (collidableHeight / (2 * frameHeight));
+        this.sprite.setOrigin(0.5, originY);
+    }
+
+    private isMobile(): boolean {
+        const os = this.scene.sys.game.device.os;
+        return Boolean(os.android || os.iOS || os.iPad || os.iPhone || os.windowsPhone);
+    }
+}

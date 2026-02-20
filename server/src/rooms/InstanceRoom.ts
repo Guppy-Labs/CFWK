@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
-import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile } from "@cfwk/shared";
+import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { DEFAULT_INVENTORY_SLOTS } from "@cfwk/shared";
@@ -8,6 +8,9 @@ import { CommandProcessor } from "../utils/CommandProcessor";
 import User from "../models/User";
 import BannedIP from "../models/BannedIP";
 import { PlayerStatsCache } from "../managers/PlayerStatsCache";
+import { AI_METERS_TO_PIXELS, AI_NPC_DEFINITIONS, getAiControllerById } from "../ai/registry";
+import { ServerMapNavService } from "../ai/ServerMapNavService";
+import { AiNpcRuntimeState } from "../ai/types";
 
 /**
  * Player state for instance rooms
@@ -43,6 +46,28 @@ export class DroppedItemSchema extends Schema {
     @type("number") createdAt: number = 0;
 }
 
+export class AiNpcHitboxSchema extends Schema {
+    @type("number") width: number = 16;
+    @type("number") height: number = 25;
+    @type("number") collidableHeight: number = 6;
+}
+
+export class InstanceAiNpcSchema extends Schema {
+    @type("string") id: string = "";
+    @type("string") kind: string = "";
+    @type("string") controllerId: string = "";
+    @type("number") x: number = 0;
+    @type("number") y: number = 0;
+    @type("number") vx: number = 0;
+    @type("number") vy: number = 0;
+    @type("number") moveTs: number = 0;
+    @type("number") direction: number = 0;
+    @type("string") anim: AINpcAnim = 'idle';
+    @type("number") tint: number = 0xffffff;
+    @type("string") pathDebug: string = "";
+    @type(AiNpcHitboxSchema) hitbox = new AiNpcHitboxSchema();
+}
+
 /**
  * World time state synchronized to all clients
  */
@@ -65,6 +90,7 @@ export class InstanceState extends Schema {
     @type("string") locationId: string = "";
     @type("string") mapFile: string = "";
     @type({ map: InstancePlayerSchema }) players = new MapSchema<InstancePlayerSchema>();
+    @type({ map: InstanceAiNpcSchema }) aiNpcs = new MapSchema<InstanceAiNpcSchema>();
     @type({ map: DroppedItemSchema }) droppedItems = new MapSchema<DroppedItemSchema>();
     @type(WorldTimeSchema) worldTime = new WorldTimeSchema();
 }
@@ -98,6 +124,7 @@ const HISTORY_SIZE = 120;
 const SOFT_DISCREPANCY = 18;
 const HARD_DISCREPANCY = 60;
 const RECONCILE_INTERVAL_MS = 80;
+const GAME_TPS = 20;
 
 /**
  * InstanceRoom - A Colyseus room representing a game world instance.
@@ -118,9 +145,11 @@ export class InstanceRoom extends Room<InstanceState> {
     private movementRuntimeBySession = new Map<string, RuntimeMovementState>();
     private positionHistoryBySession = new Map<string, PositionSnapshot[]>();
     private lastReconcileSentAtBySession = new Map<string, number>();
-    private movementTick: number = 0;
+    private gameTick: number = 0;
     private sprintStateBySession = new Map<string, boolean>();
     private pendingStatsDeltasBySession = new Map<string, IPlayerStatsDelta>();
+    private navService = new ServerMapNavService();
+    private aiRuntimeById = new Map<string, AiNpcRuntimeState>();
 
     onCreate(options: { instanceId: string; locationId: string; mapFile: string; maxPlayers: number }) {
         console.log(`[InstanceRoom] Creating room for instance: ${options.instanceId}`);
@@ -210,6 +239,8 @@ export class InstanceRoom extends Room<InstanceState> {
         state.mapFile = options.mapFile;
         this.setState(state);
 
+        this.navService.initializeFromMap(options.mapFile);
+
         // Initialize world time
         this.updateWorldTime();
 
@@ -281,8 +312,38 @@ export class InstanceRoom extends Room<InstanceState> {
         }, 1000);
 
         this.setSimulationInterval((deltaTime) => {
+            this.gameTick += 1;
             this.stepHardAuthorityMotion(deltaTime);
-        }, 1000 / 30);
+            this.stepAiNpcSimulation(deltaTime);
+        }, 1000 / GAME_TPS);
+
+        this.onMessage("ai:spawn", (client, data: { kind?: 'evil_tim'; x?: number; y?: number }) => {
+            this.markActivity(client);
+            const player = this.state.players.get(client.sessionId);
+            const kind = data?.kind || 'evil_tim';
+            const spawnX = Number.isFinite(data?.x) ? Number(data.x) : ((player?.x || 0) + 48);
+            const spawnY = Number.isFinite(data?.y) ? Number(data.y) : (player?.y || 0);
+            const id = this.spawnAiNpc(kind, spawnX, spawnY);
+
+            if (!id) {
+                client.send('chat', {
+                    username: 'SYSTEM',
+                    odcid: 'SYSTEM',
+                    message: 'Failed to spawn AI NPC.',
+                    timestamp: Date.now(),
+                    isSystem: true
+                });
+                return;
+            }
+
+            client.send('chat', {
+                username: 'SYSTEM',
+                odcid: 'SYSTEM',
+                message: `Spawned ${kind} (${id}) chase=${AI_NPC_DEFINITIONS[kind].controllerConfig.chaseRangeMeters}m.`,
+                timestamp: Date.now(),
+                isSystem: true
+            });
+        });
 
         this.onMessage("movement:frame", (client, frame: ClientMovementFrame) => {
             this.markActivity(client);
@@ -412,7 +473,7 @@ export class InstanceRoom extends Room<InstanceState> {
             const dirX = dx / length;
             const dirY = dy / length;
             
-            // External impulse on target only.
+            // External impulse on target
             const shoveVelocity = 300;
             const impulseDurationMs = 180;
 
@@ -636,6 +697,20 @@ export class InstanceRoom extends Room<InstanceState> {
 
                 // --- Command Handling ---
                 if (messageHelper.startsWith('/')) {
+                    if (messageHelper === '/spawn_evil_tim') {
+                        const aiId = this.spawnAiNpc('evil_tim', player.x + 48, player.y);
+                        client.send('chat', {
+                            username: 'SYSTEM',
+                            odcid: 'SYSTEM',
+                            message: aiId
+                                ? `Spawned Evil Tim (${aiId}) chase=${AI_NPC_DEFINITIONS.evil_tim.controllerConfig.chaseRangeMeters}m.`
+                                : 'Failed to spawn Evil Tim.',
+                            timestamp: Date.now(),
+                            isSystem: true
+                        });
+                        return;
+                    }
+
                     const parts = messageHelper.slice(1).split(' ');
                     const command = parts[0];
                     const args = parts.slice(1);
@@ -830,7 +905,7 @@ export class InstanceRoom extends Room<InstanceState> {
             impulseActiveUntil: 0
         });
         this.positionHistoryBySession.set(client.sessionId, [{
-            tick: this.movementTick,
+            tick: this.gameTick,
             time: Date.now(),
             x: player.x,
             y: player.y
@@ -911,6 +986,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
     onDispose() {
         console.log(`[InstanceRoom] Instance ${this.instanceId} disposed`);
+        this.aiRuntimeById.clear();
         if (this.timeUpdateInterval) {
             clearInterval(this.timeUpdateInterval);
         }
@@ -961,7 +1037,6 @@ export class InstanceRoom extends Room<InstanceState> {
                 }
             }
 
-            this.movementTick += 1;
             this.recordPositionSnapshot(client.sessionId, player.x, player.y, now);
             this.sendMovementReconcile(client, player, runtime.lastSeq, 'hard-server', false, 0, 'external-force');
         });
@@ -1156,7 +1231,6 @@ export class InstanceRoom extends Room<InstanceState> {
             player.direction = frame.direction;
         }
 
-        this.movementTick += 1;
         this.recordPositionSnapshot(client.sessionId, nextX, nextY, now);
         this.sendMovementReconcile(client, player, frame.seq, authority, hardOverride, errorDistance, reason);
     }
@@ -1178,7 +1252,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         const payload: ServerMovementReconcile = {
             seqAck,
-            serverTick: this.movementTick,
+            serverTick: this.gameTick,
             serverTime: now,
             x: player.x,
             y: player.y,
@@ -1195,7 +1269,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
     private recordPositionSnapshot(sessionId: string, x: number, y: number, time: number) {
         const history = this.positionHistoryBySession.get(sessionId) || [];
-        history.push({ tick: this.movementTick, time, x, y });
+        history.push({ tick: this.gameTick, time, x, y });
         if (history.length > HISTORY_SIZE) {
             history.splice(0, history.length - HISTORY_SIZE);
         }
@@ -1260,7 +1334,6 @@ export class InstanceRoom extends Room<InstanceState> {
 
         player.moveTs = now;
 
-        this.movementTick += 1;
         this.recordPositionSnapshot(sessionId, player.x, player.y, now);
 
         const targetClient = this.clients.find((entry) => entry.sessionId === sessionId);
@@ -1271,10 +1344,104 @@ export class InstanceRoom extends Room<InstanceState> {
                 vy,
                 durationMs,
                 authority: 'soft-client',
-                serverTick: this.movementTick,
+                serverTick: this.gameTick,
                 serverTime: now
             });
         }
+    }
+
+    private stepAiNpcSimulation(deltaTimeMs: number) {
+        if (this.aiRuntimeById.size === 0) return;
+
+        const now = Date.now();
+        const deltaSec = this.clampNumber(deltaTimeMs / 1000, 0.001, 0.2);
+        const players: Array<{ sessionId: string; x: number; y: number }> = [];
+        this.state.players.forEach((player, sessionId) => {
+            players.push({ sessionId, x: player.x, y: player.y });
+        });
+
+        this.aiRuntimeById.forEach((runtime, id) => {
+            const controller = getAiControllerById(runtime.controllerId);
+            if (!controller) return;
+
+            controller.update(runtime, {
+                tick: this.gameTick,
+                now,
+                deltaSec,
+                metersToPixels: (meters) => meters * AI_METERS_TO_PIXELS,
+                players,
+                nav: this.navService,
+                random: () => Math.random()
+            });
+
+            const schema = this.state.aiNpcs.get(id);
+            if (!schema) return;
+
+            schema.x = runtime.x;
+            schema.y = runtime.y;
+            schema.vx = runtime.vx;
+            schema.vy = runtime.vy;
+            schema.moveTs = runtime.moveTs || now;
+            schema.direction = runtime.direction;
+            schema.anim = runtime.anim;
+            schema.tint = runtime.tint;
+            schema.pathDebug = runtime.chasePath.length > 0
+                ? runtime.chasePath.map((point) => `${Math.round(point.x)},${Math.round(point.y)}`).join(';')
+                : '';
+        });
+    }
+
+    private spawnAiNpc(kind: 'evil_tim', x: number, y: number): string | null {
+        const definition = AI_NPC_DEFINITIONS[kind];
+        if (!definition) return null;
+
+        const id = `ai-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+        const npcSchema = new InstanceAiNpcSchema();
+        npcSchema.id = id;
+        npcSchema.kind = definition.kind;
+        npcSchema.controllerId = definition.controllerId;
+        npcSchema.x = x;
+        npcSchema.y = y;
+        npcSchema.vx = 0;
+        npcSchema.vy = 0;
+        npcSchema.moveTs = Date.now();
+        npcSchema.direction = 0;
+        npcSchema.anim = 'idle';
+        npcSchema.tint = definition.tint;
+        npcSchema.pathDebug = '';
+        npcSchema.hitbox.width = definition.hitbox.width;
+        npcSchema.hitbox.height = definition.hitbox.height;
+        npcSchema.hitbox.collidableHeight = definition.hitbox.collidableHeight;
+
+        this.state.aiNpcs.set(id, npcSchema);
+
+        const pathTickOffset = Math.floor(Math.random() * Math.max(1, definition.controllerConfig.pathRecomputeFrequencyTicks));
+        this.aiRuntimeById.set(id, {
+            id,
+            kind: definition.kind,
+            controllerId: definition.controllerId,
+            x,
+            y,
+            vx: 0,
+            vy: 0,
+            moveTs: npcSchema.moveTs,
+            direction: 0,
+            anim: 'idle',
+            tint: definition.tint,
+            hitbox: {
+                width: definition.hitbox.width,
+                height: definition.hitbox.height,
+                collidableHeight: definition.hitbox.collidableHeight
+            },
+            mode: 'idle',
+            chasePath: [],
+            chasePathIndex: 0,
+            lastIdleCheckTick: this.gameTick,
+            lastPathRecomputeTick: this.gameTick - pathTickOffset,
+            controllerConfig: { ...definition.controllerConfig }
+        });
+
+        return id;
     }
 
     private clampNumber(value: number, min: number, max: number): number {
