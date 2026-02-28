@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { getTiledProperty } from '../map/TiledTypes';
-import { OcclusionManager } from '../map/OcclusionManager';
 import { LightingManager } from './LightingManager';
+import { DepthManager, FIRE_EMITTER_OFFSETS } from '../rendering/DepthManager';
 
 /**
  * FireParticleSystem - Creates a beautiful pixel-art campfire effect
@@ -217,17 +217,10 @@ export class FireParticleSystem {
      * Update depth based on occlusion state
      * Call this in the game's update loop
      */
-    updateOcclusion(occlusionManager: OcclusionManager) {
+    updateOcclusion(depthManager: DepthManager) {
         if (!this.baseLayerTag) return;
-
-        if (occlusionManager.isTagOccluded(this.baseLayerTag)) {
-            // Layer is occluded (in front of player), fire should also be in front
-            const occludedDepth = occlusionManager.getOccludedDepth(this.baseLayerTag);
-            this.setDepth(occludedDepth + 1); // +1 to be just above the layer
-        } else {
-            // Layer is at base depth, fire should be too
-            this.setDepth(this.baseDepth);
-        }
+        const newDepth = depthManager.fireOcclusionDepth(this.baseLayerTag, this.baseDepth);
+        this.setDepth(newDepth);
     }
 
     /**
@@ -316,7 +309,7 @@ export class FireParticleSystem {
             rotate: config.core.rotate,
             emitZone: { type: 'random', source: emitZone }
         });
-        this.coreEmitter.setDepth(depth + 3);
+        this.coreEmitter.setDepth(depth + FIRE_EMITTER_OFFSETS.core);
 
         // Main flame emitter with color gradient
         this.flameEmitter = this.scene.add.particles(x, y, 'fire-particle', {
@@ -333,7 +326,7 @@ export class FireParticleSystem {
             rotate: config.flame.rotate,
             emitZone: { type: 'random', source: emitZone }
         });
-        this.flameEmitter.setDepth(depth + 2);
+        this.flameEmitter.setDepth(depth + FIRE_EMITTER_OFFSETS.flame);
 
         // Outer flame wisps
         const widerEmitZone = new Phaser.Geom.Rectangle(
@@ -357,7 +350,7 @@ export class FireParticleSystem {
             rotate: config.outerFlame.rotate,
             emitZone: { type: 'random', source: widerEmitZone }
         });
-        this.outerFlameEmitter.setDepth(depth + 1);
+        this.outerFlameEmitter.setDepth(depth + FIRE_EMITTER_OFFSETS.outerFlame);
 
         // Ember particles
         this.emberEmitter = this.scene.add.particles(x, y, 'ember-particle', {
@@ -375,7 +368,7 @@ export class FireParticleSystem {
             rotate: config.ember.rotate,
             emitZone: { type: 'random', source: emitZone }
         });
-        this.emberEmitter.setDepth(depth + 4);
+        this.emberEmitter.setDepth(depth + FIRE_EMITTER_OFFSETS.ember);
 
         // Smoke emit zone - much wider than fire for natural billowing
         const smokeEmitZone = new Phaser.Geom.Rectangle(
@@ -400,7 +393,7 @@ export class FireParticleSystem {
             accelerationX: config.smoke.accelerationX,
             emitZone: { type: 'random', source: smokeEmitZone }
         });
-        this.smokeBackEmitter.setDepth(depth);
+        this.smokeBackEmitter.setDepth(depth + FIRE_EMITTER_OFFSETS.smokeBack);
 
         // Front smoke layer (in front of fire, sparser)
         this.smokeFrontEmitter = this.scene.add.particles(x, y + config.smoke.offsetY, 'smoke-particle', {
@@ -417,7 +410,7 @@ export class FireParticleSystem {
             accelerationX: config.smoke.accelerationX,
             emitZone: { type: 'random', source: smokeEmitZone }
         });
-        this.smokeFrontEmitter.setDepth(depth + 5);
+        this.smokeFrontEmitter.setDepth(depth + FIRE_EMITTER_OFFSETS.smokeFront);
     }
 
     /**
@@ -440,12 +433,12 @@ export class FireParticleSystem {
      */
     setDepth(depth: number) {
         this.depth = depth;
-        this.smokeBackEmitter?.setDepth(depth);
-        this.outerFlameEmitter?.setDepth(depth + 1);
-        this.flameEmitter?.setDepth(depth + 2);
-        this.coreEmitter?.setDepth(depth + 3);
-        this.emberEmitter?.setDepth(depth + 4);
-        this.smokeFrontEmitter?.setDepth(depth + 5);
+        this.smokeBackEmitter?.setDepth(depth + FIRE_EMITTER_OFFSETS.smokeBack);
+        this.outerFlameEmitter?.setDepth(depth + FIRE_EMITTER_OFFSETS.outerFlame);
+        this.flameEmitter?.setDepth(depth + FIRE_EMITTER_OFFSETS.flame);
+        this.coreEmitter?.setDepth(depth + FIRE_EMITTER_OFFSETS.core);
+        this.emberEmitter?.setDepth(depth + FIRE_EMITTER_OFFSETS.ember);
+        this.smokeFrontEmitter?.setDepth(depth + FIRE_EMITTER_OFFSETS.smokeFront);
     }
 
     /**

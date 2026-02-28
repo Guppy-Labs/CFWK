@@ -67,6 +67,18 @@ export interface ServerMovementImpulse {
   serverTime: number;
 }
 
+export const SOFT_COLLISION_PLAYER_FOOT_HITBOX = {
+  width: 19.2,
+  height: 7.2
+} as const;
+
+export const SOFT_COLLISION_FORCE = {
+  pushScalar: 0.04,
+  maxPushPerStep: 0.02,
+  velocityTransfer: 0.35,
+  epsilon: 0.0001
+} as const;
+
 export type AINpcAnim = 'idle' | 'walk';
 
 export type AINpcKind = 'evil_tim';
@@ -133,6 +145,8 @@ export interface IPlayer {
     isGuiOpen?: boolean; // Whether main GUI is open
     isChatOpen?: boolean; // Whether chat is open/focused
 }
+
+  export const PLAYER_RENDER_SCALE = 1.35;
 
 // --- Map System Types ---
 

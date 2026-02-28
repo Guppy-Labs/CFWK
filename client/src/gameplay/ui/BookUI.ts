@@ -457,6 +457,9 @@ export class BookUI {
         }
 
         // Add the composited canvas as a texture
+        if (this.scene.textures.exists(rtKey)) {
+            this.scene.textures.remove(rtKey);
+        }
         this.scene.textures.addCanvas(rtKey, canvas);
 
         return rtKey;
@@ -926,8 +929,15 @@ export class BookUI {
             this.localeChangedHandler = undefined;
         }
         this.inventoryGroups?.destroy();
+        this.inventorySlots?.destroy();
+        this.equipmentSlots?.destroy();
         this.inventoryDetails?.destroy();
         this.settingsTab?.destroy();
+        this.tabs.forEach((tab) => {
+            if (this.scene.textures.exists(tab.textureKey)) {
+                this.scene.textures.remove(tab.textureKey);
+            }
+        });
         this.container.destroy();
     }
 }

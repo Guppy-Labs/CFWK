@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { NetworkManager } from '../network/NetworkManager';
-import { OcclusionManager } from '../map/OcclusionManager';
-import { getOcclusionAdjustedDepth } from '../player/PlayerVisualUtils';
+import type { OcclusionManager } from '../map/OcclusionManager';
+import { DepthManager, DROPPED_ITEM_BASE } from '../rendering/DepthManager';
 
 export type DroppedItemData = {
     id: string;
@@ -18,6 +18,7 @@ export type DroppedItemEntity = DroppedItemData & {
 
 export type DroppedItemManagerConfig = {
     occlusionManager?: OcclusionManager;
+    depthManager?: DepthManager;
     baseDepth: number;
 };
 
@@ -143,14 +144,11 @@ export class DroppedItemManager {
     }
 
     private updateDepth(item: DroppedItemEntity) {
-        const depth = getOcclusionAdjustedDepth(
-            this.config.occlusionManager,
-            item.x,
-            item.y,
-            this.config.baseDepth,
-            true
-        );
-        item.sprite.setDepth(depth);
+        if (this.config.depthManager) {
+            item.sprite.setDepth(this.config.depthManager.entityDepth(item.x, item.y, { baseDepth: this.config.baseDepth }));
+        } else {
+            item.sprite.setDepth(this.config.baseDepth + item.y * 0.01);
+        }
     }
 
     private applyItemAlpha(item: DroppedItemEntity) {

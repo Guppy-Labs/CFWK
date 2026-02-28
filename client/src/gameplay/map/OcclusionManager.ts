@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { TiledObjectLayer, OccludableLayer, OccluderRegion, getTiledProperty } from './TiledTypes';
+import { TiledObjectLayer, OccludableLayer, OccludableObjectGroup, OccluderRegion, getTiledProperty } from './TiledTypes';
+import { ENTITY_BASE, OCCLUSION_OFFSET, OCCLUDABLE_BASE } from '../rendering/DepthBands';
 
 /**
  * Manages depth-based occlusion for layered sprites
@@ -7,11 +8,12 @@ import { TiledObjectLayer, OccludableLayer, OccluderRegion, getTiledProperty } f
 export class OcclusionManager {
     private regions: OccluderRegion[] = [];
     private layers: OccludableLayer[] = [];
+    private objectGroups: OccludableObjectGroup[] = [];
     private playerFrontDepth: number;
     private playerOccludedDepthOffset: number;
     private activeTags: Set<string> = new Set();
 
-    constructor(playerFrontDepth: number = 260, playerOccludedDepthOffset: number = 20) {
+    constructor(playerFrontDepth: number = ENTITY_BASE, playerOccludedDepthOffset: number = OCCLUSION_OFFSET) {
         this.playerFrontDepth = playerFrontDepth;
         this.playerOccludedDepthOffset = playerOccludedDepthOffset;
     }
@@ -35,6 +37,14 @@ export class OcclusionManager {
      */
     addOccludableLayer(layer: Phaser.Tilemaps.TilemapLayer, baseDepth: number, tag: string, order: number) {
         this.layers.push({ layer, baseDepth, tag, order });
+    }
+
+    /**
+     * Register an occludable object-tile group (individual images sharing one depth).
+     */
+    addOccludableObjectGroup(images: Phaser.GameObjects.Image[], baseDepth: number, tag: string, order: number) {
+        if (images.length === 0) return;
+        this.objectGroups.push({ images, baseDepth, tag, order });
     }
 
     /**
@@ -74,8 +84,13 @@ export class OcclusionManager {
         // Clear active tags
         this.activeTags.clear();
 
-        // Reset layers to base depth
+        // Reset tile layers to base depth
         this.layers.forEach((entry) => entry.layer.setDepth(entry.baseDepth));
+
+        // Reset object groups to base depth
+        this.objectGroups.forEach((group) => {
+            for (const img of group.images) img.setDepth(group.baseDepth);
+        });
 
         if (this.regions.length === 0) return;
 
@@ -85,6 +100,7 @@ export class OcclusionManager {
 
         if (this.activeTags.size === 0) return;
 
+        // Elevate matching tile layers
         this.layers.forEach((entry) => {
             if (!this.activeTags.has(entry.tag)) return;
 
@@ -93,27 +109,67 @@ export class OcclusionManager {
             const finalDepth = maxDepth !== null ? Math.min(elevatedDepth, maxDepth) : elevatedDepth;
             entry.layer.setDepth(finalDepth);
         });
+
+        // Elevate matching object groups
+        this.objectGroups.forEach((group) => {
+            if (!this.activeTags.has(group.tag)) return;
+
+            const elevatedDepth = this.playerFrontDepth + this.playerOccludedDepthOffset + group.order;
+            const maxDepth = this.getMaxDepthBelowHigherObjectGroup(group);
+            const finalDepth = maxDepth !== null ? Math.min(elevatedDepth, maxDepth) : elevatedDepth;
+            for (const img of group.images) img.setDepth(finalDepth);
+        });
     }
 
     /**
-     * Get the highest depth a layer can be raised to without surpassing higher layers
+     * Get the highest depth a tile layer can be raised to without surpassing
+     * higher layers or object groups.
      */
     private getMaxDepthBelowHigherLayers(entry: OccludableLayer): number | null {
-        let nearestHigher: OccludableLayer | null = null;
+        let minHigherDepth: number | null = null;
 
         for (const layer of this.layers) {
             if (layer.baseDepth <= entry.baseDepth) continue;
             if (layer.layer.depth <= this.playerFrontDepth) continue;
-            if (!nearestHigher || layer.baseDepth < nearestHigher.baseDepth) {
-                nearestHigher = layer;
+            if (minHigherDepth === null || layer.layer.depth < minHigherDepth) {
+                minHigherDepth = layer.layer.depth;
+            }
+        }
+        for (const group of this.objectGroups) {
+            if (group.baseDepth <= entry.baseDepth) continue;
+            const sampleDepth = group.images[0]?.depth ?? group.baseDepth;
+            if (sampleDepth <= this.playerFrontDepth) continue;
+            if (minHigherDepth === null || sampleDepth < minHigherDepth) {
+                minHigherDepth = sampleDepth;
             }
         }
 
-        if (!nearestHigher) return null;
+        return minHigherDepth !== null ? minHigherDepth - 1 : null;
+    }
 
-        // Keep this layer just below the nearest higher layer's current depth
-        const higherDepth = nearestHigher.layer.depth;
-        return higherDepth - 1;
+    /**
+     * Same as above but for an object group entry.
+     */
+    private getMaxDepthBelowHigherObjectGroup(group: OccludableObjectGroup): number | null {
+        let minHigherDepth: number | null = null;
+
+        for (const layer of this.layers) {
+            if (layer.baseDepth <= group.baseDepth) continue;
+            if (layer.layer.depth <= this.playerFrontDepth) continue;
+            if (minHigherDepth === null || layer.layer.depth < minHigherDepth) {
+                minHigherDepth = layer.layer.depth;
+            }
+        }
+        for (const og of this.objectGroups) {
+            if (og.baseDepth <= group.baseDepth) continue;
+            const sampleDepth = og.images[0]?.depth ?? og.baseDepth;
+            if (sampleDepth <= this.playerFrontDepth) continue;
+            if (minHigherDepth === null || sampleDepth < minHigherDepth) {
+                minHigherDepth = sampleDepth;
+            }
+        }
+
+        return minHigherDepth !== null ? minHigherDepth - 1 : null;
     }
 
     /**
@@ -138,6 +194,10 @@ export class OcclusionManager {
         if (layer) {
             return this.playerFrontDepth + this.playerOccludedDepthOffset + layer.order;
         }
+        const group = this.objectGroups.find(g => g.tag === tag);
+        if (group) {
+            return this.playerFrontDepth + this.playerOccludedDepthOffset + group.order;
+        }
         return this.playerFrontDepth + this.playerOccludedDepthOffset;
     }
 
@@ -155,16 +215,23 @@ export class OcclusionManager {
     }
 
     /**
-     * Get the maximum depth of currently elevated layers
+     * Get the maximum depth of currently elevated layers (tile layers + object groups)
      */
     getMaxElevatedLayerDepth(): number | null {
-        if (this.layers.length === 0) return null;
+        if (this.layers.length === 0 && this.objectGroups.length === 0) return null;
         let max = -Infinity;
         let found = false;
         this.layers.forEach((entry) => {
             if (entry.layer.depth > entry.baseDepth) {
                 found = true;
                 if (entry.layer.depth > max) max = entry.layer.depth;
+            }
+        });
+        this.objectGroups.forEach((group) => {
+            const sampleDepth = group.images[0]?.depth ?? group.baseDepth;
+            if (sampleDepth > group.baseDepth) {
+                found = true;
+                if (sampleDepth > max) max = sampleDepth;
             }
         });
         return found ? max : null;
@@ -175,7 +242,10 @@ export class OcclusionManager {
      */
     getBaseDepthForTag(tag: string): number {
         const layer = this.layers.find(l => l.tag === tag);
-        return layer?.baseDepth ?? 200;
+        if (layer) return layer.baseDepth;
+        const group = this.objectGroups.find(g => g.tag === tag);
+        if (group) return group.baseDepth;
+        return OCCLUDABLE_BASE;
     }
 
     /**
@@ -213,6 +283,7 @@ export class OcclusionManager {
                 region.targetTags.forEach((tag) => tags.add(tag));
             } else {
                 this.layers.forEach((entry) => tags.add(entry.tag));
+                this.objectGroups.forEach((group) => tags.add(group.tag));
             }
         }
 
@@ -225,7 +296,7 @@ export class OcclusionManager {
     getMinBaseDepthForTags(tags: Set<string>): number {
         if (tags.size === 0) return this.getOccludableBaseDepth();
         let min = Infinity;
-        tags.forEach((tag) => {
+        tags.forEach((tag: string) => {
             const depth = this.getBaseDepthForTag(tag);
             if (depth < min) min = depth;
         });
@@ -236,9 +307,10 @@ export class OcclusionManager {
      * Get the base depth for occludable layers
      */
     getOccludableBaseDepth(): number {
-        // Return the lowest base depth of any occludable layer
-        if (this.layers.length === 0) return 200;
-        return Math.min(...this.layers.map(l => l.baseDepth));
+        const depths: number[] = [];
+        this.layers.forEach(l => depths.push(l.baseDepth));
+        this.objectGroups.forEach(g => depths.push(g.baseDepth));
+        return depths.length > 0 ? Math.min(...depths) : OCCLUDABLE_BASE;
     }
 
     private isPointInPolygon(x: number, y: number, polygon: Phaser.Math.Vector2[]): boolean {

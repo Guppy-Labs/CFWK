@@ -4,10 +4,12 @@ import { OcclusionManager } from '../map/OcclusionManager';
 import { LightingManager } from '../fx/LightingManager';
 import { NetworkManager } from '../network/NetworkManager';
 import { RemotePlayerCompositor } from './RemotePlayerCompositor';
+import type { DepthManager } from '../rendering/DepthManager';
 
 export interface RemotePlayerManagerConfig {
     playerFrontDepth: number;
     occlusionManager?: OcclusionManager;
+    depthManager?: DepthManager;
     lightingManager?: LightingManager;
     groundLayers?: Phaser.Tilemaps.TilemapLayer[];
 }
@@ -82,6 +84,7 @@ export class RemotePlayerManager {
                     direction: player.direction || 0,
                     depth: this.config.playerFrontDepth,
                     occlusionManager: this.config.occlusionManager,
+                    depthManager: this.config.depthManager,
                     lightingManager: this.config.lightingManager,
                     skipSpawnEffect: !this.initialSyncComplete, // Skip effect for existing players
                     isAfk: player.isAfk || false,

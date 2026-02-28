@@ -10,6 +10,8 @@ import { CameraController } from '../camera/CameraController';
 import { MapLoader } from '../map/MapLoader';
 import { CollisionManager } from '../map/CollisionManager';
 import { OcclusionManager } from '../map/OcclusionManager';
+import { DepthManager } from '../rendering/DepthManager';
+import { ENTITY_BASE, FIRE_BASE, DROPPED_ITEM_BASE, OCCLUSION_OFFSET, GROUND_LAYER_NAMES, OCCLUDABLE_BASE } from '../rendering/DepthBands';
 import { MCPlayerController } from '../player/MCPlayerController';
 import { CharacterService } from '../player/CharacterService';
 import { RemotePlayerManager } from '../player/RemotePlayerManager';
@@ -26,13 +28,14 @@ import { AudioManager } from '../audio/AudioManager';
 import { LocaleManager } from '../i18n/LocaleManager';
 import { DroppedItemManager } from '../items/DroppedItemManager';
 import { NPCManager } from '../npc/NPCManager';
+import { SoftCollisionSystem } from '../collision/SoftCollisionSystem';
 import { Toast } from '../../ui/Toast';
 import { DisconnectModal } from '../../ui/DisconnectModal';
 import { DialogueManager } from '../dialogue/DialogueManager';
 import type { UIScene } from './UIScene';
 import { IInstanceInfo, ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE, DEFAULT_USER_SETTINGS, IVideoSettings } from '@cfwk/shared';
 import { NetworkManager } from '../network/NetworkManager';
-import { hideLoader, setLoaderText, currentUser } from '../index';
+import { hideLoader, setLoaderText, showLoader, currentUser } from '../index';
 import { SharedMCTextures } from '../player/SharedMCTextures';
 import { FullscreenManager } from '../ui/FullscreenManager';
 import { KeybindManager } from '../input/KeybindManager';
@@ -49,9 +52,11 @@ export class GameScene extends Phaser.Scene {
     private worldTimeManager = WorldTimeManager.getInstance();
     private characterService = CharacterService.getInstance();
     private unsubscribeDisconnect?: () => void;
+    private unsubscribeServerTransfer?: () => void;
     private inventoryUpdateHandler?: (event: Event) => void;
     private rodUseHandler?: () => void;
     private isFishingTransition = false;
+    private isTransferringServer = false;
     private fishingFadeTimer?: Phaser.Time.TimerEvent;
     private fishingAutoFaceTimer?: Phaser.Time.TimerEvent;
 
@@ -59,12 +64,14 @@ export class GameScene extends Phaser.Scene {
     private mapLoader?: MapLoader;
     private collisionManager?: CollisionManager;
     private occlusionManager?: OcclusionManager;
+    private depthManager?: DepthManager;
     private mcPlayerController?: MCPlayerController;
     private cameraController?: CameraController;
     private remotePlayerManager?: RemotePlayerManager;
     private aiNpcManager?: AINpcManager;
     private droppedItemManager?: DroppedItemManager;
     private npcManager?: NPCManager;
+    private softCollisionSystem?: SoftCollisionSystem;
     private debugOverlay?: DebugOverlay;
     private dustParticles?: DustParticleSystem;
     private waterSystem?: WaterSystem;
@@ -81,12 +88,6 @@ export class GameScene extends Phaser.Scene {
     // Character appearance (fetched async)
     private characterAppearance: ICharacterAppearance = DEFAULT_CHARACTER_APPEARANCE;
 
-    // Constants
-    private readonly groundLayerNames = new Set(['Ground', 'Water']);
-    private readonly occludableBaseDepth = 200;
-    private readonly playerFrontDepth = 260;
-    private readonly playerOccludedDepthOffset = 20;
-
     constructor() {
         super('GameScene');
     }
@@ -96,6 +97,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     init(data: GameSceneData) {
+        this.isTransferringServer = false;
         this.instanceInfo = data.instance;
         console.log('[GameScene] Received instance:', this.instanceInfo);
     }
@@ -108,9 +110,8 @@ export class GameScene extends Phaser.Scene {
         
         // Initialize map loader and preload map
         this.mapLoader = new MapLoader(this, {
-            groundLayerNames: this.groundLayerNames,
-            occludableBaseDepth: this.occludableBaseDepth,
-            playerFrontDepth: this.playerFrontDepth
+            groundLayerNames: GROUND_LAYER_NAMES,
+            occludableBaseDepth: OCCLUDABLE_BASE
         });
         this.mapLoader.preloadMap(mapFile);
 
@@ -120,7 +121,7 @@ export class GameScene extends Phaser.Scene {
             sprintSpeed: 2.4,
             accel: 0.10,
             drag: 0.7,
-            depth: this.playerFrontDepth
+            depth: ENTITY_BASE
         });
 
         // Initialize audio manager and preload audio assets
@@ -138,9 +139,10 @@ export class GameScene extends Phaser.Scene {
 
         // Initialize managers
         this.collisionManager = new CollisionManager(this);
-        this.occlusionManager = new OcclusionManager(this.playerFrontDepth, this.playerOccludedDepthOffset);
+        this.occlusionManager = new OcclusionManager(ENTITY_BASE, OCCLUSION_OFFSET);
+        this.depthManager = new DepthManager(this.occlusionManager);
         
-        this.mcPlayerController?.setOcclusionManager(this.occlusionManager);
+        this.mcPlayerController?.setDepthManager(this.depthManager);
         this.mcPlayerController?.setOnFishingStart((rodItemId) => {
             this.startFishingWithAutoFacing(rodItemId);
         });
@@ -177,14 +179,13 @@ export class GameScene extends Phaser.Scene {
     private async initializeMCCharacterAndLoadMap() {
         try {
             // Update loader text
-            setLoaderText(this.localeManager.t('loader.loadingCharacter', undefined, 'Loading character...'));
+            setLoaderText(this.localeManager.t('loader.finishingUp', undefined, 'Finishing Up...'));
             
             // Fetch character appearance from server
             this.characterAppearance = await this.characterService.fetchAppearance();
             console.log('[GameScene] Character appearance loaded:', this.characterAppearance);
             
             // Initialize MC controller (this composites all the sprite layers)
-            setLoaderText(this.localeManager.t('loader.preparingCharacter', undefined, 'Preparing character...'));
             await this.mcPlayerController?.initialize(this.characterAppearance);
             console.log('[GameScene] MC character initialized');
             
@@ -409,8 +410,9 @@ export class GameScene extends Phaser.Scene {
 
         // Load NPCs from POI points in the map
         this.npcManager = new NPCManager(this, {
-            baseDepth: this.playerFrontDepth,
+            baseDepth: ENTITY_BASE,
             occlusionManager: this.occlusionManager,
+            depthManager: this.depthManager,
             lightingManager: this.lightingManager
         });
         this.npcManager.loadAndSpawnFromMap(map);
@@ -423,6 +425,14 @@ export class GameScene extends Phaser.Scene {
 
         // Setup multiplayer and world time
         this.setupMultiplayer();
+        if (this.mcPlayerController) {
+            this.softCollisionSystem = new SoftCollisionSystem(
+                this.mcPlayerController,
+                this.remotePlayerManager,
+                this.npcManager,
+                this.aiNpcManager
+            );
+        }
         this.worldTimeManager.initialize();
         
         // Initialize seasonal effects with current season
@@ -444,7 +454,7 @@ export class GameScene extends Phaser.Scene {
     private setupFireEffects(map: Phaser.Tilemaps.Tilemap) {
         if (!this.lightingManager) return;
         
-        this.fires = FireParticleSystem.createFromMap(this, map, this.playerFrontDepth - 10);
+        this.fires = FireParticleSystem.createFromMap(this, map, FIRE_BASE);
         this.fires.forEach(fire => {
             fire.setupLight(this.lightingManager!, 120, 1.5);
         });
@@ -456,24 +466,29 @@ export class GameScene extends Phaser.Scene {
 
     private setupMultiplayer() {
         this.remotePlayerManager = new RemotePlayerManager(this, {
-            playerFrontDepth: this.playerFrontDepth,
+            playerFrontDepth: ENTITY_BASE,
             occlusionManager: this.occlusionManager,
+            depthManager: this.depthManager,
             lightingManager: this.lightingManager,
             groundLayers: this.groundLayers
         });
         this.remotePlayerManager.initialize();
 
         this.aiNpcManager = new AINpcManager(this, {
-            baseDepth: this.playerFrontDepth,
+            baseDepth: ENTITY_BASE,
             occlusionManager: this.occlusionManager,
+            depthManager: this.depthManager,
             lightingManager: this.lightingManager,
             groundLayers: this.groundLayers
         });
         this.aiNpcManager.initialize();
 
+        this.softCollisionSystem?.updateBindings(this.remotePlayerManager, this.npcManager, this.aiNpcManager);
+
         this.droppedItemManager = new DroppedItemManager(this, {
             occlusionManager: this.occlusionManager,
-            baseDepth: this.playerFrontDepth - 40
+            depthManager: this.depthManager,
+            baseDepth: DROPPED_ITEM_BASE
         });
         this.droppedItemManager.initialize();
 
@@ -513,6 +528,7 @@ export class GameScene extends Phaser.Scene {
         
         // Listen for server disconnection
         this.unsubscribeDisconnect = this.networkManager.onDisconnect((code) => {
+            if (this.isTransferringServer) return;
             console.log(`[GameScene] Server disconnected with code: ${code}`);
             this.stopAllAudio();
             this.registry.set('inputBlocked', true);
@@ -554,10 +570,15 @@ export class GameScene extends Phaser.Scene {
                 }
             });
         });
+
+        this.unsubscribeServerTransfer = this.networkManager.onServerTransfer((locationId) => {
+            this.beginServerTransfer(locationId);
+        });
         
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
              this.game.events.off('chat-message', this.handleChatMessage, this);
              this.unsubscribeDisconnect?.();
+             this.unsubscribeServerTransfer?.();
              if (this.inventoryUpdateHandler) {
                  window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
              }
@@ -573,6 +594,23 @@ export class GameScene extends Phaser.Scene {
         });
 
         this.events.on('fishing:stop', this.stopFishing, this);
+    }
+
+    private beginServerTransfer(locationId: string) {
+        if (this.isTransferringServer) return;
+        this.isTransferringServer = true;
+
+        localStorage.setItem('cfwk_join_location_override', locationId);
+        setLoaderText(this.localeManager.t('scene.boot.connecting', undefined, 'Connecting...'));
+        showLoader();
+
+        this.registry.set('inputBlocked', true);
+        this.mcPlayerController?.getMobileControls()?.setInputBlocked(true);
+        this.stopAllAudio();
+
+        this.networkManager.disconnect();
+        this.scene.stop('UIScene');
+        this.scene.start('BootScene');
     }
 
     private stopAllAudio() {
@@ -722,6 +760,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     update(_time: number, delta: number) {
+        if (this.isTransferringServer) return;
+
         // Update map (tile animations)
         this.mapLoader?.update(delta);
 
@@ -788,13 +828,10 @@ export class GameScene extends Phaser.Scene {
             this.occlusionManager?.update(player);
         }
 
-        // Update NPC depth sorting with current occlusion state
-        this.npcManager?.update();
-
         // Update fire effects
-        if (this.occlusionManager) {
+        if (this.depthManager) {
             this.fires.forEach(fire => {
-                fire.updateOcclusion(this.occlusionManager!);
+                fire.updateOcclusion(this.depthManager!);
                 fire.updateLight(delta);
             });
         }
@@ -802,6 +839,10 @@ export class GameScene extends Phaser.Scene {
         // Update remote players
         this.remotePlayerManager?.update(delta);
         this.aiNpcManager?.update(delta);
+        this.softCollisionSystem?.update();
+
+        // Update NPC depth sorting with current occlusion state
+        this.npcManager?.update();
 
         const debugEnabled = this.debugOverlay?.isEnabled() === true;
         this.aiNpcManager?.drawDebugPaths(debugEnabled);

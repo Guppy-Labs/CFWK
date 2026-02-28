@@ -56,6 +56,8 @@ export class CommandProcessor {
                 return await this.handleGive(args, issuerName);
             case 'drop':
                 return await this.handleDrop(args, issuerName);
+            case 'send':
+                return await this.handleSend(args, issuerName);
             default:
                 return "Unknown command.";
         }
@@ -275,5 +277,30 @@ export class CommandProcessor {
         });
 
         return `Dropped ${amount} ${itemDef.name} at ${user.username}.`;
+    }
+
+    private static async handleSend(args: string[], issuer: string): Promise<string> {
+        if (args.length < 2) return "Usage: /send [username] [server]";
+
+        const targetName = args[0];
+        const targetLocationId = args[1].trim().toLowerCase();
+        const instanceManager = InstanceManager.getInstance();
+
+        if (!instanceManager.getLocationConfig(targetLocationId)) {
+            return `Unknown server '${targetLocationId}'.`;
+        }
+
+        const user = await this.getUserByUsername(targetName);
+        if (!user) return `User '${targetName}' not found.`;
+
+        user.lastLocationId = targetLocationId;
+        await user.save();
+
+        instanceManager.events.emit('send_user', {
+            userId: user._id.toString(),
+            locationId: targetLocationId
+        });
+
+        return `Sent ${user.username} to ${targetLocationId}.`;
     }
 }

@@ -298,6 +298,9 @@ export class CharacterCompositor {
                     const textureKey = this.generateTextureKey(animType, direction);
 
                     // Add texture to Phaser
+                    if (this.scene.textures.exists(textureKey)) {
+                        this.scene.textures.remove(textureKey);
+                    }
                     this.scene.textures.addCanvas(textureKey, canvas);
 
                     const mapKey = `${animType}-${direction}`;

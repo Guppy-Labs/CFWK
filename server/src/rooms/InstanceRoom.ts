@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
-import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim } from "@cfwk/shared";
+import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { DEFAULT_INVENTORY_SLOTS } from "@cfwk/shared";
@@ -126,6 +126,17 @@ const HARD_DISCREPANCY = 60;
 const RECONCILE_INTERVAL_MS = 80;
 const GAME_TPS = 20;
 
+type SoftCollisionBody = {
+    id: string;
+    kind: 'player' | 'ai';
+    x: number;
+    y: number;
+    halfWidth: number;
+    halfHeight: number;
+    pushX: number;
+    pushY: number;
+};
+
 /**
  * InstanceRoom - A Colyseus room representing a game world instance.
  * 
@@ -214,6 +225,17 @@ export class InstanceRoom extends Room<InstanceState> {
                 const player = this.state.players.get(client.sessionId);
                 if (player && player.odcid === data.userId) {
                     this.createDroppedItem(data.itemId, data.amount, player.x, player.y);
+                }
+            });
+        });
+
+        this.instanceManager.events.on('send_user', (data: { userId: string; locationId: string }) => {
+            this.clients.forEach(client => {
+                const player = this.state.players.get(client.sessionId);
+                if (player && player.odcid === data.userId) {
+                    client.send('server:transfer', {
+                        locationId: data.locationId
+                    });
                 }
             });
         });
@@ -315,6 +337,7 @@ export class InstanceRoom extends Room<InstanceState> {
             this.gameTick += 1;
             this.stepHardAuthorityMotion(deltaTime);
             this.stepAiNpcSimulation(deltaTime);
+            this.stepSoftEntityCollisions(deltaTime);
         }, 1000 / GAME_TPS);
 
         this.onMessage("ai:spawn", (client, data: { kind?: 'evil_tim'; x?: number; y?: number }) => {
@@ -346,7 +369,16 @@ export class InstanceRoom extends Room<InstanceState> {
         });
 
         this.onMessage("movement:frame", (client, frame: ClientMovementFrame) => {
-            this.markActivity(client);
+            const hasMovementInput = Boolean(
+                frame?.input?.up ||
+                frame?.input?.down ||
+                frame?.input?.left ||
+                frame?.input?.right ||
+                frame?.input?.sprint
+            );
+            if (hasMovementInput) {
+                this.markActivity(client);
+            }
             this.handleMovementFrame(client, frame);
         });
 
@@ -381,7 +413,6 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Handle animation sync
         this.onMessage("animation", (client, data: { anim: PlayerAnim; direction: number; isSprinting?: boolean }) => {
-            this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (player) {
                 player.anim = data.anim;
@@ -440,7 +471,7 @@ export class InstanceRoom extends Room<InstanceState> {
             }
 
             // Prevent shoving AFK-ghosted players (AFK for >= 1 minute)
-            if (target.isAfk && target.afkSince && Date.now() - target.afkSince >= 60000) {
+            if (target.isAfk) {
                 console.log(`[InstanceRoom] Shove rejected: target is AFK-ghosted`);
                 return;
             }
@@ -871,6 +902,13 @@ export class InstanceRoom extends Room<InstanceState> {
         // Register this connection
         if (odcid !== client.sessionId) {
             this.instanceManager.registerUserConnection(odcid, client.sessionId);
+
+            User.updateOne(
+                { _id: odcid },
+                { $set: { lastLocationId: this.state.locationId } }
+            ).catch((err) => {
+                console.error('[InstanceRoom] Failed to persist lastLocationId:', err);
+            });
         }
         
         // Store odcid on client for cleanup on leave
@@ -1388,6 +1426,139 @@ export class InstanceRoom extends Room<InstanceState> {
             schema.pathDebug = runtime.chasePath.length > 0
                 ? runtime.chasePath.map((point) => `${Math.round(point.x)},${Math.round(point.y)}`).join(';')
                 : '';
+        });
+    }
+
+    private stepSoftEntityCollisions(deltaTimeMs: number) {
+        const dtSec = this.clampNumber(deltaTimeMs / 1000, 0.001, 0.12);
+        const now = Date.now();
+        const bodies: SoftCollisionBody[] = [];
+
+        this.state.players.forEach((player, sessionId) => {
+            if (player.isAfk) return;
+            if (player.x === 0 && player.y === 0) return;
+
+            bodies.push({
+                id: sessionId,
+                kind: 'player',
+                x: player.x,
+                y: player.y,
+                halfWidth: SOFT_COLLISION_PLAYER_FOOT_HITBOX.width / 2,
+                halfHeight: SOFT_COLLISION_PLAYER_FOOT_HITBOX.height / 2,
+                pushX: 0,
+                pushY: 0
+            });
+        });
+
+        this.aiRuntimeById.forEach((runtime, id) => {
+            bodies.push({
+                id,
+                kind: 'ai',
+                x: runtime.x,
+                y: runtime.y,
+                halfWidth: Math.max(1, runtime.hitbox.width) / 2,
+                halfHeight: Math.max(1, runtime.hitbox.collidableHeight || runtime.hitbox.height) / 2,
+                pushX: 0,
+                pushY: 0
+            });
+        });
+
+        if (bodies.length < 2) return;
+
+        for (let i = 0; i < bodies.length; i += 1) {
+            const a = bodies[i];
+            for (let j = i + 1; j < bodies.length; j += 1) {
+                const b = bodies[j];
+
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const absDx = Math.abs(dx);
+                const absDy = Math.abs(dy);
+                const overlapX = (a.halfWidth + b.halfWidth) - absDx;
+                const overlapY = (a.halfHeight + b.halfHeight) - absDy;
+                if (overlapX <= 0 || overlapY <= 0) continue;
+
+                let dirX = dx;
+                let dirY = dy;
+                const dist = Math.hypot(dirX, dirY);
+                if (dist > SOFT_COLLISION_FORCE.epsilon) {
+                    dirX /= dist;
+                    dirY /= dist;
+                } else {
+                    dirX = a.id < b.id ? 1 : -1;
+                    dirY = 0;
+                }
+
+                const minOverlap = Math.min(overlapX, overlapY);
+                const overlapRatio = Math.min(
+                    overlapX / Math.max(1, a.halfWidth + b.halfWidth),
+                    overlapY / Math.max(1, a.halfHeight + b.halfHeight)
+                );
+                const pushMagnitude = this.clampNumber(
+                    minOverlap * SOFT_COLLISION_FORCE.pushScalar * (0.45 + overlapRatio * 0.55),
+                    0,
+                    SOFT_COLLISION_FORCE.maxPushPerStep
+                );
+
+                const pushX = dirX * pushMagnitude;
+                const pushY = dirY * pushMagnitude;
+
+                a.pushX -= pushX * 0.5;
+                a.pushY -= pushY * 0.5;
+                b.pushX += pushX * 0.5;
+                b.pushY += pushY * 0.5;
+            }
+        }
+
+        bodies.forEach((body) => {
+            const pushLen = Math.hypot(body.pushX, body.pushY);
+            if (pushLen < SOFT_COLLISION_FORCE.epsilon) return;
+
+            const velocityPushX = (body.pushX / dtSec) * SOFT_COLLISION_FORCE.velocityTransfer;
+            const velocityPushY = (body.pushY / dtSec) * SOFT_COLLISION_FORCE.velocityTransfer;
+
+            if (body.kind === 'player') {
+                const player = this.state.players.get(body.id);
+                if (!player || player.isAfk) return;
+
+                player.x += body.pushX;
+                player.y += body.pushY;
+                player.vx = this.clampNumber((player.vx || 0) + velocityPushX, -SPRINT_SPEED, SPRINT_SPEED);
+                player.vy = this.clampNumber((player.vy || 0) + velocityPushY, -SPRINT_SPEED, SPRINT_SPEED);
+                player.moveTs = now;
+
+                const runtime = this.movementRuntimeBySession.get(body.id);
+                if (runtime) {
+                    runtime.impulseVx += velocityPushX;
+                    runtime.impulseVy += velocityPushY;
+                    runtime.impulseActiveUntil = Math.max(runtime.impulseActiveUntil, now + 120);
+                    runtime.lastServerTime = now;
+                }
+
+                this.recordPositionSnapshot(body.id, player.x, player.y, now);
+
+                const client = this.clients.find((entry) => entry.sessionId === body.id);
+                if (client) {
+                    this.sendMovementReconcile(client, player, runtime?.lastSeq ?? 0, 'hard-server', false, 0, 'soft-collision');
+                }
+                return;
+            }
+
+            const runtime = this.aiRuntimeById.get(body.id);
+            const schema = this.state.aiNpcs.get(body.id);
+            if (!runtime || !schema) return;
+
+            runtime.x += body.pushX;
+            runtime.y += body.pushY;
+            runtime.vx += velocityPushX;
+            runtime.vy += velocityPushY;
+            runtime.moveTs = now;
+
+            schema.x = runtime.x;
+            schema.y = runtime.y;
+            schema.vx = runtime.vx;
+            schema.vy = runtime.vy;
+            schema.moveTs = runtime.moveTs;
         });
     }
 

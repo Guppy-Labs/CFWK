@@ -1,8 +1,10 @@
 import Phaser from 'phaser';
+import { SOFT_COLLISION_FORCE } from '@cfwk/shared';
 import { getTiledProperty, TiledObjectLayer } from '../map/TiledTypes';
 import { LightingManager } from '../fx/LightingManager';
-import { OcclusionManager } from '../map/OcclusionManager';
-import { createNameplate, getOcclusionAdjustedDepth } from '../player/PlayerVisualUtils';
+import type { OcclusionManager } from '../map/OcclusionManager';
+import { createNameplate } from '../player/PlayerVisualUtils';
+import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET } from '../rendering/DepthManager';
 import { getNpcDefinition } from './NPCRegistry';
 import { LocaleManager } from '../i18n/LocaleManager';
 
@@ -15,6 +17,7 @@ type NPCPoint = {
 type NPCManagerConfig = {
     baseDepth: number;
     occlusionManager?: OcclusionManager;
+    depthManager?: DepthManager;
     lightingManager?: LightingManager;
 };
 
@@ -30,6 +33,10 @@ type NPCInstance = {
     id: string;
     name: string;
     sprite: Phaser.GameObjects.Sprite;
+    baseX: number;
+    baseY: number;
+    softOffsetX: number;
+    softOffsetY: number;
     nameplate: Phaser.GameObjects.Container;
     nameplateYOffset: number;
     nameplateHeight: number;
@@ -40,7 +47,7 @@ type NPCInstance = {
 export class NPCManager {
     private scene: Phaser.Scene;
     private baseDepth: number;
-    private occlusionManager?: OcclusionManager;
+    private depthManager?: DepthManager;
     private lightingManager?: LightingManager;
     private tileSize = 32;
     private npcs: NPCInstance[] = [];
@@ -50,7 +57,7 @@ export class NPCManager {
     constructor(scene: Phaser.Scene, config: NPCManagerConfig) {
         this.scene = scene;
         this.baseDepth = config.baseDepth;
-        this.occlusionManager = config.occlusionManager;
+        this.depthManager = config.depthManager;
         this.lightingManager = config.lightingManager;
         this.localeChangedHandler = () => this.refreshNpcNames();
         window.addEventListener('locale:changed', this.localeChangedHandler as EventListener);
@@ -128,6 +135,37 @@ export class NPCManager {
         });
     }
 
+    getSoftCollisionBodies(): Array<{ id: string; x: number; y: number; width: number; height: number }> {
+        return this.npcs.map((npc) => ({
+            id: npc.id,
+            x: npc.sprite.x,
+            y: npc.sprite.y,
+            width: Math.max(1, npc.sprite.displayWidth),
+            height: 6
+        }));
+    }
+
+    applySoftCollisionNudge(id: string, dx: number, dy: number) {
+        const npc = this.npcs.find((entry) => entry.id === id);
+        if (!npc) return;
+
+        const length = Math.hypot(dx, dy);
+        if (!Number.isFinite(length) || length <= 0.0001) return;
+
+        const maxPerStep = SOFT_COLLISION_FORCE.maxPushPerStep;
+        const scale = length > maxPerStep ? (maxPerStep / length) : 1;
+        npc.softOffsetX += dx * scale;
+        npc.softOffsetY += dy * scale;
+
+        const offsetLength = Math.hypot(npc.softOffsetX, npc.softOffsetY);
+        const maxOffset = 4;
+        if (offsetLength > maxOffset) {
+            const clampScale = maxOffset / offsetLength;
+            npc.softOffsetX *= clampScale;
+            npc.softOffsetY *= clampScale;
+        }
+    }
+
     private getNpcPoints(map: Phaser.Tilemaps.Tilemap): NPCPoint[] {
         const points: NPCPoint[] = [];
         const objectLayers = map.objects as TiledObjectLayer[];
@@ -191,6 +229,10 @@ export class NPCManager {
                 id: def.id,
                 name: localizedName,
                 sprite,
+                baseX: point.x,
+                baseY: point.y,
+                softOffsetX: 0,
+                softOffsetY: 0,
                 nameplate,
                 nameplateYOffset: this.getNameplateYOffset(),
                 nameplateHeight: nameplate.getBounds().height,
@@ -216,23 +258,25 @@ export class NPCManager {
 
     update() {
         this.npcs.forEach((npc) => {
+            npc.softOffsetX *= 0.82;
+            npc.softOffsetY *= 0.82;
+            if (Math.abs(npc.softOffsetX) < 0.01) npc.softOffsetX = 0;
+            if (Math.abs(npc.softOffsetY) < 0.01) npc.softOffsetY = 0;
+
+            npc.sprite.setPosition(npc.baseX + npc.softOffsetX, npc.baseY + npc.softOffsetY);
             this.applyDepth(npc.sprite, npc.depthOffset);
             npc.nameplate.setPosition(npc.sprite.x, npc.sprite.y + npc.nameplateYOffset);
-            npc.nameplate.setDepth(this.baseDepth + 1000 + (npc.sprite.y * 0.001));
+            npc.nameplate.setDepth(ENTITY_BASE + NAMEPLATE_OFFSET);
         });
     }
 
     private applyDepth(sprite: Phaser.GameObjects.Sprite, depthOffset: number) {
         const feetY = sprite.getBottomLeft().y;
-        const depth = getOcclusionAdjustedDepth(
-            this.occlusionManager,
-            sprite.x,
-            feetY,
-            this.baseDepth + depthOffset,
-            false,
-            false
-        );
-        sprite.setDepth(depth);
+        if (this.depthManager) {
+            sprite.setDepth(this.depthManager.entityDepth(sprite.x, feetY, { baseDepth: this.baseDepth + depthOffset }));
+        } else {
+            sprite.setDepth(this.baseDepth + depthOffset + feetY * 0.01);
+        }
     }
 
     private getIdleTextureKey(id: string): string {
@@ -250,7 +294,7 @@ export class NPCManager {
             text: name,
             fontSize,
             yOffset: this.getNameplateYOffset(),
-            depth: this.baseDepth + 1000,
+            depth: ENTITY_BASE + NAMEPLATE_OFFSET,
             textColor: '#000000',
             hideBackground: true
         });

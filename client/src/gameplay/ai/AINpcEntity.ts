@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
-import { IAiNpcHitbox, IAiNpcState } from '@cfwk/shared';
-import { createNameplate, getOcclusionAdjustedDepth } from '../player/PlayerVisualUtils';
-import { OcclusionManager } from '../map/OcclusionManager';
+import { IAiNpcHitbox, IAiNpcState, SOFT_COLLISION_FORCE } from '@cfwk/shared';
+import { createNameplate } from '../player/PlayerVisualUtils';
+import type { OcclusionManager } from '../map/OcclusionManager';
+import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET } from '../rendering/DepthManager';
 import { LightingManager } from '../fx/LightingManager';
 import { WaterSystem } from '../fx/water/WaterSystem';
 import { PlayerShadow } from '../player/PlayerShadow';
@@ -12,6 +13,7 @@ export type AINpcEntityConfig = {
     state: IAiNpcState;
     baseDepth: number;
     occlusionManager?: OcclusionManager;
+    depthManager?: DepthManager;
     lightingManager?: LightingManager;
     groundLayers?: Phaser.Tilemaps.TilemapLayer[];
 };
@@ -26,7 +28,7 @@ export class AINpcEntity {
     private targetAnim: string;
     private targetDirection: number;
     private baseDepth: number;
-    private occlusionManager?: OcclusionManager;
+    private depthManager?: DepthManager;
     private debugPath: Array<{ x: number; y: number }> = [];
     private hitbox: IAiNpcHitbox;
     private waterSystem?: WaterSystem;
@@ -40,7 +42,7 @@ export class AINpcEntity {
         this.targetAnim = config.state.anim;
         this.targetDirection = Number.isFinite(config.state.direction) ? config.state.direction : 0;
         this.baseDepth = config.baseDepth;
-        this.occlusionManager = config.occlusionManager;
+        this.depthManager = config.depthManager;
         this.hitbox = {
             width: config.state.hitbox?.width ?? this.definition.frameWidth,
             height: config.state.hitbox?.height ?? this.definition.frameHeight,
@@ -60,7 +62,7 @@ export class AINpcEntity {
             text: this.definition.name,
             fontSize: this.isMobile() ? '10px' : '6px',
             yOffset: this.isMobile() ? -42 : -36,
-            depth: this.baseDepth + 1000,
+            depth: ENTITY_BASE + NAMEPLATE_OFFSET,
             textColor: '#000000',
             hideBackground: true
         }).container;
@@ -102,7 +104,7 @@ export class AINpcEntity {
 
         this.applyDepth();
         this.nameplate.setPosition(this.sprite.x, this.sprite.y + (this.isMobile() ? -42 : -36));
-        this.nameplate.setDepth(this.baseDepth + 1000);
+        this.nameplate.setDepth(ENTITY_BASE + NAMEPLATE_OFFSET);
 
         this.waterSystem?.update(delta);
         this.shadow?.update();
@@ -121,6 +123,31 @@ export class AINpcEntity {
 
     getPosition(): { x: number; y: number } {
         return { x: this.sprite.x, y: this.sprite.y };
+    }
+
+    getSoftCollisionFootprint(): { x: number; y: number; width: number; height: number } {
+        return {
+            x: this.sprite.x,
+            y: this.sprite.y,
+            width: Math.max(1, this.hitbox.width),
+            height: Math.max(1, this.hitbox.collidableHeight || this.hitbox.height)
+        };
+    }
+
+    applySoftCollisionNudge(dx: number, dy: number) {
+        const length = Math.hypot(dx, dy);
+        if (!Number.isFinite(length) || length <= 0.0001) return;
+
+        const maxPerStep = SOFT_COLLISION_FORCE.maxPushPerStep;
+        const scale = length > maxPerStep ? (maxPerStep / length) : 1;
+        const pushX = dx * scale;
+        const pushY = dy * scale;
+
+        this.sprite.x += pushX;
+        this.sprite.y += pushY;
+        this.targetX += pushX;
+        this.targetY += pushY;
+        this.nameplate.setPosition(this.sprite.x, this.sprite.y + (this.isMobile() ? -42 : -36));
     }
 
     getDebugHitbox(): { x: number; y: number; width: number; height: number } {
@@ -144,15 +171,11 @@ export class AINpcEntity {
 
     private applyDepth() {
         const feetY = this.sprite.getBottomLeft().y;
-        const depth = getOcclusionAdjustedDepth(
-            this.occlusionManager,
-            this.sprite.x,
-            feetY,
-            this.baseDepth,
-            false,
-            false
-        );
-        this.sprite.setDepth(depth);
+        if (this.depthManager) {
+            this.sprite.setDepth(this.depthManager.entityDepth(this.sprite.x, feetY, { baseDepth: this.baseDepth }));
+        } else {
+            this.sprite.setDepth(this.baseDepth + feetY * 0.01);
+        }
     }
 
     private parseDebugPath(rawPath?: string): Array<{ x: number; y: number }> {

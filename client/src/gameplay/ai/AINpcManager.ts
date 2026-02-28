@@ -5,10 +5,12 @@ import { LightingManager } from '../fx/LightingManager';
 import { OcclusionManager } from '../map/OcclusionManager';
 import { AINpcEntity } from './AINpcEntity';
 import { getAiNpcVisualDefinition } from './AINpcRegistry';
+import type { DepthManager } from '../rendering/DepthManager';
 
 export type AINpcManagerConfig = {
     baseDepth: number;
     occlusionManager?: OcclusionManager;
+    depthManager?: DepthManager;
     lightingManager?: LightingManager;
     groundLayers?: Phaser.Tilemaps.TilemapLayer[];
 };
@@ -39,6 +41,7 @@ export class AINpcManager {
                     state: npc,
                     baseDepth: this.config.baseDepth,
                     occlusionManager: this.config.occlusionManager,
+                    depthManager: this.config.depthManager,
                     lightingManager: this.config.lightingManager,
                     groundLayers: this.config.groundLayers
                 });
@@ -79,6 +82,10 @@ export class AINpcManager {
 
     update(delta: number) {
         this.entities.forEach((entity) => entity.update(delta));
+    }
+
+    getEntities(): Map<string, AINpcEntity> {
+        return this.entities;
     }
 
     getDebugHitboxes(): Array<{ x: number; y: number; width: number; height: number }> {

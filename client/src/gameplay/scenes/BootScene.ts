@@ -46,13 +46,20 @@ export class BootScene extends Phaser.Scene {
     }
 
     private async requestInstance() {
+        const joinLocationOverride = localStorage.getItem('cfwk_join_location_override') || undefined;
+        const lastLocationId = localStorage.getItem('cfwk_last_location_id') || undefined;
+        const requestedLocationId = joinLocationOverride || lastLocationId;
+        if (joinLocationOverride) {
+            localStorage.removeItem('cfwk_join_location_override');
+        }
+
         localStorage.removeItem('cfwk_afk');
         localStorage.removeItem('cfwk_limbo_reason');
         localStorage.removeItem('cfwk_limbo_message');
         localStorage.removeItem('cfwk_disconnected');
 
         const attemptJoin = async () => {
-            const instance = await this.networkManager.requestInstance('lobby');
+            const instance = await this.networkManager.requestInstance(requestedLocationId);
             if (!instance) return null;
             
             // Pass user data when connecting

@@ -24,6 +24,7 @@ export class SettingsLanguagePanel {
     private onLanguageSelect?: (locale: string) => void;
     private debugMenuChangedHandler?: (_parent: unknown, value: boolean) => void;
     private textureCounter = 0;
+    private generatedTextureKeys = new Set<string>();
     private lastLayout?: {
         rightPageLeftEdgeX: number;
         rightPageTopEdgeY: number;
@@ -83,6 +84,12 @@ export class SettingsLanguagePanel {
             this.scene.registry.events.off('changedata-debugMenuActive', this.debugMenuChangedHandler);
             this.debugMenuChangedHandler = undefined;
         }
+        this.generatedTextureKeys.forEach((key) => {
+            if (this.scene.textures.exists(key)) {
+                this.scene.textures.remove(key);
+            }
+        });
+        this.generatedTextureKeys.clear();
         this.container.destroy();
     }
 
@@ -157,7 +164,11 @@ export class SettingsLanguagePanel {
         const textY = Math.floor((this.buttonHeight - 8) / 2);
         ctx.drawImage(textCanvas, textX, textY);
 
+        if (this.scene.textures.exists(rtKey)) {
+            this.scene.textures.remove(rtKey);
+        }
         this.scene.textures.addCanvas(rtKey, canvas);
+        this.generatedTextureKeys.add(rtKey);
         return rtKey;
     }
 

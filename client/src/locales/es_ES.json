@@ -108,8 +108,7 @@
 	"loader": {
 		"authenticating": "Autenticando...",
 		"initializingGame": "Iniciando juego...",
-		"loadingCharacter": "Cargando personaje...",
-		"preparingCharacter": "Preparando personaje...",
+		"finishingUp": "Finalizando...",
 		"preparingWorld": "Preparando mundo...",
 		"loadingWorld": "Cargando mundo..."
 	},

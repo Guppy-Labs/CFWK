@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { WaterDepthEffect } from './WaterDepthEffect';
+import { SPLASH_OFFSET, WET_FOOTPRINT_DEPTH } from '../../rendering/DepthBands';
 
 /**
  * Configuration for water detection and effects
@@ -136,7 +137,7 @@ export class WaterSystem {
             quantity: 0,
             emitting: false
         });
-        this.splashEmitter.setDepth(this.player.depth + 1);
+        this.splashEmitter.setDepth(this.player.depth + SPLASH_OFFSET);
     }
 
     /**
@@ -227,7 +228,7 @@ export class WaterSystem {
         if (dist < this.config.footprintSpacing) return;
 
         const footprint = this.scene.add.sprite(x, y, 'wet-footprint');
-        footprint.setDepth(15);
+        footprint.setDepth(WET_FOOTPRINT_DEPTH);
         footprint.setAlpha(0.7);
         footprint.setRotation(Phaser.Math.DegToRad(Phaser.Math.Between(-15, 15)));
 
@@ -407,7 +408,7 @@ export class WaterSystem {
         this.updateFootprints();
 
         if (this.splashEmitter) {
-            this.splashEmitter.setDepth(this.player.depth + 1);
+            this.splashEmitter.setDepth(this.player.depth + SPLASH_OFFSET);
         }
     }
 

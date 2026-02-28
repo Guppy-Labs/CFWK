@@ -177,6 +177,10 @@ export class MCAnimationController {
                     });
                 }
 
+                if (this.scene.anims.exists(animKey)) {
+                    this.scene.anims.remove(animKey);
+                }
+
                 this.scene.anims.create({
                     key: animKey,
                     frames: frames,

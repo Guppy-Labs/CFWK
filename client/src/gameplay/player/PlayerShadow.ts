@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { LightingManager } from '../fx/LightingManager';
+import { ENTITY_BASE, SHADOW_OFFSET } from '../rendering/DepthBands';
 
 type ShadowTarget = {
     x: number;
@@ -44,7 +45,7 @@ export class PlayerShadow {
             this.baseAlpha
         );
 
-        this.shadow.setDepth((target.depth ?? 260) - 1);
+        this.shadow.setDepth((target.depth ?? ENTITY_BASE) + SHADOW_OFFSET);
     }
 
     /**
@@ -66,8 +67,8 @@ export class PlayerShadow {
 
         this.shadow.setPosition(this.target.x, this.target.y + this.offsetY);
 
-        const targetDepth = (this.target as any).depth ?? 260;
-        this.shadow.setDepth(targetDepth - 1);
+        const targetDepth = (this.target as any).depth ?? ENTITY_BASE;
+        this.shadow.setDepth(targetDepth + SHADOW_OFFSET);
 
         // Scale alpha based on lighting
         if (this.lightingManager) {

@@ -85,6 +85,10 @@ export class MCAfkManager {
         }
     }
 
+    isAfkGhosted(): boolean {
+        return this.isAfk;
+    }
+
     destroy() {
         if (this.afkActivityHandler) {
             this.scene.registry.events.off('changedata-afkActivity', this.afkActivityHandler);

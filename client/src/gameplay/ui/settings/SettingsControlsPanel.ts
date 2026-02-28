@@ -67,6 +67,7 @@ export class SettingsControlsPanel {
     private readonly labelRightPadding = 2;
 
     private textureCounter = 0;
+    private generatedTextureKeys = new Set<string>();
 
     constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container, config?: SettingsControlsPanelConfig) {
         this.scene = scene;
@@ -144,6 +145,12 @@ export class SettingsControlsPanel {
         window.removeEventListener('keydown', this.handleCaptureKeyDown, { capture: true } as AddEventListenerOptions);
         this.unsubscribeKeybinds?.();
         this.unsubscribeKeybinds = undefined;
+        this.generatedTextureKeys.forEach((key) => {
+            if (this.scene.textures.exists(key)) {
+                this.scene.textures.remove(key);
+            }
+        });
+        this.generatedTextureKeys.clear();
         this.container.destroy();
     }
 
@@ -255,7 +262,11 @@ export class SettingsControlsPanel {
         ctx.drawImage(srcImage, border, srcH - border, centerSrcW, border, border, border + centerH, centerW, border);
         ctx.drawImage(srcImage, srcW - border, srcH - border, border, border, border + centerW, border + centerH, border, border);
 
+        if (this.scene.textures.exists(textureKey)) {
+            this.scene.textures.remove(textureKey);
+        }
         this.scene.textures.addCanvas(textureKey, canvas);
+        this.generatedTextureKeys.add(textureKey);
         return textureKey;
     }
 

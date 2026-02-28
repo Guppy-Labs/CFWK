@@ -41,6 +41,7 @@ export interface IUser extends Document {
   premiumTier?: 'shark' | null;
   premiumCurrentPeriodEnd?: Date;
   betaAccessUntil?: Date | null;
+  lastLocationId?: string | null;
   settings?: IUserSettings;
   playerStats?: IPlayerStats;
 }
@@ -177,6 +178,7 @@ const UserSchema: Schema = new Schema({
   premiumTier: { type: String, default: null },
   premiumCurrentPeriodEnd: { type: Date },
   betaAccessUntil: { type: Date, default: null },
+  lastLocationId: { type: String, default: null },
   settings: {
     type: {
       language: { type: String, default: DEFAULT_USER_SETTINGS.language },

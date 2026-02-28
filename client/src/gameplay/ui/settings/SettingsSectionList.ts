@@ -46,6 +46,7 @@ export class SettingsSectionList {
     private readonly offsetY = 10;
 
     private textureCounter = 0;
+    private generatedTextureKeys = new Set<string>();
 
     constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container, config?: SettingsSectionListConfig) {
         this.scene = scene;
@@ -254,8 +255,22 @@ export class SettingsSectionList {
         const textCanvas = this.renderTextCanvas(label, textColor);
         ctx.drawImage(textCanvas, textX, textY);
 
+        if (this.scene.textures.exists(rtKey)) {
+            this.scene.textures.remove(rtKey);
+        }
         this.scene.textures.addCanvas(rtKey, canvas);
+        this.generatedTextureKeys.add(rtKey);
         return rtKey;
+    }
+
+    destroy() {
+        this.generatedTextureKeys.forEach((key) => {
+            if (this.scene.textures.exists(key)) {
+                this.scene.textures.remove(key);
+            }
+        });
+        this.generatedTextureKeys.clear();
+        this.container.destroy();
     }
 
     private renderTextCanvas(text: string, color: string) {

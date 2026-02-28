@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { DUST_OFFSET } from '../rendering/DepthBands';
 
 /**
  * Creates dust particle effects at the player's feet.
@@ -91,7 +92,7 @@ export class DustParticleSystem {
         });
 
         // Set depth just below player
-        this.emitter.setDepth(this.target.depth - 2);
+        this.emitter.setDepth(this.target.depth + DUST_OFFSET);
     }
 
     /**
@@ -210,7 +211,7 @@ export class DustParticleSystem {
         this.lastY = this.target.y;
 
         // Keep emitter depth synced
-        this.emitter.setDepth(this.target.depth - 2);
+        this.emitter.setDepth(this.target.depth + DUST_OFFSET);
     }
 
     /**

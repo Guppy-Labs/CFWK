@@ -84,6 +84,14 @@ export class InstanceManager {
             isPublic: true
         });
 
+        this.registerLocation({
+            id: "anchor-hollow",
+            name: "Anchor Hollow",
+            mapFile: "anchor-hollow.tmj",
+            maxPlayers: 15,
+            isPublic: true
+        });
+
     }
 
     /**

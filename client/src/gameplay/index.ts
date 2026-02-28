@@ -106,6 +106,13 @@ export function hideLoader() {
     }, 1100); // Wait for all animations to finish
 }
 
+export function showLoader() {
+    const loader = document.getElementById('game-loader');
+    if (!loader) return;
+    loader.classList.remove('exiting');
+    loader.style.display = 'flex';
+}
+
 export function setLoaderText(text: string) {
     const loaderText = document.getElementById('loader-text');
     if (loaderText) loaderText.textContent = text;

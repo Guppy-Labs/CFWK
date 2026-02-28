@@ -105,6 +105,7 @@ export class InventorySlotsUI {
 
     private trackTextureCounter = 0;
     private currentTrackTextureKey?: string;
+    private generatedTextureKeys = new Set<string>();
     private readonly trackSourceWidth = 44;
     private readonly trackSourceHeight = 5;
     private readonly trackBorder = 2;
@@ -174,6 +175,45 @@ export class InventorySlotsUI {
         this.container.setVisible(visible);
     }
 
+    destroy() {
+        this.clearSelection();
+
+        if (this.wheelHandler) {
+            this.scene.input.off('wheel', this.wheelHandler);
+            this.wheelHandler = undefined;
+        }
+        if (this.pointerMoveHandler) {
+            this.scene.input.off('pointermove', this.pointerMoveHandler);
+            this.pointerMoveHandler = undefined;
+        }
+        if (this.pointerDownHandler) {
+            this.scene.input.off('pointerdown', this.pointerDownHandler);
+            this.pointerDownHandler = undefined;
+        }
+        if (this.pointerUpHandler) {
+            this.scene.input.off('pointerup', this.pointerUpHandler);
+            this.scene.input.off('pointerupoutside', this.pointerUpHandler);
+            this.pointerUpHandler = undefined;
+        }
+
+        this.mask?.destroy();
+        this.mask = undefined;
+        this.indicatorMask?.destroy();
+        this.indicatorMask = undefined;
+
+        this.generatedTextureKeys.forEach((key) => {
+            if (this.scene.textures.exists(key)) {
+                this.scene.textures.remove(key);
+            }
+        });
+        this.generatedTextureKeys.clear();
+        this.countTextureCache.clear();
+
+        this.container.destroy();
+        this.maskGraphics.destroy();
+        this.indicatorMaskGraphics.destroy();
+    }
+
     setSlots(slots: InventorySlotDisplay[], filterCategories: string[] | null) {
         this.slots = slots;
         this.filterCategories = filterCategories;
@@ -206,7 +246,9 @@ export class InventorySlotsUI {
         this.onItemSelect?.(null, -1);
         if (this.selectedIndicator) {
             this.selectedIndicator.setVisible(false);
-            this.selectedIndicator.stop();
+            if (this.selectedIndicator.anims) {
+                this.selectedIndicator.anims.stop();
+            }
         }
         this.selectedSlotIndex = undefined;
         this.dragStartIndex = undefined;
@@ -876,7 +918,11 @@ export class InventorySlotsUI {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         const key = `__inv_count_${this.countTextureCounter++}`;
+        if (this.scene.textures.exists(key)) {
+            this.scene.textures.remove(key);
+        }
         this.scene.textures.addCanvas(key, canvas);
+        this.generatedTextureKeys.add(key);
         this.countTextureCache.set(text, key);
         return key;
     }
@@ -922,7 +968,11 @@ export class InventorySlotsUI {
         ctx.drawImage(srcImage, border, srcH - border, centerSrcW, border, border, border + centerH, centerW, border);
         ctx.drawImage(srcImage, srcW - border, srcH - border, border, border, border + centerW, border + centerH, border, border);
 
+        if (this.scene.textures.exists(rtKey)) {
+            this.scene.textures.remove(rtKey);
+        }
         this.scene.textures.addCanvas(rtKey, canvas);
+        this.generatedTextureKeys.add(rtKey);
         return rtKey;
     }
 }

@@ -108,8 +108,7 @@
   "loader": {
     "authenticating": "Authenticating...",
     "initializingGame": "Initializing game...",
-    "loadingCharacter": "Loading character...",
-    "preparingCharacter": "Preparing character...",
+    "finishingUp": "Finishing Up...",
     "preparingWorld": "Preparing world...",
     "loadingWorld": "Loading world..."
   },

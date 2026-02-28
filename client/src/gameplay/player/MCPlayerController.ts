@@ -7,16 +7,16 @@ import { TiledObjectLayer } from '../map/TiledTypes';
 import { MCAnimationController } from './MCAnimationController';
 import { PlayerShadow } from './PlayerShadow';
 import { NetworkManager } from '../network/NetworkManager';
-import { createNameplate, getOcclusionAdjustedDepth } from './PlayerVisualUtils';
+import { createNameplate } from './PlayerVisualUtils';
 import { currentUser } from '../index';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 import { InteractionManager, InteractionType } from '../interaction/InteractionManager';
 import { DroppedItemManager } from '../items/DroppedItemManager';
 import { RemotePlayerManager } from './RemotePlayerManager';
-import { OcclusionManager } from '../map/OcclusionManager';
 import type { NPCManager } from '../npc/NPCManager';
 import type { LightingManager } from '../fx/LightingManager';
-import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE, ClientMovementFrame, ServerMovementReconcile, ServerMovementImpulse } from '@cfwk/shared';
+import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET } from '../rendering/DepthManager';
+import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE, ClientMovementFrame, ServerMovementReconcile, ServerMovementImpulse, SOFT_COLLISION_FORCE, PLAYER_RENDER_SCALE } from '@cfwk/shared';
 import { MCInputManager } from './mc/MCInputManager';
 import { MCBubbleManager } from './mc/MCBubbleManager';
 import { MCAfkManager } from './mc/MCAfkManager';
@@ -30,7 +30,7 @@ export type MCPlayerControllerConfig = {
     rotationRateMaxDegPerSec?: number;
     depth?: number;
     scale?: number;
-    occlusionManager?: OcclusionManager | undefined;
+    depthManager?: DepthManager;
     maxStamina?: number;
     staminaDrainRate?: number;
     staminaRegenRate?: number;
@@ -48,7 +48,7 @@ export class MCPlayerController {
     private isFishing = false;
     private onFishingStart?: (rodItemId: string) => void;
 
-    private config: Required<Omit<MCPlayerControllerConfig, 'occlusionManager'>> & { occlusionManager?: OcclusionManager };
+    private config: Required<Omit<MCPlayerControllerConfig, 'depthManager'>> & { depthManager?: DepthManager };
 
     private characterAppearance: ICharacterAppearance = DEFAULT_CHARACTER_APPEARANCE;
     private isInitialized = false;
@@ -95,7 +95,7 @@ export class MCPlayerController {
     private nameplateHeight = 0;
 
     private speedMultiplier = 1.0;
-    private _occlusionManager?: OcclusionManager;
+    private _depthManager?: DepthManager;
     private _lightingManager?: LightingManager;
 
     private readonly hitboxWidth = 16;
@@ -117,16 +117,15 @@ export class MCPlayerController {
             drag: config.drag ?? 0.5,
             rotationRateMinDegPerSec: config.rotationRateMinDegPerSec ?? 180,
             rotationRateMaxDegPerSec: config.rotationRateMaxDegPerSec ?? 540,
-            depth: config.depth ?? 260,
-            scale: config.scale ?? 1.2,
-            occlusionManager: config.occlusionManager,
+            depth: config.depth ?? ENTITY_BASE,
+            scale: config.scale ?? PLAYER_RENDER_SCALE,
             maxStamina: config.maxStamina ?? 1,
             staminaDrainRate: config.staminaDrainRate ?? 0.3,
             staminaRegenRate: config.staminaRegenRate ?? 0.25,
             staminaRegenDelay: config.staminaRegenDelay ?? 1.0
         };
 
-        this._occlusionManager = config.occlusionManager;
+        this._depthManager = config.depthManager;
 
         this.animationController = new MCAnimationController(scene, {
             walkFrameRate: 10,
@@ -285,14 +284,14 @@ export class MCPlayerController {
         const guiOpen = this.scene.registry.get('guiOpen') === true;
         const chatFocused = this.scene.registry.get('chatFocused') === true;
         const transitionBlocked = this.scene.registry.get('inputBlocked') === true;
-        const inputBlocked = guiOpen || chatFocused || transitionBlocked || interactionLocked;
+        const inputBlocked = guiOpen || chatFocused || transitionBlocked;
 
         if (!inputBlocked) {
             const actionPresses = this.inputManager.getActionPresses();
-            if (actionPresses.interactPressed) {
+            if (actionPresses.interactPressed && !interactionLocked) {
                 this.tryInteract();
             }
-            if (actionPresses.fishingPressed) {
+            if (actionPresses.fishingPressed && !interactionLocked) {
                 this.tryStartFishing();
             }
         }
@@ -410,14 +409,9 @@ export class MCPlayerController {
         this.bubbleManager.update();
 
         const feetY = this.player.getBottomLeft().y;
-        const depth = getOcclusionAdjustedDepth(
-            this._occlusionManager,
-            this.player.x,
-            feetY,
-            this.config.depth ?? 260,
-            false,
-            false
-        );
+        const depth = this._depthManager
+            ? this._depthManager.entityDepth(this.player.x, feetY, { baseDepth: this.config.depth ?? ENTITY_BASE })
+            : (this.config.depth ?? ENTITY_BASE) + feetY * 0.01;
         this.player.setDepth(depth);
 
         this.guiEffect?.update(this.player.x, this.player.y);
@@ -687,8 +681,8 @@ export class MCPlayerController {
         this.interactionManager.setNpcManager(manager);
     }
 
-    setOcclusionManager(manager: OcclusionManager) {
-        this._occlusionManager = manager;
+    setDepthManager(manager: DepthManager) {
+        this._depthManager = manager;
     }
 
     setLightingManager(manager: LightingManager) {
@@ -711,6 +705,42 @@ export class MCPlayerController {
 
     getStamina(): number {
         return this.stamina;
+    }
+
+    getSoftCollisionFootprint(): { x: number; y: number; width: number; height: number } | null {
+        if (!this.player || !this.player.active || !this.player.body) return null;
+        const scale = this.config.scale ?? 1;
+        return {
+            x: this.player.x,
+            y: this.player.y,
+            width: this.hitboxWidth * scale,
+            height: this.collidableHeight * scale
+        };
+    }
+
+    isAfkGhosted(): boolean {
+        return this.afkManager.isAfkGhosted();
+    }
+
+    applySoftCollisionNudge(dx: number, dy: number) {
+        if (this.isAfkGhosted()) return;
+        if (!this.player?.body) return;
+
+        const length = Math.hypot(dx, dy);
+        if (!Number.isFinite(length) || length <= 0.0001) return;
+
+        const maxPerStep = SOFT_COLLISION_FORCE.maxPushPerStep;
+        const scale = length > maxPerStep ? (maxPerStep / length) : 1;
+        const pushX = dx * scale;
+        const pushY = dy * scale;
+
+        this.player.setPosition(this.player.x + pushX, this.player.y + pushY);
+        this.impulseVx += pushX * 7;
+        this.impulseVy += pushY * 7;
+
+        if (this.localNameplate) {
+            this.localNameplate.setPosition(this.player.x, this.player.y + this.nameplateYOffset);
+        }
     }
 
     setForcedFacingTarget(targetAngle?: number) {
@@ -782,6 +812,8 @@ export class MCPlayerController {
         this.guiEffect?.destroy();
         this.interactionManager?.destroy();
         this.animationController?.destroy();
+        this.player?.destroy();
+        this.player = undefined;
     }
 
     private createLocalNameplate() {
@@ -800,7 +832,7 @@ export class MCPlayerController {
             isPremium: currentUser?.isPremium,
             fontSize,
             yOffset: this.nameplateYOffset,
-            depth: (this.config.depth ?? 260) + 1000
+            depth: (this.config.depth ?? ENTITY_BASE) + NAMEPLATE_OFFSET
         });
 
         this.localNameplate = nameplate.container;

@@ -10,6 +10,12 @@ export type TiledMapObject = {
     y: number;
     width?: number;
     height?: number;
+    gid?: number;
+    flippedHorizontal?: boolean;
+    flippedVertical?: boolean;
+    flippedAntiDiagonal?: boolean;
+    rotation?: number;
+    visible?: boolean;
     point?: boolean;
     polygon?: { x: number; y: number }[];
     properties?: { name: string; type: string; value: any }[];
@@ -31,8 +37,17 @@ export type TiledTilesetData = {
     margin?: number;
     spacing?: number;
     image?: string;
+    columns?: number;
+    tilecount?: number;
+    tileoffset?: {
+        x?: number;
+        y?: number;
+    };
     tiles?: {
         id: number;
+        image?: string;
+        imagewidth?: number;
+        imageheight?: number;
         animation?: { duration: number; tileid: number }[];
     }[];
 };
@@ -45,6 +60,18 @@ export type TilesetEntry = {
 
 export type OccludableLayer = {
     layer: Phaser.Tilemaps.TilemapLayer;
+    baseDepth: number;
+    tag: string;
+    order: number;
+};
+
+/**
+ * An object-tile layer (Tiled `objectgroup` containing tile GID objects).
+ * Rendered as individual `Phaser.GameObjects.Image` instances that share
+ * the same depth and can be elevated by the OcclusionManager.
+ */
+export type OccludableObjectGroup = {
+    images: Phaser.GameObjects.Image[];
     baseDepth: number;
     tag: string;
     order: number;

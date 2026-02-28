@@ -616,6 +616,7 @@ export class SettingsTabUI {
         }
         this.soundPanel.destroy();
         this.videoPanel.destroy();
+        this.sectionList.destroy();
         this.languagePanel.destroy();
         this.controlsPanel.destroy();
         this.statisticsPanel.destroy();

@@ -26,6 +26,8 @@ import { InstanceManager } from "./managers/InstanceManager";
 import { InventoryCache } from "./managers/InventoryCache";
 import { PlayerStatsCache } from "./managers/PlayerStatsCache";
 import { startBetaCampaignMonitor } from "./utils/betaCampaignMonitor";
+import User from "./models/User";
+import { DEFAULT_FIRST_CONNECT_LOCATION_ID, FALLBACK_LOCATION_ID } from "./config/instance";
 
 // Load environment variables from common locations
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
@@ -128,7 +130,27 @@ gameServer.define("instance", InstanceRoom);
 // API endpoint to join an instance
 app.post("/api/instance/join", async (req, res) => {
     try {
-        const locationId = req.body.locationId || "lobby";
+        const requestedLocationId = typeof req.body?.locationId === 'string'
+            ? req.body.locationId.trim().toLowerCase()
+            : '';
+
+        let locationId = requestedLocationId;
+
+        if (!locationId && req.user && (req.user as any)._id) {
+            const user = await User.findById((req.user as any)._id).select('lastLocationId');
+            if (user?.lastLocationId) {
+                locationId = user.lastLocationId.trim().toLowerCase();
+            }
+        }
+
+        if (!locationId) {
+            locationId = DEFAULT_FIRST_CONNECT_LOCATION_ID;
+        }
+
+        if (!instanceManager.getLocationConfig(locationId)) {
+            locationId = FALLBACK_LOCATION_ID;
+        }
+
         const instance = await instanceManager.getOrCreateInstance(locationId);
         
         if (!instance) {

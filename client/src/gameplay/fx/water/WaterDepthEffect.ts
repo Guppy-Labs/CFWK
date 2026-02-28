@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { WATER_OVERLAY_OFFSET, WATER_UNDER_OFFSET } from '../../rendering/DepthBands';
 
 /**
  * Configuration for water depth effects
@@ -86,7 +87,7 @@ export class WaterDepthEffect {
         
         // Create fade overlay for water line (semi-transparent gradient effect)
         this.fadeOverlay = this.scene.add.graphics();
-        this.fadeOverlay.setDepth(this.player.depth + 0.01);
+        this.fadeOverlay.setDepth(this.player.depth + WATER_OVERLAY_OFFSET);
         
         // Create bitmap mask from player sprite so fade only shows over visible pixels
         this.fadeMask = new Phaser.Display.Masks.BitmapMask(this.scene, this.player);
@@ -104,7 +105,7 @@ export class WaterDepthEffect {
         this.underwaterSprite.setAlpha(this.underwaterAlpha);
         this.underwaterSprite.setTint(this.underwaterTint);
         this.underwaterSprite.setVisible(false);
-        this.underwaterSprite.setDepth(this.player.depth - 0.01);
+        this.underwaterSprite.setDepth(this.player.depth + WATER_UNDER_OFFSET);
 
         this.underwaterMaskGraphics = this.scene.add.graphics();
         this.underwaterMaskGraphics.setVisible(false);
@@ -311,7 +312,7 @@ export class WaterDepthEffect {
 
         // Clear fade overlay
         this.fadeOverlay?.clear();
-        this.fadeOverlay?.setDepth(this.player.depth + 0.01);
+        this.fadeOverlay?.setDepth(this.player.depth + WATER_OVERLAY_OFFSET);
 
         this.syncUnderwaterSprite();
 

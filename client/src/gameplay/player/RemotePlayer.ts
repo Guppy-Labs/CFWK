@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
-import { OcclusionManager } from '../map/OcclusionManager';
+import type { OcclusionManager } from '../map/OcclusionManager';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 import { SharedMCTextures } from './SharedMCTextures';
 import { WaterSystem } from '../fx/water/WaterSystem';
 import { PlayerShadow } from './PlayerShadow';
-import { createChatBubble, createIconBubble, createNameplate, getOcclusionAdjustedDepth } from './PlayerVisualUtils';
-import { MCAnimationType, MC_FRAME_DIMENSIONS_BY_ANIM } from '@cfwk/shared';
+import { createChatBubble, createIconBubble, createNameplate } from './PlayerVisualUtils';
+import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET, CHAT_BUBBLE_DEPTH } from '../rendering/DepthManager';
+import { MCAnimationType, MC_FRAME_DIMENSIONS_BY_ANIM, SOFT_COLLISION_FORCE, PLAYER_RENDER_SCALE } from '@cfwk/shared';
 import type { LightingManager } from '../fx/LightingManager';
 
 /**
@@ -80,6 +81,7 @@ export type RemotePlayerConfig = {
     direction: number;
     depth: number;
     occlusionManager?: OcclusionManager;
+    depthManager?: DepthManager;
     skipSpawnEffect?: boolean; // True for players already in room on initial sync
     isAfk?: boolean; // Initial AFK state
     afkSince?: number; // Server timestamp (ms) when AFK started
@@ -116,7 +118,7 @@ export class RemotePlayer {
     private currentAnim: string = 'idle';
     private playerColor: number = 0xffffff;
     private baseDepth: number;
-    private occlusionManager?: OcclusionManager;
+    private depthManager?: DepthManager;
     private chatBubble?: Phaser.GameObjects.Container;
     private chatTimer?: Phaser.Time.TimerEvent;
     private fishingBubble?: Phaser.GameObjects.Container;
@@ -132,7 +134,7 @@ export class RemotePlayer {
     private readonly interpolationBufferMax = 40;
     private interpolationBuffer: Array<{ time: number; x: number; y: number }> = [];
     private readonly chatBubbleGap = 10;
-    private readonly scale = 1.2;
+    private readonly scale = PLAYER_RENDER_SCALE;
     private readonly hitboxWidth = 16;
     private readonly collidableHeight = 6;
     private readonly walkFrameRate = 10;
@@ -177,7 +179,7 @@ export class RemotePlayer {
         this.targetY = config.y;
         this.currentDirection = config.direction as Direction;
         this.baseDepth = config.depth;
-        this.occlusionManager = config.occlusionManager;
+        this.depthManager = config.depthManager;
         this.lightingManager = config.lightingManager;
         this.customAnimationKeyGetter = config.customAnimationKeyGetter;
         this.walkAnimSpeedMin = config.walkAnimSpeedMin ?? this.walkAnimSpeedMin;
@@ -249,8 +251,7 @@ export class RemotePlayer {
         
         // Match MCPlayerController dimensions exactly:
         // - Base dimensions: 16x27 (MC_FRAME_DIMENSIONS['S'])
-        // - Scale: 1.2
-        // - Collidable height: 6 * 1.5 = 9
+        // - Scale: PLAYER_RENDER_SCALE
         const baseHeight = 27;
         const scaledHeight = baseHeight * this.scale;
         const collidableHeight = this.collidableHeight * this.scale;
@@ -282,9 +283,9 @@ export class RemotePlayer {
         this.spawnStartTime = this.scene.time.now;
         this.particles = [];
 
-        // Get player dimensions (match MCPlayerController: 16x27 base, 1.2 scale)
-        const width = 16 * 1.2;
-        const height = 27 * 1.2;
+        // Get player dimensions (match MCPlayerController: 16x27 base, PLAYER_RENDER_SCALE)
+        const width = 16 * this.scale;
+        const height = 27 * this.scale;
         const pixelSize = 2;
         const numParticles = 40; // Number of particles to use
 
@@ -305,7 +306,7 @@ export class RemotePlayer {
             const targetY = this.sprite.y + localY - 16; // Offset for origin
 
             const graphics = this.scene.add.graphics();
-            graphics.setDepth(this.baseDepth + 1);
+            graphics.setDepth(ENTITY_BASE + 1);
             
             this.particles.push({
                 graphics,
@@ -334,9 +335,9 @@ export class RemotePlayer {
         this.sprite.setAlpha(0);
         this.nameplate.setAlpha(0);
 
-        // Get player dimensions (match MCPlayerController: 16x27 base, 1.2 scale)
-        const width = 16 * 1.2;
-        const height = 27 * 1.2;
+        // Get player dimensions (match MCPlayerController: 16x27 base, PLAYER_RENDER_SCALE)
+        const width = 16 * this.scale;
+        const height = 27 * this.scale;
         const pixelSize = 2;
         const numParticles = 40;
 
@@ -356,7 +357,7 @@ export class RemotePlayer {
             const targetY = startY + Math.sin(angle) * distance;
 
             const graphics = this.scene.add.graphics();
-            graphics.setDepth(this.baseDepth + 1);
+            graphics.setDepth(ENTITY_BASE + 1);
             
             this.particles.push({
                 graphics,
@@ -379,7 +380,7 @@ export class RemotePlayer {
             isPremium: this.isPremium,
             fontSize,
             yOffset: this.nameplateYOffset,
-            depth: this.baseDepth + 1000,
+            depth: ENTITY_BASE + NAMEPLATE_OFFSET,
             includeAfkTimer: true
         });
 
@@ -637,14 +638,9 @@ export class RemotePlayer {
         
         // Calculate depth with Y-sorting and occlusion awareness
         const feetY = this.sprite.getBottomLeft().y;
-        const depth = getOcclusionAdjustedDepth(
-            this.occlusionManager,
-            this.sprite.x,
-            feetY,
-            this.baseDepth,
-            true,
-            false
-        );
+        const depth = this.depthManager
+            ? this.depthManager.entityDepth(this.sprite.x, feetY, { baseDepth: this.baseDepth })
+            : this.baseDepth + feetY * 0.01;
         this.sprite.setDepth(depth);
         
         // Update nameplate position (above the sprite, accounting for origin)
@@ -652,11 +648,11 @@ export class RemotePlayer {
 
         if (this.chatBubble) {
             this.positionChatBubble();
-            this.chatBubble.setDepth(99999); // Always top
+            this.chatBubble.setDepth(CHAT_BUBBLE_DEPTH); // Always top
         }
         if (this.fishingBubble) {
             this.positionFishingBubble();
-            this.fishingBubble.setDepth(99999);
+            this.fishingBubble.setDepth(CHAT_BUBBLE_DEPTH);
         }
 
         // Update AFK transparency
@@ -810,6 +806,42 @@ export class RemotePlayer {
         return this.sprite;
     }
 
+    getSoftCollisionFootprint(): { x: number; y: number; width: number; height: number } {
+        return {
+            x: this.sprite.x,
+            y: this.sprite.y,
+            width: this.hitboxWidth * this.scale,
+            height: this.collidableHeight * this.scale
+        };
+    }
+
+    applySoftCollisionNudge(dx: number, dy: number) {
+        if (this.destroyed || this.isAfkGhosted()) return;
+
+        const length = Math.hypot(dx, dy);
+        if (!Number.isFinite(length) || length <= 0.0001) return;
+
+        const maxPerStep = SOFT_COLLISION_FORCE.maxPushPerStep;
+        const scale = length > maxPerStep ? (maxPerStep / length) : 1;
+        const pushX = dx * scale;
+        const pushY = dy * scale;
+
+        this.sprite.x += pushX;
+        this.sprite.y += pushY;
+        this.targetX += pushX;
+        this.targetY += pushY;
+
+        this.interpolationBuffer = this.interpolationBuffer.map((entry) => ({
+            ...entry,
+            x: entry.x + pushX,
+            y: entry.y + pushY
+        }));
+
+        this.nameplate.setPosition(this.sprite.x, this.sprite.y + this.nameplateYOffset);
+        this.positionChatBubble();
+        this.positionFishingBubble();
+    }
+
     /**
      * Get the session ID
      */
@@ -825,8 +857,7 @@ export class RemotePlayer {
      * Returns true if the player has been AFK long enough to be ghosted
      */
     isAfkGhosted(): boolean {
-        if (!this.isAfk || !this.afkStartTime) return false;
-        return Date.now() - this.afkStartTime >= 60000;
+        return this.isAfk;
     }
 
     /**
@@ -891,7 +922,7 @@ export class RemotePlayer {
 
         for (let i = 0; i < count; i++) {
             const gfx = this.scene.add.graphics();
-            gfx.setDepth(this.sprite.depth - 1);
+            gfx.setDepth(this.depthManager?.shadowDepth(this.sprite.depth) ?? this.sprite.depth - 1);
             const angle = Math.random() * Math.PI * 2;
             const speed = 20 + Math.random() * 50;
             const size = 1 + Math.random() * 2;
@@ -962,7 +993,7 @@ export class RemotePlayer {
         const bubble = createChatBubble({
             scene: this.scene,
             message,
-            depth: 99999
+            depth: CHAT_BUBBLE_DEPTH
         });
 
         this.chatBubble = bubble.container;
@@ -1000,7 +1031,7 @@ export class RemotePlayer {
         const bubble = createIconBubble({
             scene: this.scene,
             textureKey,
-            depth: 99999
+            depth: CHAT_BUBBLE_DEPTH
         });
 
         this.fishingBubble = bubble.container;

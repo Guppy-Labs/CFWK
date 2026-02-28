@@ -23,6 +23,7 @@ export class NetworkManager {
     
     // Disconnect detection
     private disconnectCallbacks: Array<(code: number) => void> = [];
+    private transferCallbacks: Array<(locationId: string) => void> = [];
     private wasConnected: boolean = false;
 
     private inventoryCache: IInventoryResponse | null = null;
@@ -46,8 +47,8 @@ export class NetworkManager {
      * Request an instance assignment from the server.
      * This asks the server "where should I go?" and gets back instance info.
      */
-    async requestInstance(locationId: string = "lobby"): Promise<IInstanceInfo | null> {
-        console.log(`[NetworkManager] Requesting instance for location: ${locationId}`);
+    async requestInstance(locationId?: string): Promise<IInstanceInfo | null> {
+        console.log(`[NetworkManager] Requesting instance for location: ${locationId || 'auto'}`);
         
         try {
             const response = await fetch(Config.getApiUrl('/instance/join'), {
@@ -56,7 +57,7 @@ export class NetworkManager {
                     'Content-Type': 'application/json'
                 },
                 credentials: 'include',
-                body: JSON.stringify({ locationId })
+                body: JSON.stringify(locationId ? { locationId } : {})
             });
 
             if (!response.ok) {
@@ -70,6 +71,7 @@ export class NetworkManager {
             }
 
             this.currentInstance = data.instance;
+            localStorage.setItem('cfwk_last_location_id', data.instance.locationId);
             console.log("[NetworkManager] Received instance:", this.currentInstance);
             
             return this.currentInstance;
@@ -298,6 +300,11 @@ export class NetworkManager {
 
             this.statsDeltaCallbacks.forEach((cb) => cb(delta));
         });
+
+        this.currentRoom.onMessage('server:transfer', (data: { locationId?: string }) => {
+            if (!data?.locationId) return;
+            this.transferCallbacks.forEach((callback) => callback(data.locationId!));
+        });
         
         // Mark that we have an active connection
         this.wasConnected = true;
@@ -313,6 +320,16 @@ export class NetworkManager {
             const index = this.disconnectCallbacks.indexOf(callback);
             if (index > -1) {
                 this.disconnectCallbacks.splice(index, 1);
+            }
+        };
+    }
+
+    onServerTransfer(callback: (locationId: string) => void): () => void {
+        this.transferCallbacks.push(callback);
+        return () => {
+            const index = this.transferCallbacks.indexOf(callback);
+            if (index > -1) {
+                this.transferCallbacks.splice(index, 1);
             }
         };
     }

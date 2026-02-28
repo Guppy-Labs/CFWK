@@ -77,6 +77,7 @@ export class InventoryItemDetailsUI {
     private readonly fontCharSize = 8;
     private readonly fontCharGap = 1;
     private readonly fontRenderer: BitmapFontRenderer;
+    private generatedTextureKeys = new Set<string>();
 
     private config: Required<InventoryItemDetailsConfig>;
 
@@ -282,7 +283,11 @@ export class InventoryItemDetailsUI {
         ctx.drawImage(srcImage, border, srcH - border, centerSrcW, border, border, border + centerH, centerW, border);
         ctx.drawImage(srcImage, srcW - border, srcH - border, border, border, border + centerW, border + centerH, border, border);
 
+        if (this.scene.textures.exists(rtKey)) {
+            this.scene.textures.remove(rtKey);
+        }
         this.scene.textures.addCanvas(rtKey, canvas);
+        this.generatedTextureKeys.add(rtKey);
         return rtKey;
     }
 
@@ -315,7 +320,11 @@ export class InventoryItemDetailsUI {
         ctx.drawImage(srcImage, borderX, srcH - borderY, centerSrcW, borderY, borderX, borderY + centerH, centerW, borderY);
         ctx.drawImage(srcImage, srcW - borderX, srcH - borderY, borderX, borderY, borderX + centerW, borderY + centerH, borderX, borderY);
 
+        if (this.scene.textures.exists(rtKey)) {
+            this.scene.textures.remove(rtKey);
+        }
         this.scene.textures.addCanvas(rtKey, canvas);
+        this.generatedTextureKeys.add(rtKey);
         return rtKey;
     }
 
@@ -340,7 +349,11 @@ export class InventoryItemDetailsUI {
         ctx.drawImage(srcImage, left, 0, centerSrcW, srcH, left, 0, centerW, srcH);
         ctx.drawImage(srcImage, srcW - right, 0, right, srcH, left + centerW, 0, right, srcH);
 
+        if (this.scene.textures.exists(rtKey)) {
+            this.scene.textures.remove(rtKey);
+        }
         this.scene.textures.addCanvas(rtKey, canvas);
+        this.generatedTextureKeys.add(rtKey);
         return rtKey;
     }
 
@@ -381,7 +394,11 @@ export class InventoryItemDetailsUI {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         const key = `__inv_item_text_${this.labelTextureCounter++}`;
+        if (this.scene.textures.exists(key)) {
+            this.scene.textures.remove(key);
+        }
         this.scene.textures.addCanvas(key, canvas);
+        this.generatedTextureKeys.add(key);
         return key;
     }
 
@@ -410,6 +427,12 @@ export class InventoryItemDetailsUI {
             window.removeEventListener('locale:changed', this.localeChangedHandler as EventListener);
             this.localeChangedHandler = undefined;
         }
+        this.generatedTextureKeys.forEach((key) => {
+            if (this.scene.textures.exists(key)) {
+                this.scene.textures.remove(key);
+            }
+        });
+        this.generatedTextureKeys.clear();
         this.container.destroy();
     }
 
