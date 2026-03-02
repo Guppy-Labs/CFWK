@@ -1,0 +1,11 @@
+{
+    "id": "traveller",
+    "lines": [
+        {
+            "speaker": "npc",
+            "emotion": "happy",
+            "textKey": "dialogue.npc.traveller.greeting.0",
+            "text": "Road dust fades. Stories don't."
+        }
+    ]
+}

@@ -1,0 +1,11 @@
+{
+    "id": "guard",
+    "lines": [
+        {
+            "speaker": "npc",
+            "emotion": "happy",
+            "textKey": "dialogue.npc.guard.greeting.0",
+            "text": "Stay sharp. Anchor Hollow is peaceful, but peace is work."
+        }
+    ]
+}

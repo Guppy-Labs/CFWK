@@ -1,0 +1,11 @@
+{
+    "id": "seamaster",
+    "lines": [
+        {
+            "speaker": "npc",
+            "emotion": "happy",
+            "textKey": "dialogue.npc.seamaster.greeting.0",
+            "text": "Tides are honest. Keep your blade sharp, and your heart sharper."
+        }
+    ]
+}

@@ -642,7 +642,7 @@ export class InstanceRoom extends Room<InstanceState> {
             const dx = droppedItem.x - player.x;
             const dy = droppedItem.y - player.y;
             const distance = Math.hypot(dx, dy);
-            const maxPickupDistance = 18;
+            const maxPickupDistance = 42;
 
             if (distance > maxPickupDistance) return;
 

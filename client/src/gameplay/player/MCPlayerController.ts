@@ -11,7 +11,6 @@ import { createNameplate } from './PlayerVisualUtils';
 import { currentUser } from '../index';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
 import { InteractionManager, InteractionType } from '../interaction/InteractionManager';
-import { DroppedItemManager } from '../items/DroppedItemManager';
 import { RemotePlayerManager } from './RemotePlayerManager';
 import type { NPCManager } from '../npc/NPCManager';
 import type { LightingManager } from '../fx/LightingManager';
@@ -671,10 +670,6 @@ export class MCPlayerController {
 
     setRemotePlayerManager(manager: RemotePlayerManager) {
         this.interactionManager.setRemotePlayerManager(manager);
-    }
-
-    setDroppedItemManager(manager: DroppedItemManager) {
-        this.interactionManager.setDroppedItemManager(manager);
     }
 
     setNpcManager(manager: NPCManager) {

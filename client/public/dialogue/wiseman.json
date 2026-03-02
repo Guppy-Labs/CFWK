@@ -1,0 +1,11 @@
+{
+    "id": "wiseman",
+    "lines": [
+        {
+            "speaker": "npc",
+            "emotion": "happy",
+            "textKey": "dialogue.npc.wiseman.greeting.0",
+            "text": "A quiet mind hears what loud waves hide."
+        }
+    ]
+}

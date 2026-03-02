@@ -148,6 +148,24 @@
 	"npc": {
 		"test": {
 			"name": "Tim"
+		},
+		"seamaster": {
+			"name": "Maître des Mers"
+		},
+		"guard": {
+			"name": "Garde"
+		},
+		"fisherman": {
+			"name": "Pêcheur"
+		},
+		"merchant": {
+			"name": "Marchand"
+		},
+		"traveller": {
+			"name": "Voyageur"
+		},
+		"wiseman": {
+			"name": "Sage"
 		}
 	},
 	"dialogue": {
@@ -190,6 +208,36 @@
 						"0": "Pff, d'accord. Mais tu ferais mieux de ne pas gâcher mon coin de pêche !"
 					}
 				}
+				},
+				"seamaster": {
+					"greeting": {
+						"0": "Les marées sont honnêtes. Garde ta lame affûtée, et ton cœur plus encore."
+					}
+				},
+				"guard": {
+					"greeting": {
+						"0": "Restez vigilant. Anchor Hollow est paisible, mais la paix demande du travail."
+					}
+				},
+				"fisherman": {
+					"greeting": {
+						"0": "Doucement. Les poissons mordent quand l'eau est calme et les mains patientes."
+					}
+				},
+				"merchant": {
+					"greeting": {
+						"0": "Si votre sac semble léger, mon étal peut y remédier."
+					}
+				},
+				"traveller": {
+					"greeting": {
+						"0": "La poussière de la route s'efface. Pas les histoires."
+					}
+				},
+				"wiseman": {
+					"greeting": {
+						"0": "Un esprit calme entend ce que les vagues bruyantes cachent."
+					}
 			}
 		}
 	},

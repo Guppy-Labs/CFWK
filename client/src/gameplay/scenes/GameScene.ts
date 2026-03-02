@@ -497,10 +497,6 @@ export class GameScene extends Phaser.Scene {
         if (activeController && this.remotePlayerManager) {
             activeController.setRemotePlayerManager(this.remotePlayerManager);
         }
-        if (activeController && this.droppedItemManager) {
-            activeController.setDroppedItemManager(this.droppedItemManager);
-        }
-
         // Listen for chat messages (relayed from UIScene) for chat bubbles
         this.game.events.on('chat-message', this.handleChatMessage, this);
 
@@ -847,8 +843,12 @@ export class GameScene extends Phaser.Scene {
         const debugEnabled = this.debugOverlay?.isEnabled() === true;
         this.aiNpcManager?.drawDebugPaths(debugEnabled);
 
-        // Update dropped item fade
-        this.droppedItemManager?.update();
+        // Update dropped item fade and nearby pickup cards
+        if (player) {
+            this.droppedItemManager?.update(player.x, player.y);
+        } else {
+            this.droppedItemManager?.update();
+        }
 
         // Update tablist registry
         this.updateTablistRegistry();
@@ -891,6 +891,7 @@ export class GameScene extends Phaser.Scene {
 
                 // NPC hitboxes
                 npcHitboxes: this.npcManager?.getDebugHitboxes(),
+                npcVisualBounds: this.npcManager?.getDebugVisualBounds(),
                 aiNpcHitboxes: this.aiNpcManager?.getDebugHitboxes(),
 
                 // Nav / A* grid (matches server default from map tile size)

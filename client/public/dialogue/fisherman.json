@@ -1,0 +1,11 @@
+{
+    "id": "fisherman",
+    "lines": [
+        {
+            "speaker": "npc",
+            "emotion": "happy",
+            "textKey": "dialogue.npc.fisherman.greeting.0",
+            "text": "Easy now. The fish bite when the water is calm and the hands are patient."
+        }
+    ]
+}

@@ -1,0 +1,11 @@
+{
+    "id": "merchant",
+    "lines": [
+        {
+            "speaker": "npc",
+            "emotion": "happy",
+            "textKey": "dialogue.npc.merchant.greeting.0",
+            "text": "If your pack feels light, my stall can fix that."
+        }
+    ]
+}

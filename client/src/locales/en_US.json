@@ -148,6 +148,24 @@
   "npc": {
     "test": {
       "name": "Tim"
+    },
+    "seamaster": {
+      "name": "Sea Master"
+    },
+    "guard": {
+      "name": "Guard"
+    },
+    "fisherman": {
+      "name": "Fisherman"
+    },
+    "merchant": {
+      "name": "Merchant"
+    },
+    "traveller": {
+      "name": "Traveller"
+    },
+    "wiseman": {
+      "name": "Wise Man"
     }
   },
   "dialogue": {
@@ -189,6 +207,36 @@
           "noRod": {
             "0": "Ugh, fine. But you better not mess up my fishing spot!"
           }
+        }
+      },
+      "seamaster": {
+        "greeting": {
+          "0": "Tides are honest. Keep your blade sharp, and your heart sharper."
+        }
+      },
+      "guard": {
+        "greeting": {
+          "0": "Stay sharp. Anchor Hollow is peaceful, but peace is work."
+        }
+      },
+      "fisherman": {
+        "greeting": {
+          "0": "Easy now. The fish bite when the water is calm and the hands are patient."
+        }
+      },
+      "merchant": {
+        "greeting": {
+          "0": "If your pack feels light, my stall can fix that."
+        }
+      },
+      "traveller": {
+        "greeting": {
+          "0": "Road dust fades. Stories don't."
+        }
+      },
+      "wiseman": {
+        "greeting": {
+          "0": "A quiet mind hears what loud waves hide."
         }
       }
     }

@@ -59,6 +59,12 @@
   "npc": {
     "test": {
       "name": "-----"
+    },
+    "seamaster": {
+      "name": "-----"
+    },
+    "guard": {
+      "name": "-----"
     }
   },
   "dialogue": {
@@ -100,6 +106,16 @@
           "noRod": {
             "0": "-----"
           }
+        }
+      },
+      "seamaster": {
+        "greeting": {
+          "0": "-----"
+        }
+      },
+      "guard": {
+        "greeting": {
+          "0": "-----"
         }
       }
     }

@@ -40,6 +40,7 @@ export interface ExtendedDebugInfo {
 
     // Entity hitboxes
     npcHitboxes?: Array<{ x: number; y: number; width: number; height: number }>;
+    npcVisualBounds?: Array<{ x: number; y: number; width: number; height: number }>;
     aiNpcHitboxes?: Array<{ x: number; y: number; width: number; height: number }>;
     
     // Generated border
@@ -161,6 +162,7 @@ export class DebugOverlay {
             this.drawColliders(collisionBodies);
             this.drawNavGrid(extendedDebug?.navGrid);
             this.drawNpcHitboxes(extendedDebug?.npcHitboxes);
+            this.drawNpcVisualBounds(extendedDebug?.npcVisualBounds);
             this.drawAiNpcHitboxes(extendedDebug?.aiNpcHitboxes);
             this.drawZoomRegions(extendedDebug?.zoomRegions);
             this.drawFirePositions(extendedDebug?.firePositions);
@@ -479,6 +481,15 @@ export class DebugOverlay {
         this.graphics!.fillStyle(0xff4a4a, 0.2);
         hitboxes.forEach((box) => {
             this.graphics!.fillRect(box.x, box.y, box.width, box.height);
+            this.graphics!.strokeRect(box.x, box.y, box.width, box.height);
+        });
+    }
+
+    private drawNpcVisualBounds(bounds?: Array<{ x: number; y: number; width: number; height: number }>) {
+        if (!bounds || bounds.length === 0) return;
+
+        this.graphics!.lineStyle(1, 0x9eff57, 1);
+        bounds.forEach((box) => {
             this.graphics!.strokeRect(box.x, box.y, box.width, box.height);
         });
     }

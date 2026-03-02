@@ -174,9 +174,6 @@ export class DesktopInteractButton {
                 case InteractionType.Shove:
                     this.iconContainer.innerHTML = ICONS.shove;
                     break;
-                case InteractionType.Pickup:
-                    this.iconContainer.innerHTML = ICONS.pickup;
-                    break;
                 case InteractionType.Talk:
                     this.iconContainer.innerHTML = ICONS.talk;
                     break;
