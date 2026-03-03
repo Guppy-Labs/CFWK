@@ -4,6 +4,7 @@ import { InventorySlotsUI, InventoryDisplayItem } from './inventory/InventorySlo
 import { InventoryItemDetailsUI, DEFAULT_ITEM_DETAILS_CONFIG } from './inventory/InventoryItemDetailsUI';
 import { EquipmentSlotsUI } from './inventory/EquipmentSlotsUI';
 import { SettingsTabUI } from './settings/SettingsTabUI';
+import { FinbookTabUI } from './finbook/FinbookTabUI';
 import { NetworkManager } from '../network/NetworkManager';
 import { LocaleManager } from '../i18n/LocaleManager';
 import { getLocalizedItemDescription, getLocalizedItemName } from '../i18n/itemLocale';
@@ -34,6 +35,7 @@ export class BookUI {
     private inventoryDetails: InventoryItemDetailsUI;
     private equipmentSlots: EquipmentSlotsUI;
     private settingsTab: SettingsTabUI;
+    private finbookTab: FinbookTabUI;
     private activeTabLabel: 'Inventory' | 'Finbook' | 'Settings' = 'Inventory';
     private inventorySlotsData: InventorySlot[] = [];
     private inventoryItems: Array<{ slot: InventorySlot; def: ItemDefinition; display: InventoryDisplayItem }> = [];
@@ -120,6 +122,7 @@ export class BookUI {
         });
         this.equipmentSlots = new EquipmentSlotsUI(this.scene, this.container);
         this.settingsTab = new SettingsTabUI(this.scene, this.container);
+        this.finbookTab = new FinbookTabUI(this.scene, this.container);
         
         this.inventoryGroups.setOnGroupChange((group) => {
             if (this.activeTabLabel !== 'Inventory') return;
@@ -343,6 +346,7 @@ export class BookUI {
         this.inventorySlots.layout(leftPageLeftEdgeX, leftPageTopEdgeY, this.pageHeight, scale);
         this.equipmentSlots.layout(rightPageLeftEdgeX, rightPageTopEdgeY, this.pageHeight, scale);
         this.settingsTab.layout(leftPageLeftEdgeX, leftPageTopEdgeY, rightPageLeftEdgeX, rightPageTopEdgeY, this.pageHeight, scale);
+        this.finbookTab.layout(leftPageLeftEdgeX, leftPageTopEdgeY, rightPageLeftEdgeX, rightPageTopEdgeY, this.pageHeight, scale);
     }
 
     private createTabs() {
@@ -475,9 +479,11 @@ export class BookUI {
         });
         const isInventory = label === 'Inventory';
         const isSettings = label === 'Settings';
+        const isFinbook = label === 'Finbook';
         this.inventoryGroups.setVisible(isInventory);
         this.equipmentSlots.setVisible(isInventory);
         this.settingsTab.setVisible(isSettings);
+        this.finbookTab.setVisible(isFinbook);
         if (isInventory) {
             this.inventoryGroups.setActiveGroup('All', true);
             this.refreshInventory();
@@ -873,6 +879,7 @@ export class BookUI {
         this.inventoryDetails.setVisible(false);
         this.equipmentSlots.setVisible(false);
         this.settingsTab.setVisible(false);
+        this.finbookTab.setVisible(false);
         this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
         this.equipmentSlots.clearSelection();
         this.inventorySlots.setBottomReservedHeight(0);
@@ -933,6 +940,7 @@ export class BookUI {
         this.equipmentSlots?.destroy();
         this.inventoryDetails?.destroy();
         this.settingsTab?.destroy();
+        this.finbookTab?.destroy();
         this.tabs.forEach((tab) => {
             if (this.scene.textures.exists(tab.textureKey)) {
                 this.scene.textures.remove(tab.textureKey);

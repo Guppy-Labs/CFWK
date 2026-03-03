@@ -13,7 +13,7 @@ import { DialogueRepository } from './DialogueRepository';
 import type { UIScene } from '../scenes/UIScene';
 import type { GameScene } from '../scenes/GameScene';
 import { NetworkManager } from '../network/NetworkManager';
-import type { IInventoryResponse } from '@cfwk/shared';
+import type { IAdvancementsState, IInventoryResponse } from '@cfwk/shared';
 import { LocaleManager } from '../i18n/LocaleManager';
 
 type NpcInteractionDetail = {
@@ -98,6 +98,8 @@ export class DialogueManager {
     }
 
     private exitDialogueMode() {
+        const completedNpcId = this.npcId;
+
         this.gameScene.setDialogueActive(false);
         this.gameScene.setInteractionCooldown(250);
         this.uiScene.setDialogueActive(false);
@@ -108,6 +110,10 @@ export class DialogueManager {
         this.npcName = undefined;
         this.pendingActions = [];
         this.hasShownLine = false;
+
+        if (completedNpcId) {
+            this.networkManager.sendNpcInteract(completedNpcId);
+        }
     }
 
     private getFocusPoint() {
@@ -199,7 +205,43 @@ export class DialogueManager {
             return check.negate ? !hasItem : hasItem;
         }
 
+        if (check.type === 'questObjective') {
+            const matches = await this.matchesQuestObjectiveCheck(check);
+            return check.negate ? !matches : matches;
+        }
+
         return false;
+    }
+
+    private async matchesQuestObjectiveCheck(check: Extract<DialogueCheck, { type: 'questObjective' }>): Promise<boolean> {
+        const advancements = await this.getAdvancementsSnapshot();
+        if (!advancements) return false;
+
+        const progress = advancements.questProgress[check.questId];
+        if (!progress) return false;
+
+        if (check.status && progress.status !== check.status) {
+            return false;
+        }
+
+        if (typeof check.objectiveIndex === 'number') {
+            const objectiveIndex = typeof progress.objectiveIndex === 'number'
+                ? Math.max(0, Math.floor(progress.objectiveIndex))
+                : 0;
+            if (objectiveIndex !== Math.max(0, Math.floor(check.objectiveIndex))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private async getAdvancementsSnapshot(): Promise<IAdvancementsState | null> {
+        const cached = this.networkManager.getCachedAdvancementsState();
+        if (cached) return cached;
+
+        this.networkManager.requestAdvancementsState();
+        return null;
     }
 
     private async checkOptionBranch(branch: DialogueOptionBranch): Promise<boolean> {

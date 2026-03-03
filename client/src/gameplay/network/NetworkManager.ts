@@ -1,6 +1,6 @@
 import * as Colyseus from "colyseus.js";
 import { Config } from "../../config";
-import { DEFAULT_USER_SETTINGS, IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, IPlayerStatsDelta, IPlayerStatsResponse, ISettingsResponse, PLAYER_STAT_KEYS, IUserSettings, ClientMovementFrame } from "@cfwk/shared";
+import { DEFAULT_USER_SETTINGS, IAdvancementsState, IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, IPlayerStatsDelta, IPlayerStatsResponse, ISettingsResponse, PLAYER_STAT_KEYS, IUserSettings, ClientMovementFrame } from "@cfwk/shared";
 
 /**
  * NetworkManager - Handles all server communication for multiplayer.
@@ -29,6 +29,7 @@ export class NetworkManager {
     private inventoryCache: IInventoryResponse | null = null;
     private settingsCache: IUserSettings | null = null;
     private statsCache: IPlayerStatsResponse | null = null;
+    private advancementsCache: IAdvancementsState | null = null;
     private statsDeltaCallbacks: Array<(delta: IPlayerStatsDelta) => void> = [];
 
     private constructor() {
@@ -301,6 +302,11 @@ export class NetworkManager {
             this.statsDeltaCallbacks.forEach((cb) => cb(delta));
         });
 
+        this.currentRoom.onMessage('advancements:state', (state: IAdvancementsState) => {
+            this.advancementsCache = state;
+            window.dispatchEvent(new CustomEvent('advancements:update', { detail: state }));
+        });
+
         this.currentRoom.onMessage('server:transfer', (data: { locationId?: string }) => {
             if (!data?.locationId) return;
             this.transferCallbacks.forEach((callback) => callback(data.locationId!));
@@ -507,6 +513,24 @@ export class NetworkManager {
         if (this.currentRoom) {
             this.currentRoom.send('npc:interact', { npcId });
         }
+    }
+
+    requestAdvancementsState() {
+        if (this.currentRoom) {
+            this.currentRoom.send('advancements:get', {});
+        }
+    }
+
+    getCachedAdvancementsState(): IAdvancementsState | null {
+        if (!this.advancementsCache) return null;
+        return {
+            enrolled: this.advancementsCache.enrolled,
+            questProgress: { ...this.advancementsCache.questProgress },
+            completedAchievements: [...this.advancementsCache.completedAchievements],
+            discoveredRegions: Object.fromEntries(
+                Object.entries(this.advancementsCache.discoveredRegions).map(([mapFile, regions]) => [mapFile, [...regions]])
+            )
+        };
     }
 
     /**

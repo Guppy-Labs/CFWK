@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { ADVANCEMENT_QUEST_CATALOG, IAdvancementAlertMessage, IQuestObjectiveEntry } from '@cfwk/shared';
 import { calculateWorldTime, Season } from '@cfwk/shared';
 import { HeadbarTabList, TabListEntry } from './HeadbarTabList';
 import { MobileControls } from './MobileControls';
@@ -28,6 +29,12 @@ const SEASON_TEXTURE_KEYS: Record<Season, string> = {
     [Season.Autumn]: 'ui-season-autumn'
 };
 
+type ResolvedHeadbarAlert = {
+    title: string;
+    subtitle: string;
+    size?: 'default' | 'compact';
+};
+
 export class HeadbarUI {
     private scene: Phaser.Scene;
     private container: Phaser.GameObjects.Container;
@@ -38,6 +45,9 @@ export class HeadbarUI {
     private timeText: Phaser.GameObjects.Image;
     private dateText: Phaser.GameObjects.Image;
     private yearText: Phaser.GameObjects.Image;
+    private alertContainer: Phaser.GameObjects.Container;
+    private alertTitleText: Phaser.GameObjects.Image;
+    private alertSubtitleText: Phaser.GameObjects.Image;
 
     private config: Required<HeadbarConfig>;
     private localeManager = LocaleManager.getInstance();
@@ -56,9 +66,15 @@ export class HeadbarUI {
     // Tab list integration
     private tabList: HeadbarTabList;
     private isTabListVisible = false;
+    private tabListWantsVisible = false;
     private isAnimating = false;
     private currentBannerWidth = 0;
     private currentBannerHeight = 0;
+    private alertQueue: ResolvedHeadbarAlert[] = [];
+    private alertTitleTextureKey?: string;
+    private alertSubtitleTextureKey?: string;
+    private currentAlertTitleScale = 0;
+    private currentAlertSubtitleScale = 0;
 
     // Font rendering
     private readonly fontCharSize = 8;
@@ -72,16 +88,26 @@ export class HeadbarUI {
     private readonly bannerHeight = 76; // Tighter fit around content
     private readonly bannerMinWidth = 220;
     private readonly textScale = 1.5; // Scale up text
+    private readonly alertTitleScale = 3.65;
+    private readonly alertSubtitleScale = 2.35;
+    private readonly compactAlertTitleScale = 2.5;
+    private readonly compactAlertSubtitleScale = 1.8;
+    private readonly alertLineGap = 14;
+    private readonly alertHorizontalPadding = 48;
+    private readonly alertVerticalPadding = 24;
     private readonly bannerScale = 1.5; // Scale up banner before nine-slicing
     private readonly scaledCharGap = 2; // Gap between characters at scaled size
 
     // Animation timing
     private readonly expandDuration = 200;
     private readonly fadeDuration = 150;
+    private readonly alertDisplayDuration = 3000;
 
     constructor(scene: Phaser.Scene, config: HeadbarConfig = {}) {
         this.scene = scene;
         this.fontRenderer = new BitmapFontRenderer(scene, this.fontCharSize);
+        this.currentAlertTitleScale = this.alertTitleScale;
+        this.currentAlertSubtitleScale = this.alertSubtitleScale;
         this.config = {
             bannerTextureKey: config.bannerTextureKey ?? DEFAULT_HEADBAR_CONFIG.bannerTextureKey,
             textColor: config.textColor ?? DEFAULT_HEADBAR_CONFIG.textColor,
@@ -119,8 +145,15 @@ export class HeadbarUI {
         this.yearTextureKey = this.createTextTexture('Year 1');
         this.yearText = this.scene.add.image(0, 0, this.yearTextureKey).setOrigin(1, 0.5);
 
+        this.alertTitleTextureKey = this.createTextTexture('', '#f6f0df', this.currentAlertTitleScale);
+        this.alertTitleText = this.scene.add.image(0, 0, this.alertTitleTextureKey).setOrigin(0.5, 0.5);
+        this.alertSubtitleTextureKey = this.createTextTexture('', '#fff5cf', this.currentAlertSubtitleScale);
+        this.alertSubtitleText = this.scene.add.image(0, 0, this.alertSubtitleTextureKey).setOrigin(0.5, 0.5);
+        this.alertContainer = this.scene.add.container(0, 0, [this.alertTitleText, this.alertSubtitleText]);
+        this.alertContainer.setAlpha(0);
+
         this.contentContainer.add([this.seasonIcon, this.timeText, this.dateText, this.yearText]);
-        this.container.add([this.hitArea, this.banner, this.contentContainer]);
+        this.container.add([this.hitArea, this.banner, this.contentContainer, this.alertContainer]);
 
         // Create tab list (initially hidden)
         this.tabList = new HeadbarTabList(this.scene, this.container, {
@@ -177,10 +210,18 @@ export class HeadbarUI {
         this.container.setVisible(visible);
     }
 
+    enqueueAdvancementAlert(alert: IAdvancementAlertMessage) {
+        const resolved = this.resolveAdvancementAlert(alert);
+        if (!resolved) return;
+        this.alertQueue.push(resolved);
+        this.processAlertQueue();
+    }
+
     /**
      * Show the tab list with smooth animation
      */
     showTabList() {
+        this.tabListWantsVisible = true;
         if (this.isTabListVisible || this.isAnimating) return;
         this.isTabListVisible = true;
         this.isAnimating = true;
@@ -222,6 +263,7 @@ export class HeadbarUI {
                     ease: 'Sine.easeOut',
                     onComplete: () => {
                         this.isAnimating = false;
+                        this.syncTabListVisibility();
                     }
                 }
             ]
@@ -232,6 +274,7 @@ export class HeadbarUI {
      * Hide the tab list with smooth animation
      */
     hideTabList() {
+        this.tabListWantsVisible = false;
         if (!this.isTabListVisible || this.isAnimating) return;
         this.isTabListVisible = false;
         this.isAnimating = true;
@@ -266,10 +309,237 @@ export class HeadbarUI {
                     ease: 'Sine.easeOut',
                     onComplete: () => {
                         this.isAnimating = false;
+                        this.syncTabListVisibility();
                     }
                 }
             ]
         });
+    }
+
+    private syncTabListVisibility() {
+        if (this.isAnimating) return;
+
+        if (this.tabListWantsVisible && !this.isTabListVisible) {
+            this.showTabList();
+            return;
+        }
+
+        if (!this.tabListWantsVisible && this.isTabListVisible) {
+            this.hideTabList();
+            return;
+        }
+
+        if (!this.isTabListVisible) {
+            this.processAlertQueue();
+        }
+    }
+
+    private processAlertQueue() {
+        if (this.isAnimating) return;
+        if (this.isTabListVisible) return;
+        const next = this.alertQueue.shift();
+        if (!next) return;
+
+        this.playAlert(next);
+    }
+
+    private playAlert(alert: ResolvedHeadbarAlert) {
+        this.isAnimating = true;
+
+        const compact = alert.size === 'compact';
+        this.currentAlertTitleScale = compact ? this.compactAlertTitleScale : this.alertTitleScale;
+        this.currentAlertSubtitleScale = compact ? this.compactAlertSubtitleScale : this.alertSubtitleScale;
+
+        const normalWidth = this.calculateNormalBannerWidth();
+        const normalHeight = this.bannerHeight;
+        const titleWidth = this.measureText(alert.title, this.currentAlertTitleScale);
+        const subtitleWidth = this.measureText(alert.subtitle, this.currentAlertSubtitleScale);
+        const maxTextWidth = Math.max(titleWidth, subtitleWidth);
+        const alertWidth = Math.max(this.bannerMinWidth, maxTextWidth + this.alertHorizontalPadding * 2);
+
+        const titleFontSize = Math.floor(this.fontCharSize * this.currentAlertTitleScale);
+        const subtitleFontSize = Math.floor(this.fontCharSize * this.currentAlertSubtitleScale);
+        const contentHeight = titleFontSize + subtitleFontSize + this.alertLineGap;
+        const alertHeight = Math.max(normalHeight, contentHeight + this.alertVerticalPadding * 2);
+
+        this.updateAlertTexts(alert.title, alert.subtitle);
+
+        this.scene.tweens.chain({
+            tweens: [
+                {
+                    targets: this.contentContainer,
+                    alpha: 0,
+                    duration: this.fadeDuration,
+                    ease: 'Sine.easeOut'
+                },
+                {
+                    targets: this,
+                    currentBannerWidth: alertWidth,
+                    currentBannerHeight: alertHeight,
+                    duration: this.expandDuration,
+                    ease: 'Sine.easeInOut',
+                    onUpdate: () => {
+                        this.updateBannerTexture();
+                        this.layoutAlertContent();
+                    }
+                },
+                {
+                    targets: this.alertContainer,
+                    alpha: 1,
+                    duration: this.fadeDuration,
+                    ease: 'Sine.easeOut'
+                },
+                {
+                    targets: this.alertContainer,
+                    alpha: 1,
+                    duration: this.alertDisplayDuration,
+                    ease: 'Linear'
+                },
+                {
+                    targets: this.alertContainer,
+                    alpha: 0,
+                    duration: this.fadeDuration,
+                    ease: 'Sine.easeOut'
+                },
+                {
+                    targets: this,
+                    currentBannerWidth: normalWidth,
+                    currentBannerHeight: normalHeight,
+                    duration: this.expandDuration,
+                    ease: 'Sine.easeInOut',
+                    onUpdate: () => {
+                        this.updateBannerTexture();
+                        this.layoutNormalContent();
+                    }
+                },
+                {
+                    targets: this.contentContainer,
+                    alpha: 1,
+                    duration: this.fadeDuration,
+                    ease: 'Sine.easeOut',
+                    onComplete: () => {
+                        this.isAnimating = false;
+                        this.processAlertQueue();
+                    }
+                }
+            ]
+        });
+    }
+
+    private updateAlertTexts(title: string, subtitle: string) {
+        const oldTitleKey = this.alertTitleTextureKey;
+        const oldSubtitleKey = this.alertSubtitleTextureKey;
+
+        this.alertTitleTextureKey = this.createTextTexture(title, '#f6f0df', this.currentAlertTitleScale);
+        this.alertSubtitleTextureKey = this.createTextTexture(subtitle, '#fff5cf', this.currentAlertSubtitleScale);
+        this.alertTitleText.setTexture(this.alertTitleTextureKey);
+        this.alertSubtitleText.setTexture(this.alertSubtitleTextureKey);
+
+        if (oldTitleKey && oldTitleKey !== this.alertTitleTextureKey && this.scene.textures.exists(oldTitleKey)) {
+            this.scene.textures.remove(oldTitleKey);
+        }
+        if (oldSubtitleKey && oldSubtitleKey !== this.alertSubtitleTextureKey && this.scene.textures.exists(oldSubtitleKey)) {
+            this.scene.textures.remove(oldSubtitleKey);
+        }
+
+        this.layoutAlertContent();
+    }
+
+    private layoutAlertContent() {
+        const titleFontSize = Math.floor(this.fontCharSize * this.currentAlertTitleScale);
+        const subtitleFontSize = Math.floor(this.fontCharSize * this.currentAlertSubtitleScale);
+        const totalHeight = titleFontSize + subtitleFontSize + this.alertLineGap;
+        const topY = Math.floor((this.currentBannerHeight - totalHeight) / 2);
+
+        this.alertTitleText.setPosition(0, Math.floor(topY + titleFontSize / 2));
+        this.alertSubtitleText.setPosition(0, Math.floor(topY + titleFontSize + this.alertLineGap + subtitleFontSize / 2));
+    }
+
+    private resolveAdvancementAlert(alert: IAdvancementAlertMessage): ResolvedHeadbarAlert | null {
+        switch (alert.type) {
+            case 'quest-started': {
+                const questId = alert.questId || 'unknown';
+                const questName = this.localeManager.t(`advancements.quest.${questId}.name`, undefined, questId);
+                return {
+                    title: this.localeManager.t('advancements.alert.questStarted', undefined, 'Quest Started'),
+                    subtitle: questName
+                };
+            }
+            case 'quest-completed': {
+                const questId = alert.questId || 'unknown';
+                const questName = this.localeManager.t(`advancements.quest.${questId}.name`, undefined, questId);
+                return {
+                    title: this.localeManager.t('advancements.alert.questCompleted', undefined, 'Quest Completed'),
+                    subtitle: questName
+                };
+            }
+            case 'quest-objective': {
+                const questId = alert.questId || 'unknown';
+                const objectiveText = this.resolveQuestObjectiveSubtitle(questId, alert.objectiveIndex);
+                return {
+                    title: this.localeManager.t('advancements.alert.questObjective', undefined, 'New Objective'),
+                    subtitle: objectiveText
+                };
+            }
+            case 'new-quests': {
+                const count = Math.max(0, Math.floor(alert.count ?? 0));
+                return {
+                    title: this.localeManager.t('advancements.alert.newQuests', undefined, 'New Quests Available'),
+                    subtitle: this.localeManager.t('advancements.alert.newQuestsCount', { count }, `${count} new quest(s)`),
+                    size: 'compact'
+                };
+            }
+            case 'achievement-unlocked': {
+                const achievementId = alert.achievementId || 'unknown';
+                const achievementName = this.localeManager.t(`advancements.achievement.${achievementId}.name`, undefined, achievementId);
+                return {
+                    title: this.localeManager.t('advancements.alert.achievementUnlocked', undefined, 'Achievement Unlocked'),
+                    subtitle: achievementName
+                };
+            }
+            case 'area-discovered': {
+                const mapName = alert.mapName || this.localeManager.t('advancements.alert.areaDiscovered', undefined, 'Area Discovered');
+                const regionName = alert.regionName || this.localeManager.t('advancements.alert.unknownRegion', undefined, 'Unknown Region');
+                return {
+                    title: mapName,
+                    subtitle: regionName
+                };
+            }
+            default:
+                return null;
+        }
+    }
+
+    private resolveQuestObjectiveSubtitle(questId: string, objectiveIndex?: number): string {
+        const questEntry = ADVANCEMENT_QUEST_CATALOG.find((entry) => entry.id === questId);
+        if (!questEntry) {
+            return this.localeManager.t(`advancements.quest.${questId}.name`, undefined, questId);
+        }
+
+        const stagedObjectives = questEntry.objectives ?? (questEntry.objective ? [questEntry.objective] : []);
+        const idx = typeof objectiveIndex === 'number' ? Math.max(0, Math.floor(objectiveIndex)) : 0;
+        const objective = stagedObjectives[Math.min(idx, Math.max(0, stagedObjectives.length - 1))]
+            ?? questEntry.startObjective
+            ?? questEntry.objective;
+
+        if (!objective) {
+            return this.localeManager.t(`advancements.quest.${questId}.name`, undefined, questId);
+        }
+
+        return this.objectiveToText(objective);
+    }
+
+    private objectiveToText(objective: IQuestObjectiveEntry): string {
+        if (objective.kind === 'fish-catch') {
+            return this.localeManager.t('finbook.quest.objective.fishCatch', undefined, 'Catch a fish');
+        }
+
+        if (objective.kind === 'talk-to-npc' && objective.npcId) {
+            const npcName = this.localeManager.t(`npc.${objective.npcId}.name`, undefined, objective.npcId);
+            return this.localeManager.t('finbook.quest.objective.talkToNpc', { name: npcName }, `Talk to ${npcName}`);
+        }
+
+        return this.localeManager.t('finbook.quest.objective.generic', undefined, 'Complete the next task');
     }
 
     private updateBannerTexture() {
@@ -427,6 +697,7 @@ export class HeadbarUI {
         this.updateHitArea();
 
         this.layoutNormalContent();
+        this.layoutAlertContent();
     }
 
     private createBannerTexture(width: number, height: number) {
@@ -476,12 +747,14 @@ export class HeadbarUI {
         return rtKey;
     }
 
-    private createTextTexture(text: string) {
+    private createTextTexture(text: string, color?: string, scale?: number) {
         const rtKey = `__headbar_text_${this.textureCounter++}`;
         const canvas = document.createElement('canvas');
+        const resolvedScale = scale ?? this.textScale;
+        const resolvedColor = color ?? this.config.textColor;
 
-        const width = this.measureText(text);
-        const height = Math.floor(this.fontCharSize * this.textScale);
+        const width = this.measureText(text, resolvedScale);
+        const height = Math.floor(this.fontCharSize * resolvedScale);
 
         canvas.width = Math.max(1, width);
         canvas.height = height;
@@ -489,22 +762,22 @@ export class HeadbarUI {
         ctx.imageSmoothingEnabled = false;
 
         this.fontRenderer.drawText(ctx, text, 0, 0, {
-            scale: this.textScale,
+            scale: resolvedScale,
             charGap: this.scaledCharGap
         });
 
         // Apply text color
         ctx.globalCompositeOperation = 'source-in';
-        ctx.fillStyle = this.config.textColor;
+        ctx.fillStyle = resolvedColor;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         this.scene.textures.addCanvas(rtKey, canvas);
         return rtKey;
     }
 
-    private measureText(text: string): number {
+    private measureText(text: string, scale?: number): number {
         return this.fontRenderer.measureTextWidth(text, {
-            scale: this.textScale,
+            scale: scale ?? this.textScale,
             charGap: this.scaledCharGap
         });
     }
@@ -523,6 +796,12 @@ export class HeadbarUI {
         }
         if (this.yearTextureKey && this.scene.textures.exists(this.yearTextureKey)) {
             this.scene.textures.remove(this.yearTextureKey);
+        }
+        if (this.alertTitleTextureKey && this.scene.textures.exists(this.alertTitleTextureKey)) {
+            this.scene.textures.remove(this.alertTitleTextureKey);
+        }
+        if (this.alertSubtitleTextureKey && this.scene.textures.exists(this.alertSubtitleTextureKey)) {
+            this.scene.textures.remove(this.alertSubtitleTextureKey);
         }
 
         if (this.hitArea) {

@@ -105,6 +105,67 @@
       "autumn": "Autumn"
     }
   },
+  "advancements": {
+    "alert": {
+      "questStarted": "Quest Started",
+      "questObjective": "New Objective",
+      "questCompleted": "Quest Completed",
+      "newQuests": "New Quests Available",
+      "newQuestsCount": "{count} new quest(s)",
+      "achievementUnlocked": "Achievement Unlocked",
+      "areaDiscovered": "Area Discovered",
+      "unknownRegion": "Unknown Region"
+    },
+    "quest": {
+      "first_catch": {
+        "name": "A Fisher's First Catch"
+      },
+      "travellers_errand": {
+        "name": "Traveller's Errand"
+      }
+    },
+    "achievement": {
+      "campfire_stories": {
+        "name": "Campfire Stories"
+      }
+    }
+  },
+  "finbook": {
+    "section": {
+      "quests": "Quests",
+      "achievements": "Achievements",
+      "locations": "Locations"
+    },
+    "locked": "???",
+    "quest": {
+      "new": "NEW",
+      "descriptionFallback": "Details coming soon.",
+       "track": "Track",
+      "untrack": "Untrack",
+      "objective": {
+        "label": "Objective",
+        "nextLabel": "Next Objective",
+        "fishCatch": "Catch a fish",
+        "talkToNpc": "Talk to {name}",
+        "generic": "Complete the next task"
+      },
+      "status": {
+        "label": "Status",
+        "notStarted": "Not Started",
+        "inProgress": "In Progress",
+        "completed": "Completed"
+      },
+      "first_catch": {
+        "description": "Speak with the Fisherman, then catch your first fish."
+      },
+      "travellers_errand": {
+        "description": "Talk to the Traveller, then report to the Guard."
+      }
+    },
+    "achievementCategory": {
+      "fun": "Fun"
+    }
+  },
   "loader": {
     "authenticating": "Authenticating...",
     "initializingGame": "Initializing game...",
@@ -352,6 +413,8 @@
       "bannedMessage": "You have been banned from Cute Fish With Knives.",
       "afkTitle": "AFK Timeout",
       "afkMessage": "You were disconnected for being idle. Reconnect when you are ready to play.",
+      "wipedTitle": "Game Wiped",
+      "wipedMessage": "Your gameplay data was reset by an admin. Please reconnect.",
       "offlineTitle": "Server Offline"
     },
     "boot": {

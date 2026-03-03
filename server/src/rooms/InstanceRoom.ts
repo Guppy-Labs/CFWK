@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
-import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX } from "@cfwk/shared";
+import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX, IAdvancementAlertMessage } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { DEFAULT_INVENTORY_SLOTS } from "@cfwk/shared";
@@ -11,6 +11,7 @@ import { PlayerStatsCache } from "../managers/PlayerStatsCache";
 import { AI_METERS_TO_PIXELS, AI_NPC_DEFINITIONS, getAiControllerById } from "../ai/registry";
 import { ServerMapNavService } from "../ai/ServerMapNavService";
 import { AiNpcRuntimeState } from "../ai/types";
+import { AdvancementsManager } from "../managers/AdvancementsManager";
 
 /**
  * Player state for instance rooms
@@ -161,6 +162,7 @@ export class InstanceRoom extends Room<InstanceState> {
     private pendingStatsDeltasBySession = new Map<string, IPlayerStatsDelta>();
     private navService = new ServerMapNavService();
     private aiRuntimeById = new Map<string, AiNpcRuntimeState>();
+    private advancementsManager = new AdvancementsManager('lobby.tmj');
 
     onCreate(options: { instanceId: string; locationId: string; mapFile: string; maxPlayers: number }) {
         console.log(`[InstanceRoom] Creating room for instance: ${options.instanceId}`);
@@ -251,6 +253,36 @@ export class InstanceRoom extends Room<InstanceState> {
             });
         });
 
+        this.instanceManager.events.on('clear_progress', (data: { userId: string }) => {
+            this.advancementsManager.clearCachedUser(data.userId);
+
+            this.clients.forEach((client) => {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.odcid !== data.userId) return;
+
+                void this.advancementsManager.getStateForUser(data.userId)
+                    .then((state) => {
+                        client.send('advancements:state', state);
+                    })
+                    .catch((error) => {
+                        console.error('[InstanceRoom] Failed to push advancements state after clear_progress:', error);
+                    });
+            });
+        });
+
+        this.instanceManager.events.on('wipe_user', (data: { userId: string }) => {
+            this.advancementsManager.clearCachedUser(data.userId);
+            PlayerStatsCache.getInstance().resetUser(data.userId);
+
+            this.clients.forEach((client) => {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.odcid !== data.userId) return;
+
+                this.pendingStatsDeltasBySession.delete(client.sessionId);
+                client.leave(4005, 'Your gameplay data was wiped. Please reconnect.');
+            });
+        });
+
         this.instanceId = options.instanceId;
         this.maxClients = options.maxPlayers;
         
@@ -262,6 +294,7 @@ export class InstanceRoom extends Room<InstanceState> {
         this.setState(state);
 
         this.navService.initializeFromMap(options.mapFile);
+        this.advancementsManager = new AdvancementsManager(options.mapFile);
 
         // Initialize world time
         this.updateWorldTime();
@@ -602,6 +635,7 @@ export class InstanceRoom extends Room<InstanceState> {
             if (!itemId) return;
 
             this.incrementStat(client, player, 'catches', 1);
+            await this.sendAdvancements(client, await this.advancementsManager.onFishCatch(player.odcid));
 
             const { items: currentSlots, equippedRodId: equippedRodIdFromState } = await InventoryCache.getInstance().getInventoryState(player.odcid);
             const stackSize = getItemDefinition(itemId)?.stackSize ?? 99;
@@ -628,6 +662,11 @@ export class InstanceRoom extends Room<InstanceState> {
             if (!data || typeof data.npcId !== 'string' || !data.npcId.trim()) return;
 
             this.incrementStat(client, player, 'npcInteractions', 1);
+            void this.advancementsManager.onNpcInteract(player.odcid, data.npcId.trim())
+                .then((updates) => this.sendAdvancements(client, updates))
+                .catch((error) => {
+                    console.error('[InstanceRoom] npc advancements failed:', error);
+                });
         });
 
         // Handle pickup item interactions
@@ -798,6 +837,15 @@ export class InstanceRoom extends Room<InstanceState> {
                     timestamp: Date.now(),
                     isPremium: player.isPremium
                 });
+
+                const chatText = data.message.slice(0, 100);
+                void this.advancementsManager.onChatMessage(player.odcid, player.x, player.y, chatText)
+                    .then((alerts) => {
+                        alerts.forEach((alert) => client.send('advancement:alert', alert));
+                    })
+                    .catch((error) => {
+                        console.error('[InstanceRoom] chat advancements failed:', error);
+                    });
                 
                 console.log(`[InstanceRoom] Chat from ${player.username}: ${data.message}`);
             }
@@ -897,6 +945,10 @@ export class InstanceRoom extends Room<InstanceState> {
             throw new Error("DUPLICATE_CONNECTION");
         }
 
+        if (odcid !== client.sessionId) {
+            await this.advancementsManager.initializeUser(odcid);
+        }
+
         console.log(`[InstanceRoom] ${client.sessionId} joined instance ${this.instanceId}`);
         
         // Register this connection
@@ -956,6 +1008,26 @@ export class InstanceRoom extends Room<InstanceState> {
         } catch (err) {
             console.error('[InstanceRoom] Error sending initial inventory:', err);
         }
+
+        try {
+            const advancementsState = await this.advancementsManager.getStateForUser(odcid);
+            client.send('advancements:state', advancementsState);
+        } catch (err) {
+            console.error('[InstanceRoom] Error sending initial advancements state:', err);
+        }
+
+        this.onMessage('advancements:get', async (client) => {
+            this.markActivity(client);
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+
+            try {
+                const advancementsState = await this.advancementsManager.getStateForUser(player.odcid);
+                client.send('advancements:state', advancementsState);
+            } catch (err) {
+                console.error('[InstanceRoom] Error responding with advancements state:', err);
+            }
+        });
 
         // Handle equipment updates from client
         this.onMessage("equipment:set", async (client, data: { equippedRodId: string | null }) => {
@@ -1270,7 +1342,30 @@ export class InstanceRoom extends Room<InstanceState> {
         }
 
         this.recordPositionSnapshot(client.sessionId, nextX, nextY, now);
+        void this.advancementsManager.onPlayerMoved(player.odcid, nextX, nextY)
+            .then((alerts) => {
+                alerts.forEach((alert) => client.send('advancement:alert', alert));
+            })
+            .catch((error) => {
+                console.error('[InstanceRoom] region advancements failed:', error);
+            });
         this.sendMovementReconcile(client, player, frame.seq, authority, hardOverride, errorDistance, reason);
+    }
+
+    private async sendAdvancements(client: Client, updates: { alerts: IAdvancementAlertMessage[]; delayedNewQuestCounts: number[] }) {
+        updates.alerts.forEach((alert) => {
+            client.send('advancement:alert', alert);
+        });
+
+        updates.delayedNewQuestCounts.forEach((count) => {
+            setTimeout(() => {
+                if (!this.state.players.has(client.sessionId)) return;
+                client.send('advancement:alert', {
+                    type: 'new-quests',
+                    count
+                } satisfies IAdvancementAlertMessage);
+            }, 6000);
+        });
     }
 
     private sendMovementReconcile(

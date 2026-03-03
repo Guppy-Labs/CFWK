@@ -46,6 +46,17 @@ export class InventoryCache {
         return items;
     }
 
+    resetUserInventory(userId: string): InventoryItem[] {
+        const items = this.createEmptySlots(DEFAULT_INVENTORY_SLOTS);
+        this.cache.set(userId, {
+            items: [...items],
+            equippedRodId: null,
+            dirty: false,
+            lastLoaded: Date.now()
+        });
+        return items;
+    }
+
     async getInventoryState(userId: string): Promise<{ items: InventoryItem[]; equippedRodId: string | null }> {
         const items = await this.getInventory(userId);
         const entry = this.cache.get(userId);

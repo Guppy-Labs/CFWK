@@ -7,7 +7,9 @@ import {
   DEFAULT_INVENTORY_SLOTS,
   getItemDefinition,
   IPlayerStats,
-  DEFAULT_PLAYER_STATS
+  DEFAULT_PLAYER_STATS,
+  IAdvancementsState,
+  DEFAULT_USER_ADVANCEMENTS
 } from '@cfwk/shared';
 
 // Re-export for convenience
@@ -44,6 +46,7 @@ export interface IUser extends Document {
   lastLocationId?: string | null;
   settings?: IUserSettings;
   playerStats?: IPlayerStats;
+  advancements?: IAdvancementsState;
 }
 
 type RawInventoryEntry = { index?: number; itemId?: string | null; count?: number };
@@ -114,6 +117,15 @@ function normalizeInventoryForSave(rawInventory: RawInventoryEntry[]): Normalize
   }
 
   return slots;
+}
+
+function createDefaultAdvancements(): IAdvancementsState {
+  return {
+    enrolled: DEFAULT_USER_ADVANCEMENTS.enrolled,
+    questProgress: {},
+    completedAchievements: [],
+    discoveredRegions: {}
+  };
 }
 
 const UserSchema: Schema = new Schema({
@@ -231,6 +243,10 @@ const UserSchema: Schema = new Schema({
       npcInteractions: { type: Number, default: DEFAULT_PLAYER_STATS.npcInteractions }
     },
     default: () => ({ ...DEFAULT_PLAYER_STATS })
+  },
+  advancements: {
+    type: Schema.Types.Mixed,
+    default: () => createDefaultAdvancements()
   }
 }, {
   timestamps: true

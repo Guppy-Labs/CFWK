@@ -6849,15 +6849,67 @@
          "visible":true,
          "x":0,
          "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":25,
+         "name":"Regions",
+         "objects":[
+                {
+                 "height":0,
+                 "id":124,
+                 "name":"Coast Town",
+                 "polygon":[
+                        {
+                         "x":0,
+                         "y":0
+                        }, 
+                        {
+                         "x":-1000,
+                         "y":-10
+                        }, 
+                        {
+                         "x":-1010,
+                         "y":-946
+                        }, 
+                        {
+                         "x":888,
+                         "y":-926
+                        }, 
+                        {
+                         "x":892,
+                         "y":-48
+                        }, 
+                        {
+                         "x":218,
+                         "y":14
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":3374,
+                 "y":5696
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
         }],
- "nextlayerid":25,
- "nextobjectid":123,
+ "nextlayerid":26,
+ "nextobjectid":125,
  "orientation":"orthogonal",
  "properties":[
         {
          "name":"Border Pad",
          "type":"float",
          "value":10
+        }, 
+        {
+         "name":"Name",
+         "type":"string",
+         "value":"Anchor Hollow"
         }],
  "renderorder":"right-down",
  "tiledversion":"1.11.2",

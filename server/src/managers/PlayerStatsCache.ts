@@ -69,6 +69,10 @@ export class PlayerStatsCache {
         };
     }
 
+    resetUser(userId: string): void {
+        this.cache.delete(userId);
+    }
+
     async getRanksForStats(stats: IPlayerStats, maxRank = 999): Promise<IPlayerStatRanks> {
         const ranks: IPlayerStatRanks = {};
 

@@ -387,6 +387,116 @@ export interface IPlayerStatsResponse {
   ranks: IPlayerStatRanks;
 }
 
+export type QuestProgressStatus = 'active' | 'completed';
+
+export interface IQuestProgressEntry {
+  questId: string;
+  status: QuestProgressStatus;
+  startedAt: number | null;
+  completedAt: number | null;
+  objectiveIndex?: number | null;
+}
+
+export interface IAdvancementsState {
+  enrolled: boolean;
+  questProgress: Record<string, IQuestProgressEntry>;
+  completedAchievements: string[];
+  discoveredRegions: Record<string, string[]>;
+}
+
+export const DEFAULT_USER_ADVANCEMENTS: IAdvancementsState = {
+  enrolled: true,
+  questProgress: {},
+  completedAchievements: [],
+  discoveredRegions: {}
+};
+
+export type AdvancementAlertType =
+  | 'quest-started'
+  | 'quest-objective'
+  | 'quest-completed'
+  | 'new-quests'
+  | 'achievement-unlocked'
+  | 'area-discovered';
+
+export interface IAdvancementAlertMessage {
+  type: AdvancementAlertType;
+  questId?: string;
+  objectiveIndex?: number;
+  achievementId?: string;
+  mapName?: string;
+  regionName?: string;
+  count?: number;
+}
+
+export type IQuestCatalogEntry = {
+  id: string;
+  dependencyQuestId: string | null;
+  nextQuestId?: string;
+  startObjective?: IQuestObjectiveEntry;
+  objectives?: IQuestObjectiveEntry[];
+  objective?: IQuestObjectiveEntry;
+};
+
+export type QuestObjectiveKind = 'fish-catch' | 'talk-to-npc';
+
+export type IQuestObjectiveEntry = {
+  kind: QuestObjectiveKind;
+  npcId?: string;
+};
+
+export type IAchievementCatalogEntry = {
+  id: string;
+  category: string;
+};
+
+export type ILocationCatalogRegionEntry = {
+  id: string;
+};
+
+export type ILocationCatalogEntry = {
+  mapFile: string;
+  mapName: string;
+  regions: ILocationCatalogRegionEntry[];
+};
+
+export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
+  {
+    id: 'first_catch',
+    dependencyQuestId: null,
+    nextQuestId: 'travellers_errand',
+    startObjective: { kind: 'talk-to-npc', npcId: 'fisherman' },
+    objectives: [
+      { kind: 'fish-catch' },
+      { kind: 'talk-to-npc', npcId: 'fisherman' }
+    ],
+    objective: { kind: 'fish-catch' }
+  },
+  {
+    id: 'travellers_errand',
+    dependencyQuestId: 'first_catch',
+    startObjective: { kind: 'talk-to-npc', npcId: 'traveller' },
+    objectives: [
+      { kind: 'talk-to-npc', npcId: 'guard' }
+    ],
+    objective: { kind: 'talk-to-npc', npcId: 'guard' }
+  }
+];
+
+export const ADVANCEMENT_ACHIEVEMENT_CATALOG: IAchievementCatalogEntry[] = [
+  { id: 'campfire_stories', category: 'fun' }
+];
+
+export const ADVANCEMENT_LOCATION_CATALOG: ILocationCatalogEntry[] = [
+  {
+    mapFile: 'anchor-hollow.tmj',
+    mapName: 'Anchor Hollow',
+    regions: [
+      { id: 'Coast Town' }
+    ]
+  }
+];
+
 export type IPlayerStatsDelta = Partial<Record<PlayerStatKey, number>>;
 
 export const PLAYER_STAT_KEYS: PlayerStatKey[] = [

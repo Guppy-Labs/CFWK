@@ -33,7 +33,17 @@ import { Toast } from '../../ui/Toast';
 import { DisconnectModal } from '../../ui/DisconnectModal';
 import { DialogueManager } from '../dialogue/DialogueManager';
 import type { UIScene } from './UIScene';
-import { IInstanceInfo, ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE, DEFAULT_USER_SETTINGS, IVideoSettings } from '@cfwk/shared';
+import {
+    ADVANCEMENT_QUEST_CATALOG,
+    DEFAULT_CHARACTER_APPEARANCE,
+    DEFAULT_USER_ADVANCEMENTS,
+    DEFAULT_USER_SETTINGS,
+    IAdvancementsState,
+    ICharacterAppearance,
+    IInstanceInfo,
+    IQuestObjectiveEntry,
+    IVideoSettings
+} from '@cfwk/shared';
 import { NetworkManager } from '../network/NetworkManager';
 import { hideLoader, setLoaderText, showLoader, currentUser } from '../index';
 import { SharedMCTextures } from '../player/SharedMCTextures';
@@ -84,6 +94,15 @@ export class GameScene extends Phaser.Scene {
     private fires: FireParticleSystem[] = [];
     private lastTablistSnapshot = '';
     private currentVideoSettings: IVideoSettings = { ...DEFAULT_USER_SETTINGS.video };
+    private advancementsState: IAdvancementsState = {
+        enrolled: DEFAULT_USER_ADVANCEMENTS.enrolled,
+        questProgress: {},
+        completedAchievements: [],
+        discoveredRegions: {}
+    };
+    private advancementsUpdateHandler?: (event: Event) => void;
+    private questDirectionArrow?: Phaser.GameObjects.Triangle;
+    private questTargetMarker?: Phaser.GameObjects.Container;
     
     // Character appearance (fetched async)
     private characterAppearance: ICharacterAppearance = DEFAULT_CHARACTER_APPEARANCE;
@@ -154,6 +173,7 @@ export class GameScene extends Phaser.Scene {
         this.seasonalEffectsManager = new SeasonalEffectsManager(this);
 
         this.applyStartupSettings();
+        this.setupQuestIndicators();
 
         // Launch UI Scene
         this.scene.launch('UIScene');
@@ -350,6 +370,126 @@ export class GameScene extends Phaser.Scene {
 
     getNpcPosition(id: string): { x: number; y: number; name: string } | null {
         return this.npcManager?.getNpcById(id) ?? null;
+    }
+
+    private setupQuestIndicators() {
+        const cached = this.networkManager.getCachedAdvancementsState();
+        if (cached) {
+            this.advancementsState = cached;
+        }
+
+        this.questDirectionArrow = this.add.triangle(0, 0, -8, -5, 9, 0, -8, 5, 0xffc04d, 0.85);
+        this.questDirectionArrow.setVisible(false);
+        this.questDirectionArrow.setDepth(ENTITY_BASE - 1);
+
+        const markerStem = this.add.rectangle(0, -6, 2.5, 8, 0xff9a2e, 0.72).setOrigin(0.5, 1);
+        const markerDot = this.add.circle(0, -2.2, 1.6, 0xff9a2e, 0.72);
+        this.questTargetMarker = this.add.container(0, 0, [markerStem, markerDot]);
+        this.questTargetMarker.setVisible(false);
+        this.questTargetMarker.setDepth(ENTITY_BASE + 2001);
+        this.questTargetMarker.setScale(0.85);
+
+        this.advancementsUpdateHandler = (event: Event) => {
+            const detail = (event as CustomEvent<IAdvancementsState>).detail;
+            if (!detail) return;
+            this.advancementsState = {
+                enrolled: detail.enrolled,
+                questProgress: { ...detail.questProgress },
+                completedAchievements: [...detail.completedAchievements],
+                discoveredRegions: Object.fromEntries(
+                    Object.entries(detail.discoveredRegions).map(([mapFile, regions]) => [mapFile, [...regions]])
+                )
+            };
+        };
+
+        window.addEventListener('advancements:update', this.advancementsUpdateHandler as EventListener);
+    }
+
+    private getTargetedQuestObjective(): { questId: string; objective: IQuestObjectiveEntry } | null {
+        const targetedQuestId = this.registry.get('targetedQuestId') as string | null;
+        if (!targetedQuestId) return null;
+
+        const questEntry = ADVANCEMENT_QUEST_CATALOG.find((entry) => entry.id === targetedQuestId);
+        if (!questEntry) return null;
+
+        const progress = this.advancementsState.questProgress[targetedQuestId];
+        if (progress?.status === 'completed') return null;
+
+        const stagedObjectives = questEntry.objectives ?? (questEntry.objective ? [questEntry.objective] : []);
+        const activeIndex = typeof progress?.objectiveIndex === 'number'
+            ? Math.max(0, Math.floor(progress.objectiveIndex))
+            : 0;
+        const activeObjective = stagedObjectives[Math.min(activeIndex, Math.max(0, stagedObjectives.length - 1))] ?? null;
+
+        const objective = progress?.status === 'active'
+            ? (activeObjective ?? questEntry.objective ?? questEntry.startObjective)
+            : (questEntry.startObjective ?? activeObjective ?? questEntry.objective);
+        if (!objective) return null;
+
+        return {
+            questId: targetedQuestId,
+            objective
+        };
+    }
+
+    private updateQuestIndicators(time: number) {
+        const objectiveData = this.getTargetedQuestObjective();
+        if (!objectiveData || objectiveData.objective.kind !== 'talk-to-npc' || !objectiveData.objective.npcId) {
+            this.questDirectionArrow?.setVisible(false);
+            this.questTargetMarker?.setVisible(false);
+            return;
+        }
+
+        const player = this.getActivePlayer();
+        if (!player) {
+            this.questDirectionArrow?.setVisible(false);
+            this.questTargetMarker?.setVisible(false);
+            return;
+        }
+
+        const npc = this.getNpcPosition(objectiveData.objective.npcId);
+        if (!npc) {
+            this.questDirectionArrow?.setVisible(false);
+            this.questTargetMarker?.setVisible(false);
+            return;
+        }
+
+        const dx = npc.x - player.x;
+        const dy = npc.y - player.y;
+        const angle = Math.atan2(dy, dx);
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        const directionX = dx / distance;
+        const directionY = dy / distance;
+        const hideArrowDistancePx = 10 * 10;
+
+        const feet = player.getBottomCenter();
+        const playerHalfWidth = Math.max(10, (player.displayWidth || 0) * 0.5);
+        const arrowClearance = 16;
+        const arrowPushOut = Math.max(34, playerHalfWidth + arrowClearance);
+        const arrowX = feet.x + directionX * arrowPushOut;
+        const arrowY = feet.y - 8 + directionY * arrowPushOut;
+        const warp = 0.62 + 0.22 * Math.abs(directionX);
+
+        if (this.questDirectionArrow) {
+            if (distance <= hideArrowDistancePx) {
+                this.questDirectionArrow.setVisible(false);
+            } else {
+                this.questDirectionArrow.setVisible(true);
+                this.questDirectionArrow.setPosition(arrowX, arrowY);
+                this.questDirectionArrow.setRotation(angle);
+                this.questDirectionArrow.setScale(0.82, warp);
+                this.questDirectionArrow.setAlpha(0.7 + Math.sin(time * 0.01) * 0.08);
+                this.questDirectionArrow.setDepth((player.depth ?? ENTITY_BASE) - 1);
+            }
+        }
+
+        if (this.questTargetMarker) {
+            const bobOffset = Math.sin(time * 0.0045) * 1.2;
+            this.questTargetMarker.setVisible(true);
+            this.questTargetMarker.setPosition(npc.x, npc.y - 54 + bobOffset);
+            this.questTargetMarker.setScale(0.85, 0.88);
+            this.questTargetMarker.setAlpha(0.72);
+        }
     }
 
     setDialogueActive(active: boolean, focusPoint?: { x: number; y: number }) {
@@ -556,6 +696,19 @@ export class GameScene extends Phaser.Scene {
                 return;
             }
 
+            if (code === 4005) {
+                DisconnectModal.show({
+                    title: this.localeManager.t('scene.game.wipedTitle', undefined, 'Game Wiped'),
+                    message: this.localeManager.t('scene.game.wipedMessage', undefined, 'Your gameplay data was reset by an admin. Please reconnect.'),
+                    icon: 'disconnect',
+                    onReconnect: () => {
+                        this.scene.stop('UIScene');
+                        this.scene.start('BootScene');
+                    }
+                });
+                return;
+            }
+
             DisconnectModal.show({
                 title: this.localeManager.t('scene.game.offlineTitle', undefined, 'Server Offline'),
                 message: `The connection to the game server was lost${detail}.<br>Please try again later.`,
@@ -581,10 +734,18 @@ export class GameScene extends Phaser.Scene {
              if (this.rodUseHandler) {
                  window.removeEventListener('hud:rod-use', this.rodUseHandler);
              }
+                         if (this.advancementsUpdateHandler) {
+                                 window.removeEventListener('advancements:update', this.advancementsUpdateHandler as EventListener);
+                                 this.advancementsUpdateHandler = undefined;
+                         }
              this.events.off('stop-audio', this.stopAllAudio, this);
              this.events.off('fishing:stop', this.stopFishing, this);
                          this.fishingAutoFaceTimer?.remove(false);
                          this.fishingAutoFaceTimer = undefined;
+                             this.questDirectionArrow?.destroy();
+                             this.questDirectionArrow = undefined;
+                             this.questTargetMarker?.destroy();
+                             this.questTargetMarker = undefined;
                this.npcManager?.destroy();
                          this.dialogueManager?.destroy();
         });
@@ -782,7 +943,7 @@ export class GameScene extends Phaser.Scene {
 
         // Update water system (splash, footprints, depth effects)
         this.waterSystem?.update(delta);
-        const nearWater = this.waterSystem?.isNearWater(0.5) ?? false;
+        const nearWater = this.waterSystem?.isNearWater(2.5) ?? false;
         if (this.registry.get('nearWater') !== nearWater) {
             this.registry.set('nearWater', nearWater);
         }
@@ -849,6 +1010,8 @@ export class GameScene extends Phaser.Scene {
         } else {
             this.droppedItemManager?.update();
         }
+
+        this.updateQuestIndicators(_time);
 
         // Update tablist registry
         this.updateTablistRegistry();

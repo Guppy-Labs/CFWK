@@ -7,7 +7,7 @@ import { HeadbarUI } from '../ui/HeadbarUI';
 import { NetworkManager } from '../network/NetworkManager';
 import { InventoryChangeMonitor } from '../ui/InventoryChangeMonitor';
 import { SubtitleStack } from '../ui/SubtitleStack';
-import { ITEM_DEFINITIONS, getItemImagePath } from '@cfwk/shared';
+import { IAdvancementAlertMessage, ITEM_DEFINITIONS, getItemImagePath } from '@cfwk/shared';
 import { DialogueUI } from '../ui/DialogueUI';
 import type { DialogueRenderLine } from '../dialogue/DialogueTypes';
 import { KeybindManager } from '../input/KeybindManager';
@@ -33,6 +33,7 @@ export class UIScene extends Phaser.Scene {
     private nearWaterHandler?: (parent: any, value: boolean) => void;
     private subtitleEventHandler?: (event: Event) => void;
     private subtitlesEnabledChangedHandler?: (event: Event) => void;
+    private isPlayerListKeyHeld = false;
     private networkManager = NetworkManager.getInstance();
     private keybindManager = KeybindManager.getInstance();
     private cursorDefaultUrl?: string;
@@ -244,6 +245,11 @@ export class UIScene extends Phaser.Scene {
         // Intercept Tab at the window level to prevent default focus behavior
         this.tabKeyDownHandler = (event: KeyboardEvent) => {
             if (!this.keybindManager.matchesActionEvent('playerList', event)) return;
+            this.isPlayerListKeyHeld = true;
+            if (event.repeat) {
+                event.preventDefault();
+                return;
+            }
             // Don't show tablist while chat is focused
             if (this.chat?.isChatFocused()) return;
             if (this.registry.get('guiOpen') === true) return;
@@ -252,7 +258,7 @@ export class UIScene extends Phaser.Scene {
         };
         this.tabKeyUpHandler = (event: KeyboardEvent) => {
             if (!this.keybindManager.matchesActionEvent('playerList', event)) return;
-            if (this.registry.get('guiOpen') === true) return;
+            this.isPlayerListKeyHeld = false;
             event.preventDefault();
             this.headbarUI?.hideTabList();
         };
@@ -419,6 +425,7 @@ export class UIScene extends Phaser.Scene {
         this.dialogueActive = active;
 
         if (active) {
+            this.headbarUI?.hideTabList();
             if (this.chat?.isChatFocused()) {
                 this.chat.blur();
             }
@@ -541,9 +548,19 @@ export class UIScene extends Phaser.Scene {
             // Emit to game for bubbles
             this.game.events.emit('chat-message', data);
         });
+
+        room.onMessage('advancement:alert', (data: IAdvancementAlertMessage) => {
+            if (!this.headbarUI) return;
+            this.headbarUI.enqueueAdvancementAlert(data);
+            this.networkManager.requestAdvancementsState();
+        });
     }
 
     update(_time: number, delta: number) {
+        if (!this.isPlayerListKeyHeld && this.registry.get('guiOpen') !== true) {
+            this.headbarUI?.hideTabList();
+        }
+
         this.playerHud?.update(delta);
         this.inventoryChangeMonitor?.update();
         this.subtitleStack?.update();

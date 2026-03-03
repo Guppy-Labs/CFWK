@@ -34,6 +34,7 @@ export class Chat {
     private readonly commandSpecs: CommandSpec[] = [
         { name: 'ban', args: ['player'] },
         { name: 'broadcast', args: ['text'] },
+        { name: 'clearprogress', args: ['player'] },
         { name: 'drop', args: ['player', 'item', 'count'] },
         { name: 'give', args: ['player', 'item', 'count'] },
         { name: 'mute', args: ['player'] },

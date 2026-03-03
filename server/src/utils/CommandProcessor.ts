@@ -2,7 +2,12 @@ import User from '../models/User';
 import BannedIP from '../models/BannedIP';
 import { InstanceManager } from '../managers/InstanceManager';
 import { InventoryCache } from '../managers/InventoryCache';
-import { getItemDefinition } from '@cfwk/shared';
+import { PlayerStatsCache } from '../managers/PlayerStatsCache';
+import { DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_STATS, DEFAULT_USER_ADVANCEMENTS, getItemDefinition } from '@cfwk/shared';
+
+function createEmptyInventorySlots() {
+    return Array.from({ length: DEFAULT_INVENTORY_SLOTS }, (_v, index) => ({ index, itemId: null, count: 0 }));
+}
 
 export class CommandProcessor {
     // Basic duration parser (1d, 2h, 30m, 10s)
@@ -58,6 +63,10 @@ export class CommandProcessor {
                 return await this.handleDrop(args, issuerName);
             case 'send':
                 return await this.handleSend(args, issuerName);
+            case 'clearprogress':
+                return await this.handleClearProgress(args);
+            case 'wipe':
+                return await this.handleWipe(args);
             default:
                 return "Unknown command.";
         }
@@ -302,5 +311,69 @@ export class CommandProcessor {
         });
 
         return `Sent ${user.username} to ${targetLocationId}.`;
+    }
+
+    private static async handleClearProgress(args: string[]): Promise<string> {
+        if (args.length < 1) return 'Usage: /clearprogress [username]';
+
+        const targetName = args[0];
+        const user = await this.getUserByUsername(targetName);
+        if (!user) return `User '${targetName}' not found.`;
+
+        user.set('advancements', {
+            enrolled: DEFAULT_USER_ADVANCEMENTS.enrolled,
+            questProgress: {},
+            completedAchievements: [],
+            discoveredRegions: {}
+        });
+        await user.save();
+
+        InstanceManager.getInstance().events.emit('clear_progress', {
+            userId: user._id.toString()
+        });
+
+        return `Cleared advancement progress for ${user.username}.`;
+    }
+
+    private static async handleWipe(args: string[]): Promise<string> {
+        if (args.length < 1) return 'Usage: /wipe [username]';
+
+        const targetName = args[0];
+        const user = await this.getUserByUsername(targetName);
+        if (!user) return `User '${targetName}' not found.`;
+
+        const resetInventory = createEmptyInventorySlots();
+
+        await User.updateOne(
+            { _id: user._id },
+            {
+                $set: {
+                    inventory: resetInventory,
+                    equippedRodId: null,
+                    playerStats: { ...DEFAULT_PLAYER_STATS },
+                    advancements: {
+                        enrolled: DEFAULT_USER_ADVANCEMENTS.enrolled,
+                        questProgress: {},
+                        completedAchievements: [],
+                        discoveredRegions: {}
+                    },
+                    lastLocationId: null
+                }
+            }
+        );
+
+        const userId = user._id.toString();
+        const inventoryCache = InventoryCache.getInstance();
+        const playerStatsCache = PlayerStatsCache.getInstance();
+
+        const items = inventoryCache.resetUserInventory(userId);
+        playerStatsCache.resetUser(userId);
+
+        const instanceManager = InstanceManager.getInstance();
+        instanceManager.events.emit('clear_progress', { userId });
+        instanceManager.events.emit('inventory_update', { userId, items });
+        instanceManager.events.emit('wipe_user', { userId });
+
+        return `Wiped gameplay data for ${user.username}.`;
     }
 }

@@ -19,11 +19,19 @@ export type DialogueLine = {
     hideSpeakerVisuals?: boolean;
 };
 
-export type DialogueCheck = {
-    type: 'hasItem';
-    itemId: string;
-    negate?: boolean;
-};
+export type DialogueCheck =
+    | {
+        type: 'hasItem';
+        itemId: string;
+        negate?: boolean;
+    }
+    | {
+        type: 'questObjective';
+        questId: string;
+        status?: 'active' | 'completed';
+        objectiveIndex?: number;
+        negate?: boolean;
+    };
 
 export type DialogueAction = {
     type: 'giveItem';
