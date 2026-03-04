@@ -72,7 +72,7 @@ export class MCPlayerController {
     private correctionOffsetY = 0;
     private syncTimer = 0;
     private readonly syncInterval = 50;
-    private readonly hardRubberbandThreshold = 48;
+    private readonly hardRubberbandThreshold = 72;
     private readonly PHYSICS_FPS = 60;
     private readonly IMPULSE_DECAY = 0.88;
     private networkMovementHandlersAttached = false;
