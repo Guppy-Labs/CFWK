@@ -3,6 +3,7 @@
 		"tab": {
 			"inventory": "Inventario",
 			"finbook": "Libro de pesca",
+			"glimmerbowl": "Glimmerbowl",
 			"settings": "Ajustes"
 		},
 		"header": "Ajustes",
@@ -94,6 +95,16 @@
 			"rod": "Caña"
 		}
 	},
+	"glimmerbowl": {
+		"placeholder": "Vista previa de pecera",
+		"section": {
+			"regular": "Regular",
+			"awakened": "Despertado"
+		},
+		"details": {
+			"view": "Ver"
+		}
+	},
 	"headbar": {
 		"playersOnline": "Jugadores en línea",
 		"datePattern": "{season} Día {day}",
@@ -144,6 +155,23 @@
 		},
 		"biteHint": "¡Haz clic {clicks} veces más en {seconds} segundos!",
 		"caughtItem": "¡Has atrapado {item}!"
+	},
+	"guide": {
+		"rod": {
+			"openInventory": "Para equipar tu nueva caña, abre tu inventario (pulsa {key} en escritorio).",
+			"openInventoryMobile": "Para equipar tu nueva caña, toca el botón de inventario.",
+			"selectRod": "Haz clic en tu caña dentro del inventario para seleccionarla.",
+			"equipRod": "Haz clic en la ranura de caña a la derecha para equiparla.",
+			"closeInventory": "Cierra tu inventario (pulsa {key} en escritorio).",
+			"closeInventoryMobile": "Toca otra vez el botón de inventario para cerrarlo."
+		},
+		"fishing": {
+			"useRod": "Estás cerca del agua. Pulsa {key} (escritorio) o toca el botón de la caña para empezar a pescar.",
+			"holdCast": "Mantén pulsado el botón de lanzar unos segundos y luego suéltalo.",
+			"waitBite": "Bien. Espera a que pique un pez...",
+			"reel": "Haz clic en el botón de recoger repetidamente hasta atrapar el pez.",
+			"stop": "¡Gran captura! Haz clic en Dejar de pescar y luego habla con el Pescador."
+		}
 	},
 	"npc": {
 		"test": {

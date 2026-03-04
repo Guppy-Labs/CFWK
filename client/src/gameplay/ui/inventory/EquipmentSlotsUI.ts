@@ -441,6 +441,16 @@ export class EquipmentSlotsUI {
         return !!this.slotBounds && this.slotBounds.contains(pointer.x, pointer.y);
     }
 
+    getRodSlotScreenRect(): Phaser.Geom.Rectangle | null {
+        if (!this.slotBounds) return null;
+        return new Phaser.Geom.Rectangle(
+            this.slotBounds.x,
+            this.slotBounds.y,
+            this.slotBounds.width,
+            this.slotBounds.height
+        );
+    }
+
     private createLabelTexture(text: string): string {
         const width = this.measureBitmapTextWidth(text);
         const height = this.fontCharSize;

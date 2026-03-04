@@ -46,9 +46,11 @@ export class FishingScene extends Phaser.Scene {
     private biteTimer?: Phaser.Time.TimerEvent;
     private biteActive = false;
     private biteWindowTimer?: Phaser.Time.TimerEvent;
+    private biteWindowRemainingMs?: number;
     private readonly biteWindowMs = 5000;
     private reelClicks = 0;
     private reelClicksNeeded = 10;
+    private guideFreezeBiteTimer = false;
     private readonly baseBiteDelayMinMs = 4000;
     private readonly baseBiteDelayMaxMs = 12000;
     private readonly biteMessageKeys = [
@@ -156,6 +158,7 @@ export class FishingScene extends Phaser.Scene {
 
         this.scale.on('resize', this.onResize, this);
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+        window.dispatchEvent(new CustomEvent('guide:fishing:entered'));
     }
 
     update(_time: number, delta: number) {
@@ -249,6 +252,8 @@ export class FishingScene extends Phaser.Scene {
     private stopFishing() {
         this.markAfkActivity();
         this.cleanupFishingState();
+        this.guideFreezeBiteTimer = false;
+        window.dispatchEvent(new CustomEvent('guide:fishing:stopped'));
         const gameScene = this.scene.get('GameScene');
         gameScene?.events.emit('fishing:stop');
         this.scene.stop();
@@ -256,6 +261,7 @@ export class FishingScene extends Phaser.Scene {
     }
 
     private cleanupFishingState() {
+        this.guideFreezeBiteTimer = false;
         this.isHoldingCast = false;
         this.castHoldStart = 0;
         this.castHoldDuration = 0;
@@ -265,6 +271,7 @@ export class FishingScene extends Phaser.Scene {
         this.biteTimer = undefined;
         this.biteWindowTimer?.remove(false);
         this.biteWindowTimer = undefined;
+        this.biteWindowRemainingMs = undefined;
 
         this.castTossTween?.stop();
         this.castTossTween = undefined;
@@ -392,6 +399,7 @@ export class FishingScene extends Phaser.Scene {
         this.castLineEnd = this.getCastTarget(this.castPower);
         this.castLineBaseEnd = this.castLineEnd.clone();
         this.networkManager.sendFishingCast(this.currentDepth, 'temperate');
+        window.dispatchEvent(new CustomEvent('guide:fishing:casted'));
         this.queueBite();
     }
 
@@ -480,8 +488,10 @@ export class FishingScene extends Phaser.Scene {
         this.ui?.setBiteClickRatio(0);
 
         this.networkManager.sendFishingHook();
+        window.dispatchEvent(new CustomEvent('guide:fishing:bite-started'));
 
         this.biteWindowTimer?.remove(false);
+        this.biteWindowRemainingMs = undefined;
         this.biteWindowTimer = this.time.delayedCall(this.biteWindowMs, () => this.failBite());
     }
 
@@ -499,7 +509,17 @@ export class FishingScene extends Phaser.Scene {
     }
 
     private updateBiteBars() {
-        if (!this.biteActive || !this.biteWindowTimer) return;
+        if (!this.biteActive) return;
+        if (this.guideFreezeBiteTimer) {
+            const remaining = this.biteWindowRemainingMs ?? (this.biteWindowTimer
+                ? Math.max(0, this.biteWindowMs - this.biteWindowTimer.getElapsed())
+                : this.biteWindowMs);
+            const ratio = Phaser.Math.Clamp(remaining / this.biteWindowMs, 0, 1);
+            this.ui?.setBiteTimeRatio(ratio);
+            this.updateBiteHint(remaining);
+            return;
+        }
+        if (!this.biteWindowTimer) return;
         const remaining = Math.max(0, this.biteWindowMs - this.biteWindowTimer.getElapsed());
         const ratio = remaining / this.biteWindowMs;
         this.ui?.setBiteTimeRatio(ratio);
@@ -522,6 +542,8 @@ export class FishingScene extends Phaser.Scene {
     private clearBite() {
         this.biteTimer?.remove(false);
         this.biteWindowTimer?.remove(false);
+        this.biteWindowTimer = undefined;
+        this.biteWindowRemainingMs = undefined;
         this.stopBiteAlert();
         this.ui?.setBiteText('', false);
         this.ui?.setBiteHint('', false);
@@ -744,8 +766,51 @@ export class FishingScene extends Phaser.Scene {
             const catchText = this.localeManager.t('fishing.caughtItem', { item: itemName }, `Caught ${itemName}!`);
             this.ui?.setBiteText(catchText, true);
             this.ui?.setBiteHint('', false);
+            window.dispatchEvent(new CustomEvent('guide:fishing:caught', { detail: { itemId: data.itemId } }));
             this.playCatchAnimation(data.itemId);
         });
+    }
+
+    setGuideFreezeBiteTimer(freeze: boolean) {
+        if (this.guideFreezeBiteTimer === freeze) return;
+        this.guideFreezeBiteTimer = freeze;
+        if (!this.biteActive) return;
+
+        if (freeze) {
+            if (this.biteWindowTimer) {
+                this.biteWindowRemainingMs = Math.max(0, this.biteWindowMs - this.biteWindowTimer.getElapsed());
+                this.biteWindowTimer.remove(false);
+                this.biteWindowTimer = undefined;
+            }
+            const frozenRatio = Phaser.Math.Clamp((this.biteWindowRemainingMs ?? this.biteWindowMs) / this.biteWindowMs, 0, 1);
+            this.ui?.setBiteTimeRatio(frozenRatio);
+            return;
+        }
+
+        const remaining = this.biteWindowRemainingMs;
+        if (!remaining || remaining <= 0) {
+            this.failBite();
+            return;
+        }
+
+        this.biteWindowRemainingMs = undefined;
+        this.biteWindowTimer = this.time.delayedCall(remaining, () => this.failBite());
+    }
+
+    getGuideCastButtonRect(): Phaser.Geom.Rectangle | null {
+        return this.ui?.getCastButtonRect() ?? null;
+    }
+
+    getGuideStopButtonRect(): Phaser.Geom.Rectangle | null {
+        return this.ui?.getStopButtonRect() ?? null;
+    }
+
+    getGuideBiteHintRect(): Phaser.Geom.Rectangle | null {
+        return this.ui?.getBiteHintRect() ?? null;
+    }
+
+    getGuideBiteInfoRect(): Phaser.Geom.Rectangle | null {
+        return this.ui?.getBiteInfoRect() ?? null;
     }
 
     private setupHookListener() {

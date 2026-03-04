@@ -56,6 +56,23 @@
     "biteHint": "----- {clicks} ----- {seconds} -----",
     "caughtItem": "----- {item}!"
   },
+  "guide": {
+    "rod": {
+      "openInventory": "----- {key} -----",
+      "openInventoryMobile": "-----",
+      "selectRod": "-----",
+      "equipRod": "-----",
+      "closeInventory": "----- {key} -----",
+      "closeInventoryMobile": "-----"
+    },
+    "fishing": {
+      "useRod": "----- {key} -----",
+      "holdCast": "-----",
+      "waitBite": "-----",
+      "reel": "-----",
+      "stop": "----- -----"
+    }
+  },
   "npc": {
     "test": {
       "name": "-----"

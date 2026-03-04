@@ -22,6 +22,12 @@
                     "emotion": "surprise",
                     "textKey": "dialogue.npc.fisherman.postCatch.1",
                     "text": "But there's a big secret beneath these waters... and I still don't know what it is."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.fisherman.postCatch.2",
+                    "text": "You should venture further onto the island to learn how things work around here."
                 }
             ]
         }

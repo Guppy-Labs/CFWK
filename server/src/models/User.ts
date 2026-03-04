@@ -5,11 +5,13 @@ import {
   DEFAULT_USER_SETTINGS,
   IUserSettings,
   DEFAULT_INVENTORY_SLOTS,
+  GlimmerbowlEntry,
   getItemDefinition,
   IPlayerStats,
   DEFAULT_PLAYER_STATS,
   IAdvancementsState,
-  DEFAULT_USER_ADVANCEMENTS
+  DEFAULT_USER_ADVANCEMENTS,
+  DEFAULT_GUIDE_TUTORIAL_STATE
 } from '@cfwk/shared';
 
 // Re-export for convenience
@@ -36,6 +38,7 @@ export interface IUser extends Document {
   lastKnownIP?: string;
   inventory?: { index: number; itemId: string | null; count: number }[];
   equippedRodId?: string | null;
+  glimmerbowl?: GlimmerbowlEntry[];
   characterAppearance?: ICharacterAppearance;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -124,7 +127,8 @@ function createDefaultAdvancements(): IAdvancementsState {
     enrolled: DEFAULT_USER_ADVANCEMENTS.enrolled,
     questProgress: {},
     completedAchievements: [],
-    discoveredRegions: {}
+    discoveredRegions: {},
+    tutorial: { ...DEFAULT_GUIDE_TUTORIAL_STATE }
   };
 }
 
@@ -157,6 +161,16 @@ const UserSchema: Schema = new Schema({
     default: []
   },
   equippedRodId: { type: String, default: null },
+  glimmerbowl: {
+    type: [
+      {
+        itemId: { type: String, required: true },
+        count: { type: Number, required: true, default: 1 },
+        tier: { type: String, enum: ['regular', 'awakened'], required: true, default: 'regular' }
+      }
+    ],
+    default: []
+  },
   characterAppearance: {
     type: {
       body: {

@@ -36,6 +36,7 @@ import type { UIScene } from './UIScene';
 import {
     ADVANCEMENT_QUEST_CATALOG,
     DEFAULT_CHARACTER_APPEARANCE,
+    DEFAULT_GUIDE_TUTORIAL_STATE,
     DEFAULT_USER_ADVANCEMENTS,
     DEFAULT_USER_SETTINGS,
     IAdvancementsState,
@@ -98,7 +99,8 @@ export class GameScene extends Phaser.Scene {
         enrolled: DEFAULT_USER_ADVANCEMENTS.enrolled,
         questProgress: {},
         completedAchievements: [],
-        discoveredRegions: {}
+        discoveredRegions: {},
+        tutorial: { ...DEFAULT_GUIDE_TUTORIAL_STATE }
     };
     private advancementsUpdateHandler?: (event: Event) => void;
     private questDirectionArrow?: Phaser.GameObjects.Triangle;
@@ -113,6 +115,10 @@ export class GameScene extends Phaser.Scene {
 
     getMobileControls() {
         return this.mcPlayerController?.getMobileControls();
+    }
+
+    getGuideInventoryButtonRect(): Phaser.Geom.Rectangle | null {
+        return this.mcPlayerController?.getGuideInventoryButtonRect() ?? null;
     }
 
     init(data: GameSceneData) {
@@ -254,6 +260,7 @@ export class GameScene extends Phaser.Scene {
             // Ignore if chat is focused
             if (this.registry.get('chatFocused') === true) return;
             if (this.registry.get('guiOpen') === true) return;
+            if (this.registry.get('guideBlockAll') === true) return;
             
             const shiftDown = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT)?.isDown ?? false;
             this.debugOverlay?.toggle(shiftDown);
@@ -264,6 +271,7 @@ export class GameScene extends Phaser.Scene {
         this.input.keyboard?.on('keydown-V', () => {
             if (this.registry.get('chatFocused') === true) return;
             if (this.registry.get('guiOpen') === true) return;
+            if (this.registry.get('guideBlockAll') === true) return;
             
             const enabled = !this.registry.get('visualEffectsEnabled');
             this.registry.set('visualEffectsEnabled', enabled);
@@ -278,6 +286,7 @@ export class GameScene extends Phaser.Scene {
         this.input.keyboard?.on('keydown-P', () => {
             if (this.registry.get('chatFocused') === true) return;
             if (this.registry.get('guiOpen') === true) return;
+            if (this.registry.get('guideBlockAll') === true) return;
             
             const enabled = !this.registry.get('seasonalEffectsEnabled');
             this.registry.set('seasonalEffectsEnabled', enabled);
@@ -292,6 +301,7 @@ export class GameScene extends Phaser.Scene {
         this.input.keyboard?.on('keydown-Z', () => {
             if (this.registry.get('chatFocused') === true) return;
             if (this.registry.get('guiOpen') === true) return;
+            if (this.registry.get('guideBlockAll') === true) return;
             
             this.audioManager?.playMeow();
         });
@@ -398,7 +408,8 @@ export class GameScene extends Phaser.Scene {
                 completedAchievements: [...detail.completedAchievements],
                 discoveredRegions: Object.fromEntries(
                     Object.entries(detail.discoveredRegions).map(([mapFile, regions]) => [mapFile, [...regions]])
-                )
+                ),
+                tutorial: { ...detail.tutorial }
             };
         };
 

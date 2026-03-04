@@ -33,6 +33,7 @@ export class DialogueManager {
     private pendingActions: DialogueAction[] = [];
     private inventorySnapshot?: IInventoryResponse | null;
     private hasShownLine = false;
+    private grantedRodDuringDialogue = false;
 
     private npcInteractHandler?: (event: Event) => void;
     private inventoryUpdateHandler?: (event: Event) => void;
@@ -86,6 +87,7 @@ export class DialogueManager {
         this.npcId = npcId;
         this.npcName = npcName;
         this.hasShownLine = false;
+        this.grantedRodDuringDialogue = false;
 
         this.enterDialogueMode();
         this.renderCurrentLine();
@@ -110,6 +112,16 @@ export class DialogueManager {
         this.npcName = undefined;
         this.pendingActions = [];
         this.hasShownLine = false;
+
+        if (completedNpcId && this.grantedRodDuringDialogue) {
+            window.dispatchEvent(new CustomEvent('guide:rod-granted-dialogue-complete', {
+                detail: {
+                    npcId: completedNpcId,
+                    itemId: 'rickety_rod'
+                }
+            }));
+        }
+        this.grantedRodDuringDialogue = false;
 
         if (completedNpcId) {
             this.networkManager.sendNpcInteract(completedNpcId);
@@ -374,6 +386,9 @@ export class DialogueManager {
         const amount = Math.max(1, Math.floor(action.amount ?? 1));
         emptySlot.itemId = action.itemId;
         emptySlot.count = amount;
+        if (action.itemId === 'rickety_rod') {
+            this.grantedRodDuringDialogue = true;
+        }
 
         this.networkManager.sendInventorySlots(slots);
         const updated: IInventoryResponse = {

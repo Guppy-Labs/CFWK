@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import {
+    DEFAULT_GUIDE_TUTORIAL_STATE,
     DEFAULT_USER_ADVANCEMENTS,
     IAdvancementAlertMessage,
     IAdvancementsState,
+    IGuideTutorialState,
     IQuestProgressEntry
 } from '@cfwk/shared';
 import User from '../models/User';
@@ -81,7 +83,8 @@ function createDefaultAdvancementsState(): IAdvancementsState {
         enrolled: DEFAULT_USER_ADVANCEMENTS.enrolled,
         questProgress: {},
         completedAchievements: [],
-        discoveredRegions: {}
+        discoveredRegions: {},
+        tutorial: { ...DEFAULT_GUIDE_TUTORIAL_STATE }
     };
 }
 
@@ -145,7 +148,36 @@ export class AdvancementsManager {
             completedAchievements: [...state.completedAchievements],
             discoveredRegions: Object.fromEntries(
                 Object.entries(state.discoveredRegions).map(([mapFile, regions]) => [mapFile, [...regions]])
-            )
+            ),
+            tutorial: { ...state.tutorial }
+        };
+    }
+
+    async updateTutorialState(userId: string, tutorialPatch: Partial<IGuideTutorialState>): Promise<IAdvancementsState | null> {
+        if (!this.isPersistentUserId(userId)) {
+            return null;
+        }
+
+        const state = await this.getOrLoadState(userId);
+        if (!state) {
+            return null;
+        }
+
+        state.tutorial = {
+            ...state.tutorial,
+            ...tutorialPatch,
+            updatedAt: Date.now()
+        };
+
+        await this.persistState(userId, state);
+        return {
+            enrolled: state.enrolled,
+            questProgress: { ...state.questProgress },
+            completedAchievements: [...state.completedAchievements],
+            discoveredRegions: Object.fromEntries(
+                Object.entries(state.discoveredRegions).map(([mapFile, regions]) => [mapFile, [...regions]])
+            ),
+            tutorial: { ...state.tutorial }
         };
     }
 
@@ -439,8 +471,13 @@ export class AdvancementsManager {
             enrolled: true,
             questProgress,
             completedAchievements,
-            discoveredRegions
+            discoveredRegions,
+            tutorial: this.normalizeTutorialState(raw.tutorial)
         };
+
+        if (!isObject(raw.tutorial)) {
+            changed = true;
+        }
 
         if (raw.enrolled !== true) {
             changed = true;
@@ -451,6 +488,29 @@ export class AdvancementsManager {
         }
 
         return { state, changed };
+    }
+
+    private normalizeTutorialState(value: unknown): IGuideTutorialState {
+        const raw = isObject(value) ? value : {};
+
+        const allowedRodSteps: IGuideTutorialState['rodStep'][] = ['idle', 'open_inventory', 'select_rod', 'equip_rod', 'close_inventory', 'completed'];
+        const allowedFishingSteps: IGuideTutorialState['fishingStep'][] = ['idle', 'use_rod', 'hold_cast', 'wait_bite', 'reel', 'stop_fishing', 'completed'];
+
+        const rodStep = typeof raw.rodStep === 'string' && allowedRodSteps.includes(raw.rodStep as IGuideTutorialState['rodStep'])
+            ? (raw.rodStep as IGuideTutorialState['rodStep'])
+            : DEFAULT_GUIDE_TUTORIAL_STATE.rodStep;
+        const fishingStep = typeof raw.fishingStep === 'string' && allowedFishingSteps.includes(raw.fishingStep as IGuideTutorialState['fishingStep'])
+            ? (raw.fishingStep as IGuideTutorialState['fishingStep'])
+            : DEFAULT_GUIDE_TUTORIAL_STATE.fishingStep;
+
+        return {
+            rodStep,
+            fishingStep,
+            rodCompleted: raw.rodCompleted === true,
+            fishingCompleted: raw.fishingCompleted === true,
+            forceSalmonCatch: raw.forceSalmonCatch === true,
+            updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : null
+        };
     }
 
     private async persistState(userId: string, state: IAdvancementsState): Promise<void> {

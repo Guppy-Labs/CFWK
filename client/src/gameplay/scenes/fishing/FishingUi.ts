@@ -263,6 +263,64 @@ export class FishingUi {
         });
     }
 
+    getCastButtonRect(): Phaser.Geom.Rectangle | null {
+        if (!this.castButtonBg || !this.castButton?.visible) return null;
+        const bounds = this.castButtonBg.getBounds();
+        return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
+
+    getStopButtonRect(): Phaser.Geom.Rectangle | null {
+        if (!this.stopButtonBg || !this.stopButton?.visible) return null;
+        const bounds = this.stopButtonBg.getBounds();
+        return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
+
+    getBiteHintRect(): Phaser.Geom.Rectangle | null {
+        if (!this.biteHint || !this.biteHint.visible) return null;
+        const bounds = this.biteHint.getBounds();
+        return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
+
+    getBiteInfoRect(): Phaser.Geom.Rectangle | null {
+        const rects: Phaser.Geom.Rectangle[] = [];
+
+        if (this.biteText?.visible) {
+            const bounds = this.biteText.getBounds();
+            rects.push(new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height));
+        }
+
+        if (this.biteTimeBar?.visible) {
+            const bounds = this.biteTimeBar.bg.getBounds();
+            rects.push(new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height));
+        }
+
+        if (this.biteClickBar?.visible) {
+            const bounds = this.biteClickBar.bg.getBounds();
+            rects.push(new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height));
+        }
+
+        if (this.biteHint?.visible) {
+            const bounds = this.biteHint.getBounds();
+            rects.push(new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height));
+        }
+
+        if (rects.length === 0) return null;
+
+        const left = Math.min(...rects.map((rect) => rect.left));
+        const top = Math.min(...rects.map((rect) => rect.top));
+        const right = Math.max(...rects.map((rect) => rect.right));
+        const bottom = Math.max(...rects.map((rect) => rect.bottom));
+
+        const paddingX = 28;
+        const paddingY = 18;
+        return new Phaser.Geom.Rectangle(
+            left - paddingX,
+            top - paddingY,
+            (right - left) + paddingX * 2,
+            (bottom - top) + paddingY * 2
+        );
+    }
+
     destroy() {
         this.stopButton?.destroy();
         this.castButton?.destroy();

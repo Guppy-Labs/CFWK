@@ -329,7 +329,7 @@ export class NPCManager {
                 collisionWidth: Math.max(1, visualMetrics.width * spriteScale),
                 collidableHeight: Math.max(1, 6 * spriteScale),
                 visualHeight: Math.max(1, visualMetrics.height * spriteScale),
-                interactionRangePx: def.interactionRangeTiles * this.tileSize
+                interactionRangePx: def.interactionRangeTiles * this.tileSize * 1.4
             });
 
             console.log(`[NPCManager] Spawned NPC ${def.id} at (${point.x.toFixed(1)}, ${point.y.toFixed(1)}) using ${textureKey}`);

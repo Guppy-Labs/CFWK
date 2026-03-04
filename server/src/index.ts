@@ -16,6 +16,7 @@ import { InstanceRoom } from "./rooms/InstanceRoom";
 import authRoutes from "./routes/auth";
 import accountRoutes from "./routes/account";
 import inventoryRoutes from "./routes/inventory";
+import glimmerbowlRoutes from "./routes/glimmerbowl";
 import betaRoutes from "./routes/beta";
 import settingsRoutes from "./routes/settings";
 import statsRoutes from "./routes/stats";
@@ -24,6 +25,7 @@ import stripeRoutes, { stripeWebhookHandler } from "./routes/stripe";
 import initPassport from "./config/passport";
 import { InstanceManager } from "./managers/InstanceManager";
 import { InventoryCache } from "./managers/InventoryCache";
+import { GlimmerbowlCache } from "./managers/GlimmerbowlCache";
 import { PlayerStatsCache } from "./managers/PlayerStatsCache";
 import { startBetaCampaignMonitor } from "./utils/betaCampaignMonitor";
 import User from "./models/User";
@@ -94,6 +96,7 @@ app.use("/api", apiRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/account", accountRoutes);
 app.use("/api/inventory", inventoryRoutes);
+app.use("/api/glimmerbowl", glimmerbowlRoutes);
 app.use("/api/beta", betaRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/stats", statsRoutes);
@@ -107,6 +110,9 @@ mongoose.connect(mongoURI)
 // Inventory cache: periodic flush every 5 minutes
 const inventoryCache = InventoryCache.getInstance();
 inventoryCache.startAutoFlush(5 * 60 * 1000);
+
+const glimmerbowlCache = GlimmerbowlCache.getInstance();
+glimmerbowlCache.startAutoFlush(5 * 60 * 1000);
 
 const playerStatsCache = PlayerStatsCache.getInstance();
 playerStatsCache.startAutoFlush(60 * 1000);
@@ -193,9 +199,11 @@ const shutdown = async (signal: string) => {
     isShuttingDown = true;
     console.log(`[Server] Shutdown initiated (${signal}). Flushing inventories...`);
     inventoryCache.stopAutoFlush();
+    glimmerbowlCache.stopAutoFlush();
     playerStatsCache.stopAutoFlush();
     try {
         await inventoryCache.flushDirty();
+        await glimmerbowlCache.flushDirty();
         await playerStatsCache.flushDirty();
     } catch (err) {
         console.error('[Server] Error flushing caches on shutdown:', err);

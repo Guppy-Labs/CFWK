@@ -293,6 +293,18 @@ export interface IInventoryResponse {
   equippedRodId?: string | null;
 }
 
+export type GlimmerFishTier = 'regular' | 'awakened';
+
+export interface GlimmerbowlEntry {
+  itemId: string;
+  count: number;
+  tier: GlimmerFishTier;
+}
+
+export interface IGlimmerbowlResponse {
+  entries: GlimmerbowlEntry[];
+}
+
 // --- User Settings Types ---
 
 export interface IAudioSettings {
@@ -402,13 +414,37 @@ export interface IAdvancementsState {
   questProgress: Record<string, IQuestProgressEntry>;
   completedAchievements: string[];
   discoveredRegions: Record<string, string[]>;
+  tutorial: IGuideTutorialState;
 }
+
+export type GuideRodStep = 'idle' | 'open_inventory' | 'select_rod' | 'equip_rod' | 'close_inventory' | 'completed';
+
+export type GuideFishingStep = 'idle' | 'use_rod' | 'hold_cast' | 'wait_bite' | 'reel' | 'stop_fishing' | 'completed';
+
+export interface IGuideTutorialState {
+  rodStep: GuideRodStep;
+  fishingStep: GuideFishingStep;
+  rodCompleted: boolean;
+  fishingCompleted: boolean;
+  forceSalmonCatch: boolean;
+  updatedAt: number | null;
+}
+
+export const DEFAULT_GUIDE_TUTORIAL_STATE: IGuideTutorialState = {
+  rodStep: 'idle',
+  fishingStep: 'idle',
+  rodCompleted: false,
+  fishingCompleted: false,
+  forceSalmonCatch: false,
+  updatedAt: null
+};
 
 export const DEFAULT_USER_ADVANCEMENTS: IAdvancementsState = {
   enrolled: true,
   questProgress: {},
   completedAchievements: [],
-  discoveredRegions: {}
+  discoveredRegions: {},
+  tutorial: { ...DEFAULT_GUIDE_TUTORIAL_STATE }
 };
 
 export type AdvancementAlertType =

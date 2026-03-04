@@ -7,10 +7,13 @@ import { HeadbarUI } from '../ui/HeadbarUI';
 import { NetworkManager } from '../network/NetworkManager';
 import { InventoryChangeMonitor } from '../ui/InventoryChangeMonitor';
 import { SubtitleStack } from '../ui/SubtitleStack';
-import { IAdvancementAlertMessage, ITEM_DEFINITIONS, getItemImagePath } from '@cfwk/shared';
+import { ControlActionKey, DEFAULT_GUIDE_TUTORIAL_STATE, IAdvancementAlertMessage, ITEM_DEFINITIONS, getItemImagePath } from '@cfwk/shared';
 import { DialogueUI } from '../ui/DialogueUI';
 import type { DialogueRenderLine } from '../dialogue/DialogueTypes';
 import { KeybindManager } from '../input/KeybindManager';
+import { GuideOverlay, GuideOverlayState } from '../ui/guide/GuideOverlay';
+import { GuideCoordinator } from '../ui/guide/GuideCoordinator';
+import { GuideInputGate } from '../ui/guide/GuideInputGate';
 
 export class UIScene extends Phaser.Scene {
     private playerHud?: PlayerHud;
@@ -39,6 +42,9 @@ export class UIScene extends Phaser.Scene {
     private cursorDefaultUrl?: string;
     private cursorHoverUrl?: string;
     private hoverCount = 0;
+    private guideOverlay?: GuideOverlay;
+    private guideCoordinator?: GuideCoordinator;
+    private guideInputGate?: GuideInputGate;
 
     constructor() {
         super({ key: 'UIScene' });
@@ -143,6 +149,11 @@ export class UIScene extends Phaser.Scene {
         this.inventoryChangeMonitor = new InventoryChangeMonitor(this);
         this.subtitleStack = new SubtitleStack(this);
         this.dialogueUI = new DialogueUI(this);
+        this.guideOverlay = new GuideOverlay(this);
+        this.guideInputGate = new GuideInputGate(this, this.keybindManager);
+        this.guideInputGate.install();
+        const cachedAdvancements = this.networkManager.getCachedAdvancementsState();
+        this.guideCoordinator = new GuideCoordinator(this, cachedAdvancements?.tutorial ?? { ...DEFAULT_GUIDE_TUTORIAL_STATE });
         this.networkManager.getSettings().then((settings) => {
             if (!settings) return;
             const gameScene = this.scene.get('GameScene') as { getAudioManager?: () => { applyUserAudioSettings?: (audio: any) => void } | undefined };
@@ -386,6 +397,9 @@ export class UIScene extends Phaser.Scene {
             window.removeEventListener('mousedown', markActivity, { capture: true } as any);
             window.removeEventListener('touchstart', markActivity, { capture: true } as any);
             this.scale.off('resize', this.onResize, this);
+            this.guideCoordinator?.destroy();
+            this.guideInputGate?.uninstall();
+            this.guideOverlay?.destroy();
             this.chat?.destroy();
             this.bookUI?.destroy();
             this.headbarUI?.destroy();
@@ -442,6 +456,68 @@ export class UIScene extends Phaser.Scene {
         this.headbarUI?.setVisible(!active);
         this.chat?.setVisible(!active);
         this.inventoryChangeMonitor?.setVisible(!active);
+    }
+
+    showGuideOverlay(state: GuideOverlayState) {
+        this.guideOverlay?.setState(state);
+    }
+
+    clearGuideOverlay() {
+        this.guideOverlay?.hide();
+    }
+
+    applyGuideInputGate(config: { allowedActions: ControlActionKey[]; allowedPointerRect: Phaser.Geom.Rectangle | null }) {
+        this.guideInputGate?.apply(config);
+    }
+
+    clearGuideInputGate() {
+        this.guideInputGate?.clear();
+    }
+
+    getGuideRodInventoryRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideRodInventoryRect() ?? null;
+    }
+
+    getGuideEquipmentRodRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideEquippedRodRect() ?? null;
+    }
+
+    getGuideHudRodRect(): Phaser.Geom.Rectangle | null {
+        return this.playerHud?.getRodSlotScreenRect() ?? null;
+    }
+
+    getGuideInventoryTriggerRect(): Phaser.Geom.Rectangle | null {
+        const gameScene = this.scene.get('GameScene') as any;
+        return gameScene?.getGuideInventoryButtonRect?.() ?? null;
+    }
+
+    getGuideFishingCastRect(): Phaser.Geom.Rectangle | null {
+        const fishingScene = this.scene.isActive('FishingScene') ? this.scene.get('FishingScene') as any : null;
+        return fishingScene?.getGuideCastButtonRect?.() ?? null;
+    }
+
+    getGuideFishingStopRect(): Phaser.Geom.Rectangle | null {
+        const fishingScene = this.scene.isActive('FishingScene') ? this.scene.get('FishingScene') as any : null;
+        return fishingScene?.getGuideStopButtonRect?.() ?? null;
+    }
+
+    getGuideFishingBiteHintRect(): Phaser.Geom.Rectangle | null {
+        const fishingScene = this.scene.isActive('FishingScene') ? this.scene.get('FishingScene') as any : null;
+        return fishingScene?.getGuideBiteHintRect?.() ?? null;
+    }
+
+    getGuideFishingBiteInfoRect(): Phaser.Geom.Rectangle | null {
+        const fishingScene = this.scene.isActive('FishingScene') ? this.scene.get('FishingScene') as any : null;
+        return fishingScene?.getGuideBiteInfoRect?.() ?? fishingScene?.getGuideBiteHintRect?.() ?? null;
+    }
+
+    isFishingSceneOpen(): boolean {
+        return this.scene.isActive('FishingScene');
+    }
+
+    setGuideFishingTimerFreeze(freeze: boolean) {
+        const fishingScene = this.scene.isActive('FishingScene') ? this.scene.get('FishingScene') as any : null;
+        fishingScene?.setGuideFreezeBiteTimer?.(freeze);
     }
 
     private setupCustomCursor() {
@@ -528,6 +604,7 @@ export class UIScene extends Phaser.Scene {
         this.inventoryChangeMonitor?.layout();
         this.subtitleStack?.layout();
         this.dialogueUI?.layout();
+        this.guideOverlay?.resize();
     }
 
     private setupChatListener() {
@@ -557,9 +634,15 @@ export class UIScene extends Phaser.Scene {
     }
 
     update(_time: number, delta: number) {
+        if (this.scene.isActive('FishingScene')) {
+            this.scene.bringToTop('UIScene');
+        }
+
         if (!this.isPlayerListKeyHeld && this.registry.get('guiOpen') !== true) {
             this.headbarUI?.hideTabList();
         }
+
+        this.guideCoordinator?.update();
 
         this.playerHud?.update(delta);
         this.inventoryChangeMonitor?.update();

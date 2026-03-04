@@ -2,8 +2,9 @@ import User from '../models/User';
 import BannedIP from '../models/BannedIP';
 import { InstanceManager } from '../managers/InstanceManager';
 import { InventoryCache } from '../managers/InventoryCache';
+import { GlimmerbowlCache } from '../managers/GlimmerbowlCache';
 import { PlayerStatsCache } from '../managers/PlayerStatsCache';
-import { DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_STATS, DEFAULT_USER_ADVANCEMENTS, getItemDefinition } from '@cfwk/shared';
+import { DEFAULT_GUIDE_TUTORIAL_STATE, DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_STATS, DEFAULT_USER_ADVANCEMENTS, getItemDefinition } from '@cfwk/shared';
 
 function createEmptyInventorySlots() {
     return Array.from({ length: DEFAULT_INVENTORY_SLOTS }, (_v, index) => ({ index, itemId: null, count: 0 }));
@@ -244,12 +245,19 @@ export class CommandProcessor {
         const user = await this.getUserByUsername(targetName);
         if (!user) return `User '${targetName}' not found.`;
 
+        if (itemDef.category === 'Fish') {
+            const entries = await GlimmerbowlCache.getInstance().addFish(user._id.toString(), itemId, amount, 'regular');
+            InstanceManager.getInstance().events.emit('glimmerbowl_update', {
+                userId: user._id.toString(),
+                entries
+            });
+        } else {
             const slots = await InventoryCache.getInstance().addItem(user._id.toString(), itemId, amount);
-
             InstanceManager.getInstance().events.emit('inventory_update', {
                 userId: user._id.toString(),
                 items: slots
             });
+        }
 
         // because of the new inventory monitor ui, this isn't needed
         // InstanceManager.getInstance().events.emit('msg_user', {
@@ -324,7 +332,8 @@ export class CommandProcessor {
             enrolled: DEFAULT_USER_ADVANCEMENTS.enrolled,
             questProgress: {},
             completedAchievements: [],
-            discoveredRegions: {}
+            discoveredRegions: {},
+            tutorial: { ...DEFAULT_GUIDE_TUTORIAL_STATE }
         });
         await user.save();
 
@@ -349,13 +358,15 @@ export class CommandProcessor {
             {
                 $set: {
                     inventory: resetInventory,
+                    glimmerbowl: [],
                     equippedRodId: null,
                     playerStats: { ...DEFAULT_PLAYER_STATS },
                     advancements: {
                         enrolled: DEFAULT_USER_ADVANCEMENTS.enrolled,
                         questProgress: {},
                         completedAchievements: [],
-                        discoveredRegions: {}
+                        discoveredRegions: {},
+                        tutorial: { ...DEFAULT_GUIDE_TUTORIAL_STATE }
                     },
                     lastLocationId: null
                 }
@@ -364,14 +375,17 @@ export class CommandProcessor {
 
         const userId = user._id.toString();
         const inventoryCache = InventoryCache.getInstance();
+        const glimmerbowlCache = GlimmerbowlCache.getInstance();
         const playerStatsCache = PlayerStatsCache.getInstance();
 
         const items = inventoryCache.resetUserInventory(userId);
+        const entries = glimmerbowlCache.resetUser(userId);
         playerStatsCache.resetUser(userId);
 
         const instanceManager = InstanceManager.getInstance();
         instanceManager.events.emit('clear_progress', { userId });
         instanceManager.events.emit('inventory_update', { userId, items });
+        instanceManager.events.emit('glimmerbowl_update', { userId, entries });
         instanceManager.events.emit('wipe_user', { userId });
 
         return `Wiped gameplay data for ${user.username}.`;

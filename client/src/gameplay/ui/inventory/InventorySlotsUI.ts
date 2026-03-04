@@ -106,6 +106,8 @@ export class InventorySlotsUI {
     private trackTextureCounter = 0;
     private currentTrackTextureKey?: string;
     private generatedTextureKeys = new Set<string>();
+    private static instanceCounter = 0;
+    private readonly instanceTexturePrefix: string;
     private readonly trackSourceWidth = 44;
     private readonly trackSourceHeight = 5;
     private readonly trackBorder = 2;
@@ -115,6 +117,7 @@ export class InventorySlotsUI {
 
     constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container, config: InventorySlotsConfig = {}) {
         this.scene = scene;
+        this.instanceTexturePrefix = `__inv_slots_${InventorySlotsUI.instanceCounter++}`;
         this.config = {
             columns: config.columns ?? 5,
             rows: config.rows ?? 20,
@@ -126,7 +129,7 @@ export class InventorySlotsUI {
             gridOffsetY: config.gridOffsetY ?? 37,
             gridBottomPadding: config.gridBottomPadding ?? 14,
             bottomReservedHeight: config.bottomReservedHeight ?? 0,
-            scrollbarOffsetX: config.scrollbarOffsetX ?? 5,
+            scrollbarOffsetX: config.scrollbarOffsetX ?? 4,
             scrollbarThumbOffsetX: config.scrollbarThumbOffsetX ?? -2,
             scrollbarThumbOffsetY: config.scrollbarThumbOffsetY ?? 0,
             itemScale: config.itemScale ?? 1,
@@ -313,6 +316,19 @@ export class InventorySlotsUI {
             x: this.slotsBounds.x + localPos.x * scale,
             y: this.slotsBounds.y + (localPos.y - this.scrollOffset) * scale
         };
+    }
+
+    getSlotScreenRect(index: number): Phaser.Geom.Rectangle | null {
+        const center = this.getSlotScreenPosition(index);
+        if (!center || !this.lastLayout) return null;
+
+        const size = this.config.slotSize * this.lastLayout.scale;
+        return new Phaser.Geom.Rectangle(
+            center.x - size / 2,
+            center.y - size / 2,
+            size,
+            size
+        );
     }
 
     /**
@@ -917,7 +933,7 @@ export class InventorySlotsUI {
         ctx.fillStyle = `#${this.config.countColor.toString(16).padStart(6, '0')}`;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        const key = `__inv_count_${this.countTextureCounter++}`;
+        const key = `${this.instanceTexturePrefix}_count_${this.countTextureCounter++}`;
         if (this.scene.textures.exists(key)) {
             this.scene.textures.remove(key);
         }
@@ -935,7 +951,7 @@ export class InventorySlotsUI {
         const targetWidth = Math.max(1, Math.round(trackHeight));
         const targetHeight = this.trackSourceHeight;
 
-        const rtKey = `__inv_scroll_track_${this.trackTextureCounter++}`;
+        const rtKey = `${this.instanceTexturePrefix}_scroll_track_${this.trackTextureCounter++}`;
         const canvas = document.createElement('canvas');
         canvas.width = targetWidth;
         canvas.height = targetHeight;

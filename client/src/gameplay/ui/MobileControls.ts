@@ -254,6 +254,12 @@ export class MobileControls {
     getIsVisible(): boolean {
         return this.isVisible;
     }
+
+    getInventoryButtonScreenRect(): Phaser.Geom.Rectangle | null {
+        if (!this.inventoryButton || !this.inventoryButton.visible) return null;
+        const bounds = this.inventoryButton.getBounds();
+        return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
     
     /**
      * Show controls (top-right buttons on all devices; touch controls on mobile)

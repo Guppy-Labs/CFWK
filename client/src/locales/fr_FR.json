@@ -145,6 +145,23 @@
 		"biteHint": "Cliquez encore {clicks} fois en {seconds} secondes !",
 		"caughtItem": "Vous avez attrapé {item} !"
 	},
+	"guide": {
+		"rod": {
+			"openInventory": "Pour équiper votre nouvelle canne, ouvrez votre inventaire (appuyez sur {key} sur PC).",
+			"openInventoryMobile": "Pour équiper votre nouvelle canne, touchez le bouton d'inventaire.",
+			"selectRod": "Cliquez sur votre canne dans l'inventaire pour la sélectionner.",
+			"equipRod": "Cliquez sur l'emplacement de canne à droite pour l'équiper.",
+			"closeInventory": "Fermez votre inventaire (appuyez sur {key} sur PC).",
+			"closeInventoryMobile": "Touchez à nouveau le bouton d'inventaire pour fermer l'inventaire."
+		},
+		"fishing": {
+			"useRod": "Vous êtes près de l'eau. Appuyez sur {key} (PC) ou cliquez sur le bouton de canne pour commencer à pêcher.",
+			"holdCast": "Maintenez le bouton de lancer quelques secondes, puis relâchez.",
+			"waitBite": "Parfait. Attendez qu'un poisson morde...",
+			"reel": "Cliquez sur le bouton du moulinet à répétition jusqu'à attraper le poisson.",
+			"stop": "Belle prise ! Cliquez sur Arrêter la pêche, puis parlez au Pêcheur."
+		}
+	},
 	"npc": {
 		"test": {
 			"name": "Tim"

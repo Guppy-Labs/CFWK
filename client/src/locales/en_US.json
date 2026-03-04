@@ -3,6 +3,7 @@
     "tab": {
       "inventory": "Inventory",
       "finbook": "Finbook",
+      "glimmerbowl": "Glimmerbowl",
       "settings": "Settings"
     },
     "header": "Settings",
@@ -92,6 +93,16 @@
     },
     "equipment": {
       "rod": "Rod"
+    }
+  },
+  "glimmerbowl": {
+    "placeholder": "Fishbowl Preview",
+    "section": {
+      "regular": "Regular",
+      "awakened": "Awakened"
+    },
+    "details": {
+      "view": "View"
     }
   },
   "headbar": {
@@ -205,6 +216,23 @@
     },
     "biteHint": "Click {clicks} more times in {seconds} seconds!",
     "caughtItem": "Caught {item}!"
+  },
+  "guide": {
+    "rod": {
+      "openInventory": "To equip your new rod, open your inventory (press {key} on desktop).",
+      "openInventoryMobile": "To equip your new rod, tap the inventory button.",
+      "selectRod": "Click your rod in the inventory to select it.",
+      "equipRod": "Click the rod equipment slot on the right to equip it.",
+      "closeInventory": "Close your inventory (press {key} on desktop).",
+      "closeInventoryMobile": "Tap the inventory button again to close your inventory."
+    },
+    "fishing": {
+      "useRod": "You're near water. Press {key} (desktop) or click the rod button to start fishing.",
+      "holdCast": "Hold the cast button for a few seconds, then release.",
+      "waitBite": "Great. Wait for a bite...",
+      "reel": "Click the reel button repeatedly until you catch the fish.",
+      "stop": "Great catch! Click Stop Fishing, then talk to the Fisherman."
+    }
   },
   "npc": {
     "test": {

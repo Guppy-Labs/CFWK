@@ -154,6 +154,11 @@ export class PlayerHud {
         this.onRodUse = handler;
     }
 
+    getRodSlotScreenRect(): Phaser.Geom.Rectangle {
+        const bounds = this.rodSlot.getBounds();
+        return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
+
     update(delta: number) {
         const deltaSeconds = delta / 1000;
         const diff = this.stamina - this.displayStamina;

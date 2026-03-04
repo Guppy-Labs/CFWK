@@ -283,11 +283,14 @@ export class MCPlayerController {
         const guiOpen = this.scene.registry.get('guiOpen') === true;
         const chatFocused = this.scene.registry.get('chatFocused') === true;
         const transitionBlocked = this.scene.registry.get('inputBlocked') === true;
-        const inputBlocked = guiOpen || chatFocused || transitionBlocked;
+        const guideBlocked = this.scene.registry.get('guideBlockAll') === true;
+        const guideAllowedActions = this.scene.registry.get('guideAllowedActions') as string[] | undefined;
+        const guideAllowsFish = guideBlocked && Array.isArray(guideAllowedActions) && guideAllowedActions.includes('fish');
+        const inputBlocked = guiOpen || chatFocused || transitionBlocked || guideBlocked;
 
-        if (!inputBlocked) {
+        if (!inputBlocked || guideAllowsFish) {
             const actionPresses = this.inputManager.getActionPresses();
-            if (actionPresses.interactPressed && !interactionLocked) {
+            if (actionPresses.interactPressed && !interactionLocked && !guideBlocked) {
                 this.tryInteract();
             }
             if (actionPresses.fishingPressed && !interactionLocked) {
@@ -688,6 +691,10 @@ export class MCPlayerController {
         return this.inputManager.getMobileControls();
     }
 
+    getGuideInventoryButtonRect(): Phaser.Geom.Rectangle | null {
+        return this.inputManager.getMobileControls()?.getInventoryButtonScreenRect() ?? null;
+    }
+
     getIsMoving(): boolean {
         if (!this.player?.body) return false;
         const velocity = this.player.body.velocity as MatterJS.Vector;
@@ -782,7 +789,10 @@ export class MCPlayerController {
         const guiOpen = this.scene.registry.get('guiOpen') === true;
         const chatFocused = this.scene.registry.get('chatFocused') === true;
         const transitionBlocked = this.scene.registry.get('inputBlocked') === true;
-        if (guiOpen || chatFocused || transitionBlocked) return;
+        const guideBlocked = this.scene.registry.get('guideBlockAll') === true;
+        const guideAllowedActions = this.scene.registry.get('guideAllowedActions') as string[] | undefined;
+        const guideAllowsFish = guideBlocked && Array.isArray(guideAllowedActions) && guideAllowedActions.includes('fish');
+        if (guiOpen || chatFocused || (transitionBlocked && !guideAllowsFish) || (guideBlocked && !guideAllowsFish)) return;
         const nearWater = this.scene.registry.get('nearWater') === true;
         if (!nearWater) return;
         if (!this.equippedRodId) return;

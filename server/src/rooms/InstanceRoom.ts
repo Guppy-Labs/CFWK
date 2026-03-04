@@ -1,8 +1,9 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
-import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX, IAdvancementAlertMessage } from "@cfwk/shared";
+import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX, IAdvancementAlertMessage, IGuideTutorialState } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
+import { GlimmerbowlCache } from "../managers/GlimmerbowlCache";
 import { DEFAULT_INVENTORY_SLOTS } from "@cfwk/shared";
 import { CommandProcessor } from "../utils/CommandProcessor";
 import User from "../models/User";
@@ -160,6 +161,7 @@ export class InstanceRoom extends Room<InstanceState> {
     private gameTick: number = 0;
     private sprintStateBySession = new Map<string, boolean>();
     private pendingStatsDeltasBySession = new Map<string, IPlayerStatsDelta>();
+    private tutorialStateBySession = new Map<string, IGuideTutorialState>();
     private navService = new ServerMapNavService();
     private aiRuntimeById = new Map<string, AiNpcRuntimeState>();
     private advancementsManager = new AdvancementsManager('lobby.tmj');
@@ -216,6 +218,17 @@ export class InstanceRoom extends Room<InstanceState> {
                         slots: data.items,
                         totalSlots: DEFAULT_INVENTORY_SLOTS,
                         equippedRodId
+                    });
+                }
+            });
+        });
+
+        this.instanceManager.events.on('glimmerbowl_update', (data: { userId: string; entries: { itemId: string; count: number; tier: 'regular' | 'awakened' }[] }) => {
+            this.clients.forEach(client => {
+                const player = this.state.players.get(client.sessionId);
+                if (player && player.odcid === data.userId) {
+                    client.send('glimmerbowl', {
+                        entries: data.entries
                     });
                 }
             });
@@ -604,7 +617,9 @@ export class InstanceRoom extends Room<InstanceState> {
             const entries = getLootTable(cast.region as any);
             const equippedRodIdCurrent = InventoryCache.getInstance().getEquippedRod(player.odcid);
             const rodStats = getRodStats(equippedRodIdCurrent);
-            const itemId = selectFromLootTable(entries, cast.depth, 'rickety', null, rodStats.rarityMultiplier);
+            const guidedTutorial = this.tutorialStateBySession.get(client.sessionId);
+            const forcedItemId = guidedTutorial?.forceSalmonCatch ? 'salmon' : null;
+            const itemId = forcedItemId ?? selectFromLootTable(entries, cast.depth, 'rickety', null, rodStats.rarityMultiplier);
             if (!itemId) return;
 
             const mass = getItemDefinition(itemId)?.mass ?? 1;
@@ -630,12 +645,24 @@ export class InstanceRoom extends Room<InstanceState> {
             const entries = getLootTable(cast.region as any);
             const equippedRodIdCurrent = InventoryCache.getInstance().getEquippedRod(player.odcid);
             const rodStats = getRodStats(equippedRodIdCurrent);
-            const itemId = cast.itemId ?? selectFromLootTable(entries, cast.depth, 'rickety', null, rodStats.rarityMultiplier);
+            const guidedTutorial = this.tutorialStateBySession.get(client.sessionId);
+            const forcedItemId = guidedTutorial?.forceSalmonCatch ? 'salmon' : null;
+            const itemId = forcedItemId ?? cast.itemId ?? selectFromLootTable(entries, cast.depth, 'rickety', null, rodStats.rarityMultiplier);
             this.fishingCasts.delete(client.sessionId);
             if (!itemId) return;
 
+            const itemDef = getItemDefinition(itemId);
+            if (!itemDef) return;
+
             this.incrementStat(client, player, 'catches', 1);
             await this.sendAdvancements(client, await this.advancementsManager.onFishCatch(player.odcid));
+
+            if (itemDef.category === 'Fish') {
+                const glimmerEntries = await GlimmerbowlCache.getInstance().addFish(player.odcid, itemId, 1, 'regular');
+                client.send('glimmerbowl', { entries: glimmerEntries });
+                client.send('fishing:catchResult', { itemId });
+                return;
+            }
 
             const { items: currentSlots, equippedRodId: equippedRodIdFromState } = await InventoryCache.getInstance().getInventoryState(player.odcid);
             const stackSize = getItemDefinition(itemId)?.stackSize ?? 99;
@@ -685,6 +712,21 @@ export class InstanceRoom extends Room<InstanceState> {
 
             if (distance > maxPickupDistance) return;
 
+            const droppedItemDef = getItemDefinition(droppedItem.itemId);
+            if (!droppedItemDef) return;
+
+            if (droppedItemDef.category === 'Fish') {
+                this.state.droppedItems.delete(data.droppedItemId);
+                const entries = await GlimmerbowlCache.getInstance().addFish(
+                    player.odcid,
+                    droppedItem.itemId,
+                    droppedItem.amount,
+                    'regular'
+                );
+                client.send('glimmerbowl', { entries });
+                return;
+            }
+
             const { items: currentSlots, equippedRodId: equippedRodIdFromState } = await InventoryCache.getInstance().getInventoryState(player.odcid);
             const stackSize = getItemDefinition(droppedItem.itemId)?.stackSize ?? 99;
             const hasStackSpace = currentSlots.some((slot) => slot.itemId === droppedItem.itemId && slot.count < stackSize);
@@ -715,6 +757,22 @@ export class InstanceRoom extends Room<InstanceState> {
 
             const amount = Math.max(1, Math.floor(data.amount || 1));
             if (!data.itemId) return;
+
+            const itemDef = getItemDefinition(data.itemId);
+            if (!itemDef) return;
+
+            if (itemDef.category === 'Fish') {
+                const glimmerUpdated = await GlimmerbowlCache.getInstance().removeFish(
+                    player.odcid,
+                    data.itemId,
+                    amount
+                );
+                if (!glimmerUpdated) return;
+
+                this.createDroppedItem(data.itemId, amount, player.x, player.y);
+                client.send('glimmerbowl', { entries: glimmerUpdated });
+                return;
+            }
 
             const updated = await InventoryCache.getInstance().removeItem(
                 player.odcid,
@@ -1010,7 +1068,15 @@ export class InstanceRoom extends Room<InstanceState> {
         }
 
         try {
+            const { entries } = await GlimmerbowlCache.getInstance().getState(odcid);
+            client.send('glimmerbowl', { entries });
+        } catch (err) {
+            console.error('[InstanceRoom] Error sending initial glimmerbowl:', err);
+        }
+
+        try {
             const advancementsState = await this.advancementsManager.getStateForUser(odcid);
+            this.tutorialStateBySession.set(client.sessionId, advancementsState.tutorial);
             client.send('advancements:state', advancementsState);
         } catch (err) {
             console.error('[InstanceRoom] Error sending initial advancements state:', err);
@@ -1023,9 +1089,28 @@ export class InstanceRoom extends Room<InstanceState> {
 
             try {
                 const advancementsState = await this.advancementsManager.getStateForUser(player.odcid);
+                this.tutorialStateBySession.set(client.sessionId, advancementsState.tutorial);
                 client.send('advancements:state', advancementsState);
             } catch (err) {
                 console.error('[InstanceRoom] Error responding with advancements state:', err);
+            }
+        });
+
+        this.onMessage('guide:update', async (client, data: { tutorial?: Partial<IGuideTutorialState> }) => {
+            this.markActivity(client);
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+
+            const tutorialPatch = data?.tutorial;
+            if (!tutorialPatch || typeof tutorialPatch !== 'object') return;
+
+            try {
+                const advancementsState = await this.advancementsManager.updateTutorialState(player.odcid, tutorialPatch);
+                if (!advancementsState) return;
+                this.tutorialStateBySession.set(client.sessionId, advancementsState.tutorial);
+                client.send('advancements:state', advancementsState);
+            } catch (error) {
+                console.error('[InstanceRoom] Failed to update guide tutorial state:', error);
             }
         });
 
@@ -1083,6 +1168,7 @@ export class InstanceRoom extends Room<InstanceState> {
         
         this.state.players.delete(client.sessionId);
         this.fishingCasts.delete(client.sessionId);
+        this.tutorialStateBySession.delete(client.sessionId);
         this.lastActivityBySession.delete(client.sessionId);
         this.pendingStatsDeltasBySession.delete(client.sessionId);
         this.sprintStateBySession.delete(client.sessionId);
@@ -1356,6 +1442,17 @@ export class InstanceRoom extends Room<InstanceState> {
         updates.alerts.forEach((alert) => {
             client.send('advancement:alert', alert);
         });
+
+        const player = this.state.players.get(client.sessionId);
+        if (player) {
+            try {
+                const advancementsState = await this.advancementsManager.getStateForUser(player.odcid);
+                this.tutorialStateBySession.set(client.sessionId, advancementsState.tutorial);
+                client.send('advancements:state', advancementsState);
+            } catch (error) {
+                console.error('[InstanceRoom] Failed to push advancements state after update:', error);
+            }
+        }
 
         updates.delayedNewQuestCounts.forEach((count) => {
             setTimeout(() => {

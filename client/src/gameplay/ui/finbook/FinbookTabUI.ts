@@ -3,6 +3,7 @@ import {
     ADVANCEMENT_ACHIEVEMENT_CATALOG,
     ADVANCEMENT_LOCATION_CATALOG,
     ADVANCEMENT_QUEST_CATALOG,
+    DEFAULT_GUIDE_TUTORIAL_STATE,
     IAdvancementsState,
     IQuestObjectiveEntry,
     IQuestProgressEntry
@@ -33,7 +34,8 @@ export class FinbookTabUI {
         enrolled: true,
         questProgress: {},
         completedAchievements: [],
-        discoveredRegions: {}
+        discoveredRegions: {},
+        tutorial: { ...DEFAULT_GUIDE_TUTORIAL_STATE }
     };
 
     private textureKeys = new Set<string>();
@@ -93,7 +95,8 @@ export class FinbookTabUI {
                 completedAchievements: [...detail.completedAchievements],
                 discoveredRegions: Object.fromEntries(
                     Object.entries(detail.discoveredRegions).map(([mapFile, regions]) => [mapFile, [...regions]])
-                )
+                ),
+                tutorial: { ...detail.tutorial }
             };
             const isResetState = this.isAdvancementsResetState(this.advancementsState);
             if (isResetState) {

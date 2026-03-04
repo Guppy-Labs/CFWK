@@ -1,6 +1,6 @@
 import * as Colyseus from "colyseus.js";
 import { Config } from "../../config";
-import { DEFAULT_USER_SETTINGS, IAdvancementsState, IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, IPlayerStatsDelta, IPlayerStatsResponse, ISettingsResponse, PLAYER_STAT_KEYS, IUserSettings, ClientMovementFrame } from "@cfwk/shared";
+import { DEFAULT_USER_SETTINGS, IAdvancementsState, IGuideTutorialState, IGlimmerbowlResponse, IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, IPlayerStatsDelta, IPlayerStatsResponse, ISettingsResponse, PLAYER_STAT_KEYS, IUserSettings, ClientMovementFrame } from "@cfwk/shared";
 
 /**
  * NetworkManager - Handles all server communication for multiplayer.
@@ -27,6 +27,7 @@ export class NetworkManager {
     private wasConnected: boolean = false;
 
     private inventoryCache: IInventoryResponse | null = null;
+    private glimmerbowlCache: IGlimmerbowlResponse | null = null;
     private settingsCache: IUserSettings | null = null;
     private statsCache: IPlayerStatsResponse | null = null;
     private advancementsCache: IAdvancementsState | null = null;
@@ -101,6 +102,27 @@ export class NetworkManager {
             return data;
         } catch (error) {
             console.error('[NetworkManager] Error fetching inventory:', error);
+            return null;
+        }
+    }
+
+    async getGlimmerbowl(): Promise<IGlimmerbowlResponse | null> {
+        try {
+            if (this.glimmerbowlCache) return this.glimmerbowlCache;
+            const response = await fetch('/api/glimmerbowl', {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch glimmerbowl: ${response.statusText}`);
+            }
+
+            const data: IGlimmerbowlResponse = await response.json();
+            this.glimmerbowlCache = data;
+            return data;
+        } catch (error) {
+            console.error('[NetworkManager] Error fetching glimmerbowl:', error);
             return null;
         }
     }
@@ -281,6 +303,11 @@ export class NetworkManager {
         this.currentRoom.onMessage('inventory:skip', (data: { itemId: string; quantity?: number }) => {
             if (!data?.itemId) return;
             window.dispatchEvent(new CustomEvent('inventory:skip', { detail: data }));
+        });
+
+        this.currentRoom.onMessage('glimmerbowl', (data: IGlimmerbowlResponse) => {
+            this.glimmerbowlCache = data;
+            window.dispatchEvent(new CustomEvent('glimmerbowl:update', { detail: data }));
         });
 
         this.currentRoom.onMessage('stats:delta', (delta: IPlayerStatsDelta) => {
@@ -529,8 +556,15 @@ export class NetworkManager {
             completedAchievements: [...this.advancementsCache.completedAchievements],
             discoveredRegions: Object.fromEntries(
                 Object.entries(this.advancementsCache.discoveredRegions).map(([mapFile, regions]) => [mapFile, [...regions]])
-            )
+            ),
+            tutorial: { ...this.advancementsCache.tutorial }
         };
+    }
+
+    sendGuideTutorialUpdate(tutorial: Partial<IGuideTutorialState>) {
+        if (this.currentRoom) {
+            this.currentRoom.send('guide:update', { tutorial });
+        }
     }
 
     /**
@@ -556,6 +590,7 @@ export class NetworkManager {
             this.currentRoom = null;
         }
         this.currentInstance = null;
+        this.glimmerbowlCache = null;
     }
 
     /**
