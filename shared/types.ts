@@ -266,6 +266,8 @@ export interface IInstanceInfo {
     roomName: string;        // Colyseus room name to join
     currentPlayers: number;  // How many players currently
     maxPlayers: number;      // Max capacity
+  spawnX?: number;         // Optional persisted rejoin X coordinate
+  spawnY?: number;         // Optional persisted rejoin Y coordinate
 }
 
 /**
@@ -280,6 +282,7 @@ export interface IJoinInstanceResponse {
 // --- Inventory System Types ---
 
 export const DEFAULT_INVENTORY_SLOTS = 15;
+export const DEFAULT_USABLE_EQUIP_SLOTS = 4;
 
 export interface InventorySlot {
   index: number;
@@ -291,7 +294,18 @@ export interface IInventoryResponse {
   slots: InventorySlot[];
   totalSlots: number;
   equippedRodId?: string | null;
+  equippedUsableIds?: Array<string | null>;
 }
+
+export interface IPlayerHeartsState {
+  currentHearts: number;
+  maxHearts: number;
+}
+
+export const DEFAULT_PLAYER_HEARTS_STATE: IPlayerHeartsState = {
+  currentHearts: 9,
+  maxHearts: 9
+};
 
 export type GlimmerFishTier = 'regular' | 'awakened';
 
@@ -303,6 +317,7 @@ export interface GlimmerbowlEntry {
 
 export interface IGlimmerbowlResponse {
   entries: GlimmerbowlEntry[];
+  unlocked: boolean;
 }
 
 // --- User Settings Types ---
@@ -421,21 +436,35 @@ export type GuideRodStep = 'idle' | 'open_inventory' | 'select_rod' | 'equip_rod
 
 export type GuideFishingStep = 'idle' | 'use_rod' | 'hold_cast' | 'wait_bite' | 'reel' | 'stop_fishing' | 'completed';
 
+export type GuideInteractionStep = 'idle' | 'press_interact' | 'completed';
+
+export type GuideFoodStep = 'idle' | 'open_inventory' | 'select_berry' | 'explain_food_score' | 'equip_quickslot_1' | 'close_inventory' | 'consume_quickslot_1' | 'completed';
+
 export interface IGuideTutorialState {
+  interactionStep: GuideInteractionStep;
   rodStep: GuideRodStep;
   fishingStep: GuideFishingStep;
+  foodStep: GuideFoodStep;
+  interactionCompleted: boolean;
   rodCompleted: boolean;
   fishingCompleted: boolean;
+  foodCompleted: boolean;
   forceSalmonCatch: boolean;
+  forceFoodGuideHeal: boolean;
   updatedAt: number | null;
 }
 
 export const DEFAULT_GUIDE_TUTORIAL_STATE: IGuideTutorialState = {
+  interactionStep: 'idle',
   rodStep: 'idle',
   fishingStep: 'idle',
+  foodStep: 'idle',
+  interactionCompleted: false,
   rodCompleted: false,
   fishingCompleted: false,
+  foodCompleted: false,
   forceSalmonCatch: false,
+  forceFoodGuideHeal: false,
   updatedAt: null
 };
 
@@ -468,17 +497,21 @@ export interface IAdvancementAlertMessage {
 export type IQuestCatalogEntry = {
   id: string;
   dependencyQuestId: string | null;
+  dependencyQuestIds?: string[];
   nextQuestId?: string;
+  nextQuestIds?: string[];
   startObjective?: IQuestObjectiveEntry;
   objectives?: IQuestObjectiveEntry[];
   objective?: IQuestObjectiveEntry;
 };
 
-export type QuestObjectiveKind = 'fish-catch' | 'talk-to-npc';
+export type QuestObjectiveKind = 'fish-catch' | 'talk-to-npc' | 'harvest-interactive';
 
 export type IQuestObjectiveEntry = {
   kind: QuestObjectiveKind;
   npcId?: string;
+  componentId?: string;
+  mapObjectId?: number;
 };
 
 export type IAchievementCatalogEntry = {
@@ -500,7 +533,7 @@ export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
   {
     id: 'first_catch',
     dependencyQuestId: null,
-    nextQuestId: 'travellers_errand',
+    nextQuestIds: ['travellers_errand', 'anti_death_measures'],
     startObjective: { kind: 'talk-to-npc', npcId: 'fisherman' },
     objectives: [
       { kind: 'fish-catch' },
@@ -511,11 +544,33 @@ export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
   {
     id: 'travellers_errand',
     dependencyQuestId: 'first_catch',
+    dependencyQuestIds: ['first_catch'],
     startObjective: { kind: 'talk-to-npc', npcId: 'traveller' },
     objectives: [
       { kind: 'talk-to-npc', npcId: 'guard' }
     ],
     objective: { kind: 'talk-to-npc', npcId: 'guard' }
+  },
+  {
+    id: 'anti_death_measures',
+    dependencyQuestId: 'first_catch',
+    dependencyQuestIds: ['first_catch'],
+    startObjective: { kind: 'talk-to-npc', npcId: 'merchant' },
+    objectives: [
+      { kind: 'harvest-interactive', componentId: 'yekbush' },
+      { kind: 'talk-to-npc', npcId: 'merchant' }
+    ],
+    objective: { kind: 'harvest-interactive', componentId: 'yekbush' }
+  },
+  {
+    id: 'placeholder_main_quest_3',
+    dependencyQuestId: null,
+    dependencyQuestIds: ['travellers_errand', 'anti_death_measures'],
+    startObjective: { kind: 'talk-to-npc', npcId: 'wiseman' },
+    objectives: [
+      { kind: 'talk-to-npc', npcId: 'wiseman' }
+    ],
+    objective: { kind: 'talk-to-npc', npcId: 'wiseman' }
   }
 ];
 

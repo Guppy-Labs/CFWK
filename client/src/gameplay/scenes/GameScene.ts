@@ -10,9 +10,11 @@ import { CameraController } from '../camera/CameraController';
 import { MapLoader } from '../map/MapLoader';
 import { CollisionManager } from '../map/CollisionManager';
 import { OcclusionManager } from '../map/OcclusionManager';
+import { TiledObjectLayer, getTiledProperty } from '../map/TiledTypes';
 import { DepthManager } from '../rendering/DepthManager';
 import { ENTITY_BASE, FIRE_BASE, DROPPED_ITEM_BASE, OCCLUSION_OFFSET, GROUND_LAYER_NAMES, OCCLUDABLE_BASE } from '../rendering/DepthBands';
 import { MCPlayerController } from '../player/MCPlayerController';
+import { StaticInteractiveTarget } from '../interaction/InteractionManager';
 import { CharacterService } from '../player/CharacterService';
 import { RemotePlayerManager } from '../player/RemotePlayerManager';
 import { AINpcManager } from '../ai/AINpcManager';
@@ -24,7 +26,7 @@ import { LightingManager } from '../fx/LightingManager';
 import { VisualEffectsManager } from '../fx/VisualEffectsManager';
 import { SeasonalEffectsManager } from '../fx/SeasonalEffectsManager';
 import { WorldTimeManager } from '../time/WorldTimeManager';
-import { AudioManager } from '../audio/AudioManager';
+import { AudioManager, FootstepSurface } from '../audio/AudioManager';
 import { LocaleManager } from '../i18n/LocaleManager';
 import { DroppedItemManager } from '../items/DroppedItemManager';
 import { NPCManager } from '../npc/NPCManager';
@@ -54,6 +56,16 @@ import { KeybindManager } from '../input/KeybindManager';
 interface GameSceneData {
     instance: IInstanceInfo;
 }
+
+type HarvestCooldownUiEntry = {
+    objectId: number;
+    centerX: number;
+    centerY: number;
+    readyAt: number;
+    startedAt: number;
+    container: Phaser.GameObjects.Container;
+    fill: Phaser.GameObjects.Rectangle;
+};
 
 export class GameScene extends Phaser.Scene {
     private instanceInfo?: IInstanceInfo;
@@ -105,6 +117,8 @@ export class GameScene extends Phaser.Scene {
     private advancementsUpdateHandler?: (event: Event) => void;
     private questDirectionArrow?: Phaser.GameObjects.Triangle;
     private questTargetMarker?: Phaser.GameObjects.Container;
+    private harvestTargets: StaticInteractiveTarget[] = [];
+    private harvestCooldownUiByObjectId = new Map<number, HarvestCooldownUiEntry>();
     
     // Character appearance (fetched async)
     private characterAppearance: ICharacterAppearance = DEFAULT_CHARACTER_APPEARANCE;
@@ -119,6 +133,10 @@ export class GameScene extends Phaser.Scene {
 
     getGuideInventoryButtonRect(): Phaser.Geom.Rectangle | null {
         return this.mcPlayerController?.getGuideInventoryButtonRect() ?? null;
+    }
+
+    getGuideInteractButtonRect(): Phaser.Geom.Rectangle | null {
+        return this.mcPlayerController?.getGuideInteractButtonRect() ?? null;
     }
 
     init(data: GameSceneData) {
@@ -305,7 +323,7 @@ export class GameScene extends Phaser.Scene {
             
             this.audioManager?.playMeow();
         });
-        
+
         // Default to user settings until profile settings load
         this.registry.set('visualEffectsEnabled', DEFAULT_USER_SETTINGS.video.visualEffectsEnabled);
         this.registry.set('seasonalEffectsEnabled', DEFAULT_USER_SETTINGS.video.seasonalEffectsEnabled);
@@ -351,6 +369,41 @@ export class GameScene extends Phaser.Scene {
         return this.audioManager;
     }
 
+    private getFootstepSurfaceForPlayer(player: Phaser.Physics.Matter.Sprite): FootstepSurface {
+        const mapFile = this.instanceInfo?.mapFile ?? '';
+        if (!mapFile.startsWith('anchor-hollow')) {
+            return 'sand';
+        }
+
+        const map = this.mapLoader?.getMap();
+        if (!map) return 'sand';
+
+        const feet = player.getBottomCenter();
+        const trackedLayers = new Set(['Ground', 'Stone', 'Dock']);
+
+        let bestDepth = Number.NEGATIVE_INFINITY;
+        let bestLayerName: string | null = null;
+
+        map.layers.forEach((layerData) => {
+            if (!trackedLayers.has(layerData.name)) return;
+            const layer = layerData.tilemapLayer;
+            if (!layer || !layer.visible || layer.alpha <= 0) return;
+            const tile = layer.getTileAtWorldXY(feet.x, feet.y, false);
+            if (!tile || tile.index < 0) return;
+
+            const depth = layer.depth ?? 0;
+            if (depth >= bestDepth) {
+                bestDepth = depth;
+                bestLayerName = layerData.name;
+            }
+        });
+
+        if (bestLayerName === 'Dock') return 'wood';
+        if (bestLayerName === 'Stone') return 'stone';
+        if (bestLayerName === 'Ground') return 'grass';
+        return 'sand';
+    }
+
     applyUserVideoSettings(video: IVideoSettings) {
         this.currentVideoSettings = { ...video };
 
@@ -382,6 +435,112 @@ export class GameScene extends Phaser.Scene {
         return this.npcManager?.getNpcById(id) ?? null;
     }
 
+    private extractHarvestTargets(map: Phaser.Tilemaps.Tilemap): StaticInteractiveTarget[] {
+        const objectLayers = map.objects as TiledObjectLayer[];
+        const interactivesLayer = objectLayers.find((layer) => layer.name === 'Interactives');
+        if (!interactivesLayer) return [];
+
+        const targets: StaticInteractiveTarget[] = [];
+        for (const object of interactivesLayer.objects || []) {
+            const componentIdRaw = getTiledProperty(object, 'componentid');
+            const componentId = typeof componentIdRaw === 'string' ? componentIdRaw.trim().toLowerCase() : '';
+            if (componentId !== 'yekbush') continue;
+            if (typeof object.id !== 'number') continue;
+
+            const center = this.getObjectCenter(object);
+            if (!center) continue;
+
+            targets.push({
+                objectId: Math.floor(object.id),
+                componentId,
+                x: center.x,
+                y: center.y,
+                rangePx: 3 * 32
+            });
+        }
+
+        return targets;
+    }
+
+    private getObjectCenter(object: { x: number; y: number; width?: number; height?: number; polygon?: Array<{ x: number; y: number }> }): { x: number; y: number } | null {
+        const baseX = Number(object.x ?? 0);
+        const baseY = Number(object.y ?? 0);
+        if (Array.isArray(object.polygon) && object.polygon.length > 0) {
+            let sumX = 0;
+            let sumY = 0;
+            object.polygon.forEach((point) => {
+                sumX += baseX + Number(point.x ?? 0);
+                sumY += baseY + Number(point.y ?? 0);
+            });
+            return {
+                x: sumX / object.polygon.length,
+                y: sumY / object.polygon.length
+            };
+        }
+
+        return {
+            x: baseX + Number(object.width ?? 0) * 0.5,
+            y: baseY + Number(object.height ?? 0) * 0.5
+        };
+    }
+
+    private upsertHarvestCooldownUi(objectId: number, centerX: number, centerY: number, readyAt: number, cooldownMs: number) {
+        const now = Date.now();
+        const entry = this.harvestCooldownUiByObjectId.get(objectId);
+        const startedAt = Math.max(0, readyAt - Math.max(1, cooldownMs));
+
+        if (entry) {
+            entry.centerX = centerX;
+            entry.centerY = centerY;
+            entry.readyAt = readyAt;
+            entry.startedAt = startedAt;
+            return;
+        }
+
+        const bg = this.add.rectangle(0, 0, 24, 4, 0x000000, 0.45).setOrigin(0.5, 0.5);
+        const fill = this.add.rectangle(-11, 0, 22, 2, 0x86e17b, 0.9).setOrigin(0, 0.5);
+        const container = this.add.container(centerX, centerY - 18, [bg, fill]);
+        container.setDepth(ENTITY_BASE + 2100);
+        container.setVisible(true);
+
+        this.harvestCooldownUiByObjectId.set(objectId, {
+            objectId,
+            centerX,
+            centerY,
+            readyAt,
+            startedAt,
+            container,
+            fill
+        });
+
+        if (readyAt <= now) {
+            this.removeHarvestCooldownUi(objectId);
+        }
+    }
+
+    private removeHarvestCooldownUi(objectId: number) {
+        const entry = this.harvestCooldownUiByObjectId.get(objectId);
+        if (!entry) return;
+        entry.container.destroy(true);
+        this.harvestCooldownUiByObjectId.delete(objectId);
+    }
+
+    private updateHarvestCooldownUi(timeMs: number) {
+        this.harvestCooldownUiByObjectId.forEach((entry, objectId) => {
+            if (timeMs >= entry.readyAt) {
+                this.removeHarvestCooldownUi(objectId);
+                return;
+            }
+
+            const total = Math.max(1, entry.readyAt - entry.startedAt);
+            const elapsed = Math.max(0, Math.min(total, timeMs - entry.startedAt));
+            const ratio = elapsed / total;
+            entry.fill.width = Math.max(1, 22 * ratio);
+            entry.container.setPosition(entry.centerX, entry.centerY - 18);
+            entry.container.setVisible(true);
+        });
+    }
+
     private setupQuestIndicators() {
         const cached = this.networkManager.getCachedAdvancementsState();
         if (cached) {
@@ -392,12 +551,12 @@ export class GameScene extends Phaser.Scene {
         this.questDirectionArrow.setVisible(false);
         this.questDirectionArrow.setDepth(ENTITY_BASE - 1);
 
-        const markerStem = this.add.rectangle(0, -6, 2.5, 8, 0xff9a2e, 0.72).setOrigin(0.5, 1);
-        const markerDot = this.add.circle(0, -2.2, 1.6, 0xff9a2e, 0.72);
+        const markerStem = this.add.rectangle(0, -6.5, 3.2, 10.5, 0xff9a2e, 0.9).setOrigin(0.5, 1);
+        const markerDot = this.add.circle(0, -2.1, 2.1, 0xff9a2e, 0.9);
         this.questTargetMarker = this.add.container(0, 0, [markerStem, markerDot]);
         this.questTargetMarker.setVisible(false);
         this.questTargetMarker.setDepth(ENTITY_BASE + 2001);
-        this.questTargetMarker.setScale(0.85);
+        this.questTargetMarker.setScale(1.08);
 
         this.advancementsUpdateHandler = (event: Event) => {
             const detail = (event as CustomEvent<IAdvancementsState>).detail;
@@ -443,9 +602,45 @@ export class GameScene extends Phaser.Scene {
         };
     }
 
+    private getQuestObjectiveTarget(objective: IQuestObjectiveEntry, playerX: number, playerY: number): { x: number; y: number } | null {
+        if (objective.kind === 'talk-to-npc' && objective.npcId) {
+            const npc = this.getNpcPosition(objective.npcId);
+            if (!npc) return null;
+            return { x: npc.x, y: npc.y };
+        }
+
+        if (objective.kind === 'harvest-interactive' && objective.componentId) {
+            const componentId = objective.componentId.trim().toLowerCase();
+            const matching = this.harvestTargets.filter((target) => target.componentId === componentId);
+            if (matching.length === 0) return null;
+
+            if (typeof objective.mapObjectId === 'number') {
+                const exact = matching.find((target) => target.objectId === Math.floor(objective.mapObjectId as number));
+                if (exact) {
+                    return { x: exact.x, y: exact.y };
+                }
+            }
+
+            let best = matching[0];
+            let bestDistance = Math.hypot(best.x - playerX, best.y - playerY);
+            for (let index = 1; index < matching.length; index++) {
+                const candidate = matching[index];
+                const distance = Math.hypot(candidate.x - playerX, candidate.y - playerY);
+                if (distance < bestDistance) {
+                    best = candidate;
+                    bestDistance = distance;
+                }
+            }
+
+            return { x: best.x, y: best.y };
+        }
+
+        return null;
+    }
+
     private updateQuestIndicators(time: number) {
         const objectiveData = this.getTargetedQuestObjective();
-        if (!objectiveData || objectiveData.objective.kind !== 'talk-to-npc' || !objectiveData.objective.npcId) {
+        if (!objectiveData) {
             this.questDirectionArrow?.setVisible(false);
             this.questTargetMarker?.setVisible(false);
             return;
@@ -458,15 +653,15 @@ export class GameScene extends Phaser.Scene {
             return;
         }
 
-        const npc = this.getNpcPosition(objectiveData.objective.npcId);
-        if (!npc) {
+        const target = this.getQuestObjectiveTarget(objectiveData.objective, player.x, player.y);
+        if (!target) {
             this.questDirectionArrow?.setVisible(false);
             this.questTargetMarker?.setVisible(false);
             return;
         }
 
-        const dx = npc.x - player.x;
-        const dy = npc.y - player.y;
+        const dx = target.x - player.x;
+        const dy = target.y - player.y;
         const angle = Math.atan2(dy, dx);
         const distance = Math.max(1, Math.hypot(dx, dy));
         const directionX = dx / distance;
@@ -497,9 +692,9 @@ export class GameScene extends Phaser.Scene {
         if (this.questTargetMarker) {
             const bobOffset = Math.sin(time * 0.0045) * 1.2;
             this.questTargetMarker.setVisible(true);
-            this.questTargetMarker.setPosition(npc.x, npc.y - 54 + bobOffset);
-            this.questTargetMarker.setScale(0.85, 0.88);
-            this.questTargetMarker.setAlpha(0.72);
+            this.questTargetMarker.setPosition(target.x, target.y - 54 + bobOffset);
+            this.questTargetMarker.setScale(1.12, 1.16);
+            this.questTargetMarker.setAlpha(0.93);
         }
     }
 
@@ -539,6 +734,10 @@ export class GameScene extends Phaser.Scene {
         let player: Phaser.Physics.Matter.Sprite | undefined;
         
         player = this.mcPlayerController?.spawn(map);
+        if (player && typeof this.instanceInfo?.spawnX === 'number' && typeof this.instanceInfo?.spawnY === 'number') {
+            player.setPosition(this.instanceInfo.spawnX, this.instanceInfo.spawnY);
+            player.setVelocity(0, 0);
+        }
         
         if (player) {
             this.lightingManager?.enableLightingOn(player);
@@ -568,6 +767,9 @@ export class GameScene extends Phaser.Scene {
         });
         this.npcManager.loadAndSpawnFromMap(map);
         this.mcPlayerController?.setNpcManager(this.npcManager);
+
+        this.harvestTargets = this.extractHarvestTargets(map);
+        this.mcPlayerController?.setStaticInteractives(this.harvestTargets);
 
         // Initial occlusion update
         if (player) {
@@ -672,6 +874,7 @@ export class GameScene extends Phaser.Scene {
         this.setupShoveListener();
         this.setupShoveAttemptListener();
         this.setupFishingListener();
+        this.setupHarvestListener();
         
         // Listen for server disconnection
         this.unsubscribeDisconnect = this.networkManager.onDisconnect((code) => {
@@ -757,6 +960,8 @@ export class GameScene extends Phaser.Scene {
                              this.questDirectionArrow = undefined;
                              this.questTargetMarker?.destroy();
                              this.questTargetMarker = undefined;
+                             this.harvestCooldownUiByObjectId.forEach((entry) => entry.container.destroy(true));
+                             this.harvestCooldownUiByObjectId.clear();
                this.npcManager?.destroy();
                          this.dialogueManager?.destroy();
         });
@@ -927,6 +1132,34 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
+    private setupHarvestListener() {
+        const room = this.networkManager.getRoom();
+        if (!room) return;
+
+        const applyCooldown = (payload: { objectId?: number; readyAt?: number; cooldownMs?: number; centerX?: number; centerY?: number }) => {
+            if (!Number.isFinite(payload.objectId) || !Number.isFinite(payload.readyAt)) return;
+            const objectId = Math.floor(Number(payload.objectId));
+            const readyAt = Math.floor(Number(payload.readyAt));
+            if (objectId <= 0) return;
+
+            this.mcPlayerController?.setInteractiveCooldown(objectId, readyAt);
+
+            const target = this.harvestTargets.find((entry) => entry.objectId === objectId);
+            const centerX = Number.isFinite(payload.centerX) ? Number(payload.centerX) : (target?.x ?? 0);
+            const centerY = Number.isFinite(payload.centerY) ? Number(payload.centerY) : (target?.y ?? 0);
+            const cooldownMs = Number.isFinite(payload.cooldownMs) ? Math.floor(Number(payload.cooldownMs)) : 40_000;
+            this.upsertHarvestCooldownUi(objectId, centerX, centerY, readyAt, cooldownMs);
+        };
+
+        room.onMessage('interactive:harvest:success', (data: { objectId?: number; readyAt?: number; cooldownMs?: number; centerX?: number; centerY?: number }) => {
+            applyCooldown(data);
+        });
+
+        room.onMessage('interactive:harvest:cooldown', (data: { objectId?: number; readyAt?: number; cooldownMs?: number; centerX?: number; centerY?: number }) => {
+            applyCooldown(data);
+        });
+    }
+
     update(_time: number, delta: number) {
         if (this.isTransferringServer) return;
 
@@ -974,7 +1207,8 @@ export class GameScene extends Phaser.Scene {
             const inWater = this.waterSystem?.getIsInWater() ?? false;
             const isWet = this.waterSystem?.getIsWet() ?? false;
             const waterDepth = this.waterSystem?.getDepth() ?? 0;
-            this.audioManager?.updateFootsteps(isMoving, isSprinting, inWater, isWet, waterDepth);
+            const surface = player ? this.getFootstepSurfaceForPlayer(player) : 'sand';
+            this.audioManager?.updateFootsteps(isMoving, isSprinting, inWater, isWet, waterDepth, surface);
         }
         
         // Update fire volume based on player distance to nearest fire
@@ -1022,6 +1256,7 @@ export class GameScene extends Phaser.Scene {
             this.droppedItemManager?.update();
         }
 
+        this.updateHarvestCooldownUi(Date.now());
         this.updateQuestIndicators(_time);
 
         // Update tablist registry

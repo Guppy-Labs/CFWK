@@ -1,3 +1,5 @@
+export {};
+
 const form = document.getElementById('reset-form') as HTMLFormElement;
 const msg = document.getElementById('msg') as HTMLElement;
 const submitBtn = form.querySelector('button');

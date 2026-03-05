@@ -9,7 +9,8 @@
  */
 
 import Phaser from 'phaser';
-import { InteractionType, AvailableInteraction } from '../interaction/InteractionManager';
+import { AvailableInteraction } from '../interaction/InteractionManager';
+import { getInteractionPromptStyle } from './InteractionPromptStyle';
 
 export interface MobileInputState {
     up: boolean;
@@ -53,6 +54,7 @@ export class MobileControls {
     private joystickHandle?: Phaser.GameObjects.Image;
     private inventoryButton?: Phaser.GameObjects.Image;
     private interactButton?: Phaser.GameObjects.Image;
+    private interactButtonOverlay?: Phaser.GameObjects.Image;
     private inventoryKeyIcon?: Phaser.GameObjects.Image;
     private interactKeyIcon?: Phaser.GameObjects.Image;
     private fullscreenButton?: Phaser.GameObjects.Image;
@@ -95,9 +97,6 @@ export class MobileControls {
     private joystickLoadHooked = false;
     private lastShowTouchControls = false;
     private lastJoystickTarget = { x: 0, y: 0, radius: 0 };
-    
-    // UI styling
-    private readonly borderRadius = '16px';
     
     // Visibility
     private isVisible = false;
@@ -260,6 +259,12 @@ export class MobileControls {
         const bounds = this.inventoryButton.getBounds();
         return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
     }
+
+    getInteractButtonScreenRect(): Phaser.Geom.Rectangle | null {
+        if (!this.interactButton || !this.interactButton.visible) return null;
+        const bounds = this.interactButton.getBounds();
+        return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
     
     /**
      * Show controls (top-right buttons on all devices; touch controls on mobile)
@@ -318,6 +323,7 @@ export class MobileControls {
         this.inventoryButton?.destroy();
         this.inventoryKeyIcon?.destroy();
         this.interactButton?.destroy();
+        this.interactButtonOverlay?.destroy();
         this.interactKeyIcon?.destroy();
         this.fullscreenButton?.destroy();
         this.menuButton?.destroy();
@@ -391,11 +397,19 @@ export class MobileControls {
     private updateInteractButtonIcon() {
         if (!this.currentInteraction || !this.interactButton) return;
 
-        const texture = this.currentInteraction.type === InteractionType.Talk
-            ? 'ui-interact-chat'
-            : 'ui-interact-blank';
-        if (this.interactButton.texture.key !== texture) {
-            this.interactButton.setTexture(texture);
+        const style = getInteractionPromptStyle(this.currentInteraction, this.scene.textures);
+        if (this.interactButton.texture.key !== style.mobileButtonTexture) {
+            this.interactButton.setTexture(style.mobileButtonTexture);
+        }
+
+        if (!this.interactButtonOverlay) return;
+        if (style.mobileOverlayTexture) {
+            if (this.interactButtonOverlay.texture.key !== style.mobileOverlayTexture) {
+                this.interactButtonOverlay.setTexture(style.mobileOverlayTexture);
+            }
+            this.interactButtonOverlay.setVisible(this.interactButton.visible);
+        } else {
+            this.interactButtonOverlay.setVisible(false);
         }
     }
 
@@ -424,19 +438,6 @@ export class MobileControls {
         this.scene.scale.on('resize', this.scaleResizeListener);
     }
 
-    private getNavbarHeight(): number {
-        const navbar = document.querySelector('.game-navbar, .navbar, nav, header') as HTMLElement | null;
-        if (navbar) {
-            const rect = navbar.getBoundingClientRect();
-            // Only count navbar if it's visible
-            const isVisible = rect.height > 0 && rect.width > 0;
-            if (isVisible) {
-                return rect.height;
-            }
-        }
-        return 0;
-    }
-
     private updateTopButtonPositions() {
         const topOffset = this.topButtonMargin;
         const camera = (this.joystickScene ?? this.scene).cameras.main;
@@ -461,7 +462,6 @@ export class MobileControls {
     private positionJoystick() {
         if (!this.joystickBase || !this.joystickHandle) return;
         const camera = (this.joystickScene ?? this.scene).cameras.main;
-        const viewWidth = camera.width;
         const viewHeight = camera.height;
         const x = this.joystickMarginX + (this.joystickBase.displayWidth * 0.5);
         const y = viewHeight - this.joystickMarginY - (this.joystickBase.displayHeight * 0.5);
@@ -656,6 +656,14 @@ export class MobileControls {
         this.interactButton.on('pointerupoutside', () => this.setInteractPressed(false));
         this.interactButton.on('pointerout', () => this.setInteractPressed(false));
 
+        this.interactButtonOverlay = targetScene.add.image(0, 0, 'ui-interact-blank');
+        this.interactButtonOverlay.setOrigin(0.5, 0.5);
+        this.interactButtonOverlay.setDepth(10003);
+        this.interactButtonOverlay.setScrollFactor(0);
+        this.interactButtonOverlay.setScale(this.joystickBaseScale * 0.6);
+        this.interactButtonOverlay.setAlpha(this.controlOpacity + 0.35);
+        this.interactButtonOverlay.setVisible(false);
+
         this.updateInteractPosition();
     }
 
@@ -799,6 +807,7 @@ export class MobileControls {
         const x = viewWidth - this.joystickMarginX - halfSize;
         const y = viewHeight - this.joystickMarginY - size - this.inventoryInteractGap - halfSize;
         this.interactButton.setPosition(x, y);
+        this.interactButtonOverlay?.setPosition(x, y);
         if (this.interactKeyIcon) {
             this.interactKeyIcon.setPosition(x - halfSize - this.keyIconOffset, y - halfSize - this.keyIconOffset);
         }
@@ -807,6 +816,10 @@ export class MobileControls {
     private setInteractVisible(visible: boolean) {
         if (!this.interactButton) return;
         this.interactButton.setVisible(visible);
+        if (this.interactButtonOverlay) {
+            const hasOverlay = this.interactButtonOverlay.texture.key !== 'ui-interact-blank';
+            this.interactButtonOverlay.setVisible(visible && hasOverlay);
+        }
         this.setInteractKeyVisible(visible);
         if (visible) {
             this.updateInteractPosition();
@@ -838,6 +851,7 @@ export class MobileControls {
 
     private setInteractPressed(pressed: boolean) {
         this.setSpritePressed(this.interactButton, pressed);
+        this.setSpritePressed(this.interactButtonOverlay, pressed);
     }
 
     private setSpritePressed(button: Phaser.GameObjects.Image | undefined, pressed: boolean) {
@@ -1034,8 +1048,7 @@ export class MobileControls {
             return;
         }
 
-        const fullyExtended = distance >= maxDist;
-        this.inputState.sprint = fullyExtended;
+        this.inputState.sprint = normalizedDist >= this.joystickSprintThreshold;
 
         const angle = Math.atan2(dy, dx);
         const angleDeg = ((angle * 180) / Math.PI + 360) % 360;

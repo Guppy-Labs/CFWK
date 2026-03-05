@@ -126,14 +126,24 @@
 	"subtitles": {
 		"ambientOcean": "Olas del océano",
 		"ambientFire": "Fuego crepitando",
+		"footstepGrass": "Pasos sobre hierba",
 		"footstepSand": "Pasos en la arena",
+		"footstepStone": "Pasos sobre piedra",
 		"footstepWater": "Pasos en agua poco profunda",
+		"footstepWood": "Pasos sobre madera",
 		"meow": "Miau",
+		"eatYekberries": "Comiendo yekberries",
 		"rodCast": "Lanzamiento de caña",
 		"rodReel": "Recogida de caña",
 		"waterSplash": "Salpicadura de agua",
 		"biteAlert": "Alerta de picada",
 		"reelClick": "Clic del carrete",
+		"questStarted": "Misión iniciada",
+		"questObjective": "Objetivo de misión actualizado",
+		"questCompleted": "Misión completada",
+		"questTracked": "Misión seguida",
+		"achievementUnlocked": "Logro desbloqueado",
+		"locationDiscovered": "Nueva ubicación descubierta",
 		"itemCollected": "Objeto recogido",
 		"itemDropped": "Objeto soltado",
 		"itemSkipped": "Objeto omitido",
@@ -274,6 +284,10 @@
 			"name": "Bayas doradas",
 			"description": "Una baya rara y dulce que restaura la vitalidad."
 		},
+		"yekberries": {
+			"name": "Bayas yek",
+			"description": "Bayas ácidas de un yekbush. Comida de curación simple y fiable."
+		},
 		"tuna": {
 			"name": "Atún",
 			"description": "Un atún común. Delicioso si se prepara bien."
@@ -325,6 +339,10 @@
 		"fisherman_rod": {
 			"name": "Caña de pescador",
 			"description": "Una caña fiable usada por pescadores experimentados."
+		},
+		"developer_rod": {
+			"name": "Caña de desarrollador",
+			"description": "Una caña de depuración ajustada para capturas de prueba muy rápidas."
 		},
 		"sea_grass": {
 			"name": "Hierba marina",

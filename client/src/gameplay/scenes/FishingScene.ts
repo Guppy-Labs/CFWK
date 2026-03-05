@@ -36,8 +36,8 @@ export class FishingScene extends Phaser.Scene {
     private isHoldingCast = false;
     private castHoldStart = 0;
     private castHoldDuration = 0;
-    private readonly castMinHoldMs = 500;
-    private readonly castMaxHoldMs = 2500;
+    private readonly baseCastMinHoldMs = 500;
+    private readonly baseCastMaxHoldMs = 2500;
     private readonly castDepthMin = 1;
     private readonly castDepthMax = 12;
     private casted = false;
@@ -334,14 +334,16 @@ export class FishingScene extends Phaser.Scene {
         if (!this.isHoldingCast) return;
         this.isHoldingCast = false;
 
-        if (this.castHoldDuration < this.castMinHoldMs) {
+        const { minHoldMs, maxHoldMs } = this.getCastHoldTimingMs();
+
+        if (this.castHoldDuration < minHoldMs) {
             this.castHoldDuration = 0;
             this.ui?.setCastBarVisible(false);
             this.releaseRodWithoutCast();
             return;
         }
 
-        this.castPower = Phaser.Math.Clamp((this.castHoldDuration - this.castMinHoldMs) / (this.castMaxHoldMs - this.castMinHoldMs), 0, 1);
+        this.castPower = Phaser.Math.Clamp((this.castHoldDuration - minHoldMs) / (maxHoldMs - minHoldMs), 0, 1);
         this.currentDepth = Phaser.Math.Linear(this.castDepthMin, this.castDepthMax, this.castPower);
         this.pendingCastRelease = true;
         this.releaseRodWithCast();
@@ -349,10 +351,21 @@ export class FishingScene extends Phaser.Scene {
 
     private updateCastHold(_delta: number) {
         if (!this.isHoldingCast) return;
-        this.castHoldDuration = Math.min(this.castMaxHoldMs, this.time.now - this.castHoldStart);
-        const ratio = Phaser.Math.Clamp(this.castHoldDuration / this.castMaxHoldMs, 0, 1);
+        const { maxHoldMs } = this.getCastHoldTimingMs();
+        this.castHoldDuration = Math.min(maxHoldMs, this.time.now - this.castHoldStart);
+        const ratio = Phaser.Math.Clamp(this.castHoldDuration / maxHoldMs, 0, 1);
         this.setRodThrowPull(ratio);
         this.ui?.setCastBarValue(ratio);
+    }
+
+    private getCastHoldTimingMs() {
+        const rodStats = getRodStats(this.rodItemId);
+        const strength = Math.max(0.1, rodStats.strength || 1);
+        const chargeScale = Phaser.Math.Clamp(1 / strength, 0.25, 2.5);
+        const minHoldMs = Math.max(120, Math.round(this.baseCastMinHoldMs * chargeScale));
+        const scaledMaxHoldMs = Math.round(this.baseCastMaxHoldMs * chargeScale);
+        const maxHoldMs = Math.max(minHoldMs + 1, scaledMaxHoldMs);
+        return { minHoldMs, maxHoldMs };
     }
 
     private startCast() {

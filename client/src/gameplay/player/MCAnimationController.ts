@@ -83,7 +83,6 @@ export class MCAnimationController {
     private currentDirection: MCDirectionIndex = MCDirectionIndex.Down;
     private currentAnimation: MCAnimationType = 'idle';
     private currentRotation: number = Math.PI / 2; // Start facing down (south)
-    private isSprinting = false;
 
     // Movement thresholds
     private readonly moveThreshold = 0.1;
@@ -219,8 +218,7 @@ export class MCAnimationController {
     /**
      * Set whether the player is sprinting
      */
-    setSprinting(sprinting: boolean) {
-        this.isSprinting = sprinting;
+    setSprinting(_sprinting: boolean) {
     }
 
     /**

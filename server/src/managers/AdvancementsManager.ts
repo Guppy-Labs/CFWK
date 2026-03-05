@@ -1,11 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import {
+    ADVANCEMENT_QUEST_CATALOG,
     DEFAULT_GUIDE_TUTORIAL_STATE,
     DEFAULT_USER_ADVANCEMENTS,
     IAdvancementAlertMessage,
     IAdvancementsState,
     IGuideTutorialState,
+    IQuestCatalogEntry,
+    IQuestObjectiveEntry,
     IQuestProgressEntry
 } from '@cfwk/shared';
 import User from '../models/User';
@@ -13,13 +16,14 @@ import { AI_METERS_TO_PIXELS } from '../ai/registry';
 
 type QuestEvent =
     | { kind: 'npc'; npcId: string }
-    | { kind: 'fish-catch' };
+    | { kind: 'fish-catch' }
+    | { kind: 'harvest-interactive'; componentId: string; mapObjectId?: number };
 
 type QuestDefinition = {
     id: string;
-    dependencyQuestId: string | null;
+    dependencyQuestIds: string[];
     isolated: boolean;
-    start: QuestEvent;
+    start: QuestEvent | null;
     objectives: QuestEvent[];
 };
 
@@ -55,25 +59,61 @@ type TiledMap = {
     layers?: TiledLayer[];
 };
 
-const QUEST_DEFINITIONS: QuestDefinition[] = [
-    {
-        id: 'first_catch',
-        dependencyQuestId: null,
-        isolated: false,
-        start: { kind: 'npc', npcId: 'fisherman' },
-        objectives: [
-            { kind: 'fish-catch' },
-            { kind: 'npc', npcId: 'fisherman' }
-        ]
-    },
-    {
-        id: 'travellers_errand',
-        dependencyQuestId: 'first_catch',
-        isolated: false,
-        start: { kind: 'npc', npcId: 'traveller' },
-        objectives: [{ kind: 'npc', npcId: 'guard' }]
+function toQuestEvent(objective: IQuestObjectiveEntry | undefined | null): QuestEvent | null {
+    if (!objective) return null;
+    if (objective.kind === 'fish-catch') {
+        return { kind: 'fish-catch' };
     }
-];
+    if (objective.kind === 'talk-to-npc') {
+        if (!objective.npcId) return null;
+        return { kind: 'npc', npcId: objective.npcId };
+    }
+    if (objective.kind === 'harvest-interactive') {
+        if (!objective.componentId) return null;
+        return {
+            kind: 'harvest-interactive',
+            componentId: objective.componentId,
+            mapObjectId: typeof objective.mapObjectId === 'number' ? objective.mapObjectId : undefined
+        };
+    }
+    return null;
+}
+
+function toQuestDefinition(entry: IQuestCatalogEntry): QuestDefinition | null {
+    const dependencyQuestIds = Array.from(new Set((entry.dependencyQuestIds ?? [])
+        .filter((questId): questId is string => typeof questId === 'string' && questId.trim().length > 0)
+        .map((questId) => questId.trim())));
+
+    if (dependencyQuestIds.length === 0 && entry.dependencyQuestId) {
+        dependencyQuestIds.push(entry.dependencyQuestId);
+    }
+
+    const stagedObjectives = (entry.objectives ?? [])
+        .map((objective) => toQuestEvent(objective))
+        .filter((objective): objective is QuestEvent => objective !== null);
+
+    const startObjective = toQuestEvent(entry.startObjective);
+    const objectiveFallback = toQuestEvent(entry.objective);
+    const startEvent = startObjective ?? objectiveFallback;
+
+    const objectives = stagedObjectives.length > 0
+        ? stagedObjectives
+        : (startEvent ? [startEvent] : []);
+
+    if (!startEvent && objectives.length === 0) return null;
+
+    return {
+        id: entry.id,
+        dependencyQuestIds,
+        isolated: false,
+        start: startEvent,
+        objectives
+    };
+}
+
+const QUEST_DEFINITIONS: QuestDefinition[] = ADVANCEMENT_QUEST_CATALOG
+    .map((entry) => toQuestDefinition(entry))
+    .filter((entry): entry is QuestDefinition => entry !== null);
 
 const QUEST_DEFINITION_BY_ID = new Map(QUEST_DEFINITIONS.map((quest) => [quest.id, quest]));
 const CAMPFIRE_STORIES_ID = 'campfire_stories';
@@ -106,6 +146,11 @@ function matchesQuestEvent(expected: QuestEvent, received: QuestEvent): boolean 
     if (expected.kind !== received.kind) return false;
     if (expected.kind === 'npc' && received.kind === 'npc') {
         return expected.npcId === received.npcId;
+    }
+    if (expected.kind === 'harvest-interactive' && received.kind === 'harvest-interactive') {
+        if (expected.componentId !== received.componentId) return false;
+        if (typeof expected.mapObjectId !== 'number') return true;
+        return expected.mapObjectId === received.mapObjectId;
     }
     return expected.kind === 'fish-catch' && received.kind === 'fish-catch';
 }
@@ -220,6 +265,32 @@ export class AdvancementsManager {
         return updates;
     }
 
+    async onHarvestInteractive(userId: string, componentId: string, mapObjectId?: number): Promise<AdvancementsUpdate> {
+        if (!this.isPersistentUserId(userId)) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+
+        const normalizedComponentId = componentId.trim().toLowerCase();
+        if (!normalizedComponentId) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+
+        const state = await this.getOrLoadState(userId);
+        if (!state) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+
+        const updates = this.applyQuestEvent(state, {
+            kind: 'harvest-interactive',
+            componentId: normalizedComponentId,
+            mapObjectId: typeof mapObjectId === 'number' ? Math.floor(mapObjectId) : undefined
+        });
+        if (updates.alerts.length > 0 || updates.delayedNewQuestCounts.length > 0) {
+            await this.persistState(userId, state);
+        }
+        return updates;
+    }
+
     async onChatMessage(userId: string, x: number, y: number, message: string): Promise<IAdvancementAlertMessage[]> {
         if (!this.isPersistentUserId(userId)) return [];
         const trimmedMessage = message.trim();
@@ -310,11 +381,11 @@ export class AdvancementsManager {
         for (const quest of QUEST_DEFINITIONS) {
             if (state.questProgress[quest.id]) continue;
 
-            if (quest.dependencyQuestId && !this.isQuestCompleted(state, quest.dependencyQuestId)) {
+            if (!this.areQuestDependenciesMet(state, quest.dependencyQuestIds)) {
                 continue;
             }
 
-            if (!matchesQuestEvent(quest.start, event)) {
+            if (!quest.start || !matchesQuestEvent(quest.start, event)) {
                 continue;
             }
 
@@ -342,11 +413,17 @@ export class AdvancementsManager {
     private countNewlyAvailableQuests(state: IAdvancementsState, completedQuestId: string): number {
         let count = 0;
         for (const quest of QUEST_DEFINITIONS) {
-            if (quest.dependencyQuestId !== completedQuestId) continue;
+            if (!quest.dependencyQuestIds.includes(completedQuestId)) continue;
             if (state.questProgress[quest.id]) continue;
+            if (!this.areQuestDependenciesMet(state, quest.dependencyQuestIds)) continue;
             count += 1;
         }
         return count;
+    }
+
+    private areQuestDependenciesMet(state: IAdvancementsState, dependencyQuestIds: string[]): boolean {
+        if (dependencyQuestIds.length === 0) return true;
+        return dependencyQuestIds.every((questId) => this.isQuestCompleted(state, questId));
     }
 
     private isQuestStartBlocked(state: IAdvancementsState, questId: string, newQuestIsIsolated: boolean): boolean {
@@ -493,8 +570,14 @@ export class AdvancementsManager {
     private normalizeTutorialState(value: unknown): IGuideTutorialState {
         const raw = isObject(value) ? value : {};
 
+        const allowedInteractionSteps: IGuideTutorialState['interactionStep'][] = ['idle', 'press_interact', 'completed'];
         const allowedRodSteps: IGuideTutorialState['rodStep'][] = ['idle', 'open_inventory', 'select_rod', 'equip_rod', 'close_inventory', 'completed'];
         const allowedFishingSteps: IGuideTutorialState['fishingStep'][] = ['idle', 'use_rod', 'hold_cast', 'wait_bite', 'reel', 'stop_fishing', 'completed'];
+        const allowedFoodSteps: IGuideTutorialState['foodStep'][] = ['idle', 'open_inventory', 'select_berry', 'explain_food_score', 'equip_quickslot_1', 'close_inventory', 'consume_quickslot_1', 'completed'];
+
+        const interactionStep = typeof raw.interactionStep === 'string' && allowedInteractionSteps.includes(raw.interactionStep as IGuideTutorialState['interactionStep'])
+            ? (raw.interactionStep as IGuideTutorialState['interactionStep'])
+            : DEFAULT_GUIDE_TUTORIAL_STATE.interactionStep;
 
         const rodStep = typeof raw.rodStep === 'string' && allowedRodSteps.includes(raw.rodStep as IGuideTutorialState['rodStep'])
             ? (raw.rodStep as IGuideTutorialState['rodStep'])
@@ -502,13 +585,21 @@ export class AdvancementsManager {
         const fishingStep = typeof raw.fishingStep === 'string' && allowedFishingSteps.includes(raw.fishingStep as IGuideTutorialState['fishingStep'])
             ? (raw.fishingStep as IGuideTutorialState['fishingStep'])
             : DEFAULT_GUIDE_TUTORIAL_STATE.fishingStep;
+        const foodStep = typeof raw.foodStep === 'string' && allowedFoodSteps.includes(raw.foodStep as IGuideTutorialState['foodStep'])
+            ? (raw.foodStep as IGuideTutorialState['foodStep'])
+            : DEFAULT_GUIDE_TUTORIAL_STATE.foodStep;
 
         return {
+            interactionStep,
             rodStep,
             fishingStep,
+            foodStep,
+            interactionCompleted: raw.interactionCompleted === true,
             rodCompleted: raw.rodCompleted === true,
             fishingCompleted: raw.fishingCompleted === true,
+            foodCompleted: raw.foodCompleted === true,
             forceSalmonCatch: raw.forceSalmonCatch === true,
+            forceFoodGuideHeal: raw.forceFoodGuideHeal === true,
             updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : null
         };
     }

@@ -5,12 +5,14 @@ import { KeybindManager } from '../../input/KeybindManager';
 export type GuideInputGateConfig = {
     allowedActions: ControlActionKey[];
     allowedPointerRect: Phaser.Geom.Rectangle | null;
+    allowedUsableSlotIndex?: number | null;
 };
 
 export class GuideInputGate {
     private enabled = false;
     private allowedActions = new Set<ControlActionKey>();
     private allowedPointerRect: Phaser.Geom.Rectangle | null = null;
+    private allowedUsableSlotIndex: number | null = null;
 
     private keyHandler?: (event: KeyboardEvent) => void;
     private pointerHandler?: (event: MouseEvent | PointerEvent | TouchEvent) => void;
@@ -63,32 +65,47 @@ export class GuideInputGate {
         this.enabled = false;
         this.allowedActions.clear();
         this.allowedPointerRect = null;
+        this.allowedUsableSlotIndex = null;
     }
 
     apply(config: GuideInputGateConfig) {
         this.enabled = true;
         this.allowedActions = new Set(config.allowedActions);
         this.allowedPointerRect = config.allowedPointerRect;
+        this.allowedUsableSlotIndex = typeof config.allowedUsableSlotIndex === 'number'
+            ? Math.max(0, Math.min(3, Math.floor(config.allowedUsableSlotIndex)))
+            : null;
 
         this.scene.registry.set('guideBlockAll', true);
         this.scene.registry.set('guideAllowedActions', [...this.allowedActions]);
+        this.scene.registry.set('guideAllowedUsableSlot', this.allowedUsableSlotIndex);
     }
 
     clear() {
         this.enabled = false;
         this.allowedActions.clear();
         this.allowedPointerRect = null;
+        this.allowedUsableSlotIndex = null;
 
         this.scene.registry.set('guideBlockAll', false);
         this.scene.registry.set('guideAllowedActions', []);
+        this.scene.registry.set('guideAllowedUsableSlot', null);
     }
 
     private isAllowedAction(event: KeyboardEvent): boolean {
+        if (this.allowedUsableSlotIndex !== null && this.matchesUsableSlotHotkey(event, this.allowedUsableSlotIndex)) {
+            return true;
+        }
         if (this.allowedActions.size === 0) return false;
         for (const action of this.allowedActions) {
             if (this.keybindManager.matchesActionEvent(action, event)) return true;
         }
         return false;
+    }
+
+    private matchesUsableSlotHotkey(event: KeyboardEvent, slotIndex: number): boolean {
+        const slotNumber = slotIndex + 1;
+        return event.code === `Digit${slotNumber}` || event.code === `Numpad${slotNumber}`;
     }
 
     private isPointerInsideRect(event: MouseEvent | PointerEvent | TouchEvent, rect: Phaser.Geom.Rectangle): boolean {

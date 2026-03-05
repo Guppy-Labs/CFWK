@@ -14,10 +14,11 @@ router.use(isAuthenticated);
 router.get('/', async (req, res) => {
     try {
         const userId = (req.user as any).id;
-        const { entries } = await GlimmerbowlCache.getInstance().getState(userId);
+        const { entries, unlocked } = await GlimmerbowlCache.getInstance().getState(userId);
 
         const response: IGlimmerbowlResponse = {
-            entries
+            entries,
+            unlocked
         };
         res.json(response);
     } catch (err) {

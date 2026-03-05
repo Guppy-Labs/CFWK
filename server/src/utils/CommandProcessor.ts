@@ -5,6 +5,7 @@ import { InventoryCache } from '../managers/InventoryCache';
 import { GlimmerbowlCache } from '../managers/GlimmerbowlCache';
 import { PlayerStatsCache } from '../managers/PlayerStatsCache';
 import { DEFAULT_GUIDE_TUTORIAL_STATE, DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_STATS, DEFAULT_USER_ADVANCEMENTS, getItemDefinition } from '@cfwk/shared';
+import { DEFAULT_FIRST_CONNECT_LOCATION_ID } from '../config/instance';
 
 function createEmptyInventorySlots() {
     return Array.from({ length: DEFAULT_INVENTORY_SLOTS }, (_v, index) => ({ index, itemId: null, count: 0 }));
@@ -244,17 +245,28 @@ export class CommandProcessor {
 
         const user = await this.getUserByUsername(targetName);
         if (!user) return `User '${targetName}' not found.`;
+        const userId = user._id.toString();
 
         if (itemDef.category === 'Fish') {
-            const entries = await GlimmerbowlCache.getInstance().addFish(user._id.toString(), itemId, amount, 'regular');
-            InstanceManager.getInstance().events.emit('glimmerbowl_update', {
-                userId: user._id.toString(),
-                entries
-            });
+            const glimmerState = await GlimmerbowlCache.getInstance().getState(userId);
+            if (glimmerState.unlocked) {
+                const entries = await GlimmerbowlCache.getInstance().addFish(userId, itemId, amount, 'regular');
+                InstanceManager.getInstance().events.emit('glimmerbowl_update', {
+                    userId,
+                    entries,
+                    unlocked: true
+                });
+            } else {
+                const slots = await InventoryCache.getInstance().addItem(userId, itemId, amount);
+                InstanceManager.getInstance().events.emit('inventory_update', {
+                    userId,
+                    items: slots
+                });
+            }
         } else {
-            const slots = await InventoryCache.getInstance().addItem(user._id.toString(), itemId, amount);
+            const slots = await InventoryCache.getInstance().addItem(userId, itemId, amount);
             InstanceManager.getInstance().events.emit('inventory_update', {
-                userId: user._id.toString(),
+                userId,
                 items: slots
             });
         }
@@ -368,7 +380,10 @@ export class CommandProcessor {
                         discoveredRegions: {},
                         tutorial: { ...DEFAULT_GUIDE_TUTORIAL_STATE }
                     },
-                    lastLocationId: null
+                    glimmerbowlUnlocked: false,
+                    lastLocationId: DEFAULT_FIRST_CONNECT_LOCATION_ID,
+                    lastPositionX: null,
+                    lastPositionY: null
                 }
             }
         );
@@ -385,7 +400,7 @@ export class CommandProcessor {
         const instanceManager = InstanceManager.getInstance();
         instanceManager.events.emit('clear_progress', { userId });
         instanceManager.events.emit('inventory_update', { userId, items });
-        instanceManager.events.emit('glimmerbowl_update', { userId, entries });
+        instanceManager.events.emit('glimmerbowl_update', { userId, entries, unlocked: false });
         instanceManager.events.emit('wipe_user', { userId });
 
         return `Wiped gameplay data for ${user.username}.`;

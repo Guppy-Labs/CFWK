@@ -491,7 +491,6 @@ function updateDiff(el: HTMLElement, val: number) {
 }
 
 function checkUsernameCooldown(lastChangeStr: string | undefined) {
-    let canChange = true;
     let msg = "You can change your username.";
     let isWarning = false;
 
@@ -502,7 +501,6 @@ function checkUsernameCooldown(lastChangeStr: string | undefined) {
         const diffDays = diffMs / (1000 * 60 * 60 * 24);
         
         if (diffDays < 14) {
-            canChange = false;
             isWarning = true;
             const daysLeft = Math.ceil(14 - diffDays);
             msg = `Next change available in ${daysLeft} days.`;

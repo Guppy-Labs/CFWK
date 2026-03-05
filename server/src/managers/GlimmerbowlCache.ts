@@ -1,5 +1,6 @@
 import User from '../models/User';
 import { GlimmerFishTier, GlimmerbowlEntry, getItemDefinition } from '@cfwk/shared';
+import { InventoryCache } from './InventoryCache';
 
 type CacheEntry = {
     entries: GlimmerbowlEntry[];
@@ -40,9 +41,83 @@ export class GlimmerbowlCache {
         return entries;
     }
 
-    async getState(userId: string): Promise<{ entries: GlimmerbowlEntry[] }> {
+    async getState(userId: string): Promise<{ entries: GlimmerbowlEntry[]; unlocked: boolean }> {
+        const unlocked = await this.isUnlocked(userId);
         const entries = await this.getEntries(userId);
-        return { entries };
+        return { entries, unlocked };
+    }
+
+    async isUnlocked(userId: string): Promise<boolean> {
+        const user = await User.findById(userId).select('glimmerbowlUnlocked').lean();
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        return Boolean((user as any).glimmerbowlUnlocked);
+    }
+
+    async unlockForUser(userId: string): Promise<{ entries: GlimmerbowlEntry[]; unlocked: boolean; slots?: { index: number; itemId: string | null; count: number }[]; equippedRodId?: string | null; movedFish: boolean }> {
+        await User.updateOne(
+            { _id: userId },
+            { $set: { glimmerbowlUnlocked: true } }
+        );
+        const migrated = await this.migrateInventoryFishToGlimmerbowl(userId);
+        const state = await this.getState(userId);
+        return {
+            ...state,
+            slots: migrated.slots,
+            equippedRodId: migrated.equippedRodId,
+            movedFish: migrated.movedFish
+        };
+    }
+
+    async migrateInventoryFishToGlimmerbowl(userId: string): Promise<{ movedFish: boolean; slots?: { index: number; itemId: string | null; count: number }[]; equippedRodId?: string | null }> {
+        const inventoryCache = InventoryCache.getInstance();
+        const { items: slots, equippedRodId } = await inventoryCache.getInventoryState(userId);
+        const fishCounts = new Map<string, number>();
+        let changed = false;
+
+        const nextSlots = slots.map((slot) => {
+            if (!slot.itemId || slot.count <= 0) return slot;
+            const itemDef = getItemDefinition(slot.itemId);
+            if (!itemDef || itemDef.category !== 'Fish') return slot;
+
+            fishCounts.set(slot.itemId, (fishCounts.get(slot.itemId) ?? 0) + slot.count);
+            changed = true;
+            return {
+                index: slot.index,
+                itemId: null,
+                count: 0
+            };
+        });
+
+        if (!changed) {
+            return { movedFish: false };
+        }
+
+        inventoryCache.setInventory(userId, nextSlots);
+
+        const entries = await this.getEntries(userId);
+        fishCounts.forEach((count, itemId) => {
+            const existing = entries.find((entry) => entry.itemId === itemId && entry.tier === 'regular');
+            if (existing) {
+                existing.count += count;
+                return;
+            }
+
+            entries.push({
+                itemId,
+                count,
+                tier: 'regular'
+            });
+        });
+
+        this.markDirty(userId, entries);
+        return {
+            movedFish: true,
+            slots: nextSlots,
+            equippedRodId
+        };
     }
 
     async addFish(userId: string, itemId: string, amount: number, tier: GlimmerFishTier = 'regular'): Promise<GlimmerbowlEntry[]> {

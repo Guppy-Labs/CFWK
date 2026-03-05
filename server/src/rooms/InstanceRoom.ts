@@ -1,10 +1,11 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
-import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX, IAdvancementAlertMessage, IGuideTutorialState } from "@cfwk/shared";
+import fs from "fs";
+import path from "path";
+import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX, IAdvancementAlertMessage, IGuideTutorialState, DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_HEARTS_STATE, IPlayerHeartsState, isEquippableUsableItem } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { GlimmerbowlCache } from "../managers/GlimmerbowlCache";
-import { DEFAULT_INVENTORY_SLOTS } from "@cfwk/shared";
 import { CommandProcessor } from "../utils/CommandProcessor";
 import User from "../models/User";
 import BannedIP from "../models/BannedIP";
@@ -127,6 +128,39 @@ const SOFT_DISCREPANCY = 18;
 const HARD_DISCREPANCY = 90;
 const RECONCILE_INTERVAL_MS = 80;
 const GAME_TPS = 20;
+const YEKBUSH_COMPONENT_ID = 'yekbush';
+const YEKBUSH_INTERACTION_RADIUS_PX = 3 * 32;
+const YEKBUSH_COOLDOWN_MS = 40_000;
+
+type TiledProperty = { name: string; value: unknown };
+
+type TiledMapObject = {
+    id?: number;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    polygon?: Array<{ x: number; y: number }>;
+    properties?: TiledProperty[];
+};
+
+type TiledLayer = {
+    name?: string;
+    type?: string;
+    objects?: TiledMapObject[];
+};
+
+type TiledMap = {
+    layers?: TiledLayer[];
+};
+
+type InteractiveHarvestTarget = {
+    objectId: number;
+    componentId: string;
+    centerX: number;
+    centerY: number;
+    radiusPx: number;
+};
 
 type SoftCollisionBody = {
     id: string;
@@ -162,6 +196,10 @@ export class InstanceRoom extends Room<InstanceState> {
     private sprintStateBySession = new Map<string, boolean>();
     private pendingStatsDeltasBySession = new Map<string, IPlayerStatsDelta>();
     private tutorialStateBySession = new Map<string, IGuideTutorialState>();
+    private glimmerbowlUnlockedByUserId = new Map<string, boolean>();
+    private heartsByUserId = new Map<string, IPlayerHeartsState>();
+    private harvestTargetsByObjectId = new Map<number, InteractiveHarvestTarget>();
+    private harvestCooldownByUserId = new Map<string, Map<number, number>>();
     private navService = new ServerMapNavService();
     private aiRuntimeById = new Map<string, AiNpcRuntimeState>();
     private advancementsManager = new AdvancementsManager('lobby.tmj');
@@ -214,21 +252,24 @@ export class InstanceRoom extends Room<InstanceState> {
                 const player = this.state.players.get(client.sessionId);
                 if (player && player.odcid === data.userId) {
                     const equippedRodId = InventoryCache.getInstance().getEquippedRod(data.userId);
+                    const equippedUsableIds = InventoryCache.getInstance().getEquippedUsables(data.userId);
                     client.send('inventory', {
                         slots: data.items,
                         totalSlots: DEFAULT_INVENTORY_SLOTS,
-                        equippedRodId
+                        equippedRodId,
+                        equippedUsableIds
                     });
                 }
             });
         });
 
-        this.instanceManager.events.on('glimmerbowl_update', (data: { userId: string; entries: { itemId: string; count: number; tier: 'regular' | 'awakened' }[] }) => {
+        this.instanceManager.events.on('glimmerbowl_update', (data: { userId: string; entries: { itemId: string; count: number; tier: 'regular' | 'awakened' }[]; unlocked?: boolean }) => {
             this.clients.forEach(client => {
                 const player = this.state.players.get(client.sessionId);
                 if (player && player.odcid === data.userId) {
                     client.send('glimmerbowl', {
-                        entries: data.entries
+                        entries: data.entries,
+                        unlocked: data.unlocked ?? true
                     });
                 }
             });
@@ -286,6 +327,7 @@ export class InstanceRoom extends Room<InstanceState> {
         this.instanceManager.events.on('wipe_user', (data: { userId: string }) => {
             this.advancementsManager.clearCachedUser(data.userId);
             PlayerStatsCache.getInstance().resetUser(data.userId);
+            this.glimmerbowlUnlockedByUserId.set(data.userId, false);
 
             this.clients.forEach((client) => {
                 const player = this.state.players.get(client.sessionId);
@@ -305,6 +347,9 @@ export class InstanceRoom extends Room<InstanceState> {
         state.locationId = options.locationId;
         state.mapFile = options.mapFile;
         this.setState(state);
+
+        this.harvestTargetsByObjectId = this.loadHarvestTargets(options.mapFile);
+        this.harvestCooldownByUserId.clear();
 
         this.navService.initializeFromMap(options.mapFile);
         this.advancementsManager = new AdvancementsManager(options.mapFile);
@@ -657,9 +702,18 @@ export class InstanceRoom extends Room<InstanceState> {
             this.incrementStat(client, player, 'catches', 1);
             await this.sendAdvancements(client, await this.advancementsManager.onFishCatch(player.odcid));
 
-            if (itemDef.category === 'Fish') {
+            const glimmerbowlUnlocked = await this.isGlimmerbowlUnlocked(player.odcid);
+            if (itemDef.category === 'Fish' && glimmerbowlUnlocked) {
+                const migrated = await GlimmerbowlCache.getInstance().migrateInventoryFishToGlimmerbowl(player.odcid);
+                if (migrated.movedFish && migrated.slots) {
+                    client.send('inventory', {
+                        slots: migrated.slots,
+                        totalSlots: DEFAULT_INVENTORY_SLOTS,
+                        equippedRodId: migrated.equippedRodId ?? null
+                    });
+                }
                 const glimmerEntries = await GlimmerbowlCache.getInstance().addFish(player.odcid, itemId, 1, 'regular');
-                client.send('glimmerbowl', { entries: glimmerEntries });
+                client.send('glimmerbowl', { entries: glimmerEntries, unlocked: true });
                 client.send('fishing:catchResult', { itemId });
                 return;
             }
@@ -696,6 +750,88 @@ export class InstanceRoom extends Room<InstanceState> {
                 });
         });
 
+        this.onMessage('interactive:harvest', async (client, data: { objectId?: number; componentId?: string }) => {
+            this.markActivity(client);
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+
+            const componentId = typeof data?.componentId === 'string'
+                ? data.componentId.trim().toLowerCase()
+                : YEKBUSH_COMPONENT_ID;
+            if (componentId !== YEKBUSH_COMPONENT_ID) return;
+
+            const objectId = Number.isFinite(data?.objectId)
+                ? Math.floor(Number(data?.objectId))
+                : -1;
+            if (objectId <= 0) return;
+
+            const target = this.harvestTargetsByObjectId.get(objectId);
+            if (!target || target.componentId !== componentId) return;
+
+            const distance = Math.hypot(player.x - target.centerX, player.y - target.centerY);
+            if (distance > target.radiusPx) return;
+
+            const now = Date.now();
+            const cooldownMap = this.getOrCreateHarvestCooldownMap(player.odcid);
+            const readyAt = cooldownMap.get(objectId) ?? 0;
+            if (readyAt > now) {
+                client.send('interactive:harvest:cooldown', {
+                    objectId,
+                    componentId,
+                    centerX: target.centerX,
+                    centerY: target.centerY,
+                    cooldownMs: YEKBUSH_COOLDOWN_MS,
+                    readyAt,
+                    remainingMs: readyAt - now
+                });
+                return;
+            }
+
+            const quantity = Math.random() < 0.2 ? 2 : 1;
+            const itemId = 'yekberries';
+
+            const { items: currentSlots } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+            const stackSize = getItemDefinition(itemId)?.stackSize ?? 99;
+            const hasStackSpace = currentSlots.some((slot) => slot.itemId === itemId && slot.count < stackSize);
+            const hasEmptySlot = currentSlots.some((slot) => !slot.itemId || slot.count === 0);
+
+            let updatedSlots = currentSlots;
+            if (hasStackSpace || hasEmptySlot) {
+                updatedSlots = await InventoryCache.getInstance().addItem(player.odcid, itemId, quantity);
+            } else {
+                this.createDroppedItem(itemId, quantity, player.x, player.y);
+                client.send('inventory:skip', { itemId, quantity });
+            }
+
+            const nextReadyAt = now + YEKBUSH_COOLDOWN_MS;
+            cooldownMap.set(objectId, nextReadyAt);
+
+            const { equippedRodId, equippedUsableIds } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+            client.send('inventory', {
+                slots: updatedSlots,
+                totalSlots: DEFAULT_INVENTORY_SLOTS,
+                equippedRodId,
+                equippedUsableIds
+            });
+
+            client.send('interactive:harvest:success', {
+                objectId,
+                componentId,
+                centerX: target.centerX,
+                centerY: target.centerY,
+                quantity,
+                itemId,
+                cooldownMs: YEKBUSH_COOLDOWN_MS,
+                readyAt: nextReadyAt
+            });
+
+            void this.advancementsManager.onHarvestInteractive(player.odcid, componentId, objectId)
+                .then((updates) => this.sendAdvancements(client, updates))
+                .catch((error) => {
+                    console.error('[InstanceRoom] harvest advancements failed:', error);
+                });
+        });
+
         // Handle pickup item interactions
         this.onMessage("pickupItem", async (client, data: { droppedItemId: string }) => {
             this.markActivity(client);
@@ -715,7 +851,17 @@ export class InstanceRoom extends Room<InstanceState> {
             const droppedItemDef = getItemDefinition(droppedItem.itemId);
             if (!droppedItemDef) return;
 
-            if (droppedItemDef.category === 'Fish') {
+            const glimmerbowlUnlocked = await this.isGlimmerbowlUnlocked(player.odcid);
+
+            if (droppedItemDef.category === 'Fish' && glimmerbowlUnlocked) {
+                const migrated = await GlimmerbowlCache.getInstance().migrateInventoryFishToGlimmerbowl(player.odcid);
+                if (migrated.movedFish && migrated.slots) {
+                    client.send('inventory', {
+                        slots: migrated.slots,
+                        totalSlots: DEFAULT_INVENTORY_SLOTS,
+                        equippedRodId: migrated.equippedRodId ?? null
+                    });
+                }
                 this.state.droppedItems.delete(data.droppedItemId);
                 const entries = await GlimmerbowlCache.getInstance().addFish(
                     player.odcid,
@@ -723,7 +869,7 @@ export class InstanceRoom extends Room<InstanceState> {
                     droppedItem.amount,
                     'regular'
                 );
-                client.send('glimmerbowl', { entries });
+                client.send('glimmerbowl', { entries, unlocked: true });
                 return;
             }
 
@@ -761,7 +907,16 @@ export class InstanceRoom extends Room<InstanceState> {
             const itemDef = getItemDefinition(data.itemId);
             if (!itemDef) return;
 
-            if (itemDef.category === 'Fish') {
+            const glimmerbowlUnlocked = await this.isGlimmerbowlUnlocked(player.odcid);
+            if (itemDef.category === 'Fish' && glimmerbowlUnlocked) {
+                const migrated = await GlimmerbowlCache.getInstance().migrateInventoryFishToGlimmerbowl(player.odcid);
+                if (migrated.movedFish && migrated.slots) {
+                    client.send('inventory', {
+                        slots: migrated.slots,
+                        totalSlots: DEFAULT_INVENTORY_SLOTS,
+                        equippedRodId: migrated.equippedRodId ?? null
+                    });
+                }
                 const glimmerUpdated = await GlimmerbowlCache.getInstance().removeFish(
                     player.odcid,
                     data.itemId,
@@ -770,7 +925,7 @@ export class InstanceRoom extends Room<InstanceState> {
                 if (!glimmerUpdated) return;
 
                 this.createDroppedItem(data.itemId, amount, player.x, player.y);
-                client.send('glimmerbowl', { entries: glimmerUpdated });
+                client.send('glimmerbowl', { entries: glimmerUpdated, unlocked: true });
                 return;
             }
 
@@ -812,7 +967,8 @@ export class InstanceRoom extends Room<InstanceState> {
 
             InventoryCache.getInstance().setInventory(player.odcid, padded);
             const equippedRodId = InventoryCache.getInstance().getEquippedRod(player.odcid);
-            client.send('inventory', { slots: padded, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+            const equippedUsableIds = InventoryCache.getInstance().getEquippedUsables(player.odcid);
+            client.send('inventory', { slots: padded, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId, equippedUsableIds });
         });
 
         // Handle chat messages
@@ -957,6 +1113,9 @@ export class InstanceRoom extends Room<InstanceState> {
         let isPremium = false;
         let hasGameAccess = false;
         let userAppearance: string = ""; // JSON-encoded appearance
+        let initialHearts: IPlayerHeartsState = { ...DEFAULT_PLAYER_HEARTS_STATE };
+        let persistedJoinX: number | null = null;
+        let persistedJoinY: number | null = null;
         if (odcid !== client.sessionId) {
             try {
                 const user = await User.findById(odcid);
@@ -979,6 +1138,17 @@ export class InstanceRoom extends Room<InstanceState> {
                 // Load character appearance for remote player rendering (always include, use defaults if missing)
                 const appearance = user?.characterAppearance || DEFAULT_CHARACTER_APPEARANCE;
                 userAppearance = JSON.stringify(appearance);
+                const storedHearts = (user as any)?.hearts;
+                if (storedHearts && typeof storedHearts === 'object') {
+                    initialHearts = this.normalizeHeartsState({
+                        currentHearts: Number((storedHearts as any).currentHearts),
+                        maxHearts: Number((storedHearts as any).maxHearts)
+                    });
+                }
+                if (typeof (user as any)?.lastPositionX === 'number' && typeof (user as any)?.lastPositionY === 'number') {
+                    persistedJoinX = Number((user as any).lastPositionX);
+                    persistedJoinY = Number((user as any).lastPositionY);
+                }
                 
                 // Track user's IP for future ban enforcement
                 if (user && clientIP && user.lastKnownIP !== clientIP) {
@@ -1028,7 +1198,10 @@ export class InstanceRoom extends Room<InstanceState> {
         // Position starts at (0, 0) - client will send actual spawn position immediately
         // Other clients wait for valid (non-zero) position before showing spawn effect
         const player = new InstancePlayerSchema();
-        // player.x and player.y default to 0 in schema - client sends actual spawn position
+        if (typeof persistedJoinX === 'number' && typeof persistedJoinY === 'number') {
+            player.x = persistedJoinX;
+            player.y = persistedJoinY;
+        }
         player.username = options.username || "Guest";
         player.isPremium = isPremium;
         player.odcid = odcid; // Use odcid for consistent coloring
@@ -1037,6 +1210,7 @@ export class InstanceRoom extends Room<InstanceState> {
         player.moveTs = Date.now();
         
         this.state.players.set(client.sessionId, player);
+        this.heartsByUserId.set(odcid, initialHearts);
         this.lastActivityBySession.set(client.sessionId, Date.now());
         this.pendingStatsDeltasBySession.set(client.sessionId, {});
         this.sprintStateBySession.set(client.sessionId, false);
@@ -1061,15 +1235,18 @@ export class InstanceRoom extends Room<InstanceState> {
 
         // Send initial inventory to the client on join
         try {
-            const { items: slots, equippedRodId } = await InventoryCache.getInstance().getInventoryState(odcid);
-            client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+            const { items: slots, equippedRodId, equippedUsableIds } = await InventoryCache.getInstance().getInventoryState(odcid);
+            client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId, equippedUsableIds });
         } catch (err) {
             console.error('[InstanceRoom] Error sending initial inventory:', err);
         }
 
+        client.send('player:hearts', initialHearts);
+
         try {
-            const { entries } = await GlimmerbowlCache.getInstance().getState(odcid);
-            client.send('glimmerbowl', { entries });
+            const { entries, unlocked } = await GlimmerbowlCache.getInstance().getState(odcid);
+            this.glimmerbowlUnlockedByUserId.set(odcid, unlocked);
+            client.send('glimmerbowl', { entries, unlocked });
         } catch (err) {
             console.error('[InstanceRoom] Error sending initial glimmerbowl:', err);
         }
@@ -1115,16 +1292,104 @@ export class InstanceRoom extends Room<InstanceState> {
         });
 
         // Handle equipment updates from client
-        this.onMessage("equipment:set", async (client, data: { equippedRodId: string | null }) => {
+        this.onMessage("equipment:set", async (client, data: { equippedRodId?: string | null; equippedUsableIds?: Array<string | null> }) => {
             this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             if (!player) return;
 
             const equippedRodId = data?.equippedRodId ?? null;
             InventoryCache.getInstance().setEquippedRod(player.odcid, equippedRodId);
+            if (Array.isArray(data?.equippedUsableIds)) {
+                InventoryCache.getInstance().setEquippedUsables(player.odcid, data.equippedUsableIds);
+            }
 
-            const { items: slots } = await InventoryCache.getInstance().getInventoryState(player.odcid);
-            client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+            const { items: slots, equippedUsableIds } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+            client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId, equippedUsableIds });
+        });
+
+        this.onMessage('item:use', async (client, data: { slotIndex?: number }) => {
+            this.markActivity(client);
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+
+            const slotIndex = typeof data?.slotIndex === 'number' ? Math.floor(data.slotIndex) : -1;
+            if (slotIndex < 0) return;
+
+            const equippedUsables = InventoryCache.getInstance().getEquippedUsables(player.odcid);
+            if (slotIndex >= equippedUsables.length) return;
+
+            const equippedItemId = equippedUsables[slotIndex];
+            if (!equippedItemId) return;
+
+            const itemDef = getItemDefinition(equippedItemId);
+            if (!isEquippableUsableItem(itemDef)) return;
+
+            const { items: currentSlots } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+            const inventoryCountForItem = currentSlots
+                .filter((slot) => slot.itemId === equippedItemId)
+                .reduce((sum, slot) => sum + slot.count, 0);
+
+            let updatedSlots = currentSlots;
+            if (inventoryCountForItem > 0) {
+                const removed = await InventoryCache.getInstance().removeItem(player.odcid, equippedItemId, 1);
+                if (!removed) return;
+                updatedSlots = removed;
+            }
+
+            const nextUsables = [...equippedUsables];
+            nextUsables[slotIndex] = null;
+            InventoryCache.getInstance().setEquippedUsables(player.odcid, nextUsables);
+
+            const guidedTutorial = this.tutorialStateBySession.get(client.sessionId);
+            const forceGuideFoodHeal = guidedTutorial?.forceFoodGuideHeal === true && equippedItemId === 'yekberries';
+
+            if (itemDef?.category === 'Food') {
+                const score = Math.max(0, Math.floor(itemDef.foodScore ?? 0));
+                const guaranteed = Math.floor(score / 100);
+                const remainder = score - guaranteed * 100;
+                const bonus = Math.random() * 100 < remainder ? 1 : 0;
+                const restoreHearts = forceGuideFoodHeal ? Math.max(1, guaranteed + bonus) : (guaranteed + bonus);
+
+                if (restoreHearts > 0) {
+                    const current = this.heartsByUserId.get(player.odcid) ?? { ...DEFAULT_PLAYER_HEARTS_STATE };
+                    const next = this.normalizeHeartsState({
+                        currentHearts: current.currentHearts + restoreHearts,
+                        maxHearts: current.maxHearts
+                    });
+                    this.heartsByUserId.set(player.odcid, next);
+                    client.send('player:hearts', next);
+                    if (player.odcid !== client.sessionId) {
+                        await User.updateOne({ _id: player.odcid }, { $set: { hearts: next } });
+                    }
+                }
+            }
+
+            if (forceGuideFoodHeal) {
+                try {
+                    const advancementsState = await this.advancementsManager.updateTutorialState(player.odcid, {
+                        forceFoodGuideHeal: false
+                    });
+                    if (advancementsState) {
+                        this.tutorialStateBySession.set(client.sessionId, advancementsState.tutorial);
+                        client.send('advancements:state', advancementsState);
+                    }
+                } catch (error) {
+                    console.error('[InstanceRoom] Failed clearing food guide heal flag:', error);
+                }
+            }
+
+            const { equippedRodId, equippedUsableIds } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+            client.send('inventory', {
+                slots: updatedSlots,
+                totalSlots: DEFAULT_INVENTORY_SLOTS,
+                equippedRodId,
+                equippedUsableIds
+            });
+            client.send('inventory:consumed', {
+                itemId: equippedItemId,
+                quantity: 1,
+                slotIndex
+            });
         });
         
         // Notify instance manager
@@ -1159,11 +1424,32 @@ export class InstanceRoom extends Room<InstanceState> {
 
     onLeave(client: Client, consented: boolean) {
         console.log(`[InstanceRoom] ${client.sessionId} left instance ${this.instanceId}`);
+        const departingPlayer = this.state.players.get(client.sessionId);
         
         // Unregister user connection
         const odcid = (client as any).odcid;
+        if (odcid) {
+            this.harvestCooldownByUserId.delete(odcid);
+        }
         if (odcid && odcid !== client.sessionId) {
             this.instanceManager.unregisterUserConnection(odcid);
+            this.glimmerbowlUnlockedByUserId.delete(odcid);
+            this.heartsByUserId.delete(odcid);
+
+            if (departingPlayer) {
+                User.updateOne(
+                    { _id: odcid },
+                    {
+                        $set: {
+                            lastLocationId: this.state.locationId,
+                            lastPositionX: departingPlayer.x,
+                            lastPositionY: departingPlayer.y
+                        }
+                    }
+                ).catch((err) => {
+                    console.error('[InstanceRoom] Failed to persist last known player position:', err);
+                });
+            }
         }
         
         this.state.players.delete(client.sessionId);
@@ -1183,6 +1469,9 @@ export class InstanceRoom extends Room<InstanceState> {
     onDispose() {
         console.log(`[InstanceRoom] Instance ${this.instanceId} disposed`);
         this.aiRuntimeById.clear();
+        this.heartsByUserId.clear();
+        this.harvestCooldownByUserId.clear();
+        this.harvestTargetsByObjectId.clear();
         if (this.timeUpdateInterval) {
             clearInterval(this.timeUpdateInterval);
         }
@@ -1198,6 +1487,116 @@ export class InstanceRoom extends Room<InstanceState> {
         if (this.statsBroadcastInterval) {
             clearInterval(this.statsBroadcastInterval);
         }
+    }
+
+    private async isGlimmerbowlUnlocked(userId: string): Promise<boolean> {
+        const cached = this.glimmerbowlUnlockedByUserId.get(userId);
+        if (cached !== undefined) return cached;
+
+        const unlocked = await GlimmerbowlCache.getInstance().isUnlocked(userId);
+        this.glimmerbowlUnlockedByUserId.set(userId, unlocked);
+        return unlocked;
+    }
+
+    private normalizeHeartsState(input: IPlayerHeartsState): IPlayerHeartsState {
+        const maxHearts = Math.max(1, Math.floor(Number.isFinite(input.maxHearts) ? input.maxHearts : DEFAULT_PLAYER_HEARTS_STATE.maxHearts));
+        const currentHearts = Math.max(0, Math.min(maxHearts, Math.floor(Number.isFinite(input.currentHearts) ? input.currentHearts : maxHearts)));
+        return {
+            currentHearts,
+            maxHearts
+        };
+    }
+
+    private getOrCreateHarvestCooldownMap(userId: string): Map<number, number> {
+        let cooldownMap = this.harvestCooldownByUserId.get(userId);
+        if (cooldownMap) return cooldownMap;
+        cooldownMap = new Map<number, number>();
+        this.harvestCooldownByUserId.set(userId, cooldownMap);
+        return cooldownMap;
+    }
+
+    private loadHarvestTargets(mapFileName: string): Map<number, InteractiveHarvestTarget> {
+        const targets = new Map<number, InteractiveHarvestTarget>();
+        const mapPath = this.resolveMapPath(mapFileName);
+        if (!mapPath) return targets;
+
+        try {
+            const raw = fs.readFileSync(mapPath, 'utf8');
+            const map = JSON.parse(raw) as TiledMap;
+            const interactivesLayer = (map.layers ?? []).find((layer) => layer.type === 'objectgroup' && layer.name === 'Interactives');
+            if (!interactivesLayer || !Array.isArray(interactivesLayer.objects)) return targets;
+
+            for (const object of interactivesLayer.objects) {
+                if (!Number.isFinite(object.id)) continue;
+                const objectId = Math.floor(Number(object.id));
+                if (objectId <= 0) continue;
+
+                const componentId = this.getTiledPropertyValue(object.properties, 'componentid');
+                const normalizedComponentId = typeof componentId === 'string' ? componentId.trim().toLowerCase() : '';
+                if (normalizedComponentId !== YEKBUSH_COMPONENT_ID) continue;
+
+                const center = this.computeObjectCenter(object);
+                if (!center) continue;
+
+                targets.set(objectId, {
+                    objectId,
+                    componentId: normalizedComponentId,
+                    centerX: center.x,
+                    centerY: center.y,
+                    radiusPx: YEKBUSH_INTERACTION_RADIUS_PX
+                });
+            }
+        } catch (error) {
+            console.error('[InstanceRoom] Failed to load harvest targets from map:', error);
+        }
+
+        return targets;
+    }
+
+    private computeObjectCenter(object: TiledMapObject): { x: number; y: number } | null {
+        const baseX = Number(object.x ?? 0);
+        const baseY = Number(object.y ?? 0);
+
+        if (Array.isArray(object.polygon) && object.polygon.length > 0) {
+            let sumX = 0;
+            let sumY = 0;
+            for (const point of object.polygon) {
+                sumX += baseX + Number(point.x ?? 0);
+                sumY += baseY + Number(point.y ?? 0);
+            }
+            const count = object.polygon.length;
+            if (count <= 0) return null;
+            return { x: sumX / count, y: sumY / count };
+        }
+
+        const width = Number(object.width ?? 0);
+        const height = Number(object.height ?? 0);
+        return {
+            x: baseX + width * 0.5,
+            y: baseY + height * 0.5
+        };
+    }
+
+    private getTiledPropertyValue(properties: TiledProperty[] | undefined, propertyName: string): unknown {
+        if (!Array.isArray(properties)) return undefined;
+        const normalized = propertyName.trim().toLowerCase();
+        const found = properties.find((property) => String(property.name).trim().toLowerCase() === normalized);
+        return found?.value;
+    }
+
+    private resolveMapPath(mapFileName: string): string | null {
+        const candidates = [
+            path.resolve(__dirname, '../../../client/public/maps', mapFileName),
+            path.resolve(__dirname, '../../client/public/maps', mapFileName),
+            path.resolve(process.cwd(), '../client/public/maps', mapFileName),
+            path.resolve(process.cwd(), 'client/public/maps', mapFileName)
+        ];
+
+        for (const candidate of candidates) {
+            if (fs.existsSync(candidate)) return candidate;
+        }
+
+        return null;
     }
 
     private stepHardAuthorityMotion(deltaTimeMs: number) {

@@ -27,6 +27,7 @@ export type InventoryItemDetailsData = {
     slotIndex: number;
     amount?: number;
     stackSize?: number;
+    scoreText?: string;
 };
 
 export const DEFAULT_ITEM_DETAILS_CONFIG: Required<InventoryItemDetailsConfig> = {
@@ -56,6 +57,7 @@ export class InventoryItemDetailsUI {
     private divider: Phaser.GameObjects.Image;
     private nameImage: Phaser.GameObjects.Image;
     private amountImage: Phaser.GameObjects.Image;
+    private scoreImage: Phaser.GameObjects.Image;
     private descriptionImage: Phaser.GameObjects.Image;
     private dropButtonBg: Phaser.GameObjects.Image;
     private dropButtonLabel: Phaser.GameObjects.Image;
@@ -82,6 +84,7 @@ export class InventoryItemDetailsUI {
     private dividerTextureCounter = 0;
     private nameTextureKey?: string;
     private amountTextureKey?: string;
+    private scoreTextureKey?: string;
     private descriptionTextureKey?: string;
     private frameTextureKey?: string;
     private dividerTextureKey?: string;
@@ -132,6 +135,11 @@ export class InventoryItemDetailsUI {
         this.amountImage = this.scene.add.image(0, 0, this.amountTextureKey).setOrigin(1, -0.5);
         this.amountImage.setScale(0.7);
 
+        this.scoreTextureKey = this.createTextTexture('', 1, false, '#d45b5b');
+        this.scoreImage = this.scene.add.image(0, 0, this.scoreTextureKey).setOrigin(1, -0.3);
+        this.scoreImage.setScale(0.6);
+        this.scoreImage.setVisible(false);
+
         this.descriptionTextureKey = this.createTextTexture('', this.config.width - this.config.descriptionOffsetX * 2);
         this.descriptionImage = this.scene.add.image(0, 0, this.descriptionTextureKey).setOrigin(0, 0);
 
@@ -156,7 +164,7 @@ export class InventoryItemDetailsUI {
         this.dropButton.setVisible(false);
         this.secondaryButton.setVisible(false);
 
-        this.container.add([this.frame, this.divider, this.nameImage, this.amountImage, this.descriptionImage, this.dropButton, this.secondaryButton]);
+        this.container.add([this.frame, this.divider, this.nameImage, this.scoreImage, this.amountImage, this.descriptionImage, this.dropButton, this.secondaryButton]);
         this.container.setVisible(false);
 
         this.localeChangedHandler = () => this.refreshLocalizedLabels();
@@ -195,6 +203,7 @@ export class InventoryItemDetailsUI {
             this.setVisible(false);
             this.dropButton.setVisible(false);
             this.secondaryButton.setVisible(false);
+            this.scoreImage.setVisible(false);
             this.currentItem = undefined;
             return;
         }
@@ -203,21 +212,29 @@ export class InventoryItemDetailsUI {
         const amountText = this.getAmountText(data);
         const amountWidth = Math.max(1, this.measureBitmapTextWidth(amountText));
         const amountKey = this.createTextTexture(amountText, amountWidth, false, this.config.amountTextColor);
+        const scoreText = data.scoreText ?? '';
+        const scoreWidth = Math.max(1, this.measureBitmapTextWidth(scoreText));
+        const scoreKey = this.createTextTexture(scoreText, scoreWidth, false, '#d45b5b');
         const descKey = this.createTextTexture(data.description, this.config.width - this.config.descriptionOffsetX * 2, true, this.config.descriptionTextColor);
 
         const oldName = this.nameTextureKey;
         const oldAmount = this.amountTextureKey;
+        const oldScore = this.scoreTextureKey;
         const oldDesc = this.descriptionTextureKey;
 
         this.nameTextureKey = nameKey;
         this.amountTextureKey = amountKey;
+        this.scoreTextureKey = scoreKey;
         this.descriptionTextureKey = descKey;
         this.nameImage.setTexture(nameKey);
         this.amountImage.setTexture(amountKey);
+        this.scoreImage.setTexture(scoreKey);
+        this.scoreImage.setVisible(Boolean(scoreText));
         this.descriptionImage.setTexture(descKey);
 
         if (oldName && this.scene.textures.exists(oldName)) this.scene.textures.remove(oldName);
         if (oldAmount && this.scene.textures.exists(oldAmount)) this.scene.textures.remove(oldAmount);
+        if (oldScore && this.scene.textures.exists(oldScore)) this.scene.textures.remove(oldScore);
         if (oldDesc && this.scene.textures.exists(oldDesc)) this.scene.textures.remove(oldDesc);
 
         this.currentItem = {
@@ -227,6 +244,7 @@ export class InventoryItemDetailsUI {
         };
         this.dropButton.setVisible(data.slotIndex >= 0);
         this.secondaryButton.setVisible(data.slotIndex >= 0 && Boolean(this.onSecondaryAction));
+        this.updateHeaderLayout();
         this.updateDropButtonLayout();
         this.setVisible(true);
     }
@@ -245,8 +263,7 @@ export class InventoryItemDetailsUI {
 
         this.nameImage.setPosition(this.config.nameOffsetX, this.config.nameOffsetY);
 
-        const amountX = this.config.width - this.config.nameOffsetX;
-        this.amountImage.setPosition(amountX, this.config.nameOffsetY);
+        this.updateHeaderLayout();
 
         const descriptionY = dividerY + this.getDividerHeight() + this.config.descriptionOffsetY;
         this.descriptionImage.setPosition(this.config.descriptionOffsetX, descriptionY);
@@ -256,6 +273,12 @@ export class InventoryItemDetailsUI {
 
     getReservedHeight(): number {
         return this.config.height - 4;
+    }
+
+    getScoreScreenRect(): Phaser.Geom.Rectangle | null {
+        if (!this.container.visible || !this.scoreImage.visible) return null;
+        const bounds = this.scoreImage.getBounds();
+        return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
     }
 
     private updateDropButtonLayout() {
@@ -285,6 +308,16 @@ export class InventoryItemDetailsUI {
             this.dropButton.setPosition(x, y);
             this.secondaryButton.setPosition(x, y);
         }
+    }
+
+    private updateHeaderLayout() {
+        const amountX = this.config.width - this.config.nameOffsetX;
+        this.amountImage.setPosition(amountX, this.config.nameOffsetY);
+
+        if (!this.scoreImage.visible) return;
+        const amountWidth = this.amountImage.width * this.amountImage.scaleX;
+        const scoreX = amountX - amountWidth - 4;
+        this.scoreImage.setPosition(scoreX, this.config.nameOffsetY + 1);
     }
 
     private refreshLocalizedLabels() {

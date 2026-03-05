@@ -14,6 +14,10 @@ export type ItemConsumeEffect = {
     [key: string]: unknown;
 };
 
+export type UsableType = 'consumable' | 'utility';
+export type ConsumableKind = 'standard' | 'specific';
+export type EquippableSlotType = 'rod' | 'usable';
+
 export type ItemDefinition = {
     id: string;
     name: string;
@@ -24,6 +28,10 @@ export type ItemDefinition = {
     stackSize: number;
     consumeEffect: ItemConsumeEffect;
     rodStats?: RodStats;
+    usableType?: UsableType;
+    consumableKind?: ConsumableKind;
+    equippableSlotType?: EquippableSlotType;
+    foodScore?: number;
     /**
      * Optional custom file path relative to /public for the item image.
      * If not specified, defaults to: items/{category}/{id}.png
@@ -40,10 +48,29 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         category: 'Food',
         description: 'A rare, sweet berry that restores vitality.',
         stackSize: 80,
+        usableType: 'consumable',
+        consumableKind: 'standard',
+        equippableSlotType: 'usable',
+        foodScore: 0,
         consumeEffect: {
             type: 'heal',
             amount: 0
         }
+    },
+    {
+        id: 'yekberries',
+        name: 'Yek Berries',
+        category: 'Food',
+        description: 'Tiny tart berries from a yek bush. Barely nourishing, but better than nothing.',
+        stackSize: 80,
+        usableType: 'consumable',
+        consumableKind: 'standard',
+        equippableSlotType: 'usable',
+        foodScore: 20,
+        consumeEffect: {
+            type: 'heal'
+        },
+        file: 'items/food/yekberries.png'
     },
 
     // === FISH (Common) ===
@@ -179,6 +206,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         description: 'A worn fishing rod held together with hope and string.',
         rodStats: { speedMultiplier: 0.75, rarityMultiplier: 0.4, strength: 0.5 },
         stackSize: 1,
+        equippableSlotType: 'rod',
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile075.png'
     },
@@ -189,6 +217,18 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         description: 'A reliable fishing rod used by experienced anglers.',
         rodStats: { speedMultiplier: 0.75, rarityMultiplier: 0.5, strength: 0.75 },
         stackSize: 1,
+        equippableSlotType: 'rod',
+        consumeEffect: { type: 'none' },
+        file: 'assets/fish/tile081.png'
+    },
+    {
+        id: 'developer_rod',
+        name: 'Developer Rod',
+        category: 'Tools',
+        description: 'A debug rod tuned for very fast test catches.',
+        rodStats: { speedMultiplier: 8, rarityMultiplier: 2.0, strength: 4.0 },
+        stackSize: 1,
+        equippableSlotType: 'rod',
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile081.png'
     },
@@ -379,4 +419,14 @@ export function getAllFishingItems(): ItemDefinition[] {
     return ITEM_DEFINITIONS.filter(
         item => item.category === 'Fish' || item.category === 'Junk' || item.category === 'Treasure'
     );
+}
+
+export function isRodItem(item: ItemDefinition | undefined | null): boolean {
+    return Boolean(item?.equippableSlotType === 'rod' || (item?.category === 'Tools' && item?.rodStats));
+}
+
+export function isEquippableUsableItem(item: ItemDefinition | undefined | null): boolean {
+    if (!item) return false;
+    if (item.equippableSlotType === 'usable') return true;
+    return item.category === 'Food';
 }

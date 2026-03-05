@@ -115,14 +115,24 @@
 	"subtitles": {
 		"ambientOcean": "Vagues de l'océan",
 		"ambientFire": "Feu qui crépite",
+		"footstepGrass": "Pas sur l'herbe",
 		"footstepSand": "Pas sur le sable",
+		"footstepStone": "Pas sur la pierre",
 		"footstepWater": "Pas dans l'eau peu profonde",
+		"footstepWood": "Pas sur le bois",
 		"meow": "Miaou",
+		"eatYekberries": "Mange des yekberries",
 		"rodCast": "Lancer de canne à pêche",
 		"rodReel": "Moulinage de canne à pêche",
 		"waterSplash": "Éclaboussure",
 		"biteAlert": "Alerte de morsure",
 		"reelClick": "Clic du moulinet",
+		"questStarted": "Quête commencée",
+		"questObjective": "Objectif de quête mis à jour",
+		"questCompleted": "Quête terminée",
+		"questTracked": "Quête suivie",
+		"achievementUnlocked": "Succès débloqué",
+		"locationDiscovered": "Nouveau lieu découvert",
 		"itemCollected": "Objet ramassé",
 		"itemDropped": "Objet jeté",
 		"itemSkipped": "Objet ignoré",
@@ -263,6 +273,10 @@
 			"name": "Baies dorées",
 			"description": "Une baie rare et sucrée qui redonne de la vitalité."
 		},
+		"yekberries": {
+			"name": "Baies yek",
+			"description": "Des baies acidulées d'un yekbush. Une nourriture de soin simple et fiable."
+		},
 		"tuna": {
 			"name": "Thon",
 			"description": "Un thon commun. Délicieux lorsqu'il est bien préparé."
@@ -314,6 +328,10 @@
 		"fisherman_rod": {
 			"name": "Canne du pêcheur",
 			"description": "Une canne fiable utilisée par des pêcheurs expérimentés."
+		},
+		"developer_rod": {
+			"name": "Canne développeur",
+			"description": "Une canne de débogage réglée pour des prises de test très rapides."
 		},
 		"sea_grass": {
 			"name": "Herbe marine",

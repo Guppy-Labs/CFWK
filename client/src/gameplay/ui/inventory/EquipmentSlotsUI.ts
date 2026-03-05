@@ -4,11 +4,12 @@ import { MobileControls } from '../MobileControls';
 import { LocaleManager } from '../../i18n/LocaleManager';
 import { BitmapFontRenderer } from '../BitmapFontRenderer';
 
-export type EquipmentSlotType = 'rod';
+export type EquipmentSlotType = 'rod' | 'usable';
 
 export type EquippedItem = {
     slotType: EquipmentSlotType;
     item: InventoryDisplayItem;
+    slotIndex?: number;
 };
 
 export type EquipmentSlotsConfig = {
@@ -16,6 +17,8 @@ export type EquipmentSlotsConfig = {
     offsetX?: number;
     offsetY?: number;
     labelOffsetY?: number;
+    usableSlotStartOffsetY?: number;
+    usableSlotGap?: number;
 };
 
 export class EquipmentSlotsUI {
@@ -24,7 +27,11 @@ export class EquipmentSlotsUI {
     private rodSlot: Phaser.GameObjects.Image;
     private rodIcon?: Phaser.GameObjects.Image;
     private rodLabel: Phaser.GameObjects.Image;
+    private usableSlots: Phaser.GameObjects.Image[] = [];
+    private usableIcons: Array<Phaser.GameObjects.Image | undefined> = [];
+    private usableSlotPlaceholders: Phaser.GameObjects.Image[] = [];
     private equippedRod: InventoryDisplayItem | null = null;
+    private equippedUsables: Array<InventoryDisplayItem | null> = [null, null, null, null];
     private lastLayout?: { rightPageLeftEdgeX: number; rightPageTopEdgeY: number; pageHeight: number; scale: number };
     
     private hoverIndicator?: Phaser.GameObjects.Image;
@@ -35,15 +42,20 @@ export class EquipmentSlotsUI {
     private disableHoverIndicator = false;
     private dragGhost?: Phaser.GameObjects.Image;
     private dragSourceIcon?: Phaser.GameObjects.Image;
+    private dragSourceType?: EquipmentSlotType;
+    private dragSourceUsableIndex?: number;
     private dragStartX?: number;
     private dragStartY?: number;
     
     private onRodSlotClick?: (currentRod: InventoryDisplayItem | null) => void;
+    private onUsableSlotClick?: (slotIndex: number, currentItem: InventoryDisplayItem | null) => void;
     private onRodEquipped?: (rod: InventoryDisplayItem) => void;
     private onRodUnequipped?: (rod: InventoryDisplayItem) => void;
     private onRodSlotDragComplete?: (pointer: Phaser.Input.Pointer) => boolean;
+    private onUsableSlotDragComplete?: (slotIndex: number, pointer: Phaser.Input.Pointer) => boolean;
 
-    private slotBounds?: Phaser.Geom.Rectangle;
+    private rodSlotBounds?: Phaser.Geom.Rectangle;
+    private usableSlotBounds: Phaser.Geom.Rectangle[] = [];
     private pointerMoveHandler?: (pointer: Phaser.Input.Pointer) => void;
     private pointerDownHandler?: (pointer: Phaser.Input.Pointer) => void;
     private pointerUpHandler?: (pointer: Phaser.Input.Pointer) => void;
@@ -64,7 +76,9 @@ export class EquipmentSlotsUI {
             slotSize: config.slotSize ?? 24,
             offsetX: config.offsetX ?? 62,
             offsetY: config.offsetY ?? 40,
-            labelOffsetY: config.labelOffsetY ?? 10
+            labelOffsetY: config.labelOffsetY ?? 10,
+            usableSlotStartOffsetY: config.usableSlotStartOffsetY ?? 34,
+            usableSlotGap: config.usableSlotGap ?? 6
         };
         this.fontRenderer = new BitmapFontRenderer(this.scene, this.fontCharSize);
 
@@ -74,6 +88,18 @@ export class EquipmentSlotsUI {
         // Create the rod slot (empty by default)
         this.rodSlot = this.scene.add.image(0, 0, 'ui-slot-empty').setOrigin(0.5, 0.5);
         this.container.add(this.rodSlot);
+
+        for (let index = 0; index < 4; index++) {
+            const usableSlot = this.scene.add.image(0, 0, 'ui-slot-empty').setOrigin(0.5, 0.5);
+            this.usableSlots.push(usableSlot);
+            this.container.add(usableSlot);
+
+            const placeholderKey = this.createLabelTexture(String(index + 1), '#7f7f7f');
+            const placeholder = this.scene.add.image(0, 0, placeholderKey).setOrigin(0.5, 0.5);
+            placeholder.setAlpha(0.95);
+            this.usableSlotPlaceholders.push(placeholder);
+            this.container.add(placeholder);
+        }
 
         // Create the label texture
         this.labelTextureKey = this.createLabelTexture(this.localeManager.t('inventory.equipment.rod', undefined, 'Rod'));
@@ -117,20 +143,21 @@ export class EquipmentSlotsUI {
                 this.setHovered(false);
                 return;
             }
-            if (!this.slotBounds) return;
-
-            const isInBounds = this.slotBounds.contains(pointer.x, pointer.y);
+            const hit = this.getSlotHit(pointer);
+            const isInBounds = hit?.type === 'rod';
             this.setHovered(isInBounds);
         };
 
         this.pointerDownHandler = (pointer: Phaser.Input.Pointer) => {
             if (!this.container.visible) return;
-            if (!this.slotBounds) return;
-            if (!this.slotBounds.contains(pointer.x, pointer.y)) return;
+            const hit = this.getSlotHit(pointer);
+            if (!hit) return;
 
             this.dragPointerId = pointer.id;
             this.dragStartX = pointer.x;
             this.dragStartY = pointer.y;
+            this.dragSourceType = hit.type;
+            this.dragSourceUsableIndex = hit.usableIndex;
         };
 
         this.pointerUpHandler = (pointer: Phaser.Input.Pointer) => {
@@ -140,22 +167,38 @@ export class EquipmentSlotsUI {
             this.dragStartX = undefined;
             this.dragStartY = undefined;
 
-            const isInBounds = this.slotBounds?.contains(pointer.x, pointer.y);
+            const hit = this.getSlotHit(pointer);
+            const isInBounds = Boolean(hit);
             if (this.dragGhost) {
-                if (isInBounds) {
+                const isDropOnSource =
+                    (this.dragSourceType === 'rod' && hit?.type === 'rod')
+                    || (this.dragSourceType === 'usable' && hit?.type === 'usable' && hit.usableIndex === this.dragSourceUsableIndex);
+                if (isDropOnSource) {
                     this.endDragVisual(true);
                     return;
                 }
 
-                const handled = this.onRodSlotDragComplete?.(pointer) ?? false;
+                let handled = false;
+                if (this.dragSourceType === 'rod') {
+                    handled = this.onRodSlotDragComplete?.(pointer) ?? false;
+                } else if (this.dragSourceType === 'usable' && this.dragSourceUsableIndex !== undefined) {
+                    handled = this.onUsableSlotDragComplete?.(this.dragSourceUsableIndex, pointer) ?? false;
+                }
                 this.endDragVisual(!handled);
                 return;
             }
 
-            if (!isInBounds) return;
-            const nextSelected = !this.isRodSlotSelected;
-            this.setSelected(nextSelected);
-            this.onRodSlotClick?.(this.equippedRod);
+            if (!isInBounds || !hit) return;
+            if (hit.type === 'rod') {
+                const nextSelected = !this.isRodSlotSelected;
+                this.setSelected(nextSelected);
+                this.onRodSlotClick?.(this.equippedRod);
+                return;
+            }
+
+            if (hit.usableIndex === undefined) return;
+            this.setSelected(false);
+            this.onUsableSlotClick?.(hit.usableIndex, this.equippedUsables[hit.usableIndex] ?? null);
         };
 
         this.scene.input.on('pointermove', this.pointerMoveHandler);
@@ -208,15 +251,32 @@ export class EquipmentSlotsUI {
     }
 
     private startDragVisual(pointer: Phaser.Input.Pointer) {
-        if (!this.rodIcon || !this.equippedRod) return;
         if (this.dragGhost) return;
 
-        const scale = this.container.scaleX || 1;
-        this.dragSourceIcon = this.rodIcon;
-        this.rodIcon.setVisible(false);
+        if (this.dragSourceType === 'rod') {
+            if (!this.rodIcon || !this.equippedRod) return;
+            const scale = this.container.scaleX || 1;
+            this.dragSourceIcon = this.rodIcon;
+            this.rodIcon.setVisible(false);
 
-        this.dragGhost = this.scene.add.image(pointer.x, pointer.y, this.equippedRod.iconKey).setOrigin(0.5, 0.5);
-        this.dragGhost.setScale(this.rodIcon.scaleX * scale, this.rodIcon.scaleY * scale);
+            this.dragGhost = this.scene.add.image(pointer.x, pointer.y, this.equippedRod.iconKey).setOrigin(0.5, 0.5);
+            this.dragGhost.setScale(this.rodIcon.scaleX * scale, this.rodIcon.scaleY * scale);
+        } else if (this.dragSourceType === 'usable' && this.dragSourceUsableIndex !== undefined) {
+            const sourceIndex = this.dragSourceUsableIndex;
+            const sourceIcon = this.usableIcons[sourceIndex];
+            const sourceItem = this.equippedUsables[sourceIndex];
+            if (!sourceIcon || !sourceItem) return;
+
+            const scale = this.container.scaleX || 1;
+            this.dragSourceIcon = sourceIcon;
+            sourceIcon.setVisible(false);
+
+            this.dragGhost = this.scene.add.image(pointer.x, pointer.y, sourceItem.iconKey).setOrigin(0.5, 0.5);
+            this.dragGhost.setScale(sourceIcon.scaleX * scale, sourceIcon.scaleY * scale);
+        } else {
+            return;
+        }
+
         this.dragGhost.setAlpha(0.85);
         this.dragGhost.setScrollFactor(0);
         this.dragGhost.setDepth(13000);
@@ -250,6 +310,8 @@ export class EquipmentSlotsUI {
 
         if (!selected) {
             this.dragPointerId = undefined;
+            this.dragSourceType = undefined;
+            this.dragSourceUsableIndex = undefined;
             this.dragStartX = undefined;
             this.dragStartY = undefined;
             this.endDragVisual(true);
@@ -285,6 +347,18 @@ export class EquipmentSlotsUI {
         return { x, y };
     }
 
+    private getUsableSlotLocalY(slotIndex: number): number {
+        return this.config.usableSlotStartOffsetY + slotIndex * (this.config.slotSize + this.config.usableSlotGap);
+    }
+
+    private getUsableSlotScreenPosition(slotIndex: number): { x: number; y: number } | undefined {
+        if (!this.lastLayout) return undefined;
+        const { rightPageLeftEdgeX, rightPageTopEdgeY, scale } = this.lastLayout;
+        const x = rightPageLeftEdgeX + this.config.offsetX * scale;
+        const y = rightPageTopEdgeY + (this.config.offsetY + this.getUsableSlotLocalY(slotIndex)) * scale;
+        return { x, y };
+    }
+
     setVisible(visible: boolean) {
         this.container.setVisible(visible);
         if (!visible) {
@@ -303,15 +377,39 @@ export class EquipmentSlotsUI {
 
         // Update slot bounds for click detection
         const slotSize = this.config.slotSize * scale;
-        this.slotBounds = new Phaser.Geom.Rectangle(
+        this.rodSlotBounds = new Phaser.Geom.Rectangle(
             x - slotSize / 2,
             y - slotSize / 2,
             slotSize,
             slotSize
         );
 
+        this.usableSlotBounds = this.usableSlots.map((_, index) => {
+            const localY = this.getUsableSlotLocalY(index);
+            const worldY = y + localY * scale;
+            return new Phaser.Geom.Rectangle(
+                x - slotSize / 2,
+                worldY - slotSize / 2,
+                slotSize,
+                slotSize
+            );
+        });
+
         // Position label below slot
         this.rodLabel.setPosition(0, this.config.slotSize / 2 + this.config.labelOffsetY);
+
+        this.usableSlots.forEach((slot, index) => {
+            const localY = this.getUsableSlotLocalY(index);
+            slot.setPosition(0, localY);
+
+            const placeholder = this.usableSlotPlaceholders[index];
+            placeholder.setPosition(0, localY);
+
+            const icon = this.usableIcons[index];
+            if (icon) {
+                icon.setPosition(0, localY);
+            }
+        });
     }
 
     /**
@@ -417,12 +515,110 @@ export class EquipmentSlotsUI {
         return this.equippedRod;
     }
 
+    equipUsable(slotIndex: number, item: InventoryDisplayItem, fromPosition?: { x: number; y: number }): void {
+        if (slotIndex < 0 || slotIndex >= this.equippedUsables.length) return;
+
+        const existingIcon = this.usableIcons[slotIndex];
+        if (existingIcon) {
+            existingIcon.destroy();
+            this.usableIcons[slotIndex] = undefined;
+        }
+
+        this.equippedUsables[slotIndex] = item;
+        this.usableSlots[slotIndex].setTexture('ui-slot-filled');
+        this.usableSlotPlaceholders[slotIndex].setVisible(false);
+
+        const icon = this.scene.add.image(0, 0, item.iconKey).setOrigin(0.5, 0.5);
+        icon.setPosition(0, this.getUsableSlotLocalY(slotIndex));
+        this.usableIcons[slotIndex] = icon;
+        this.container.add(icon);
+
+        if (this.hoverIndicator) this.container.bringToTop(this.hoverIndicator);
+        if (this.selectedIndicator) this.container.bringToTop(this.selectedIndicator);
+
+        if (fromPosition && this.lastLayout) {
+            const { scale } = this.lastLayout;
+            const containerPos = this.getUsableSlotScreenPosition(slotIndex);
+            if (containerPos) {
+                const localStartX = (fromPosition.x - containerPos.x) / scale;
+                const localStartY = (fromPosition.y - containerPos.y) / scale;
+                icon.setPosition(localStartX, localStartY + this.getUsableSlotLocalY(slotIndex));
+                icon.setAlpha(0.8);
+                this.scene.tweens.add({
+                    targets: icon,
+                    x: 0,
+                    y: this.getUsableSlotLocalY(slotIndex),
+                    alpha: 1,
+                    duration: 200,
+                    ease: 'Back.out'
+                });
+            }
+        }
+    }
+
+    unequipUsable(slotIndex: number, toPosition?: { x: number; y: number }): InventoryDisplayItem | null {
+        if (slotIndex < 0 || slotIndex >= this.equippedUsables.length) return null;
+
+        const item = this.equippedUsables[slotIndex];
+        if (!item) return null;
+
+        this.equippedUsables[slotIndex] = null;
+        this.usableSlots[slotIndex].setTexture('ui-slot-empty');
+        this.usableSlotPlaceholders[slotIndex].setVisible(true);
+
+        const icon = this.usableIcons[slotIndex];
+        this.usableIcons[slotIndex] = undefined;
+        if (icon) {
+            if (toPosition && this.lastLayout) {
+                const { scale } = this.lastLayout;
+                const containerPos = this.getUsableSlotScreenPosition(slotIndex);
+                if (containerPos) {
+                    const localEndX = (toPosition.x - containerPos.x) / scale;
+                    const localEndY = (toPosition.y - containerPos.y) / scale + this.getUsableSlotLocalY(slotIndex);
+                    this.scene.tweens.add({
+                        targets: icon,
+                        x: localEndX,
+                        y: localEndY,
+                        alpha: 0,
+                        duration: 200,
+                        ease: 'Back.in',
+                        onComplete: () => icon.destroy()
+                    });
+                } else {
+                    icon.destroy();
+                }
+            } else {
+                icon.destroy();
+            }
+        }
+
+        return item;
+    }
+
+    getEquippedUsable(slotIndex: number): InventoryDisplayItem | null {
+        if (slotIndex < 0 || slotIndex >= this.equippedUsables.length) return null;
+        return this.equippedUsables[slotIndex];
+    }
+
+    getEquippedUsables(): Array<InventoryDisplayItem | null> {
+        return [...this.equippedUsables];
+    }
+
     hasRodEquipped(): boolean {
         return this.equippedRod !== null;
     }
 
+    hasUsableEquipped(slotIndex: number): boolean {
+        if (slotIndex < 0 || slotIndex >= this.equippedUsables.length) return false;
+        return this.equippedUsables[slotIndex] !== null;
+    }
+
     setOnRodSlotClick(callback?: (currentRod: InventoryDisplayItem | null) => void) {
         this.onRodSlotClick = callback;
+    }
+
+    setOnUsableSlotClick(callback?: (slotIndex: number, currentItem: InventoryDisplayItem | null) => void) {
+        this.onUsableSlotClick = callback;
     }
 
     setOnRodEquipped(callback?: (rod: InventoryDisplayItem) => void) {
@@ -437,21 +633,50 @@ export class EquipmentSlotsUI {
         this.onRodSlotDragComplete = callback;
     }
 
+    setOnUsableSlotDragComplete(callback?: (slotIndex: number, pointer: Phaser.Input.Pointer) => boolean) {
+        this.onUsableSlotDragComplete = callback;
+    }
+
     isPointerOverSlot(pointer: Phaser.Input.Pointer): boolean {
-        return !!this.slotBounds && this.slotBounds.contains(pointer.x, pointer.y);
+        return this.getSlotHit(pointer) !== null;
+    }
+
+    getSlotUnderPointer(pointer: Phaser.Input.Pointer): { type: EquipmentSlotType; usableIndex?: number } | null {
+        return this.getSlotHit(pointer);
     }
 
     getRodSlotScreenRect(): Phaser.Geom.Rectangle | null {
-        if (!this.slotBounds) return null;
+        if (!this.rodSlotBounds) return null;
         return new Phaser.Geom.Rectangle(
-            this.slotBounds.x,
-            this.slotBounds.y,
-            this.slotBounds.width,
-            this.slotBounds.height
+            this.rodSlotBounds.x,
+            this.rodSlotBounds.y,
+            this.rodSlotBounds.width,
+            this.rodSlotBounds.height
         );
     }
 
-    private createLabelTexture(text: string): string {
+    getUsableSlotScreenRect(slotIndex: number): Phaser.Geom.Rectangle | null {
+        if (slotIndex < 0 || slotIndex >= this.usableSlotBounds.length) return null;
+        const bounds = this.usableSlotBounds[slotIndex];
+        if (!bounds) return null;
+        return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
+
+    private getSlotHit(pointer: Phaser.Input.Pointer): { type: EquipmentSlotType; usableIndex?: number } | null {
+        if (this.rodSlotBounds?.contains(pointer.x, pointer.y)) {
+            return { type: 'rod' };
+        }
+
+        for (let index = 0; index < this.usableSlotBounds.length; index++) {
+            if (this.usableSlotBounds[index]?.contains(pointer.x, pointer.y)) {
+                return { type: 'usable', usableIndex: index };
+            }
+        }
+
+        return null;
+    }
+
+    private createLabelTexture(text: string, color = '#4b3435'): string {
         const width = this.measureBitmapTextWidth(text);
         const height = this.fontCharSize;
 
@@ -464,7 +689,7 @@ export class EquipmentSlotsUI {
 
         // Tint text color (brownish to match UI)
         ctx.globalCompositeOperation = 'source-in';
-        ctx.fillStyle = '#4b3435';
+        ctx.fillStyle = color;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         const key = `__equip_label_${Date.now()}`;
@@ -505,6 +730,12 @@ export class EquipmentSlotsUI {
         if (this.labelTextureKey && this.scene.textures.exists(this.labelTextureKey)) {
             this.scene.textures.remove(this.labelTextureKey);
         }
+        this.usableSlotPlaceholders.forEach((placeholder) => {
+            const key = placeholder.texture.key;
+            if (this.scene.textures.exists(key)) {
+                this.scene.textures.remove(key);
+            }
+        });
         this.container.destroy();
     }
 }

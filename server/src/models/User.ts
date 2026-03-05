@@ -11,7 +11,9 @@ import {
   DEFAULT_PLAYER_STATS,
   IAdvancementsState,
   DEFAULT_USER_ADVANCEMENTS,
-  DEFAULT_GUIDE_TUTORIAL_STATE
+  DEFAULT_GUIDE_TUTORIAL_STATE,
+  DEFAULT_PLAYER_HEARTS_STATE,
+  IPlayerHeartsState
 } from '@cfwk/shared';
 
 // Re-export for convenience
@@ -38,7 +40,9 @@ export interface IUser extends Document {
   lastKnownIP?: string;
   inventory?: { index: number; itemId: string | null; count: number }[];
   equippedRodId?: string | null;
+  equippedUsableIds?: Array<string | null>;
   glimmerbowl?: GlimmerbowlEntry[];
+  glimmerbowlUnlocked?: boolean;
   characterAppearance?: ICharacterAppearance;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -47,8 +51,11 @@ export interface IUser extends Document {
   premiumCurrentPeriodEnd?: Date;
   betaAccessUntil?: Date | null;
   lastLocationId?: string | null;
+  lastPositionX?: number | null;
+  lastPositionY?: number | null;
   settings?: IUserSettings;
   playerStats?: IPlayerStats;
+  hearts?: IPlayerHeartsState;
   advancements?: IAdvancementsState;
 }
 
@@ -161,6 +168,10 @@ const UserSchema: Schema = new Schema({
     default: []
   },
   equippedRodId: { type: String, default: null },
+  equippedUsableIds: {
+    type: [String],
+    default: () => [null, null, null, null]
+  },
   glimmerbowl: {
     type: [
       {
@@ -171,6 +182,7 @@ const UserSchema: Schema = new Schema({
     ],
     default: []
   },
+  glimmerbowlUnlocked: { type: Boolean, default: false },
   characterAppearance: {
     type: {
       body: {
@@ -205,6 +217,8 @@ const UserSchema: Schema = new Schema({
   premiumCurrentPeriodEnd: { type: Date },
   betaAccessUntil: { type: Date, default: null },
   lastLocationId: { type: String, default: null },
+  lastPositionX: { type: Number, default: null },
+  lastPositionY: { type: Number, default: null },
   settings: {
     type: {
       language: { type: String, default: DEFAULT_USER_SETTINGS.language },
@@ -257,6 +271,13 @@ const UserSchema: Schema = new Schema({
       npcInteractions: { type: Number, default: DEFAULT_PLAYER_STATS.npcInteractions }
     },
     default: () => ({ ...DEFAULT_PLAYER_STATS })
+  },
+  hearts: {
+    type: {
+      currentHearts: { type: Number, default: DEFAULT_PLAYER_HEARTS_STATE.currentHearts },
+      maxHearts: { type: Number, default: DEFAULT_PLAYER_HEARTS_STATE.maxHearts }
+    },
+    default: () => ({ ...DEFAULT_PLAYER_HEARTS_STATE })
   },
   advancements: {
     type: Schema.Types.Mixed,

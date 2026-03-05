@@ -305,6 +305,11 @@ export class NetworkManager {
             window.dispatchEvent(new CustomEvent('inventory:skip', { detail: data }));
         });
 
+        this.currentRoom.onMessage('inventory:consumed', (data: { itemId?: string; quantity?: number; slotIndex?: number }) => {
+            if (!data?.itemId) return;
+            window.dispatchEvent(new CustomEvent('inventory:consumed', { detail: data }));
+        });
+
         this.currentRoom.onMessage('glimmerbowl', (data: IGlimmerbowlResponse) => {
             this.glimmerbowlCache = data;
             window.dispatchEvent(new CustomEvent('glimmerbowl:update', { detail: data }));
@@ -413,10 +418,20 @@ export class NetworkManager {
     /**
      * Send equipped rod updates to the server
      */
-    sendEquippedRod(equippedRodId: string | null) {
+    sendEquippedRod(equippedRodId: string | null, equippedUsableIds?: Array<string | null>) {
         if (this.currentRoom) {
-            this.currentRoom.send('equipment:set', { equippedRodId });
+            this.currentRoom.send('equipment:set', { equippedRodId, equippedUsableIds });
         }
+    }
+
+    sendUseEquippedItem(slotIndex: number) {
+        if (!this.currentRoom) return;
+        this.currentRoom.send('item:use', { slotIndex });
+    }
+
+    sendHarvestInteractive(objectId: number, componentId: string) {
+        if (!this.currentRoom) return;
+        this.currentRoom.send('interactive:harvest', { objectId, componentId });
     }
 
     /**

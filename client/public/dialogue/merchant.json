@@ -1,5 +1,142 @@
 {
     "id": "merchant",
+    "forks": [
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "anti_death_measures",
+                    "status": "active",
+                    "objectiveIndex": 1
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.antiDeath.return.0",
+                    "text": "Good haul. Those yekberries keep fighters standing."
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.antiDeath.return.player.0",
+                    "text": "So this is just... survival food?"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.antiDeath.return.1",
+                    "text": "For now. Soon I'll teach you how to turn yekfruits into a more nourishing meal."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.antiDeath.return.2",
+                    "text": "Keep a few slotted and use them before panic takes over."
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "anti_death_measures",
+                    "status": "active",
+                    "objectiveIndex": 0
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.antiDeath.harvest.0",
+                    "text": "Find a nearby Yekbush and gather some yekberries. Barely nourishing, but enough to keep you alive."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.antiDeath.harvest.1",
+                    "text": "Come back once you've picked a bush and we'll call you battle-ready."
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "anti_death_measures",
+                    "status": "active",
+                    "negate": true
+                },
+                {
+                    "type": "questObjective",
+                    "questId": "anti_death_measures",
+                    "status": "completed",
+                    "negate": true
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.antiDeath.intro.0",
+                    "text": "Looking to buy something?"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.antiDeath.intro.choice.prompt",
+                    "text": "What do I even say?",
+                    "options": [
+                        {
+                            "id": "uhhh_i_guess",
+                            "textKey": "dialogue.npc.merchant.antiDeath.intro.choice.uhh",
+                            "text": "Uhhh... I guess?",
+                            "lines": [
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "surprise",
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.1",
+                                    "text": "Then let's start with money. You got any?"
+                                },
+                                {
+                                    "speaker": "player",
+                                    "emotion": "sad",
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.2",
+                                    "text": "No... not a single coin."
+                                },
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "surprise",
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.3",
+                                    "text": "How are you even surviving in Anchor Hollow?"
+                                },
+                                {
+                                    "speaker": "player",
+                                    "emotion": "sad",
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.4",
+                                    "text": "I'm new here. Still figuring things out."
+                                },
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "happy",
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.5",
+                                    "text": "Alright, I'll help. Find a nearby Yekbush and grab some yekberries for a barely nourishing meal."
+                                },
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "happy",
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.6",
+                                    "text": "Bring them back to me when you've harvested one."
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
     "lines": [
         {
             "speaker": "npc",

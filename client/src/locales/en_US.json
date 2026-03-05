@@ -133,6 +133,12 @@
       },
       "travellers_errand": {
         "name": "Traveller's Errand"
+      },
+      "anti_death_measures": {
+        "name": "Anti-death Measures"
+      },
+      "placeholder_main_quest_3": {
+        "name": "The Path Ahead"
       }
     },
     "achievement": {
@@ -171,6 +177,12 @@
       },
       "travellers_errand": {
         "description": "Talk to the Traveller, then report to the Guard."
+      },
+      "anti_death_measures": {
+        "description": "Talk to the Merchant, harvest yekberries, then return to the Merchant."
+      },
+      "placeholder_main_quest_3": {
+        "description": "A new chapter opens once your parallel errands are complete."
       }
     },
     "achievementCategory": {
@@ -187,14 +199,24 @@
   "subtitles": {
     "ambientOcean": "Ocean waves",
     "ambientFire": "Crackling fire",
+    "footstepGrass": "Footsteps on grass",
     "footstepSand": "Footsteps on sand",
+    "footstepStone": "Footsteps on stone",
     "footstepWater": "Footsteps in shallow water",
+    "footstepWood": "Footsteps on wood",
     "meow": "Meow",
+    "eatYekberries": "Eating yekberries",
     "rodCast": "Fishing rod cast",
     "rodReel": "Fishing reel",
     "waterSplash": "Water splash",
     "biteAlert": "Fishing bite alert",
     "reelClick": "Reel click",
+    "questStarted": "Quest started",
+    "questObjective": "Quest objective updated",
+    "questCompleted": "Quest completed",
+    "questTracked": "Quest tracked",
+    "achievementUnlocked": "Achievement unlocked",
+    "locationDiscovered": "New location discovered",
     "itemCollected": "Item collected",
     "itemDropped": "Item dropped",
     "itemSkipped": "Item skipped",
@@ -232,6 +254,20 @@
       "waitBite": "Great. Wait for a bite...",
       "reel": "Click the reel button repeatedly until you catch the fish.",
       "stop": "Great catch! Click Stop Fishing, then talk to the Fisherman."
+    },
+    "food": {
+      "openInventory": "Open your inventory (press {key} on desktop).",
+      "openInventoryMobile": "Open your inventory to get your berry ready.",
+      "selectBerry": "Click the yekberries in your inventory.",
+      "explainScore": "That red +20 is the food score. In this basic form, yekberries only heal about 1 out of 5 uses.",
+      "equipQuickslot1": "Move the yekberries into quick slot 1 on the right.",
+      "closeInventory": "Close your inventory (press {key} on desktop).",
+      "closeInventoryMobile": "Close your inventory to try the quick slot.",
+      "stabHeartLoss": "STAB! You just lost a heart! Now we'll use the berry to heal up.",
+      "consumeQuickslot1": "Now click quick slot 1 to eat. This tutorial forces a heal so you can see it, but +20 food score normally means about a 1/5 chance."
+    },
+    "interaction": {
+      "useInteract": "Use this interact button for most world and character interactions."
     }
   },
   "npc": {
@@ -316,6 +352,33 @@
       "merchant": {
         "greeting": {
           "0": "If your pack feels light, my stall can fix that."
+        },
+        "antiDeath": {
+          "intro": {
+            "0": "Looking to buy something?",
+            "1": "Then let's start with money. You got any?",
+            "2": "No... not a single coin.",
+            "3": "How are you even surviving in Anchor Hollow?",
+            "4": "I'm new here. Still figuring things out.",
+            "5": "Alright, I'll help. Find a nearby Yekbush and grab some yekberries for a barely nourishing meal.",
+            "6": "Bring them back to me when you've harvested one.",
+            "choice": {
+              "prompt": "What do I even say?",
+              "uhh": "Uhhh... I guess?"
+            }
+          },
+          "harvest": {
+            "0": "Find a nearby Yekbush and gather some yekberries. Barely nourishing, but enough to keep you alive.",
+            "1": "Come back once you've picked a bush and we'll call you battle-ready."
+          },
+          "return": {
+            "0": "Good haul. Those yekberries keep fighters standing.",
+            "1": "For now. Soon I'll teach you how to turn yekfruits into a more nourishing meal.",
+            "2": "Keep a few slotted and use them before panic takes over.",
+            "player": {
+              "0": "So this is just... survival food?"
+            }
+          }
         }
       },
       "traveller": {
@@ -334,6 +397,10 @@
     "goldenberries": {
       "name": "Golden Berries",
       "description": "A rare, sweet berry that restores vitality."
+    },
+    "yekberries": {
+      "name": "Yek Berries",
+      "description": "Tart berries from a yekbush. Simple, reliable healing food."
     },
     "tuna": {
       "name": "Tuna",
@@ -386,6 +453,10 @@
     "fisherman_rod": {
       "name": "Fisherman's Rod",
       "description": "A reliable fishing rod used by experienced anglers."
+    },
+    "developer_rod": {
+      "name": "Developer Rod",
+      "description": "A debug rod tuned for very fast test catches."
     },
     "sea_grass": {
       "name": "Sea Grass",

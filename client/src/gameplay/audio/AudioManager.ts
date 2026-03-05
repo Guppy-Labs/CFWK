@@ -8,7 +8,7 @@ import { LocaleManager } from '../i18n/LocaleManager';
 export const AUDIO_CONFIG = {
     // Background Music
     music: {
-        volume: 0.15,              // Base music volume (0-1)
+        volume: 0.25,              // Base music volume (0-1)
     },
     
     // Ambient Sound Loops
@@ -24,9 +24,9 @@ export const AUDIO_CONFIG = {
     
     // Footstep Sounds
     footsteps: {
-        baseVolume: 0.4,          // Base footstep volume
-        volumeVariation: 0.1,     // Random variation (+/- this amount)
-        walkInterval: 350,        // ms between footsteps when walking
+        baseVolume: 0.09,          // Base footstep volume
+        volumeVariation: 0.008,     // Random variation (+/- this amount)
+        walkInterval: 420,        // ms between footsteps when walking
         sprintInterval: 280,      // ms between footsteps when sprinting
         pitchMin: 0.85,           // Minimum pitch multiplier
         pitchMax: 1.15,           // Maximum pitch multiplier
@@ -48,6 +48,30 @@ export const AUDIO_CONFIG = {
 
     // UI and action SFX
     sfx: {
+        uiClick: {
+            volume: 0.38,
+        },
+        eat: {
+            volume: 0.6,
+        },
+        questStarted: {
+            volume: 0.95,
+        },
+        questObjective: {
+            volume: 0.9,
+        },
+        questCompleted: {
+            volume: 1,
+        },
+        questTrack: {
+            volume: 0.72,
+        },
+        achievementUnlocked: {
+            volume: 1,
+        },
+        locationDiscovered: {
+            volume: 0.95,
+        },
         rodCast: {
             volume: 0.55,
             rateMin: 0.75,
@@ -88,13 +112,14 @@ export const AUDIO_CONFIG = {
         dialogueNext: {
             volume: 0.6,
         },
-        dialogueEndBurst: {
-            count: 2,
-            delayMs: 160,
+        dialogueEnd: {
+            volume: 0.9,
         },
     },
 };
 // ============================================================
+
+export type FootstepSurface = 'sand' | 'grass' | 'stone' | 'wood';
 
 /**
  * Audio Configuration for different map types
@@ -114,6 +139,10 @@ export const MAP_AUDIO_CONFIGS: Record<string, MapAudioConfig> = {
         music: 'music-beach',
         ambientLoops: ['ambient-ocean', 'ambient-fire'],
     },
+    'anchor-hollow': {
+        music: 'music-anchor-hollow',
+        ambientLoops: ['ambient-ocean', 'ambient-fire'],
+    },
     'beach': {
         music: 'music-beach',
         ambientLoops: ['ambient-ocean', 'ambient-fire'],
@@ -125,6 +154,9 @@ const SUBTITLE_KEYS: Record<string, string> = {
     'ambient-fire': 'subtitles.ambientFire',
     'footstep-sand': 'subtitles.footstepSand',
     'footstep-water': 'subtitles.footstepWater',
+    'footstep-grass': 'subtitles.footstepGrass',
+    'footstep-stone': 'subtitles.footstepStone',
+    'footstep-wood': 'subtitles.footstepWood',
     meow1: 'subtitles.meow',
     meow2: 'subtitles.meow',
     meow3: 'subtitles.meow',
@@ -137,8 +169,16 @@ const SUBTITLE_KEYS: Record<string, string> = {
     'item-collected': 'subtitles.itemCollected',
     'item-drop': 'subtitles.itemDropped',
     'item-skip': 'subtitles.itemSkipped',
+    'item-eat-yekberries': 'subtitles.eatYekberries',
+    'advancement-quest-started': 'subtitles.questStarted',
+    'advancement-quest-objective': 'subtitles.questObjective',
+    'advancement-quest-completed': 'subtitles.questCompleted',
+    'advancement-quest-track': 'subtitles.questTracked',
+    'advancement-achievement-unlocked': 'subtitles.achievementUnlocked',
+    'advancement-location-discovered': 'subtitles.locationDiscovered',
     'dialogue-click': 'subtitles.dialogueText',
-    'dialogue-next': 'subtitles.dialogueAdvance'
+    'dialogue-next': 'subtitles.dialogueAdvance',
+    'dialogue-end': 'subtitles.dialogueAdvance'
 };
 
 /**
@@ -200,14 +240,19 @@ export class AudioManager {
     preload() {
         // Music tracks
         this.scene.load.audio('music-beach', '/audio/tracks/beach.m4a');
+        this.scene.load.audio('music-anchor-hollow', '/audio/tracks/anchor-hollow.m4a');
         
         // Ambient loops
         this.scene.load.audio('ambient-fire', '/audio/ambient/scene/fire.mp3');
         this.scene.load.audio('ambient-ocean', '/audio/ambient/scene/ocean.mp3');
         
         // Player sounds
-        this.scene.load.audio('footstep-sand', '/audio/ambient/player/walk_sand.mp3');
-        this.scene.load.audio('footstep-water', '/audio/ambient/player/walk_shallow_water.mp3');
+        this.scene.load.audio('footstep-grass', '/audio/ambient/player/walk/grass.mp3');
+        this.scene.load.audio('footstep-sand', '/audio/ambient/player/walk/sand.mp3');
+        this.scene.load.audio('footstep-stone', '/audio/ambient/player/walk/stone.mp3');
+        this.scene.load.audio('footstep-water', '/audio/ambient/player/walk/water.mp3');
+        this.scene.load.audio('footstep-wood', '/audio/ambient/player/walk/wood.mp3');
+        this.scene.load.audio('item-eat-yekberries', '/audio/ambient/player/eat.mp3');
         
         // Meow sounds
         this.scene.load.audio('meow1', '/audio/ambient/player/meows/meow1.mp3');
@@ -224,8 +269,16 @@ export class AudioManager {
         this.scene.load.audio('item-collected', '/audio/ambient/ui/item-collected.mp3');
         this.scene.load.audio('item-drop', '/audio/ambient/ui/item-drop.mp3');
         this.scene.load.audio('item-skip', '/audio/ambient/ui/item-skip.mp3');
+        this.scene.load.audio('ui-click', '/audio/ambient/ui/click.mp3');
+        this.scene.load.audio('advancement-quest-started', '/audio/ambient/ui/advancements/quests/start.mp3');
+        this.scene.load.audio('advancement-quest-objective', '/audio/ambient/ui/advancements/quests/objective.mp3');
+        this.scene.load.audio('advancement-quest-completed', '/audio/ambient/ui/advancements/quests/complete.mp3');
+        this.scene.load.audio('advancement-quest-track', '/audio/ambient/ui/advancements/quests/track.mp3');
+        this.scene.load.audio('advancement-achievement-unlocked', '/audio/ambient/ui/advancements/achivement.mp3');
+        this.scene.load.audio('advancement-location-discovered', '/audio/ambient/ui/advancements/location.mp3');
         this.scene.load.audio('dialogue-click', '/audio/ambient/dialogue/click.mp3');
         this.scene.load.audio('dialogue-next', '/audio/ambient/dialogue/next.mp3');
+        this.scene.load.audio('dialogue-end', '/audio/ambient/dialogue/end.mp3');
     }
     
     /**
@@ -455,7 +508,14 @@ export class AudioManager {
      * @param isWet - Does the player have wet feet (recently left water)
      * @param waterDepth - How deep in water (0-3 tiles)
      */
-    updateFootsteps(isMoving: boolean, isSprinting: boolean, inWater: boolean = false, isWet: boolean = false, waterDepth: number = 0) {
+    updateFootsteps(
+        isMoving: boolean,
+        isSprinting: boolean,
+        inWater: boolean = false,
+        isWet: boolean = false,
+        waterDepth: number = 0,
+        surface: FootstepSurface = 'sand'
+    ) {
         if (!isMoving) {
             return;
         }
@@ -470,7 +530,7 @@ export class AudioManager {
         }
         
         this.lastFootstepTime = now;
-        this.playFootstep(isSprinting, inWater, isWet, waterDepth);
+        this.playFootstep(isSprinting, inWater, isWet, waterDepth, surface);
     }
     
     /**
@@ -480,9 +540,17 @@ export class AudioManager {
      * @param isWet - Are the player's feet wet (plays damper sand sound)
      * @param waterDepth - How deep in water (0-3 tiles)
      */
-    private playFootstep(isSprinting: boolean, inWater: boolean, isWet: boolean, waterDepth: number = 0) {
+    private playFootstep(isSprinting: boolean, inWater: boolean, isWet: boolean, waterDepth: number = 0, surface: FootstepSurface = 'sand') {
         // Determine which sound to play
-        const soundKey = inWater ? 'footstep-water' : 'footstep-sand';
+        const soundKey = inWater
+            ? 'footstep-water'
+            : (surface === 'grass'
+                ? 'footstep-grass'
+                : surface === 'stone'
+                    ? 'footstep-stone'
+                    : surface === 'wood'
+                        ? 'footstep-wood'
+                        : 'footstep-sand');
         
         // Check if audio exists
         if (!this.scene.cache.audio.exists(soundKey)) {
@@ -889,6 +957,57 @@ export class AudioManager {
         this.emitSubtitle('item-skip');
     }
 
+    playUiClick() {
+        if (!this.scene.cache.audio.exists('ui-click')) return;
+        const cfg = AUDIO_CONFIG.sfx.uiClick;
+        this.scene.sound.play('ui-click', {
+            volume: this.getEffectiveOverlaysVolume(cfg.volume)
+        });
+    }
+
+    playConsumableEat(itemId: string) {
+        if (itemId !== 'yekberries') return;
+        const soundKey = 'item-eat-yekberries';
+        if (!this.scene.cache.audio.exists(soundKey)) return;
+        const cfg = AUDIO_CONFIG.sfx.eat;
+        this.scene.sound.play(soundKey, {
+            volume: this.getEffectivePlayersVolume(cfg.volume)
+        });
+        this.emitSubtitle(soundKey);
+    }
+
+    playQuestStarted() {
+        this.playAdvancementSfx('advancement-quest-started', AUDIO_CONFIG.sfx.questStarted.volume);
+    }
+
+    playQuestObjective() {
+        this.playAdvancementSfx('advancement-quest-objective', AUDIO_CONFIG.sfx.questObjective.volume);
+    }
+
+    playQuestCompleted() {
+        this.playAdvancementSfx('advancement-quest-completed', AUDIO_CONFIG.sfx.questCompleted.volume);
+    }
+
+    playQuestTrack() {
+        this.playAdvancementSfx('advancement-quest-track', AUDIO_CONFIG.sfx.questTrack.volume);
+    }
+
+    playAchievementUnlocked() {
+        this.playAdvancementSfx('advancement-achievement-unlocked', AUDIO_CONFIG.sfx.achievementUnlocked.volume);
+    }
+
+    playLocationDiscovered() {
+        this.playAdvancementSfx('advancement-location-discovered', AUDIO_CONFIG.sfx.locationDiscovered.volume);
+    }
+
+    private playAdvancementSfx(soundKey: string, baseVolume: number) {
+        if (!this.scene.cache.audio.exists(soundKey)) return;
+        this.scene.sound.play(soundKey, {
+            volume: this.getEffectiveOverlaysVolume(baseVolume)
+        });
+        this.emitSubtitle(soundKey);
+    }
+
     playDialogueClick() {
         if (!this.scene.cache.audio.exists('dialogue-click')) return;
         const cfg = AUDIO_CONFIG.sfx.dialogueClick;
@@ -904,13 +1023,10 @@ export class AudioManager {
     }
 
     playDialogueEndBurst() {
-        if (!this.scene.cache.audio.exists('dialogue-next')) return;
-        const cfg = AUDIO_CONFIG.sfx.dialogueEndBurst;
-        for (let i = 0; i < cfg.count; i += 1) {
-            this.scene.time.delayedCall(i * cfg.delayMs, () => {
-                this.playDialogueNext();
-            });
-        }
+        if (!this.scene.cache.audio.exists('dialogue-end')) return;
+        const cfg = AUDIO_CONFIG.sfx.dialogueEnd;
+        this.playDialogueSfxUnfiltered('dialogue-end', this.getEffectiveOverlaysVolume(cfg.volume));
+        this.emitSubtitle('dialogue-end');
     }
 
     private playDialogueSfxUnfiltered(key: string, volume: number) {

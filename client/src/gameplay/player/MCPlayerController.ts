@@ -10,7 +10,7 @@ import { NetworkManager } from '../network/NetworkManager';
 import { createNameplate } from './PlayerVisualUtils';
 import { currentUser } from '../index';
 import { GuiSwirlEffect } from '../fx/GuiSwirlEffect';
-import { InteractionManager, InteractionType } from '../interaction/InteractionManager';
+import { InteractionManager, InteractionType, StaticInteractiveTarget } from '../interaction/InteractionManager';
 import { RemotePlayerManager } from './RemotePlayerManager';
 import type { NPCManager } from '../npc/NPCManager';
 import type { LightingManager } from '../fx/LightingManager';
@@ -679,6 +679,14 @@ export class MCPlayerController {
         this.interactionManager.setNpcManager(manager);
     }
 
+    setStaticInteractives(targets: StaticInteractiveTarget[]) {
+        this.interactionManager.setStaticInteractives(targets);
+    }
+
+    setInteractiveCooldown(objectId: number, readyAt: number) {
+        this.interactionManager.setInteractiveCooldown(objectId, readyAt);
+    }
+
     setDepthManager(manager: DepthManager) {
         this._depthManager = manager;
     }
@@ -693,6 +701,10 @@ export class MCPlayerController {
 
     getGuideInventoryButtonRect(): Phaser.Geom.Rectangle | null {
         return this.inputManager.getMobileControls()?.getInventoryButtonScreenRect() ?? null;
+    }
+
+    getGuideInteractButtonRect(): Phaser.Geom.Rectangle | null {
+        return this.inputManager.getMobileControls()?.getInteractButtonScreenRect() ?? null;
     }
 
     getIsMoving(): boolean {

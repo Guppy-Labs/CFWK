@@ -4,6 +4,7 @@ export class PlayerHud {
     private scene: Phaser.Scene;
     private container: Phaser.GameObjects.Container;
     private slots: Phaser.GameObjects.Image[] = [];
+    private usableIcons: Array<Phaser.GameObjects.Image | undefined> = [];
     private armorSlots: Phaser.GameObjects.Image[] = [];
     private rodSlot: Phaser.GameObjects.Image;
     private rightAccessorySlot: Phaser.GameObjects.Image;
@@ -13,7 +14,11 @@ export class PlayerHud {
     private rodShineTween?: Phaser.Tweens.Tween;
     private rodNearWater = false;
     private onRodUse?: () => void;
+    private onUsableSlotUse?: (slotIndex: number) => void;
+    private equippedUsableItemIds: Array<string | null> = Array.from({ length: 4 }, () => null);
     private hearts: Phaser.GameObjects.Image[] = [];
+    private currentHearts = 9;
+    private maxHearts = 9;
     private staminaBarBg: Phaser.GameObjects.Image;
     private staminaFill: Phaser.GameObjects.TileSprite;
     private staminaFillMaskGraphics: Phaser.GameObjects.Graphics;
@@ -61,6 +66,8 @@ export class PlayerHud {
         for (let i = 0; i < this.slotCount; i++) {
             const slot = this.scene.add.image(0, 0, 'ui-hud-slot').setOrigin(0.5, 0.5);
             slot.setScale(this.slotScale);
+            slot.setInteractive({ useHandCursor: true });
+            slot.on('pointerdown', () => this.handleUsableSlotUse(i));
             this.slots.push(slot);
         }
 
@@ -111,7 +118,16 @@ export class PlayerHud {
             this.rodKeyIcon
         ]);
         this.layout();
+        this.updateHeartsVisual();
         this.updateStaminaVisual();
+    }
+
+    setHearts(currentHearts: number, maxHearts: number) {
+        const normalizedMax = Math.max(1, Math.floor(maxHearts || 0));
+        const normalizedCurrent = Math.max(0, Math.min(normalizedMax, Math.floor(currentHearts || 0)));
+        this.maxHearts = normalizedMax;
+        this.currentHearts = normalizedCurrent;
+        this.updateHeartsVisual();
     }
 
     setStamina(value: number) {
@@ -145,6 +161,38 @@ export class PlayerHud {
         this.updateRodShine();
     }
 
+    setEquippedUsables(itemIds: Array<string | null>) {
+        for (let index = 0; index < this.slotCount; index++) {
+            const itemId = itemIds[index] ?? null;
+            this.equippedUsableItemIds[index] = itemId;
+            const existingIcon = this.usableIcons[index];
+            if (!itemId) {
+                existingIcon?.destroy();
+                this.usableIcons[index] = undefined;
+                this.slots[index].setTexture(this.rodSlotTextureKey);
+                continue;
+            }
+
+            const textureKey = `item-${itemId}-18`;
+            if (!this.scene.textures.exists(textureKey)) {
+                continue;
+            }
+
+            if (existingIcon && existingIcon.texture.key === textureKey) {
+                this.slots[index].setTexture(this.filledSlotTextureKey);
+                continue;
+            }
+
+            existingIcon?.destroy();
+            const icon = this.scene.add.image(0, 0, textureKey).setOrigin(0.5, 0.5);
+            this.usableIcons[index] = icon;
+            this.container.add(icon);
+            this.slots[index].setTexture(this.filledSlotTextureKey);
+        }
+
+        this.layout();
+    }
+
     setRodNearWater(isNearWater: boolean) {
         this.rodNearWater = isNearWater;
         this.updateRodShine();
@@ -154,8 +202,23 @@ export class PlayerHud {
         this.onRodUse = handler;
     }
 
+    setOnUsableSlotUse(handler?: (slotIndex: number) => void) {
+        this.onUsableSlotUse = handler;
+    }
+
+    triggerUsableSlotUse(slotIndex: number) {
+        this.handleUsableSlotUse(slotIndex);
+    }
+
     getRodSlotScreenRect(): Phaser.Geom.Rectangle {
         const bounds = this.rodSlot.getBounds();
+        return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
+
+    getUsableSlotScreenRect(slotIndex: number): Phaser.Geom.Rectangle | null {
+        if (slotIndex < 0 || slotIndex >= this.slots.length) return null;
+        const slot = this.slots[slotIndex];
+        const bounds = slot.getBounds();
         return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
     }
 
@@ -201,6 +264,15 @@ export class PlayerHud {
             slot.setPosition(x, slotsY);
         });
 
+        this.usableIcons.forEach((icon, index) => {
+            if (!icon) return;
+            const slot = this.slots[index];
+            const targetSize = slotSize * 0.65;
+            const iconScale = targetSize / 18;
+            icon.setScale(iconScale);
+            icon.setPosition(slot.x, slot.y);
+        });
+
         const bottomEdgeY = slotsY + slotSize / 2;
         const armorBottomY = bottomEdgeY - armorSlotSize / 2;
         const armorTopY = armorBottomY - armorSlotSize - this.armorSlotGap;
@@ -230,6 +302,11 @@ export class PlayerHud {
             this.rodIcon.setPosition(rodX, rodY);
         }
         this.container.bringToTop(this.rodKeyIcon);
+        this.usableIcons.forEach((icon) => {
+            if (icon) {
+                this.container.bringToTop(icon);
+            }
+        });
 
         const heartsStartX = width / 2 - heartsRowWidth / 2 + heartWidth / 2;
         const heartsY = slotsY - slotSize / 2 - this.heartSpacing - heartHeight / 2;
@@ -238,6 +315,7 @@ export class PlayerHud {
             const x = heartsStartX + index * (heartWidth + heartGap);
             heart.setPosition(x, heartsY);
         });
+        this.updateHeartsVisual();
 
         const staminaBarWidth = Math.round(slotsRowWidth * this.staminaBarWidthScale);
         const staminaY = heartsY - heartHeight / 2 - this.staminaSpacing - staminaBarHeight / 2;
@@ -270,6 +348,7 @@ export class PlayerHud {
         this.staminaFillMaskGraphics.destroy();
         this.rodShineTween?.stop();
         this.rodIcon?.destroy();
+        this.usableIcons.forEach((icon) => icon?.destroy());
         this.rodKeyIcon.destroy();
         this.container.destroy();
     }
@@ -305,6 +384,14 @@ export class PlayerHud {
         const guiOpen = this.scene.registry.get('guiOpen') === true;
         if (guiOpen) return;
         this.onRodUse?.();
+    }
+
+    private handleUsableSlotUse(slotIndex: number) {
+        if (slotIndex < 0 || slotIndex >= this.equippedUsableItemIds.length) return;
+        if (!this.equippedUsableItemIds[slotIndex]) return;
+        const guiOpen = this.scene.registry.get('guiOpen') === true;
+        if (guiOpen) return;
+        this.onUsableSlotUse?.(slotIndex);
     }
 
     private isMobileDevice(): boolean {
@@ -422,5 +509,20 @@ export class PlayerHud {
         const g = Math.round(lowG + (normalG - lowG) * t);
         const b = Math.round(lowB + (normalB - lowB) * t);
         return (r << 16) | (g << 8) | b;
+    }
+
+    private updateHeartsVisual() {
+        const cappedMax = Math.max(1, this.maxHearts);
+        this.hearts.forEach((heart, index) => {
+            const logicalIndex = index + 1;
+            if (logicalIndex > cappedMax) {
+                heart.setVisible(false);
+                return;
+            }
+
+            heart.setVisible(true);
+            const filled = logicalIndex <= this.currentHearts;
+            heart.setAlpha(filled ? 1 : 0.26);
+        });
     }
 }

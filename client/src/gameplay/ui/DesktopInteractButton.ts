@@ -5,11 +5,12 @@
  * Displays the F key binding in the corner. Non-interactive (keyboard only).
  */
 
-import { InteractionType, AvailableInteraction } from '../interaction/InteractionManager';
+import { AvailableInteraction } from '../interaction/InteractionManager';
 import { MobileControls } from './MobileControls';
+import { getInteractionPromptStyle, DesktopInteractionIconKey } from './InteractionPromptStyle';
 
 // SVG icons
-const ICONS = {
+const ICONS: Record<DesktopInteractionIconKey, string> = {
     // X icon for no interaction
     none: `
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x">
@@ -26,17 +27,17 @@ const ICONS = {
             <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
         </svg>
     `,
-    pickup: `
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-package">
-            <path d="M16.5 9.4 7.5 4.2"/>
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
-            <path d="M3.3 7 12 12l8.7-5"/>
-            <path d="M12 22V12"/>
-        </svg>
-    `,
     talk: `
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-circle">
             <path d="M21 11.5a8.38 8.38 0 0 1-1.9 5.4a8.5 8.5 0 0 1-6.6 3.1a8.38 8.38 0 0 1-5.4-1.9L3 21l1.9-4.1a8.38 8.38 0 0 1-1.9-5.4a8.5 8.5 0 0 1 3.1-6.6a8.38 8.38 0 0 1 5.4-1.9h.5a8.48 8.48 0 0 1 8 8z"/>
+        </svg>
+    `,
+    harvest: `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="13" r="3.2" />
+            <circle cx="15" cy="12" r="3.2" />
+            <path d="M11.5 8.2c1.1-2.1 3.2-3.2 5.8-3.2" />
+            <path d="M11 8.4c-1.4-1.2-3-1.7-5-1.7" />
         </svg>
     `
 };
@@ -170,16 +171,8 @@ export class DesktopInteractButton {
 
     private updateIcon() {
         if (this.currentInteraction) {
-            switch (this.currentInteraction.type) {
-                case InteractionType.Shove:
-                    this.iconContainer.innerHTML = ICONS.shove;
-                    break;
-                case InteractionType.Talk:
-                    this.iconContainer.innerHTML = ICONS.talk;
-                    break;
-                default:
-                    this.iconContainer.innerHTML = ICONS.none;
-            }
+            const style = getInteractionPromptStyle(this.currentInteraction);
+            this.iconContainer.innerHTML = ICONS[style.desktopIcon] ?? ICONS.none;
             this.container.classList.add('has-interaction');
         } else {
             this.iconContainer.innerHTML = ICONS.none;

@@ -26,14 +26,24 @@
   "subtitles": {
     "ambientOcean": "-----",
     "ambientFire": "-----",
+    "footstepGrass": "-----",
     "footstepSand": "-----",
+    "footstepStone": "-----",
     "footstepWater": "-----",
+    "footstepWood": "-----",
     "meow": "-----",
+    "eatYekberries": "-----",
     "rodCast": "-----",
     "rodReel": "-----",
     "waterSplash": "-----",
     "biteAlert": "-----",
     "reelClick": "-----",
+    "questStarted": "-----",
+    "questObjective": "-----",
+    "questCompleted": "-----",
+    "questTracked": "-----",
+    "achievementUnlocked": "-----",
+    "locationDiscovered": "-----",
     "itemCollected": "-----",
     "itemDropped": "-----",
     "itemSkipped": "-----",
@@ -191,6 +201,10 @@
       "description": "-----"
     },
     "fisherman_rod": {
+      "name": "-----",
+      "description": "-----"
+    },
+    "developer_rod": {
       "name": "-----",
       "description": "-----"
     },

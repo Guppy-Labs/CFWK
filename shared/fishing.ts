@@ -79,6 +79,7 @@ export const FISH_ASSET_MAP: Record<string, string> = {
     // Rods
     'rickety_rod': 'tile075.png',
     'fisherman_rod': 'tile081.png',
+    'developer_rod': 'tile099.png',
     
     // Junk
     'sea_grass': 'tile225.png',

@@ -30,12 +30,16 @@ export class UIScene extends Phaser.Scene {
     private tabKeyUpHandler?: (event: KeyboardEvent) => void;
     private chatKeyHandler?: (event: KeyboardEvent) => void;
     private bookKeyHandler?: (event: KeyboardEvent) => void;
+    private usableHotkeyHandler?: (event: KeyboardEvent) => void;
     private mobileInventoryHandler?: () => void;
     private mobileMenuHandler?: () => void;
     private inventoryUpdateHandler?: (event: Event) => void;
     private nearWaterHandler?: (parent: any, value: boolean) => void;
     private subtitleEventHandler?: (event: Event) => void;
     private subtitlesEnabledChangedHandler?: (event: Event) => void;
+    private finbookQuestTargetedHandler?: (event: Event) => void;
+    private inventoryConsumedHandler?: (event: Event) => void;
+    private uiClickPointerHandler?: (pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => void;
     private isPlayerListKeyHeld = false;
     private networkManager = NetworkManager.getInstance();
     private keybindManager = KeybindManager.getInstance();
@@ -45,6 +49,9 @@ export class UIScene extends Phaser.Scene {
     private guideOverlay?: GuideOverlay;
     private guideCoordinator?: GuideCoordinator;
     private guideInputGate?: GuideInputGate;
+    private damageBorderGlow?: Phaser.GameObjects.Graphics;
+    private damageBorderTween?: Phaser.Tweens.Tween;
+    private lastKnownHearts = 9;
 
     constructor() {
         super({ key: 'UIScene' });
@@ -70,6 +77,10 @@ export class UIScene extends Phaser.Scene {
         this.load.image('ui-section-icon-food-sel', '/ui/sections/IconFoodSel.png');
         this.load.image('ui-group-icon-loot-active', '/ui/IconLoot01b.png');
         this.load.image('ui-group-icon-loot-inactive', '/ui/IconLoot01a.png');
+        this.load.spritesheet('ui-glimmerbowl', '/ui/special/Glimmerbowl.png', {
+            frameWidth: 32,
+            frameHeight: 32
+        });
         this.load.image('ui-item-info-frame', '/ui/Frame07a.png');
         this.load.image('ui-afk-frame', '/ui/Frame09a.png');
         this.load.image('ui-item-info-divider', '/ui/Line03a.png');
@@ -152,6 +163,11 @@ export class UIScene extends Phaser.Scene {
         this.guideOverlay = new GuideOverlay(this);
         this.guideInputGate = new GuideInputGate(this, this.keybindManager);
         this.guideInputGate.install();
+        this.damageBorderGlow = this.add.graphics();
+        this.damageBorderGlow.setDepth(12000);
+        this.damageBorderGlow.setVisible(false);
+        this.damageBorderGlow.setAlpha(0);
+        this.redrawDamageBorderGlow();
         const cachedAdvancements = this.networkManager.getCachedAdvancementsState();
         this.guideCoordinator = new GuideCoordinator(this, cachedAdvancements?.tutorial ?? { ...DEFAULT_GUIDE_TUTORIAL_STATE });
         this.networkManager.getSettings().then((settings) => {
@@ -175,6 +191,27 @@ export class UIScene extends Phaser.Scene {
             this.subtitleStack?.setEnabled(Boolean(customEvent.detail?.enabled));
         };
         window.addEventListener('audio:subtitles-enabled-changed', this.subtitlesEnabledChangedHandler as EventListener);
+
+        this.finbookQuestTargetedHandler = (_event: Event) => {
+            this.getAudioManager()?.playQuestTrack?.();
+        };
+        window.addEventListener('finbook:quest-targeted', this.finbookQuestTargetedHandler as EventListener);
+
+        this.inventoryConsumedHandler = (event: Event) => {
+            const customEvent = event as CustomEvent<{ itemId?: string; quantity?: number }>;
+            const itemId = customEvent.detail?.itemId;
+            if (!itemId) return;
+            this.getAudioManager()?.playConsumableEat?.(itemId);
+        };
+        window.addEventListener('inventory:consumed', this.inventoryConsumedHandler as EventListener);
+
+        this.uiClickPointerHandler = (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
+            if ((gameObject as any)?.getData?.('suppressUiClickSound') === true) {
+                return;
+            }
+            this.getAudioManager()?.playUiClick?.();
+        };
+        this.input.on(Phaser.Input.Events.GAMEOBJECT_DOWN, this.uiClickPointerHandler);
         if (this.pendingDialogueAdvanceHandler) {
             this.dialogueUI.setOnAdvance(this.pendingDialogueAdvanceHandler);
             this.pendingDialogueAdvanceHandler = undefined;
@@ -186,17 +223,24 @@ export class UIScene extends Phaser.Scene {
         this.playerHud.setOnRodUse(() => {
             window.dispatchEvent(new CustomEvent('hud:rod-use'));
         });
+        this.playerHud.setOnUsableSlotUse((slotIndex) => this.tryUseHudUsableSlot(slotIndex));
 
         this.inventoryUpdateHandler = (event: Event) => {
-            const customEvent = event as CustomEvent<{ equippedRodId?: string | null }>;
+            const customEvent = event as CustomEvent<{ equippedRodId?: string | null; equippedUsableIds?: Array<string | null> }>;
             const equippedRodId = customEvent.detail?.equippedRodId ?? null;
             this.playerHud?.setEquippedRod(equippedRodId);
+            if (customEvent.detail?.equippedUsableIds) {
+                this.playerHud?.setEquippedUsables(customEvent.detail.equippedUsableIds);
+            }
         };
         window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
 
         this.networkManager.getInventory().then((data) => {
             if (data?.equippedRodId !== undefined) {
                 this.playerHud?.setEquippedRod(data.equippedRodId ?? null);
+            }
+            if (data?.equippedUsableIds) {
+                this.playerHud?.setEquippedUsables(data.equippedUsableIds);
             }
         });
 
@@ -240,6 +284,16 @@ export class UIScene extends Phaser.Scene {
         const currentStamina = this.registry.get('stamina');
         if (typeof currentStamina === 'number') {
             this.playerHud.setStamina(currentStamina);
+        }
+
+        const currentHearts = this.registry.get('playerHeartsCurrent');
+        const maxHearts = this.registry.get('playerHeartsMax');
+        if (typeof currentHearts === 'number' && typeof maxHearts === 'number') {
+            this.playerHud.setHearts(currentHearts, maxHearts);
+            this.lastKnownHearts = Math.max(0, Math.floor(currentHearts));
+        } else {
+            this.playerHud.setHearts(9, 9);
+            this.lastKnownHearts = 9;
         }
 
         const currentPlayers = this.registry.get('tablistPlayers') as TabListEntry[] | undefined;
@@ -314,6 +368,23 @@ export class UIScene extends Phaser.Scene {
         };
         window.addEventListener('keydown', this.bookKeyHandler, { capture: true });
 
+        this.usableHotkeyHandler = (event: KeyboardEvent) => {
+            if (event.repeat) return;
+
+            let slotIndex = -1;
+            if (event.code === 'Digit1' || event.code === 'Numpad1') slotIndex = 0;
+            if (event.code === 'Digit2' || event.code === 'Numpad2') slotIndex = 1;
+            if (event.code === 'Digit3' || event.code === 'Numpad3') slotIndex = 2;
+            if (event.code === 'Digit4' || event.code === 'Numpad4') slotIndex = 3;
+            if (slotIndex < 0) return;
+
+            if (this.tryUseHudUsableSlot(slotIndex)) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        };
+        window.addEventListener('keydown', this.usableHotkeyHandler, { capture: true });
+
         this.mobileInventoryHandler = () => {
             if (this.registry.get('inputBlocked') === true) return;
             if (this.chat?.isChatFocused()) return;
@@ -375,6 +446,9 @@ export class UIScene extends Phaser.Scene {
             if (this.bookKeyHandler) {
                 window.removeEventListener('keydown', this.bookKeyHandler, { capture: true } as any);
             }
+            if (this.usableHotkeyHandler) {
+                window.removeEventListener('keydown', this.usableHotkeyHandler, { capture: true } as any);
+            }
             if (this.mobileInventoryHandler) {
                 window.removeEventListener('mobile:inventory', this.mobileInventoryHandler as EventListener);
             }
@@ -393,6 +467,15 @@ export class UIScene extends Phaser.Scene {
             if (this.subtitlesEnabledChangedHandler) {
                 window.removeEventListener('audio:subtitles-enabled-changed', this.subtitlesEnabledChangedHandler as EventListener);
             }
+            if (this.finbookQuestTargetedHandler) {
+                window.removeEventListener('finbook:quest-targeted', this.finbookQuestTargetedHandler as EventListener);
+            }
+            if (this.inventoryConsumedHandler) {
+                window.removeEventListener('inventory:consumed', this.inventoryConsumedHandler as EventListener);
+            }
+            if (this.uiClickPointerHandler) {
+                this.input.off(Phaser.Input.Events.GAMEOBJECT_DOWN, this.uiClickPointerHandler);
+            }
             window.removeEventListener('pointerdown', markActivity, { capture: true } as any);
             window.removeEventListener('mousedown', markActivity, { capture: true } as any);
             window.removeEventListener('touchstart', markActivity, { capture: true } as any);
@@ -400,6 +483,8 @@ export class UIScene extends Phaser.Scene {
             this.guideCoordinator?.destroy();
             this.guideInputGate?.uninstall();
             this.guideOverlay?.destroy();
+            this.damageBorderTween?.stop();
+            this.damageBorderGlow?.destroy();
             this.chat?.destroy();
             this.bookUI?.destroy();
             this.headbarUI?.destroy();
@@ -466,7 +551,11 @@ export class UIScene extends Phaser.Scene {
         this.guideOverlay?.hide();
     }
 
-    applyGuideInputGate(config: { allowedActions: ControlActionKey[]; allowedPointerRect: Phaser.Geom.Rectangle | null }) {
+    applyGuideInputGate(config: {
+        allowedActions: ControlActionKey[];
+        allowedPointerRect: Phaser.Geom.Rectangle | null;
+        allowedUsableSlotIndex?: number | null;
+    }) {
         this.guideInputGate?.apply(config);
     }
 
@@ -486,9 +575,65 @@ export class UIScene extends Phaser.Scene {
         return this.playerHud?.getRodSlotScreenRect() ?? null;
     }
 
+    getGuideHudQuickSlotRect(slotIndex: number): Phaser.Geom.Rectangle | null {
+        return this.playerHud?.getUsableSlotScreenRect(slotIndex) ?? null;
+    }
+
+    getGuideBerryInventoryRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideFoodInventoryRect('yekberries') ?? null;
+    }
+
+    getGuideFoodScoreRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideFoodScoreRect() ?? null;
+    }
+
+    getGuideUsableEquipRect(slotIndex: number): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideUsableEquipRect(slotIndex) ?? null;
+    }
+
+    simulateGuideHeartLoss(amount = 1): boolean {
+        const maxHeartsRaw = this.registry.get('playerHeartsMax');
+        const currentHeartsRaw = this.registry.get('playerHeartsCurrent');
+        const maxHearts = typeof maxHeartsRaw === 'number' ? Math.max(1, Math.floor(maxHeartsRaw)) : 9;
+        const currentHearts = typeof currentHeartsRaw === 'number' ? Math.max(0, Math.min(maxHearts, Math.floor(currentHeartsRaw))) : maxHearts;
+        if (currentHearts <= 0) return false;
+        const next = Math.max(0, currentHearts - Math.max(1, Math.floor(amount)));
+        this.registry.set('playerHeartsCurrent', next);
+        this.registry.set('playerHeartsMax', maxHearts);
+        this.playerHud?.setHearts(next, maxHearts);
+        this.lastKnownHearts = next;
+        this.triggerDamageFeedback();
+        return next < currentHearts;
+    }
+
+    triggerDamageFeedback(durationMs = 350) {
+        const gameScene = this.scene.isActive('GameScene') ? this.scene.get('GameScene') as Phaser.Scene : null;
+        gameScene?.cameras?.main?.shake(durationMs, 0.008, true);
+
+        if (!this.damageBorderGlow) return;
+        this.redrawDamageBorderGlow();
+        this.damageBorderTween?.stop();
+        this.damageBorderGlow.setVisible(true);
+        this.damageBorderGlow.setAlpha(0.95);
+        this.damageBorderTween = this.tweens.add({
+            targets: this.damageBorderGlow,
+            alpha: { from: 0.95, to: 0 },
+            duration: durationMs,
+            ease: 'Sine.out',
+            onComplete: () => {
+                this.damageBorderGlow?.setVisible(false);
+            }
+        });
+    }
+
     getGuideInventoryTriggerRect(): Phaser.Geom.Rectangle | null {
         const gameScene = this.scene.get('GameScene') as any;
         return gameScene?.getGuideInventoryButtonRect?.() ?? null;
+    }
+
+    getGuideInteractTriggerRect(): Phaser.Geom.Rectangle | null {
+        const gameScene = this.scene.get('GameScene') as any;
+        return gameScene?.getGuideInteractButtonRect?.() ?? null;
     }
 
     getGuideFishingCastRect(): Phaser.Geom.Rectangle | null {
@@ -605,6 +750,16 @@ export class UIScene extends Phaser.Scene {
         this.subtitleStack?.layout();
         this.dialogueUI?.layout();
         this.guideOverlay?.resize();
+        this.redrawDamageBorderGlow();
+    }
+
+    private redrawDamageBorderGlow() {
+        if (!this.damageBorderGlow) return;
+        const width = this.scale.width;
+        const height = this.scale.height;
+        this.damageBorderGlow.clear();
+        this.damageBorderGlow.lineStyle(10, 0xff3b3b, 1);
+        this.damageBorderGlow.strokeRect(5, 5, Math.max(0, width - 10), Math.max(0, height - 10));
     }
 
     private setupChatListener() {
@@ -629,7 +784,33 @@ export class UIScene extends Phaser.Scene {
         room.onMessage('advancement:alert', (data: IAdvancementAlertMessage) => {
             if (!this.headbarUI) return;
             this.headbarUI.enqueueAdvancementAlert(data);
+            const audio = this.getAudioManager();
+            if (audio) {
+                if (data.type === 'quest-started') {
+                    audio.playQuestStarted?.();
+                } else if (data.type === 'quest-objective') {
+                    audio.playQuestObjective?.();
+                } else if (data.type === 'quest-completed') {
+                    audio.playQuestCompleted?.();
+                } else if (data.type === 'achievement-unlocked') {
+                    audio.playAchievementUnlocked?.();
+                } else if (data.type === 'area-discovered') {
+                    audio.playLocationDiscovered?.();
+                }
+            }
             this.networkManager.requestAdvancementsState();
+        });
+
+        room.onMessage('player:hearts', (data: { currentHearts?: number; maxHearts?: number }) => {
+            const currentHearts = typeof data?.currentHearts === 'number' ? data.currentHearts : 9;
+            const maxHearts = typeof data?.maxHearts === 'number' ? data.maxHearts : 9;
+            if (currentHearts < this.lastKnownHearts) {
+                this.triggerDamageFeedback();
+            }
+            this.lastKnownHearts = Math.max(0, Math.floor(currentHearts));
+            this.registry.set('playerHeartsCurrent', currentHearts);
+            this.registry.set('playerHeartsMax', maxHearts);
+            this.playerHud?.setHearts(currentHearts, maxHearts);
         });
     }
 
@@ -651,5 +832,27 @@ export class UIScene extends Phaser.Scene {
         if (this.headbarUI) {
             this.headbarUI.update();
         }
+    }
+
+    private tryUseHudUsableSlot(slotIndex: number): boolean {
+        if (slotIndex < 0 || slotIndex > 3) return false;
+        if (this.registry.get('inputBlocked') === true) return false;
+        if (this.registry.get('guiOpen') === true) return false;
+        if (this.chat?.isChatFocused()) return false;
+        if (this.registry.get('guideBlockAll') === true) {
+            const allowedSlot = this.registry.get('guideAllowedUsableSlot');
+            if (typeof allowedSlot !== 'number' || Math.floor(allowedSlot) !== slotIndex) {
+                return false;
+            }
+        }
+
+        this.networkManager.sendUseEquippedItem(slotIndex);
+        window.dispatchEvent(new CustomEvent('hud:usable-use', { detail: { slotIndex } }));
+        return true;
+    }
+
+    private getAudioManager() {
+        const gameScene = this.scene.get('GameScene') as { getAudioManager?: () => any };
+        return gameScene?.getAudioManager?.();
     }
 }

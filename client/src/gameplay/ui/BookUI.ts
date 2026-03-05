@@ -9,7 +9,7 @@ import { GlimmerbowlTabUI } from './glimmerbowl/GlimmerbowlTabUI';
 import { NetworkManager } from '../network/NetworkManager';
 import { LocaleManager } from '../i18n/LocaleManager';
 import { getLocalizedItemDescription, getLocalizedItemName } from '../i18n/itemLocale';
-import { GlimmerbowlEntry, InventorySlot, getItemDefinition, ItemDefinition, ItemCategory } from '@cfwk/shared';
+import { DEFAULT_USABLE_EQUIP_SLOTS, GlimmerbowlEntry, InventorySlot, getItemDefinition, ItemDefinition, ItemCategory, isEquippableUsableItem, isRodItem } from '@cfwk/shared';
 import { BitmapFontRenderer } from './BitmapFontRenderer';
 
 type TabItem = {
@@ -39,6 +39,7 @@ export class BookUI {
     private finbookTab: FinbookTabUI;
     private glimmerbowlTab: GlimmerbowlTabUI;
     private activeTabLabel: 'Inventory' | 'Finbook' | 'Glimmerbowl' | 'Settings' = 'Inventory';
+    private glimmerbowlUnlocked = false;
     private inventorySlotsData: InventorySlot[] = [];
     private inventoryItems: Array<{ slot: InventorySlot; def: ItemDefinition; display: InventoryDisplayItem }> = [];
     private networkManager = NetworkManager.getInstance();
@@ -50,8 +51,12 @@ export class BookUI {
     // Track if we're in "rod equip" mode (selected a rod from inventory)
     private pendingRodEquip: InventoryDisplayItem | null = null;
     private pendingRodSlotIndex: number | null = null;
+    private pendingUsableEquip: InventoryDisplayItem | null = null;
+    private pendingUsableSlotIndex: number | null = null;
+    private selectedUsableEquipSlotIndex: number | null = null;
     private suppressInventorySelection = false;
     private equippedRodId: string | null = null;
+    private equippedUsableIds: Array<string | null> = Array.from({ length: DEFAULT_USABLE_EQUIP_SLOTS }, () => null);
 
     private readonly coverWidth = 320;
     private readonly coverHeight = 219;
@@ -92,16 +97,18 @@ export class BookUI {
         this.container.setVisible(false);
 
         this.inventoryUpdateHandler = (event: Event) => {
-            const customEvent = event as CustomEvent<{ slots: InventorySlot[]; totalSlots: number; equippedRodId?: string | null }>;
+            const customEvent = event as CustomEvent<{ slots: InventorySlot[]; totalSlots: number; equippedRodId?: string | null; equippedUsableIds?: Array<string | null> }>;
             const slots = customEvent.detail?.slots || [];
             const equippedRodId = customEvent.detail?.equippedRodId ?? null;
-            this.applyInventoryUpdate(slots, equippedRodId);
+            const equippedUsableIds = customEvent.detail?.equippedUsableIds;
+            this.applyInventoryUpdate(slots, equippedRodId, equippedUsableIds);
         };
         window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
         this.glimmerbowlUpdateHandler = (event: Event) => {
-            const customEvent = event as CustomEvent<{ entries: GlimmerbowlEntry[] }>;
+            const customEvent = event as CustomEvent<{ entries: GlimmerbowlEntry[]; unlocked: boolean }>;
             const entries = customEvent.detail?.entries || [];
-            this.applyGlimmerbowlUpdate(entries);
+            const unlocked = Boolean(customEvent.detail?.unlocked);
+            this.applyGlimmerbowlUpdate(entries, unlocked);
         };
         window.addEventListener('glimmerbowl:update', this.glimmerbowlUpdateHandler as EventListener);
         this.localeChangedHandler = () => {
@@ -145,6 +152,9 @@ export class BookUI {
             this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
             this.equipmentSlots.clearSelection();
             this.pendingRodEquip = null;
+            this.pendingUsableEquip = null;
+            this.pendingUsableSlotIndex = null;
+            this.selectedUsableEquipSlotIndex = null;
             this.inventorySlots.setBottomReservedHeight(0);
         });
         this.inventorySlots.setOnItemSelect((item, slotIndex, stackCount) => {
@@ -154,6 +164,9 @@ export class BookUI {
                 this.inventorySlots.setBottomReservedHeight(0);
                 this.pendingRodEquip = null;
                 this.pendingRodSlotIndex = null;
+                this.pendingUsableEquip = null;
+                this.pendingUsableSlotIndex = null;
+                this.selectedUsableEquipSlotIndex = null;
                 return;
             }
             // Check if we're unequipping a rod from the equipment slot
@@ -173,7 +186,7 @@ export class BookUI {
                         this.equipmentSlots.unequipRod(targetPos ?? undefined);
                         this.equipmentSlots.clearSelection();
                         this.equippedRodId = null;
-                        this.networkManager.sendEquippedRod(null);
+                        this.sendEquipmentState();
                         this.updateInventoryDisplay();
                         this.inventoryDetails.setItem(null);
                         this.inventorySlots.setBottomReservedHeight(0);
@@ -186,6 +199,31 @@ export class BookUI {
                 // Clicking a filled slot just switches selection to that item
                 this.equipmentSlots.clearSelection();
             }
+
+            if (this.selectedUsableEquipSlotIndex !== null) {
+                if (this.isFishingActive()) {
+                    this.selectedUsableEquipSlotIndex = null;
+                    return;
+                }
+                const selectedUsable = this.equipmentSlots.getEquippedUsable(this.selectedUsableEquipSlotIndex);
+                if (!item && selectedUsable) {
+                    const targetPos = this.inventorySlots.getSlotScreenPosition(slotIndex);
+                    if (this.placeItemInSlot(slotIndex, selectedUsable.id, 1)) {
+                        this.equipmentSlots.unequipUsable(this.selectedUsableEquipSlotIndex, targetPos ?? undefined);
+                        this.equippedUsableIds[this.selectedUsableEquipSlotIndex] = null;
+                        this.sendEquipmentState();
+                        this.updateInventoryDisplay();
+                        this.inventoryDetails.setItem(null);
+                        this.inventorySlots.setBottomReservedHeight(0);
+                        this.pendingUsableEquip = null;
+                        this.pendingUsableSlotIndex = null;
+                        this.selectedUsableEquipSlotIndex = null;
+                    }
+                    return;
+                }
+
+                this.selectedUsableEquipSlotIndex = null;
+            }
             
             // Normal inventory selection
             this.equipmentSlots.clearSelection();
@@ -195,14 +233,29 @@ export class BookUI {
                 this.inventorySlots.setBottomReservedHeight(0);
                 this.pendingRodEquip = null;
                 this.pendingRodSlotIndex = null;
+                this.pendingUsableEquip = null;
+                this.pendingUsableSlotIndex = null;
                 return;
             }
             
             // Check if this is a fishing rod
-            if (item.category === 'Tools' && item.id.includes('rod')) {
+            if (this.getRodDefinition(item.id)) {
                 this.pendingRodEquip = item;
                 this.pendingRodSlotIndex = slotIndex;
+                this.pendingUsableEquip = null;
+                this.pendingUsableSlotIndex = null;
                 window.dispatchEvent(new CustomEvent('guide:book:rod-selected', {
+                    detail: {
+                        itemId: item.id,
+                        slotIndex
+                    }
+                }));
+            } else if (this.getUsableDefinition(item.id)) {
+                this.pendingUsableEquip = item;
+                this.pendingUsableSlotIndex = slotIndex;
+                this.pendingRodEquip = null;
+                this.pendingRodSlotIndex = null;
+                window.dispatchEvent(new CustomEvent('guide:book:food-selected', {
                     detail: {
                         itemId: item.id,
                         slotIndex
@@ -211,16 +264,20 @@ export class BookUI {
             } else {
                 this.pendingRodEquip = null;
                 this.pendingRodSlotIndex = null;
+                this.pendingUsableEquip = null;
+                this.pendingUsableSlotIndex = null;
             }
             
             this.inventorySlots.setBottomReservedHeight(this.inventoryDetails.getReservedHeight());
+            const selectedDef = getItemDefinition(item.id);
             this.inventoryDetails.setItem({
                 name: item.name,
                 description: item.description,
                 itemId: item.id,
                 slotIndex,
                 amount: stackCount ?? item.count,
-                stackSize: item.stackSize
+                stackSize: item.stackSize,
+                scoreText: (selectedDef?.foodScore ?? 0) > 0 ? `+${selectedDef?.foodScore ?? 0}` : undefined
             });
         });
 
@@ -234,8 +291,17 @@ export class BookUI {
                 return false;
             }
 
-            if (this.equipmentSlots.isPointerOverSlot(pointer)) {
+            const equipmentTarget = this.equipmentSlots.getSlotUnderPointer(pointer);
+            if (equipmentTarget?.type === 'rod') {
                 if (this.handleInventoryDragToRodSlot(fromIndex)) {
+                    this.clearSelectionAfterDrag();
+                    return true;
+                }
+                return false;
+            }
+
+            if (equipmentTarget?.type === 'usable' && equipmentTarget.usableIndex !== undefined) {
+                if (this.handleInventoryDragToUsableSlot(fromIndex, equipmentTarget.usableIndex)) {
                     this.clearSelectionAfterDrag();
                     return true;
                 }
@@ -283,7 +349,7 @@ export class BookUI {
                 // Equip the new rod
                 this.equipmentSlots.equipRod(this.pendingRodEquip, sourcePos ?? undefined);
                 this.equippedRodId = this.pendingRodEquip.id;
-                this.networkManager.sendEquippedRod(this.pendingRodEquip.id);
+                this.sendEquipmentState();
                 window.dispatchEvent(new CustomEvent('guide:book:rod-equipped', {
                     detail: {
                         itemId: this.pendingRodEquip.id
@@ -309,10 +375,75 @@ export class BookUI {
                     itemId: currentRod.id,
                     slotIndex: -1,
                     amount: 1,
-                    stackSize: currentRod.stackSize
+                    stackSize: currentRod.stackSize,
+                    scoreText: undefined
                 });
                 this.inventorySlots.setBottomReservedHeight(this.inventoryDetails.getReservedHeight());
             }
+        });
+
+        this.equipmentSlots.setOnUsableSlotClick((slotIndex, currentItem) => {
+            this.equipmentSlots.clearSelection();
+
+            if (this.pendingUsableEquip && this.pendingUsableSlotIndex !== null) {
+                const sourceIndex = this.pendingUsableSlotIndex;
+                const sourcePos = this.inventorySlots.getSlotScreenPosition(sourceIndex);
+
+                if (!this.removeItemFromSlot(sourceIndex, 1)) {
+                    return;
+                }
+
+                if (currentItem) {
+                    const restored = this.placeItemInSlot(sourceIndex, currentItem.id, 1) || this.placeItemInFirstEmptySlot(currentItem.id, 1);
+                    if (!restored) {
+                        this.placeItemInSlot(sourceIndex, this.pendingUsableEquip.id, 1);
+                        return;
+                    }
+                }
+
+                this.equipmentSlots.equipUsable(slotIndex, this.pendingUsableEquip, sourcePos ?? undefined);
+                this.equippedUsableIds[slotIndex] = this.pendingUsableEquip.id;
+                this.sendEquipmentState();
+                window.dispatchEvent(new CustomEvent('guide:book:food-equipped', {
+                    detail: {
+                        itemId: this.pendingUsableEquip.id,
+                        slotIndex
+                    }
+                }));
+
+                this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
+                this.inventoryDetails.setItem(null);
+                this.inventorySlots.setBottomReservedHeight(0);
+                this.pendingUsableEquip = null;
+                this.pendingUsableSlotIndex = null;
+                this.selectedUsableEquipSlotIndex = null;
+                this.updateInventoryDisplay();
+                return;
+            }
+
+            this.selectedUsableEquipSlotIndex = currentItem ? slotIndex : null;
+            this.pendingRodEquip = null;
+            this.pendingRodSlotIndex = null;
+            this.pendingUsableEquip = null;
+            this.pendingUsableSlotIndex = null;
+
+            if (!currentItem) {
+                this.inventoryDetails.setItem(null);
+                this.inventorySlots.setBottomReservedHeight(0);
+                return;
+            }
+
+            const selectedDef = getItemDefinition(currentItem.id);
+            this.inventoryDetails.setItem({
+                name: currentItem.name,
+                description: currentItem.description,
+                itemId: currentItem.id,
+                slotIndex: -1,
+                amount: 1,
+                stackSize: currentItem.stackSize,
+                scoreText: (selectedDef?.foodScore ?? 0) > 0 ? `+${selectedDef?.foodScore ?? 0}` : undefined
+            });
+            this.inventorySlots.setBottomReservedHeight(this.inventoryDetails.getReservedHeight());
         });
 
         this.equipmentSlots.setOnRodSlotDragComplete((pointer) => {
@@ -323,9 +454,18 @@ export class BookUI {
             return false;
         });
 
+        this.equipmentSlots.setOnUsableSlotDragComplete((slotIndex, pointer) => {
+            if (this.handleUsableDragToInventory(slotIndex, pointer)) {
+                this.clearSelectionAfterDrag();
+                return true;
+            }
+            return false;
+        });
+
         this.createTabs();
         this.layout();
         this.setGuiInputEnabled(false);
+        void this.refreshGlimmerbowl();
     }
 
     private getScale(): number {
@@ -377,7 +517,7 @@ export class BookUI {
     }
 
     private createTabs() {
-        const tabKeys: Array<'Inventory' | 'Finbook' | 'Glimmerbowl' | 'Settings'> = ['Inventory', 'Finbook', 'Glimmerbowl', 'Settings'];
+        const tabKeys = this.getTabKeys();
         tabKeys.forEach((tabKey, index) => {
             const label = this.getTabLabel(tabKey);
             const active = index === 0;
@@ -385,6 +525,31 @@ export class BookUI {
             this.tabsContainer.add(tab.container);
             this.tabs.push(tab);
         });
+    }
+
+    private getTabKeys(): Array<'Inventory' | 'Finbook' | 'Glimmerbowl' | 'Settings'> {
+        return this.glimmerbowlUnlocked
+            ? ['Inventory', 'Finbook', 'Glimmerbowl', 'Settings']
+            : ['Inventory', 'Finbook', 'Settings'];
+    }
+
+    private rebuildTabs() {
+        this.tabs.forEach((tab) => {
+            tab.img.removeAllListeners();
+            if (this.scene.textures.exists(tab.textureKey)) {
+                this.scene.textures.remove(tab.textureKey);
+            }
+            tab.container.destroy();
+        });
+        this.tabs = [];
+
+        if (!this.glimmerbowlUnlocked && this.activeTabLabel === 'Glimmerbowl') {
+            this.activeTabLabel = 'Inventory';
+        }
+
+        this.createTabs();
+        this.layout();
+        this.setActiveTab(this.activeTabLabel);
     }
 
     private layoutTabs(scale: number, bookCenterX: number, cy: number, pageW: number) {
@@ -497,6 +662,9 @@ export class BookUI {
     }
 
     private setActiveTab(label: 'Inventory' | 'Finbook' | 'Glimmerbowl' | 'Settings') {
+        if (label === 'Glimmerbowl' && !this.glimmerbowlUnlocked) {
+            label = 'Inventory';
+        }
         this.activeTabLabel = label;
         this.tabs.forEach((tab) => {
             const shouldBeActive = tab.key === label;
@@ -533,6 +701,9 @@ export class BookUI {
             this.equipmentSlots.clearSelection();
             this.inventorySlots.setBottomReservedHeight(0);
             this.pendingRodEquip = null;
+            this.pendingUsableEquip = null;
+            this.pendingUsableSlotIndex = null;
+            this.selectedUsableEquipSlotIndex = null;
         }
     }
 
@@ -578,23 +749,32 @@ export class BookUI {
         const response = await this.networkManager.getInventory();
         if (!response) return;
 
-        this.applyInventoryUpdate(response.slots || [], response.equippedRodId ?? null);
+        this.applyInventoryUpdate(response.slots || [], response.equippedRodId ?? null, response.equippedUsableIds ?? []);
     }
 
     private async refreshGlimmerbowl() {
         const response = await this.networkManager.getGlimmerbowl();
         if (!response) return;
-        this.applyGlimmerbowlUpdate(response.entries || []);
+        this.applyGlimmerbowlUpdate(response.entries || [], Boolean(response.unlocked));
     }
 
-    private applyInventoryUpdate(slots: InventorySlot[], equippedRodId: string | null) {
+    private applyInventoryUpdate(slots: InventorySlot[], equippedRodId: string | null, equippedUsableIds?: Array<string | null>) {
         this.inventorySlotsData = slots;
         this.equippedRodId = equippedRodId;
+        if (Array.isArray(equippedUsableIds)) {
+            this.equippedUsableIds = Array.from({ length: DEFAULT_USABLE_EQUIP_SLOTS }, (_unused, index) => equippedUsableIds[index] ?? null);
+        }
         this.updateInventoryDisplay();
         this.updateEquippedRodFromServer();
+        this.updateEquippedUsablesFromServer();
     }
 
-    private applyGlimmerbowlUpdate(entries: GlimmerbowlEntry[]) {
+    private applyGlimmerbowlUpdate(entries: GlimmerbowlEntry[], unlocked: boolean) {
+        const wasUnlocked = this.glimmerbowlUnlocked;
+        this.glimmerbowlUnlocked = unlocked;
+        if (wasUnlocked !== this.glimmerbowlUnlocked) {
+            this.rebuildTabs();
+        }
         this.glimmerbowlTab.setEntries(entries);
     }
 
@@ -604,7 +784,6 @@ export class BookUI {
             .map((slot) => {
                 const def = slot.itemId ? getItemDefinition(slot.itemId) : null;
                 if (!def) return null;
-                if (def.category === 'Fish') return null;
                 const display: InventoryDisplayItem = {
                     id: def.id,
                     name: getLocalizedItemName(def.id, def.name),
@@ -686,7 +865,14 @@ export class BookUI {
     private getRodDefinition(itemId: string): ItemDefinition | null {
         const def = getItemDefinition(itemId);
         if (!def) return null;
-        if (def.category !== 'Tools' || !def.id.includes('rod')) return null;
+        if (!isRodItem(def)) return null;
+        return def;
+    }
+
+    private getUsableDefinition(itemId: string): ItemDefinition | null {
+        const def = getItemDefinition(itemId);
+        if (!def) return null;
+        if (!isEquippableUsableItem(def)) return null;
         return def;
     }
 
@@ -790,7 +976,33 @@ export class BookUI {
         const display = this.createDisplayItem(rodDef, 1);
         this.equipmentSlots.equipRod(display);
         this.equippedRodId = display.id;
-        this.networkManager.sendEquippedRod(display.id);
+        this.sendEquipmentState();
+        this.updateInventoryDisplay();
+        return true;
+    }
+
+    private handleInventoryDragToUsableSlot(sourceIndex: number, targetUsableSlotIndex: number): boolean {
+        if (this.isFishingActive()) return false;
+        const sourceSlot = this.getSlotByIndex(sourceIndex);
+        if (!sourceSlot || !sourceSlot.itemId || sourceSlot.count <= 0) return false;
+
+        const usableDef = this.getUsableDefinition(sourceSlot.itemId);
+        if (!usableDef) return false;
+
+        const currentUsable = this.equipmentSlots.getEquippedUsable(targetUsableSlotIndex);
+        if (currentUsable) {
+            sourceSlot.itemId = currentUsable.id;
+            sourceSlot.count = 1;
+        } else {
+            sourceSlot.itemId = null;
+            sourceSlot.count = 0;
+        }
+
+        this.persistInventorySlots();
+        const display = this.createDisplayItem(usableDef, 1);
+        this.equipmentSlots.equipUsable(targetUsableSlotIndex, display);
+        this.equippedUsableIds[targetUsableSlotIndex] = display.id;
+        this.sendEquipmentState();
         this.updateInventoryDisplay();
         return true;
     }
@@ -817,7 +1029,7 @@ export class BookUI {
             const display = this.createDisplayItem(destRodDef, 1);
             this.equipmentSlots.equipRod(display);
             this.equippedRodId = display.id;
-            this.networkManager.sendEquippedRod(display.id);
+            this.sendEquipmentState();
         } else {
             destSlot.itemId = currentRod.id;
             destSlot.count = 1;
@@ -825,7 +1037,44 @@ export class BookUI {
             this.persistInventorySlots();
             this.equipmentSlots.unequipRod();
             this.equippedRodId = null;
-            this.networkManager.sendEquippedRod(null);
+            this.sendEquipmentState();
+        }
+
+        this.updateInventoryDisplay();
+        return true;
+    }
+
+    private handleUsableDragToInventory(sourceUsableSlotIndex: number, pointer: Phaser.Input.Pointer): boolean {
+        if (this.isFishingActive()) return false;
+        const destIndex = this.inventorySlots.getSlotIndexAtPointer(pointer);
+        if (destIndex === undefined) return false;
+
+        const currentUsable = this.equipmentSlots.getEquippedUsable(sourceUsableSlotIndex);
+        if (!currentUsable) return false;
+
+        const destSlot = this.getSlotByIndex(destIndex);
+        if (!destSlot) return false;
+
+        if (destSlot.itemId) {
+            const destUsableDef = this.getUsableDefinition(destSlot.itemId);
+            if (!destUsableDef) return false;
+
+            destSlot.itemId = currentUsable.id;
+            destSlot.count = 1;
+
+            this.persistInventorySlots();
+            const display = this.createDisplayItem(destUsableDef, 1);
+            this.equipmentSlots.equipUsable(sourceUsableSlotIndex, display);
+            this.equippedUsableIds[sourceUsableSlotIndex] = display.id;
+            this.sendEquipmentState();
+        } else {
+            destSlot.itemId = currentUsable.id;
+            destSlot.count = 1;
+
+            this.persistInventorySlots();
+            this.equipmentSlots.unequipUsable(sourceUsableSlotIndex);
+            this.equippedUsableIds[sourceUsableSlotIndex] = null;
+            this.sendEquipmentState();
         }
 
         this.updateInventoryDisplay();
@@ -839,6 +1088,13 @@ export class BookUI {
         this.inventorySlots.setBottomReservedHeight(0);
         this.pendingRodEquip = null;
         this.pendingRodSlotIndex = null;
+        this.pendingUsableEquip = null;
+        this.pendingUsableSlotIndex = null;
+        this.selectedUsableEquipSlotIndex = null;
+    }
+
+    private sendEquipmentState() {
+        this.networkManager.sendEquippedRod(this.equippedRodId, this.equippedUsableIds);
     }
 
     private updateEquippedRodFromServer() {
@@ -869,6 +1125,39 @@ export class BookUI {
 
         this.equipmentSlots.equipRod(display);
         this.equipmentSlots.clearSelection();
+    }
+
+    private updateEquippedUsablesFromServer() {
+        this.equippedUsableIds.forEach((usableId, index) => {
+            const currentUsable = this.equipmentSlots.getEquippedUsable(index);
+            if (!usableId) {
+                if (currentUsable) {
+                    this.equipmentSlots.unequipUsable(index);
+                }
+                return;
+            }
+
+            if (currentUsable && currentUsable.id === usableId) {
+                return;
+            }
+
+            const def = getItemDefinition(usableId);
+            if (!def || !isEquippableUsableItem(def)) {
+                return;
+            }
+
+            const display: InventoryDisplayItem = {
+                id: def.id,
+                name: getLocalizedItemName(def.id, def.name),
+                description: getLocalizedItemDescription(def.id, def.description),
+                count: 1,
+                stackSize: def.stackSize,
+                iconKey: `item-${def.id}-18`,
+                category: def.category
+            };
+
+            this.equipmentSlots.equipUsable(index, display);
+        });
     }
 
     private isFishingActive(): boolean {
@@ -935,6 +1224,9 @@ export class BookUI {
         this.inventorySlots.setBottomReservedHeight(0);
         this.pendingRodEquip = null;
         this.pendingRodSlotIndex = null;
+        this.pendingUsableEquip = null;
+        this.pendingUsableSlotIndex = null;
+        this.selectedUsableEquipSlotIndex = null;
         this.setGuiInputEnabled(false);
     }
 
@@ -989,6 +1281,21 @@ export class BookUI {
 
     getGuideEquippedRodRect(): Phaser.Geom.Rectangle | null {
         return this.equipmentSlots.getRodSlotScreenRect();
+    }
+
+    getGuideFoodInventoryRect(itemId: string): Phaser.Geom.Rectangle | null {
+        if (!itemId) return null;
+        const slot = this.inventorySlotsData.find((entry) => entry.itemId === itemId && entry.count > 0);
+        if (!slot) return null;
+        return this.inventorySlots.getSlotScreenRect(slot.index);
+    }
+
+    getGuideFoodScoreRect(): Phaser.Geom.Rectangle | null {
+        return this.inventoryDetails.getScoreScreenRect();
+    }
+
+    getGuideUsableEquipRect(slotIndex: number): Phaser.Geom.Rectangle | null {
+        return this.equipmentSlots.getUsableSlotScreenRect(slotIndex);
     }
 
     destroy() {

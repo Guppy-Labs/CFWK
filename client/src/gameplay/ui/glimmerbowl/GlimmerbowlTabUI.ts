@@ -21,6 +21,9 @@ type GlimmerDisplayEntry = {
 };
 
 export class GlimmerbowlTabUI {
+    private static readonly BOWL_TEXTURE_KEY = 'ui-glimmerbowl';
+    private static readonly BOWL_ANIM_KEY = 'ui-glimmerbowl-idle';
+
     private readonly detailsReserveExtra = 10;
     private readonly tierButtonWidth = 62;
     private readonly tierButtonHeight = 18;
@@ -32,10 +35,7 @@ export class GlimmerbowlTabUI {
     private container: Phaser.GameObjects.Container;
     private localeManager = LocaleManager.getInstance();
 
-    private bowlPlaceholder: Phaser.GameObjects.Rectangle;
-    private bowlOutline: Phaser.GameObjects.Rectangle;
-    private bowlLabel: Phaser.GameObjects.Image;
-    private bowlLabelKey?: string;
+    private bowlSprite: Phaser.GameObjects.Sprite;
 
     private regularButton: TierButton;
     private awakenedButton: TierButton;
@@ -76,11 +76,9 @@ export class GlimmerbowlTabUI {
         this.container = this.scene.add.container(0, 0);
         parent.add(this.container);
 
-        this.bowlPlaceholder = this.scene.add.rectangle(0, 0, 120, 104, 0x1a1f29, 0.72).setOrigin(0, 0);
-        this.bowlOutline = this.scene.add.rectangle(0, 0, 120, 104, 0xffffff, 0).setOrigin(0, 0);
-        this.bowlOutline.setStrokeStyle(2, 0x4f5563, 0.9);
-        this.bowlLabelKey = this.createTextTexture(this.localeManager.t('glimmerbowl.placeholder', undefined, 'Fishbowl Preview'), '#9A9EA7');
-        this.bowlLabel = this.scene.add.image(0, 0, this.bowlLabelKey).setOrigin(0, 0);
+        this.ensureBowlAnimation();
+        this.bowlSprite = this.scene.add.sprite(0, 0, GlimmerbowlTabUI.BOWL_TEXTURE_KEY, 0).setOrigin(0.5, 0.5);
+        this.bowlSprite.play(GlimmerbowlTabUI.BOWL_ANIM_KEY);
 
         this.regularButton = this.createTierButton('regular');
         this.awakenedButton = this.createTierButton('awakened');
@@ -133,9 +131,7 @@ export class GlimmerbowlTabUI {
         });
 
         this.container.add([
-            this.bowlPlaceholder,
-            this.bowlOutline,
-            this.bowlLabel,
+            this.bowlSprite,
             this.regularButton.container,
             this.awakenedButton.container
         ]);
@@ -207,18 +203,12 @@ export class GlimmerbowlTabUI {
         const bowlW = Math.floor(contentWidth * scale);
         const bowlH = Math.floor((bowlHeight - topPad) * scale);
 
-        this.bowlPlaceholder.setPosition(bowlX, bowlY);
-        this.bowlPlaceholder.setSize(bowlW, bowlH);
-        this.bowlOutline.setPosition(bowlX, bowlY);
-        this.bowlOutline.setSize(bowlW, bowlH);
-
-        const bowlLabelW = this.getTextureWidth(this.bowlLabel.texture.key);
-        const bowlLabelH = this.getTextureHeight(this.bowlLabel.texture.key);
-        this.bowlLabel.setPosition(
-            Math.floor(bowlX + (bowlW - bowlLabelW * scale) / 2),
-            Math.floor(bowlY + (bowlH - bowlLabelH * scale) / 2)
+        this.bowlSprite.setPosition(
+            Math.floor(bowlX + bowlW / 2),
+            Math.floor(bowlY + bowlH / 2)
         );
-        this.bowlLabel.setScale(scale);
+        const bowlScale = Math.max(0.1, Math.min(bowlW / 32, bowlH / 32));
+        this.bowlSprite.setScale(bowlScale);
 
         const buttonY = Math.floor(leftPageTopEdgeY + (bowlHeight + 8 + leftVerticalOffset) * scale);
         const leftButtonX = Math.floor(leftPageLeftEdgeX + (leftPad + leftInwardOffset) * scale);
@@ -397,14 +387,6 @@ export class GlimmerbowlTabUI {
         this.updateTierLabel(this.regularButton, this.getTierLabel('regular'));
         this.updateTierLabel(this.awakenedButton, this.getTierLabel('awakened'));
 
-        const newBowlLabelKey = this.createTextTexture(this.localeManager.t('glimmerbowl.placeholder', undefined, 'Fishbowl Preview'), '#9A9EA7');
-        const oldBowlKey = this.bowlLabelKey;
-        this.bowlLabelKey = newBowlLabelKey;
-        this.bowlLabel.setTexture(newBowlLabelKey);
-        if (oldBowlKey && this.scene.textures.exists(oldBowlKey)) {
-            this.scene.textures.remove(oldBowlKey);
-        }
-
         this.detailsUI.setSecondaryAction(this.onView ? (itemId, amount, _slotIndex) => this.onView?.(itemId, amount) : undefined, this.localeManager.t('glimmerbowl.details.view', undefined, 'View'));
 
         if (this.lastLayout) {
@@ -434,6 +416,17 @@ export class GlimmerbowlTabUI {
             return this.localeManager.t('glimmerbowl.section.regular', undefined, 'Regular');
         }
         return this.localeManager.t('glimmerbowl.section.awakened', undefined, 'Awakened');
+    }
+
+    private ensureBowlAnimation() {
+        if (this.scene.anims.exists(GlimmerbowlTabUI.BOWL_ANIM_KEY)) return;
+
+        this.scene.anims.create({
+            key: GlimmerbowlTabUI.BOWL_ANIM_KEY,
+            frames: this.scene.anims.generateFrameNumbers(GlimmerbowlTabUI.BOWL_TEXTURE_KEY, { start: 0, end: 8 }),
+            frameRate: 6,
+            repeat: -1
+        });
     }
 
     private createTextTexture(text: string, color: string) {
@@ -500,12 +493,6 @@ export class GlimmerbowlTabUI {
         this.scene.textures.addCanvas(rtKey, canvas);
         this.generatedTextureKeys.add(rtKey);
         return rtKey;
-    }
-
-    private getTextureWidth(textureKey: string): number {
-        const texture = this.scene.textures.get(textureKey);
-        const source = texture.getSourceImage() as HTMLImageElement;
-        return source?.width ?? 1;
     }
 
     private getTextureHeight(textureKey: string): number {

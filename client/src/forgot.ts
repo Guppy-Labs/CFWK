@@ -1,3 +1,5 @@
+export {};
+
 const form = document.getElementById('forgot-form') as HTMLFormElement;
 const emailInput = document.getElementById('email') as HTMLInputElement;
 const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement;

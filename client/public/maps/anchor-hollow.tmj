@@ -6532,6 +6532,211 @@
                 }],
          "opacity":1,
          "type":"objectgroup",
+         "visible":false,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":26,
+         "name":"Interactives",
+         "objects":[
+                {
+                 "height":0,
+                 "id":125,
+                 "name":"",
+                 "polygon":[
+                        {
+                         "x":0,
+                         "y":0
+                        }, 
+                        {
+                         "x":-1,
+                         "y":-54.5
+                        }, 
+                        {
+                         "x":-32.5,
+                         "y":-78.5
+                        }, 
+                        {
+                         "x":-34,
+                         "y":-174
+                        }, 
+                        {
+                         "x":39.5,
+                         "y":-239.5
+                        }, 
+                        {
+                         "x":133.5,
+                         "y":-240.5
+                        }, 
+                        {
+                         "x":195.5,
+                         "y":-288.5
+                        }, 
+                        {
+                         "x":191.5,
+                         "y":-312
+                        }, 
+                        {
+                         "x":127.5,
+                         "y":-363
+                        }, 
+                        {
+                         "x":127,
+                         "y":-448.5
+                        }, 
+                        {
+                         "x":61,
+                         "y":-448
+                        }, 
+                        {
+                         "x":-20,
+                         "y":-341.5
+                        }, 
+                        {
+                         "x":-121.5,
+                         "y":-236.5
+                        }, 
+                        {
+                         "x":-152,
+                         "y":-118.5
+                        }, 
+                        {
+                         "x":-44,
+                         "y":9.5
+                        }, 
+                        {
+                         "x":-18,
+                         "y":16.5
+                        }],
+                 "properties":[
+                        {
+                         "name":"componentid",
+                         "type":"string",
+                         "value":"yekbush"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":2618,
+                 "y":5610
+                }, 
+                {
+                 "height":0,
+                 "id":126,
+                 "name":"",
+                 "polygon":[
+                        {
+                         "x":0,
+                         "y":0
+                        }, 
+                        {
+                         "x":-31.5,
+                         "y":-28.5
+                        }, 
+                        {
+                         "x":4,
+                         "y":-63.5
+                        }, 
+                        {
+                         "x":3,
+                         "y":-98.5
+                        }, 
+                        {
+                         "x":29,
+                         "y":-121
+                        }, 
+                        {
+                         "x":48,
+                         "y":-145
+                        }, 
+                        {
+                         "x":59.5,
+                         "y":-153
+                        }, 
+                        {
+                         "x":206.5,
+                         "y":-149.5
+                        }, 
+                        {
+                         "x":215.5,
+                         "y":-125
+                        }, 
+                        {
+                         "x":201,
+                         "y":-100.5
+                        }, 
+                        {
+                         "x":59.5,
+                         "y":-94.5
+                        }, 
+                        {
+                         "x":55,
+                         "y":-52.5
+                        }],
+                 "properties":[
+                        {
+                         "name":"componentid",
+                         "type":"string",
+                         "value":"yekbush"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":3491.5,
+                 "y":5339.5
+                }, 
+                {
+                 "height":0,
+                 "id":127,
+                 "name":"",
+                 "polygon":[
+                        {
+                         "x":0,
+                         "y":0
+                        }, 
+                        {
+                         "x":-303,
+                         "y":0
+                        }, 
+                        {
+                         "x":-301.5,
+                         "y":54.5
+                        }, 
+                        {
+                         "x":-119,
+                         "y":55
+                        }, 
+                        {
+                         "x":-103,
+                         "y":84
+                        }, 
+                        {
+                         "x":-25,
+                         "y":88
+                        }, 
+                        {
+                         "x":3.5,
+                         "y":71.5
+                        }],
+                 "properties":[
+                        {
+                         "name":"componentid",
+                         "type":"string",
+                         "value":"yekbush"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":3191,
+                 "y":5089.5
+                }],
+         "opacity":1,
+         "type":"objectgroup",
          "visible":true,
          "x":0,
          "y":0
@@ -6687,7 +6892,7 @@
                 }],
          "opacity":1,
          "type":"objectgroup",
-         "visible":true,
+         "visible":false,
          "x":0,
          "y":0
         }, 
@@ -6801,7 +7006,7 @@
                 }],
          "opacity":1,
          "type":"objectgroup",
-         "visible":true,
+         "visible":false,
          "x":0,
          "y":0
         }, 
@@ -6846,7 +7051,7 @@
                 }],
          "opacity":1,
          "type":"objectgroup",
-         "visible":true,
+         "visible":false,
          "x":0,
          "y":0
         }, 
@@ -6886,7 +7091,7 @@
                         }],
                  "rotation":0,
                  "type":"",
-                 "visible":true,
+                 "visible":false,
                  "width":0,
                  "x":3374,
                  "y":5696
@@ -6897,8 +7102,8 @@
          "x":0,
          "y":0
         }],
- "nextlayerid":26,
- "nextobjectid":125,
+ "nextlayerid":27,
+ "nextobjectid":128,
  "orientation":"orthogonal",
  "properties":[
         {

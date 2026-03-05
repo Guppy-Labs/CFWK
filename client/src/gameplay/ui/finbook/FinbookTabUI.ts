@@ -122,9 +122,13 @@ export class FinbookTabUI {
     setVisible(visible: boolean) {
         this.container.setVisible(visible);
         if (visible) {
-            this.selectTopQuest();
             this.reconcileTargetedQuest();
             this.autoTrackFirstQuest(false);
+            if (this.targetedQuestId && this.getSortedAvailableQuestIds().includes(this.targetedQuestId)) {
+                this.selectedQuestId = this.targetedQuestId;
+            } else {
+                this.selectTopQuest();
+            }
             this.networkManager.requestAdvancementsState();
             this.render();
         }
@@ -252,7 +256,7 @@ export class FinbookTabUI {
         this.addNineSliceImage(this.leftContainer, leftX, listY, 'ui-item-info-frame', listWidth, listHeight);
 
         const availableQuestIds = ADVANCEMENT_QUEST_CATALOG
-            .filter((quest) => !quest.dependencyQuestId || this.isQuestCompleted(quest.dependencyQuestId))
+            .filter((quest) => this.isQuestVisible(quest))
             .map((quest) => quest.id);
 
         const sorted = [...availableQuestIds].sort((a, b) => {
@@ -570,7 +574,7 @@ export class FinbookTabUI {
 
     private getSortedAvailableQuestIds(): string[] {
         const availableQuestIds = ADVANCEMENT_QUEST_CATALOG
-            .filter((quest) => !quest.dependencyQuestId || this.isQuestCompleted(quest.dependencyQuestId))
+            .filter((quest) => this.isQuestVisible(quest))
             .map((quest) => quest.id);
 
         return [...availableQuestIds].sort((a, b) => {
@@ -598,8 +602,10 @@ export class FinbookTabUI {
 
     private reconcileTargetedQuest() {
         if (!this.targetedQuestId) return;
-        const progress = this.getQuestProgress(this.targetedQuestId);
-        if (!progress || progress.status !== 'active') {
+        const targetQuestId = this.targetedQuestId;
+        const isVisible = this.isQuestVisibleById(targetQuestId);
+        const isCompleted = this.isQuestCompleted(targetQuestId);
+        if (!isVisible || isCompleted) {
             this.setTargetedQuest(null, false);
         }
     }
@@ -628,15 +634,46 @@ export class FinbookTabUI {
             }
 
             const entry = ADVANCEMENT_QUEST_CATALOG.find((quest) => quest.id === completedQuestId);
-            if (!entry?.nextQuestId) continue;
+            if (!entry) continue;
 
-            const nextQuestId = entry.nextQuestId;
-            if (this.isQuestCompleted(nextQuestId)) continue;
-            if (!this.getSortedAvailableQuestIds().includes(nextQuestId)) continue;
+            const nextQuestIds = [
+                ...(entry.nextQuestIds ?? []),
+                ...(entry.nextQuestId ? [entry.nextQuestId] : [])
+            ];
 
-            this.setTargetedQuest(nextQuestId, false);
-            return;
+            for (const nextQuestId of nextQuestIds) {
+                if (this.isQuestCompleted(nextQuestId)) continue;
+                if (!this.getSortedAvailableQuestIds().includes(nextQuestId)) continue;
+
+                this.setTargetedQuest(nextQuestId, false);
+                return;
+            }
         }
+    }
+
+    private getQuestDependencyIds(quest: (typeof ADVANCEMENT_QUEST_CATALOG)[number]): string[] {
+        const dependencies = [
+            ...(quest.dependencyQuestIds ?? []),
+            ...(quest.dependencyQuestId ? [quest.dependencyQuestId] : [])
+        ];
+
+        return Array.from(new Set(
+            dependencies
+                .map((questId) => String(questId).trim())
+                .filter((questId) => questId.length > 0)
+        ));
+    }
+
+    private isQuestVisible(quest: (typeof ADVANCEMENT_QUEST_CATALOG)[number]): boolean {
+        const dependencies = this.getQuestDependencyIds(quest);
+        if (dependencies.length === 0) return true;
+        return dependencies.every((questId) => this.isQuestCompleted(questId));
+    }
+
+    private isQuestVisibleById(questId: string): boolean {
+        const quest = ADVANCEMENT_QUEST_CATALOG.find((entry) => entry.id === questId);
+        if (!quest) return false;
+        return this.isQuestVisible(quest);
     }
 
     private isAdvancementsResetState(state: IAdvancementsState): boolean {

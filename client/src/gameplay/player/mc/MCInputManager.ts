@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { MobileControls } from '../../ui/MobileControls';
 import type { InteractionManager } from '../../interaction/InteractionManager';
+import { InteractionType } from '../../interaction/InteractionManager';
 import { KeybindManager } from '../../input/KeybindManager';
 
 type MovementInput = {
@@ -79,6 +80,11 @@ export class MCInputManager {
 
         this.interactionManager.onInteractionChange((interaction) => {
             this.mobileControls?.setAvailableInteraction(interaction);
+            const fishermanInRange = interaction?.type === InteractionType.Talk && interaction.npcId === 'fisherman';
+            this.scene.registry.set('guideFishermanInRange', fishermanInRange);
+            if (fishermanInRange) {
+                window.dispatchEvent(new CustomEvent('guide:interaction:fisherman-in-range'));
+            }
         });
 
         this.mobileInteractListener = () => {

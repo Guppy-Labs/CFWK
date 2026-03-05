@@ -141,11 +141,17 @@ app.post("/api/instance/join", async (req, res) => {
             : '';
 
         let locationId = requestedLocationId;
+        let persistedSpawnX: number | undefined;
+        let persistedSpawnY: number | undefined;
 
         if (!locationId && req.user && (req.user as any)._id) {
-            const user = await User.findById((req.user as any)._id).select('lastLocationId');
+            const user = await User.findById((req.user as any)._id).select('lastLocationId lastPositionX lastPositionY');
             if (user?.lastLocationId) {
                 locationId = user.lastLocationId.trim().toLowerCase();
+                if (typeof (user as any).lastPositionX === 'number' && typeof (user as any).lastPositionY === 'number') {
+                    persistedSpawnX = (user as any).lastPositionX;
+                    persistedSpawnY = (user as any).lastPositionY;
+                }
             }
         }
 
@@ -155,6 +161,14 @@ app.post("/api/instance/join", async (req, res) => {
 
         if (!instanceManager.getLocationConfig(locationId)) {
             locationId = FALLBACK_LOCATION_ID;
+            persistedSpawnX = undefined;
+            persistedSpawnY = undefined;
+        }
+
+        const explicitRequestedLocation = requestedLocationId.length > 0;
+        if (explicitRequestedLocation) {
+            persistedSpawnX = undefined;
+            persistedSpawnY = undefined;
         }
 
         const instance = await instanceManager.getOrCreateInstance(locationId);
@@ -174,7 +188,10 @@ app.post("/api/instance/join", async (req, res) => {
                 mapFile: instance.mapFile,
                 roomName: instance.roomName,
                 currentPlayers: instance.currentPlayers,
-                maxPlayers: instance.maxPlayers
+                maxPlayers: instance.maxPlayers,
+                ...(typeof persistedSpawnX === 'number' && typeof persistedSpawnY === 'number'
+                    ? { spawnX: persistedSpawnX, spawnY: persistedSpawnY }
+                    : {})
             }
         });
     } catch (error) {

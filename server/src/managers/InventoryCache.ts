@@ -1,11 +1,12 @@
 import User from '../models/User';
-import { DEFAULT_INVENTORY_SLOTS, getItemDefinition } from '@cfwk/shared';
+import { DEFAULT_INVENTORY_SLOTS, DEFAULT_USABLE_EQUIP_SLOTS, getItemDefinition } from '@cfwk/shared';
 
 export type InventoryItem = { index: number; itemId: string | null; count: number };
 
 type CacheEntry = {
     items: InventoryItem[];
     equippedRodId: string | null;
+    equippedUsableIds: Array<string | null>;
     dirty: boolean;
     lastLoaded: number;
 };
@@ -28,7 +29,7 @@ export class InventoryCache {
         const existing = this.cache.get(userId);
         if (existing) return existing.items;
 
-        const user = await User.findById(userId).select('inventory equippedRodId');
+        const user = await User.findById(userId).select('inventory equippedRodId equippedUsableIds');
         if (!user) {
             throw new Error('User not found');
         }
@@ -39,6 +40,7 @@ export class InventoryCache {
         this.cache.set(userId, {
             items: [...items],
             equippedRodId: user.equippedRodId ?? null,
+            equippedUsableIds: this.normalizeEquippedUsables((user as any).equippedUsableIds),
             dirty: isLegacy,
             lastLoaded: Date.now()
         });
@@ -51,18 +53,20 @@ export class InventoryCache {
         this.cache.set(userId, {
             items: [...items],
             equippedRodId: null,
+            equippedUsableIds: this.createEmptyEquippedUsables(),
             dirty: false,
             lastLoaded: Date.now()
         });
         return items;
     }
 
-    async getInventoryState(userId: string): Promise<{ items: InventoryItem[]; equippedRodId: string | null }> {
+    async getInventoryState(userId: string): Promise<{ items: InventoryItem[]; equippedRodId: string | null; equippedUsableIds: Array<string | null> }> {
         const items = await this.getInventory(userId);
         const entry = this.cache.get(userId);
         return {
             items,
-            equippedRodId: entry?.equippedRodId ?? null
+            equippedRodId: entry?.equippedRodId ?? null,
+            equippedUsableIds: this.normalizeEquippedUsables(entry?.equippedUsableIds)
         };
     }
 
@@ -130,6 +134,7 @@ export class InventoryCache {
         this.cache.set(userId, {
             items: [...items],
             equippedRodId: existing?.equippedRodId ?? null,
+            equippedUsableIds: this.normalizeEquippedUsables(existing?.equippedUsableIds),
             dirty: true,
             lastLoaded: Date.now()
         });
@@ -146,9 +151,33 @@ export class InventoryCache {
         this.cache.set(userId, {
             items: this.createEmptySlots(DEFAULT_INVENTORY_SLOTS),
             equippedRodId,
+            equippedUsableIds: this.createEmptyEquippedUsables(),
             dirty: true,
             lastLoaded: Date.now()
         });
+    }
+
+    setEquippedUsables(userId: string, equippedUsableIds: Array<string | null>) {
+        const normalized = this.normalizeEquippedUsables(equippedUsableIds);
+        const existing = this.cache.get(userId);
+        if (existing) {
+            existing.equippedUsableIds = normalized;
+            existing.dirty = true;
+            return;
+        }
+
+        this.cache.set(userId, {
+            items: this.createEmptySlots(DEFAULT_INVENTORY_SLOTS),
+            equippedRodId: null,
+            equippedUsableIds: normalized,
+            dirty: true,
+            lastLoaded: Date.now()
+        });
+    }
+
+    getEquippedUsables(userId: string): Array<string | null> {
+        const existing = this.cache.get(userId);
+        return this.normalizeEquippedUsables(existing?.equippedUsableIds);
     }
 
     getEquippedRod(userId: string): string | null {
@@ -167,6 +196,7 @@ export class InventoryCache {
         this.cache.set(userId, {
             items: [...items],
             equippedRodId: null,
+            equippedUsableIds: this.createEmptyEquippedUsables(),
             dirty: true,
             lastLoaded: Date.now()
         });
@@ -184,7 +214,13 @@ export class InventoryCache {
             dirtyEntries.map(async ([userId, entry]) => {
                 await User.updateOne(
                     { _id: userId },
-                    { $set: { inventory: entry.items, equippedRodId: entry.equippedRodId ?? null } }
+                    {
+                        $set: {
+                            inventory: entry.items,
+                            equippedRodId: entry.equippedRodId ?? null,
+                            equippedUsableIds: this.normalizeEquippedUsables(entry.equippedUsableIds)
+                        }
+                    }
                 );
                 entry.dirty = false;
             })
@@ -247,6 +283,20 @@ export class InventoryCache {
 
     private createEmptySlots(count: number): InventoryItem[] {
         return Array.from({ length: count }, (_v, index) => ({ index, itemId: null, count: 0 }));
+    }
+
+    private createEmptyEquippedUsables(): Array<string | null> {
+        return Array.from({ length: DEFAULT_USABLE_EQUIP_SLOTS }, () => null);
+    }
+
+    private normalizeEquippedUsables(values?: Array<string | null>): Array<string | null> {
+        const next = this.createEmptyEquippedUsables();
+        if (!Array.isArray(values)) return next;
+        for (let i = 0; i < Math.min(values.length, DEFAULT_USABLE_EQUIP_SLOTS); i += 1) {
+            const value = values[i];
+            next[i] = typeof value === 'string' && value.trim().length > 0 ? value : null;
+        }
+        return next;
     }
 
     private getStackSize(itemId: string): number {
