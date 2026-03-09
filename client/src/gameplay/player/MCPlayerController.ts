@@ -45,6 +45,8 @@ export class MCPlayerController {
     private shadow?: PlayerShadow;
     private equippedRodId: string | null = null;
     private isFishing = false;
+    private fishingRestartBlockedUntil = 0;
+    private readonly fishingRestartBlockMs = 450;
     private onFishingStart?: (rodItemId: string) => void;
 
     private config: Required<Omit<MCPlayerControllerConfig, 'depthManager'>> & { depthManager?: DepthManager };
@@ -588,8 +590,11 @@ export class MCPlayerController {
         const dx = data.x - this.player.x;
         const dy = data.y - this.player.y;
         const error = Math.hypot(dx, dy);
+        const hardThreshold = Number.isFinite(data.hardThreshold)
+            ? Math.max(this.hardRubberbandThreshold, data.hardThreshold as number)
+            : this.hardRubberbandThreshold;
 
-        if (data.hardOverride || error >= this.hardRubberbandThreshold) {
+        if (data.hardOverride || error >= hardThreshold) {
             const toLocal = 1 / this.PHYSICS_FPS;
             this.player.setPosition(data.x, data.y);
             this.player.setVelocity(data.vx * toLocal, data.vy * toLocal);
@@ -782,6 +787,9 @@ export class MCPlayerController {
 
     setFishingActive(active: boolean) {
         this.isFishing = active;
+        if (!active) {
+            this.fishingRestartBlockedUntil = this.scene.time.now + this.fishingRestartBlockMs;
+        }
     }
 
     setOnFishingStart(callback?: (rodItemId: string) => void) {
@@ -798,13 +806,15 @@ export class MCPlayerController {
 
     private tryStartFishing() {
         if (!this.player || this.isFishing) return;
+        if (this.scene.time.now < this.fishingRestartBlockedUntil) return;
         const guiOpen = this.scene.registry.get('guiOpen') === true;
         const chatFocused = this.scene.registry.get('chatFocused') === true;
         const transitionBlocked = this.scene.registry.get('inputBlocked') === true;
+        const guideFishingTransitionLock = this.scene.registry.get('guideFishingTransitionLock') === true;
         const guideBlocked = this.scene.registry.get('guideBlockAll') === true;
         const guideAllowedActions = this.scene.registry.get('guideAllowedActions') as string[] | undefined;
         const guideAllowsFish = guideBlocked && Array.isArray(guideAllowedActions) && guideAllowedActions.includes('fish');
-        if (guiOpen || chatFocused || (transitionBlocked && !guideAllowsFish) || (guideBlocked && !guideAllowsFish)) return;
+        if (guiOpen || chatFocused || guideFishingTransitionLock || (transitionBlocked && !guideAllowsFish) || (guideBlocked && !guideAllowsFish)) return;
         const nearWater = this.scene.registry.get('nearWater') === true;
         if (!nearWater) return;
         if (!this.equippedRodId) return;

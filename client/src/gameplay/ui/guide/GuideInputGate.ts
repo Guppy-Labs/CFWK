@@ -27,6 +27,7 @@ export class GuideInputGate {
 
         this.keyHandler = (event: KeyboardEvent) => {
             if (!this.enabled) return;
+            if (this.scene.registry.get('dialogueActive') === true) return;
             if (this.isAllowedAction(event)) return;
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -35,6 +36,7 @@ export class GuideInputGate {
 
         this.pointerHandler = (event: MouseEvent | PointerEvent | TouchEvent) => {
             if (!this.enabled) return;
+            if (this.scene.registry.get('dialogueActive') === true) return;
             if (this.allowedPointerRect && this.isPointerInsideRect(event, this.allowedPointerRect)) {
                 return;
             }

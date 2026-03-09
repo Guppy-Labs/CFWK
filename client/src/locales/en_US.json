@@ -134,6 +134,9 @@
       "travellers_errand": {
         "name": "Traveller's Errand"
       },
+      "heed_the_warning": {
+        "name": "Heed the Warning"
+      },
       "anti_death_measures": {
         "name": "Anti-death Measures"
       },
@@ -164,6 +167,7 @@
         "nextLabel": "Next Objective",
         "fishCatch": "Catch a fish",
         "talkToNpc": "Talk to {name}",
+        "stayInRegion": "Stay in {region} for {seconds}s",
         "generic": "Complete the next task"
       },
       "status": {
@@ -177,6 +181,9 @@
       },
       "travellers_errand": {
         "description": "Talk to the Traveller, then report to the Guard."
+      },
+      "heed_the_warning": {
+        "description": "Talk to the Guard, survive for 60 seconds in the danger zone, then return to the Guard."
       },
       "anti_death_measures": {
         "description": "Talk to the Merchant, harvest yekberries, then return to the Merchant."
@@ -192,6 +199,8 @@
   "loader": {
     "authenticating": "Authenticating...",
     "initializingGame": "Initializing game...",
+    "downloadingGame": "Downloading Game...",
+    "updatingGame": "Updating Game...",
     "finishingUp": "Finishing Up...",
     "preparingWorld": "Preparing world...",
     "loadingWorld": "Loading world..."
@@ -342,6 +351,52 @@
       "guard": {
         "greeting": {
           "0": "Stay sharp. Anchor Hollow is peaceful, but peace is work."
+        },
+        "preUnlock": {
+          "0": "It's not safe out here... GET BACK TO TOWN!"
+        },
+        "bridgeBlocked": {
+          "0": "HOLD YOUR HORSES! Who said you could cross this bridge?"
+        },
+        "heed": {
+          "intro": {
+            "0": "WOAH! Where do you think you're going??",
+            "1": "Well, what do you think is over there? A fancy hotel? Look kid, you aren't ready for what's across this bridge",
+            "2": "NO YOU AREN'T!",
+            "3": "Okay fine. If you're really so tough, cross this bridge, and stay a while. Let's say... 60 seconds. Sound good?",
+            "4": "HA! Alright, good luck!",
+            "player": {
+              "0": "Yes I am.",
+              "1": "Yes I am.",
+              "2": "Sure!"
+            },
+            "choice": {
+              "prompt": "How should I answer?",
+              "exploring": "Uhhh... I'm just exploring I guess?"
+            }
+          },
+          "wait": {
+            "0": "Cross this bridge, survive 60 seconds in the danger zone, then report back to me."
+          },
+          "return": {
+            "0": "WHAT?? How did you survive that???",
+            "1": "Well, color me impressed. Not many in our town could survive out there...",
+            "2": "Tell you what, If you gear up right, and show me that you're ready, I'll help you learn how to fight these evil beasts.",
+            "3": "Don't worry, you'll know when you are ready. Until then, good luck.",
+            "player": {
+              "0": "I'm back!",
+              "1": "I kinda just ran around..."
+            },
+            "choice": {
+              "prompt": "How should I respond?",
+              "yay": "Yay!",
+              "hooray": "Hooray!",
+              "cool": "Cool."
+            }
+          },
+          "post": {
+            "0": "Come back when you are ready... you're not quite there yet."
+          }
         }
       },
       "fisherman": {

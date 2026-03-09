@@ -52,6 +52,7 @@ export class AINpcEntity {
         const textureKey = this.getTextureKey('idle');
 
         this.sprite = this.scene.add.sprite(config.state.x, config.state.y, textureKey, 0);
+        this.sprite.setScale(this.definition.renderScale ?? 1);
         this.applySpriteOrigin();
         this.sprite.setTint(config.state.tint || 0xffffff);
         config.lightingManager?.enableLightingOn(this.sprite);
@@ -161,11 +162,11 @@ export class AINpcEntity {
         };
     }
 
-    private getTextureKey(state: 'idle' | 'walk'): string {
+    private getTextureKey(state: 'idle' | 'walk' | 'attack' | 'death'): string {
         return `ai-npc-${this.definition.kind}-${state}-sheet`;
     }
 
-    private getAnimKey(state: 'idle' | 'walk', direction: number): string {
+    private getAnimKey(state: 'idle' | 'walk' | 'attack' | 'death', direction: number): string {
         return `ai-npc-${this.definition.kind}-${state}-d${direction}`;
     }
 
@@ -197,10 +198,19 @@ export class AINpcEntity {
         const speed = Math.hypot(movedX, movedY) / dtSec;
         const isMoving = speed > 0.35 || this.targetAnim === 'walk';
         const direction = ((Math.round(this.targetDirection) % 8) + 8) % 8;
-        const state: 'idle' | 'walk' = isMoving ? 'walk' : 'idle';
+        let state: 'idle' | 'walk' | 'attack' | 'death';
+        if (this.targetAnim === 'death') {
+            state = 'death';
+        } else if (this.targetAnim === 'attack') {
+            state = 'attack';
+        } else {
+            state = isMoving ? 'walk' : 'idle';
+        }
         const animKey = this.getAnimKey(state, direction);
 
-        const shouldMirror = direction === 5 || direction === 6 || direction === 7;
+        const shouldMirror = this.definition.directionalMode === 'horizontal-only'
+            ? (direction === 5 || direction === 6 || direction === 7)
+            : (direction === 5 || direction === 6 || direction === 7);
         this.sprite.setFlipX(shouldMirror);
 
         if (this.sprite.anims.currentAnim?.key !== animKey) {
@@ -220,7 +230,7 @@ export class AINpcEntity {
 
     private applySpriteOrigin() {
         const collidableHeight = Math.max(1, this.hitbox.collidableHeight || this.hitbox.height);
-        const frameHeight = Math.max(1, this.definition.frameHeight);
+        const frameHeight = Math.max(1, this.sprite.frame?.realHeight ?? this.definition.frameHeight);
         const originY = 1 - (collidableHeight / (2 * frameHeight));
         this.sprite.setOrigin(0.5, originY);
     }

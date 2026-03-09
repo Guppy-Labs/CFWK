@@ -4,14 +4,41 @@ import { InstanceManager } from '../managers/InstanceManager';
 import { InventoryCache } from '../managers/InventoryCache';
 import { GlimmerbowlCache } from '../managers/GlimmerbowlCache';
 import { PlayerStatsCache } from '../managers/PlayerStatsCache';
-import { DEFAULT_GUIDE_TUTORIAL_STATE, DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_STATS, DEFAULT_USER_ADVANCEMENTS, getItemDefinition } from '@cfwk/shared';
+import { DEFAULT_GUIDE_TUTORIAL_STATE, DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_HEARTS_STATE, DEFAULT_PLAYER_STATS, DEFAULT_USER_ADVANCEMENTS, getItemDefinition } from '@cfwk/shared';
 import { DEFAULT_FIRST_CONNECT_LOCATION_ID } from '../config/instance';
+
+export type CommandExecutionResult = {
+    success: boolean;
+    message: string;
+};
 
 function createEmptyInventorySlots() {
     return Array.from({ length: DEFAULT_INVENTORY_SLOTS }, (_v, index) => ({ index, itemId: null, count: 0 }));
 }
 
 export class CommandProcessor {
+    private static readonly failureMessagePatterns: RegExp[] = [
+        /^usage:/i,
+        /^unknown command\.?$/i,
+        /^you do not have permission/i,
+        /^cannot\s/i,
+        /^invalid\s/i,
+        /^count must\s/i,
+        /^user(?:\s+'.*')?\snot found\.?$/i,
+        /^unknown item\s/i,
+        /^item\s+.*\s+not found\.?$/i,
+        /^failed\s/i
+    ];
+
+    private static toExecutionResult(message: string): CommandExecutionResult {
+        const trimmed = (message || '').trim();
+        const success = !this.failureMessagePatterns.some((pattern) => pattern.test(trimmed));
+        return {
+            success,
+            message: trimmed
+        };
+    }
+
     // Basic duration parser (1d, 2h, 30m, 10s)
     static parseDuration(durationStr: string): number | null {
         const regex = /^(\d+)([dhms])$/;
@@ -35,43 +62,60 @@ export class CommandProcessor {
         args: string[], 
         issuerId: string, 
         issuerName: string
-    ): Promise<string> {
+    ): Promise<CommandExecutionResult> {
         // fetch issuer to check permissions
         const issuer = await User.findById(issuerId);
         if (!issuer || !issuer.permissions.includes('game.admin')) {
-            return "You do not have permission to use this command.";
+            return this.toExecutionResult("You do not have permission to use this command.");
         }
 
+        let message: string;
         switch (command.toLowerCase()) {
             case 'ban':
-                return await this.handleBan(args, issuerName);
+                message = await this.handleBan(args, issuerName);
+                break;
             case 'tempban':
-                return await this.handleTempBan(args, issuerName);
+                message = await this.handleTempBan(args, issuerName);
+                break;
             case 'mute':
-                return await this.handleMute(args, issuerName);
+                message = await this.handleMute(args, issuerName);
+                break;
             case 'tempmute':
-                return await this.handleTempMute(args, issuerName);
+                message = await this.handleTempMute(args, issuerName);
+                break;
             case 'unban':
-                return await this.handleUnban(args, issuerName);
+                message = await this.handleUnban(args, issuerName);
+                break;
             case 'unmute':
-                return await this.handleUnmute(args, issuerName);
+                message = await this.handleUnmute(args, issuerName);
+                break;
             case 'broadcast':
-                return this.handleBroadcast(args, issuerName);
+                message = this.handleBroadcast(args, issuerName);
+                break;
             case 'reboot':
-                return this.handleReboot(issuerName);
+                message = this.handleReboot(issuerName);
+                break;
             case 'give':
-                return await this.handleGive(args, issuerName);
+                message = await this.handleGive(args, issuerName);
+                break;
             case 'drop':
-                return await this.handleDrop(args, issuerName);
+                message = await this.handleDrop(args, issuerName);
+                break;
             case 'send':
-                return await this.handleSend(args, issuerName);
+                message = await this.handleSend(args, issuerName);
+                break;
             case 'clearprogress':
-                return await this.handleClearProgress(args);
+                message = await this.handleClearProgress(args);
+                break;
             case 'wipe':
-                return await this.handleWipe(args);
+                message = await this.handleWipe(args);
+                break;
             default:
-                return "Unknown command.";
+                message = "Unknown command.";
+                break;
         }
+
+        return this.toExecutionResult(message);
     }
 
     private static async getUserByUsername(username: string) {
@@ -381,6 +425,7 @@ export class CommandProcessor {
                         tutorial: { ...DEFAULT_GUIDE_TUTORIAL_STATE }
                     },
                     glimmerbowlUnlocked: false,
+                    hearts: { ...DEFAULT_PLAYER_HEARTS_STATE },
                     lastLocationId: DEFAULT_FIRST_CONNECT_LOCATION_ID,
                     lastPositionX: null,
                     lastPositionY: null

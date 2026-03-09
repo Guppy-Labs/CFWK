@@ -29,7 +29,7 @@ export class Toast {
         this.container.classList.add('bottom-mode');
     }
 
-    static show(message: string, type: 'error' | 'success' | 'info' = 'info', duration = 5000) {
+    static show(message: string, type: 'error' | 'success' | 'info' = 'info', duration = 5000): () => void {
         this.init();
         
         // Create wrapper for chains + toast
@@ -68,7 +68,8 @@ export class Toast {
             this.updateZIndices();
         }
 
-        setTimeout(() => {
+        const dismiss = () => {
+            if (!wrapper.isConnected) return;
             const currentHeight = wrapper.offsetHeight;
             const slideDistance = currentHeight + 40;
             wrapper.style.height = `${currentHeight}px`;
@@ -87,7 +88,101 @@ export class Toast {
                 wrapper.remove();
             };
             wrapper.addEventListener('transitionend', onDone);
-        }, duration);
+        };
+
+        if (duration > 0) {
+            setTimeout(() => {
+                dismiss();
+            }, duration);
+        }
+
+        return dismiss;
+    }
+
+    static showAction(
+        message: string,
+        actionLabel: string,
+        onAction: () => void | Promise<void>,
+        type: 'error' | 'success' | 'info' = 'info',
+        duration = 0
+    ): () => void {
+        this.init();
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'toast-wrapper bottom';
+
+        const leftChain = document.createElement('img');
+        leftChain.src = '/assets/ui/toast-chain.png';
+        leftChain.className = 'toast-chain toast-chain-left';
+        leftChain.alt = '';
+
+        const rightChain = document.createElement('img');
+        rightChain.src = '/assets/ui/toast-chain.png';
+        rightChain.className = 'toast-chain toast-chain-right';
+        rightChain.alt = '';
+
+        const toast = document.createElement('div');
+        toast.className = `mm-toast ${type}`;
+
+        const textSpan = document.createElement('span');
+        textSpan.innerText = message;
+
+        const actionButton = document.createElement('button');
+        actionButton.type = 'button';
+        actionButton.className = 'mm-toast-action';
+        actionButton.innerText = actionLabel;
+        actionButton.addEventListener('click', () => {
+            actionButton.disabled = true;
+            Promise.resolve(onAction())
+                .catch((error) => {
+                    console.error('[Toast] action failed:', error);
+                })
+                .finally(() => {
+                    actionButton.disabled = false;
+                });
+        });
+
+        toast.appendChild(textSpan);
+        toast.appendChild(actionButton);
+
+        wrapper.appendChild(leftChain);
+        wrapper.appendChild(rightChain);
+        wrapper.appendChild(toast);
+
+        this.container?.appendChild(wrapper);
+        if (this.container) {
+            this.enforceMaxToasts();
+            this.updateZIndices();
+        }
+
+        const dismiss = () => {
+            if (!wrapper.isConnected) return;
+            const currentHeight = wrapper.offsetHeight;
+            const slideDistance = currentHeight + 40;
+            wrapper.style.height = `${currentHeight}px`;
+            wrapper.style.transition = 'height 0.5s ease, margin 0.5s ease, transform 0.5s ease';
+
+            requestAnimationFrame(() => {
+                wrapper.style.height = '0px';
+                wrapper.style.marginBottom = '0px';
+                wrapper.style.marginTop = '0px';
+                wrapper.style.transform = `translateY(${slideDistance}px)`;
+            });
+
+            const onDone = () => {
+                wrapper.removeEventListener('transitionend', onDone);
+                wrapper.remove();
+            };
+            wrapper.addEventListener('transitionend', onDone);
+        };
+
+        if (duration > 0) {
+            setTimeout(() => {
+                dismiss();
+            }, duration);
+        }
+
+        return dismiss;
     }
     
     static error(message: string, duration = 6000) { 

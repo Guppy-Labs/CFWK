@@ -29,6 +29,8 @@ const mapsRewritePlugin = () => ({
         req.url = '/sent/index.html';
       } else if (shouldRewriteToForgot(req?.url)) {
         req.url = '/forgot/index.html';
+      } else if (shouldRewriteToLogs(req?.url)) {
+        req.url = '/logs/index.html';
       } else if (shouldRewriteToGame(req?.url)) {
         req.url = '/game/index.html';
       }
@@ -61,6 +63,8 @@ const mapsRewritePlugin = () => ({
         req.url = '/sent/index.html';
       } else if (shouldRewriteToForgot(req?.url)) {
         req.url = '/forgot/index.html';
+      } else if (shouldRewriteToLogs(req?.url)) {
+        req.url = '/logs/index.html';
       } else if (shouldRewriteToGame(req?.url)) {
         req.url = '/game/index.html';
       }
@@ -154,6 +158,13 @@ function shouldRewriteToForgot(url?: string) {
   return false;
 }
 
+function shouldRewriteToLogs(url?: string) {
+  if (!url) return false;
+  const pathname = url.split('?')[0];
+  if (pathname === '/logs' || pathname === '/logs/') return true;
+  return false;
+}
+
 function shouldRewriteToMaps(url?: string) {
   if (!url) return false;
   const pathname = url.split('?')[0];
@@ -213,6 +224,7 @@ export default defineConfig(({ mode }) => {
           reset: resolve(__dirname, 'reset/index.html'),
           sent: resolve(__dirname, 'sent/index.html'),
           forgot: resolve(__dirname, 'forgot/index.html'),
+          logs: resolve(__dirname, 'logs/index.html'),
           soon: resolve(__dirname, 'soon.html')
         }
       }

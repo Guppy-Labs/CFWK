@@ -67,6 +67,7 @@ export class EquipmentSlotsUI {
     private labelTextureKey?: string;
     private localeManager = LocaleManager.getInstance();
     private localeChangedHandler?: (event: Event) => void;
+    private readonly usableSlotTextureKey = 'ui-slot-base';
 
     private config: Required<EquipmentSlotsConfig>;
 
@@ -90,7 +91,7 @@ export class EquipmentSlotsUI {
         this.container.add(this.rodSlot);
 
         for (let index = 0; index < 4; index++) {
-            const usableSlot = this.scene.add.image(0, 0, 'ui-slot-empty').setOrigin(0.5, 0.5);
+            const usableSlot = this.scene.add.image(0, 0, this.usableSlotTextureKey).setOrigin(0.5, 0.5);
             this.usableSlots.push(usableSlot);
             this.container.add(usableSlot);
 
@@ -104,6 +105,7 @@ export class EquipmentSlotsUI {
         // Create the label texture
         this.labelTextureKey = this.createLabelTexture(this.localeManager.t('inventory.equipment.rod', undefined, 'Rod'));
         this.rodLabel = this.scene.add.image(0, 0, this.labelTextureKey).setOrigin(0.5, 0);
+        this.rodLabel.setVisible(false);
         this.container.add(this.rodLabel);
 
         this.localeChangedHandler = () => this.refreshLabel();
@@ -251,6 +253,7 @@ export class EquipmentSlotsUI {
     }
 
     private startDragVisual(pointer: Phaser.Input.Pointer) {
+        if (this.scene.registry.get('guideBlockAll') === true) return;
         if (this.dragGhost) return;
 
         if (this.dragSourceType === 'rod') {
@@ -401,14 +404,21 @@ export class EquipmentSlotsUI {
         this.usableSlots.forEach((slot, index) => {
             const localY = this.getUsableSlotLocalY(index);
             slot.setPosition(0, localY);
+            slot.setTexture(this.usableSlotTextureKey);
 
             const placeholder = this.usableSlotPlaceholders[index];
-            placeholder.setPosition(0, localY);
+            placeholder.setPosition(-this.config.slotSize / 2 + 2, localY - this.config.slotSize / 2 + 1);
+            placeholder.setAlpha(0.95);
+            placeholder.setVisible(true);
 
             const icon = this.usableIcons[index];
             if (icon) {
                 icon.setPosition(0, localY);
             }
+        });
+
+        this.usableSlotPlaceholders.forEach((placeholder) => {
+            this.container.bringToTop(placeholder);
         });
     }
 
@@ -525,8 +535,7 @@ export class EquipmentSlotsUI {
         }
 
         this.equippedUsables[slotIndex] = item;
-        this.usableSlots[slotIndex].setTexture('ui-slot-filled');
-        this.usableSlotPlaceholders[slotIndex].setVisible(false);
+        this.usableSlots[slotIndex].setTexture(this.usableSlotTextureKey);
 
         const icon = this.scene.add.image(0, 0, item.iconKey).setOrigin(0.5, 0.5);
         icon.setPosition(0, this.getUsableSlotLocalY(slotIndex));
@@ -535,6 +544,7 @@ export class EquipmentSlotsUI {
 
         if (this.hoverIndicator) this.container.bringToTop(this.hoverIndicator);
         if (this.selectedIndicator) this.container.bringToTop(this.selectedIndicator);
+        this.usableSlotPlaceholders.forEach((placeholder) => this.container.bringToTop(placeholder));
 
         if (fromPosition && this.lastLayout) {
             const { scale } = this.lastLayout;
@@ -563,8 +573,7 @@ export class EquipmentSlotsUI {
         if (!item) return null;
 
         this.equippedUsables[slotIndex] = null;
-        this.usableSlots[slotIndex].setTexture('ui-slot-empty');
-        this.usableSlotPlaceholders[slotIndex].setVisible(true);
+        this.usableSlots[slotIndex].setTexture(this.usableSlotTextureKey);
 
         const icon = this.usableIcons[slotIndex];
         this.usableIcons[slotIndex] = undefined;

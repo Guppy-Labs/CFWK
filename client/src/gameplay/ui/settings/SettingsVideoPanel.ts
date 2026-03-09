@@ -164,6 +164,7 @@ export class SettingsVideoPanel {
 
             const toggle = new SettingsToggle(this.scene, this.container, {
                 value: false,
+                allowToggleOff: false,
                 onChange: (value) => {
                     if (!value) return;
 

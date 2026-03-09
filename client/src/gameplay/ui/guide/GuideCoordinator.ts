@@ -31,6 +31,7 @@ export class GuideCoordinator {
     private readonly fishingReelPromptDelayMs = 900;
     private readonly fishingStopPromptDelayMs = 1500;
     private suppressFishingOverlayUntil = 0;
+    private fishingTransitionLockActive = false;
 
     private readonly rodGrantedHandler: (event: Event) => void;
     private readonly guiChangedHandler: (event: Event) => void;
@@ -51,6 +52,7 @@ export class GuideCoordinator {
 
     constructor(private readonly uiScene: UIScene, initial: IGuideTutorialState) {
         this.tutorial = { ...initial };
+        this.uiScene.registry.set('guideFishingTransitionLock', false);
 
         this.rodGrantedHandler = () => {
             if (this.tutorial.rodCompleted) return;
@@ -200,6 +202,7 @@ export class GuideCoordinator {
 
     update() {
         this.tryReconcileGuideProgressAfterReload();
+        this.syncFishingTransitionLock();
 
         if (!this.tutorial.interactionCompleted && this.tutorial.interactionStep === 'idle') {
             const fishermanInRange = this.uiScene.registry.get('guideFishermanInRange') === true;
@@ -294,6 +297,7 @@ export class GuideCoordinator {
         window.removeEventListener('guide:book:food-equipped', this.foodEquippedHandler as EventListener);
         window.removeEventListener('guide:interaction:fisherman-in-range', this.fishermanInRangeHandler as EventListener);
         window.removeEventListener('npc:interact', this.npcInteractHandler as EventListener);
+        this.setFishingTransitionLock(false);
     }
 
     private tryStartFishingGuide() {
@@ -561,6 +565,7 @@ export class GuideCoordinator {
         this.tutorial.updatedAt = Date.now();
         this.waitingForFishingGuide = false;
         this.fishingGuideEligibleAt = Date.now() + this.fishingGuideStartDelayMs;
+        this.syncFishingTransitionLock();
         this.networkManager.sendGuideTutorialUpdate({
             rodCompleted: true,
             rodStep: 'completed'
@@ -573,6 +578,7 @@ export class GuideCoordinator {
         this.tutorial.fishingCompleted = true;
         this.tutorial.fishingStep = 'completed';
         this.tutorial.forceSalmonCatch = false;
+        this.setFishingTransitionLock(false);
         this.tutorial.updatedAt = Date.now();
         this.networkManager.sendGuideTutorialUpdate({
             fishingCompleted: true,
@@ -628,6 +634,7 @@ export class GuideCoordinator {
 
     private setFishingStep(step: IGuideTutorialState['fishingStep'], extra?: Partial<IGuideTutorialState>) {
         this.tutorial.fishingStep = step;
+        this.syncFishingTransitionLock();
         this.tutorial.updatedAt = Date.now();
         if (extra?.forceSalmonCatch !== undefined) {
             this.tutorial.forceSalmonCatch = extra.forceSalmonCatch;
@@ -668,7 +675,7 @@ export class GuideCoordinator {
         if (!inventory) return;
 
         const guiOpen = this.uiScene.registry.get('guiOpen') === true;
-        const antiDeathQuest = advancements.questProgress?.anti_death_measures;
+        const antiDeathQuest = advancements?.questProgress?.anti_death_measures;
         const antiDeathCompleted = typeof antiDeathQuest?.completedAt === 'number' && antiDeathQuest.completedAt > 0;
         const hasGuideRod = inventory.slots?.some((slot) => slot.itemId === 'rickety_rod' && slot.count > 0) ?? false;
         const rodEquipped = Boolean(inventory.equippedRodId);
@@ -825,5 +832,18 @@ export class GuideCoordinator {
         this.suppressFishingOverlayUntil = Date.now() + durationMs;
         this.uiScene.clearGuideOverlay();
         this.uiScene.clearGuideInputGate();
+    }
+
+    private syncFishingTransitionLock() {
+        const shouldLock = this.tutorial.rodCompleted
+            && !this.tutorial.fishingCompleted
+            && this.tutorial.fishingStep === 'idle';
+        this.setFishingTransitionLock(shouldLock);
+    }
+
+    private setFishingTransitionLock(locked: boolean) {
+        if (this.fishingTransitionLockActive === locked) return;
+        this.fishingTransitionLockActive = locked;
+        this.uiScene.registry.set('guideFishingTransitionLock', locked);
     }
 }

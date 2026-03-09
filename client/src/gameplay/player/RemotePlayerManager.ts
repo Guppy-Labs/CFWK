@@ -25,6 +25,8 @@ export class RemotePlayerManager {
     private initialSyncComplete = false;
     private remoteCompositor: RemotePlayerCompositor;
     private lastAppearanceBySession: Map<string, string> = new Map();
+    private pendingAppearanceBySession: Map<string, string> = new Map();
+    private appearanceUpdateInProgress = new Set<string>();
 
     constructor(scene: Phaser.Scene, config: RemotePlayerManagerConfig) {
         this.scene = scene;
@@ -66,6 +68,11 @@ export class RemotePlayerManager {
                 if (appearance && appearance.trim() !== '') {
                     try {
                         await this.remoteCompositor.compositeForPlayer(sessionId, appearance);
+                        if (!room.state.players.has(sessionId)) {
+                            this.remoteCompositor.destroyForPlayer(sessionId);
+                            isCreatingPlayer = false;
+                            return;
+                        }
                         // Create a function to get animation keys for this player
                         animationKeyGetter = (anim: string, direction: string) => {
                             return this.remoteCompositor.getPlayerAnimationKey(sessionId, anim as any, direction as any);
@@ -141,19 +148,7 @@ export class RemotePlayerManager {
                     const lastAppearance = this.lastAppearanceBySession.get(sessionId) || '';
                     if (newAppearance !== lastAppearance) {
                         this.lastAppearanceBySession.set(sessionId, newAppearance);
-                        this.remoteCompositor
-                            .updateForPlayer(sessionId, newAppearance)
-                            .then(() => {
-                                const remote = this.remotePlayers.get(sessionId);
-                                if (remote) {
-                                    remote.setCustomAnimationKeyGetter((anim: any, direction: any) =>
-                                        this.remoteCompositor.getPlayerAnimationKey(sessionId, anim, direction)
-                                    );
-                                }
-                            })
-                            .catch(err => {
-                                console.warn(`[RemotePlayerManager] Failed to re-composite textures for ${sessionId}:`, err);
-                            });
+                        this.queueAppearanceUpdate(sessionId, newAppearance);
                     }
                 }
                 const remote = this.remotePlayers.get(sessionId);
@@ -176,6 +171,8 @@ export class RemotePlayerManager {
                     remotePlayer.destroy();
                     this.remotePlayers.delete(sessionId);
                     this.lastAppearanceBySession.delete(sessionId);
+                    this.pendingAppearanceBySession.delete(sessionId);
+                    this.appearanceUpdateInProgress.delete(sessionId);
                     // Clean up compositor textures for this player
                     this.remoteCompositor.destroyForPlayer(sessionId);
                 });
@@ -217,6 +214,50 @@ export class RemotePlayerManager {
     destroy() {
         this.remotePlayers.forEach(remote => remote.destroy());
         this.remotePlayers.clear();
+        this.pendingAppearanceBySession.clear();
+        this.appearanceUpdateInProgress.clear();
         this.remoteCompositor.destroy();
+    }
+
+    private queueAppearanceUpdate(sessionId: string, appearance: string) {
+        this.pendingAppearanceBySession.set(sessionId, appearance);
+        if (this.appearanceUpdateInProgress.has(sessionId)) return;
+        this.appearanceUpdateInProgress.add(sessionId);
+
+        const processUpdates = async () => {
+            try {
+                while (true) {
+                    const nextAppearance = this.pendingAppearanceBySession.get(sessionId);
+                    if (nextAppearance === undefined) break;
+                    this.pendingAppearanceBySession.delete(sessionId);
+
+                    await this.remoteCompositor.updateForPlayer(sessionId, nextAppearance);
+
+                    if (!this.remotePlayers.has(sessionId)) {
+                        this.remoteCompositor.destroyForPlayer(sessionId);
+                        continue;
+                    }
+
+                    const remote = this.remotePlayers.get(sessionId);
+                    const latestAppearance = this.lastAppearanceBySession.get(sessionId) || '';
+                    if (!remote || latestAppearance !== nextAppearance) {
+                        continue;
+                    }
+
+                    remote.setCustomAnimationKeyGetter((anim: any, direction: any) =>
+                        this.remoteCompositor.getPlayerAnimationKey(sessionId, anim, direction)
+                    );
+                }
+            } catch (err) {
+                console.warn(`[RemotePlayerManager] Failed to re-composite textures for ${sessionId}:`, err);
+            } finally {
+                this.appearanceUpdateInProgress.delete(sessionId);
+                if (this.pendingAppearanceBySession.has(sessionId)) {
+                    this.queueAppearanceUpdate(sessionId, this.pendingAppearanceBySession.get(sessionId) || '');
+                }
+            }
+        };
+
+        void processUpdates();
     }
 }

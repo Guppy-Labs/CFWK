@@ -20,6 +20,8 @@ import glimmerbowlRoutes from "./routes/glimmerbowl";
 import betaRoutes from "./routes/beta";
 import settingsRoutes from "./routes/settings";
 import statsRoutes from "./routes/stats";
+import assetsRoutes from "./routes/assets";
+import logsRoutes from "./routes/logs";
 import apiRoutes from "./routes";
 import stripeRoutes, { stripeWebhookHandler } from "./routes/stripe";
 import initPassport from "./config/passport";
@@ -28,6 +30,8 @@ import { InventoryCache } from "./managers/InventoryCache";
 import { GlimmerbowlCache } from "./managers/GlimmerbowlCache";
 import { PlayerStatsCache } from "./managers/PlayerStatsCache";
 import { startBetaCampaignMonitor } from "./utils/betaCampaignMonitor";
+import { ensureGremlinTrimmedSpritesOnStart } from "./utils/ensureGremlinTrimmedSprites";
+import { refreshGremlinHitboxFromTrimMeta } from "./ai/registry";
 import User from "./models/User";
 import { DEFAULT_FIRST_CONNECT_LOCATION_ID, FALLBACK_LOCATION_ID } from "./config/instance";
 
@@ -100,7 +104,10 @@ app.use("/api/glimmerbowl", glimmerbowlRoutes);
 app.use("/api/beta", betaRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/stats", statsRoutes);
+app.use("/api/assets", assetsRoutes);
 app.use("/api/stripe", stripeRoutes);
+app.use("/api/logs", logsRoutes);
+app.use("/logs", logsRoutes);
 
 // MongoDB connection
 mongoose.connect(mongoURI)
@@ -207,8 +214,15 @@ app.use("/colyseus", monitor());
 
 const publicDomain = process.env.PUBLIC_DOMAIN || 'localhost';
 
-gameServer.listen(port);
-console.log(`Listening on ws://${publicDomain}:${port}`);
+void ensureGremlinTrimmedSpritesOnStart()
+    .catch((error) => {
+        console.error('[GremlinTrim] Startup generation failed:', error);
+    })
+    .finally(() => {
+        refreshGremlinHitboxFromTrimMeta();
+        gameServer.listen(port);
+        console.log(`Listening on ws://${publicDomain}:${port}`);
+    });
 
 let isShuttingDown = false;
 const shutdown = async (signal: string) => {

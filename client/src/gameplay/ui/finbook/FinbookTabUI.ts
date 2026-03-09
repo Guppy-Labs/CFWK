@@ -101,10 +101,11 @@ export class FinbookTabUI {
             const isResetState = this.isAdvancementsResetState(this.advancementsState);
             if (isResetState) {
                 this.resetSeenQuestState();
+                this.setTargetedQuest(null, false);
             }
             this.reconcileTargetedQuest();
             if (isResetState) {
-                this.autoTrackFirstQuest(true);
+                this.selectTopQuest();
             } else {
                 this.autoTargetNextQuestAfterCompletion(previousState, targetedBeforeUpdate);
                 this.autoTrackFirstQuest(false);
@@ -1112,6 +1113,17 @@ export class FinbookTabUI {
         if (objective.kind === 'talk-to-npc' && objective.npcId) {
             const npcName = this.localeManager.t(`npc.${objective.npcId}.name`, undefined, objective.npcId);
             return this.t('finbook.quest.objective.talkToNpc', `Talk to ${npcName}`, { name: npcName });
+        }
+
+        if (objective.kind === 'stay-in-region' && objective.regionName) {
+            const seconds = Number.isFinite(objective.durationMs)
+                ? Math.max(1, Math.round((objective.durationMs as number) / 1000))
+                : 60;
+            return this.t(
+                'finbook.quest.objective.stayInRegion',
+                `Stay in ${objective.regionName} for ${seconds}s`,
+                { region: objective.regionName, seconds }
+            );
         }
 
         return this.t('finbook.quest.objective.generic', 'Complete the next task');

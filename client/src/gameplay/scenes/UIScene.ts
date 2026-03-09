@@ -52,95 +52,16 @@ export class UIScene extends Phaser.Scene {
     private damageBorderGlow?: Phaser.GameObjects.Graphics;
     private damageBorderTween?: Phaser.Tweens.Tween;
     private lastKnownHearts = 9;
+    private hasReceivedHeartsSnapshot = false;
+    private dangerCountdownText?: Phaser.GameObjects.Text;
+    private dangerCountdownRegistryHandler?: (_parent: any, value: string | null) => void;
 
     constructor() {
         super({ key: 'UIScene' });
     }
 
     preload() {
-        this.load.image('ui-book-cover', '/ui/BookCover01a.png');
-        this.load.image('ui-book-page-left', '/ui/BookPageL01a.png');
-        this.load.image('ui-book-page-right', '/ui/BookPageR01a.png');
-        this.load.image('ui-tab-active', '/ui/Marker01a.png');
-        this.load.image('ui-tab-inactive', '/ui/Marker01b.png');
-        this.load.image('ui-group-button-selected', '/ui/Button08a.png');
-        this.load.image('ui-group-button-unselected', '/ui/Button08b.png');
-        this.load.image('ui-section-icon-all', '/ui/sections/IconAll.png');
-        this.load.image('ui-section-icon-all-sel', '/ui/sections/IconAllSel.png');
-        this.load.image('ui-section-icon-gear', '/ui/sections/IconGear.png');
-        this.load.image('ui-section-icon-gear-sel', '/ui/sections/IconGearSel.png');
-        this.load.image('ui-section-icon-tools', '/ui/sections/IconTools.png');
-        this.load.image('ui-section-icon-tools-sel', '/ui/sections/IconToolsSel.png');
-        this.load.image('ui-section-icon-fishing', '/ui/sections/IconFishing.png');
-        this.load.image('ui-section-icon-fishing-sel', '/ui/sections/IconFishingSel.png');
-        this.load.image('ui-section-icon-food', '/ui/sections/IconFood.png');
-        this.load.image('ui-section-icon-food-sel', '/ui/sections/IconFoodSel.png');
-        this.load.image('ui-group-icon-loot-active', '/ui/IconLoot01b.png');
-        this.load.image('ui-group-icon-loot-inactive', '/ui/IconLoot01a.png');
-        this.load.spritesheet('ui-glimmerbowl', '/ui/special/Glimmerbowl.png', {
-            frameWidth: 32,
-            frameHeight: 32
-        });
-        this.load.image('ui-item-info-frame', '/ui/Frame07a.png');
-        this.load.image('ui-afk-frame', '/ui/Frame09a.png');
-        this.load.image('ui-item-info-divider', '/ui/Line03a.png');
-        this.load.image('ui-slot-base', '/ui/Slot01a.png');
-        this.load.image('ui-slot-extended', '/ui/Slot01e.png');
-        this.load.image('ui-slot-empty', '/ui/Slot01g.png');
-        this.load.image('ui-slot-filled', '/ui/Slot01b.png');
-        this.load.image('ui-slot-select-1', '/ui/select/sel1.png');
-        this.load.image('ui-slot-select-2', '/ui/select/sel2.png');
-        this.load.image('ui-slot-select-3', '/ui/select/sel3.png');
-        this.load.image('ui-slot-select-4', '/ui/select/sel4.png');
-        this.load.image('ui-scrollbar-track', '/ui/Bar07a.png');
-        this.load.image('ui-scrollbar-thumb', '/ui/IconHandle03a.png');
-        this.load.image('ui-slider-track', '/ui/Bar01a.png');
-        this.load.image('ui-slider-fill', '/ui/Fill01a.png');
-        this.load.image('ui-slider-handle', '/ui/IconHandle02a.png');
-        this.load.image('ui-toggle-off', '/ui/Toggle07a.png');
-        this.load.image('ui-toggle-on', '/ui/Toggle07b.png');
-        this.load.image('ui-hud-slot', '/ui/Slot02e.png');
-        this.load.image('ui-hud-slot-filled', '/ui/Slot02b.png');
-        this.load.image('ui-hud-heart', '/ui/IconHealth01a.png');
-        this.load.image('ui-hud-stamina-bg', '/ui/Bar04a.png');
-        this.load.image('ui-hud-stamina-fill', '/ui/Fill02a.png');
-        this.load.image('ui-hud-key-r', '/ui/keys/R.png');
-        this.load.image('ui-hud-key-e', '/ui/keys/E.png');
-        this.load.image('ui-hud-key-f', '/ui/keys/F.png');
-        this.load.image('ui-backpack', '/ui/Backpack01a.png');
-        this.load.image('ui-interact-chat', '/ui/InteractChat01a.png');
-        this.load.image('ui-interact-blank', '/ui/InteractBlank01a.png');
-        this.load.image('ui-menu', '/ui/Menu01a.png');
-        this.load.image('ui-fullscreen', '/ui/Fullscreen01a.png');
-        this.load.image('ui-exit-fullscreen', '/ui/ExitFullscreen01a.png');
-        this.load.image('ui-font-ascii', '/assets/font/ascii.png');
-        this.load.image('ui-font-accented', '/assets/font/accented.png');
-        this.load.image('ui-font-nonlatin-european', '/assets/font/nonlatin_european.png');
-        this.load.json('ui-font-map', '/assets/font/map.json');
-        this.load.image('ui-cursor-default', '/ui/Cursor03b.png');
-        this.load.image('ui-cursor-hover', '/ui/Cursor03c.png');
-        this.load.image('ui-dialogue-cursor', '/ui/Cursor03a.png');
-        this.load.image('ui-dialogue-content', '/ui/dialogue/content.png');
-        this.load.image('ui-dialogue-name', '/ui/dialogue/name.png');
-        this.load.image('ui-dialogue-option', '/ui/Frame08a.png');
-        this.load.image('dialogue-char-test-angry', '/ui/dialogue/chars/test/angry.png');
-        this.load.image('dialogue-char-test-disgust', '/ui/dialogue/chars/test/disgust.png');
-        this.load.image('dialogue-char-test-fear', '/ui/dialogue/chars/test/fear.png');
-        this.load.image('dialogue-char-test-happy', '/ui/dialogue/chars/test/happy.png');
-        this.load.image('dialogue-char-test-sad', '/ui/dialogue/chars/test/sad.png');
-        this.load.image('dialogue-char-test-surprise', '/ui/dialogue/chars/test/surprise.png');
-        this.load.image('dialogue-char-mc-angry', '/ui/dialogue/chars/mc/angry.png');
-        this.load.image('dialogue-char-mc-disgust', '/ui/dialogue/chars/mc/disgust.png');
-        this.load.image('dialogue-char-mc-happy', '/ui/dialogue/chars/mc/happy.png');
-        this.load.image('dialogue-char-mc-sad', '/ui/dialogue/chars/mc/sad.png');
-        this.load.image('dialogue-char-mc-surprise', '/ui/dialogue/chars/mc/surprise.png');
-
-        // Headbar textures
-        this.load.image('ui-headbar-banner', '/ui/Banner01b.png');
-        this.load.image('ui-season-winter', '/ui/seasons/winter.png');
-        this.load.image('ui-season-spring', '/ui/seasons/spring.png');
-        this.load.image('ui-season-summer', '/ui/seasons/summer.png');
-        this.load.image('ui-season-autumn', '/ui/seasons/autumn.png');
+        this.load.pack('ui-core-pack', '/packs/ui-core.pack.json');
 
         ITEM_DEFINITIONS.forEach((item) => {
             const imagePath = getItemImagePath(item.id);
@@ -153,10 +74,37 @@ export class UIScene extends Phaser.Scene {
     create() {
         this.preloadItemIconTextures();
         this.setupCustomCursor();
+        this.registry.set('dialogueActive', false);
         this.playerHud = new PlayerHud(this);
         this.chat = new Chat(this);
         this.bookUI = new BookUI(this);
         this.headbarUI = new HeadbarUI(this);
+        this.headbarUI.setOnAdvancementAlertDisplayed((type) => {
+            const audio = this.getAudioManager();
+            if (!audio) return;
+            if (type === 'quest-started') {
+                audio.playQuestStarted?.();
+            } else if (type === 'quest-objective') {
+                audio.playQuestObjective?.();
+            } else if (type === 'quest-completed') {
+                audio.playQuestCompleted?.();
+            } else if (type === 'achievement-unlocked') {
+                audio.playAchievementUnlocked?.();
+            } else if (type === 'area-discovered') {
+                audio.playLocationDiscovered?.();
+            }
+        });
+        this.dangerCountdownText = this.add.text(Math.floor(this.scale.width / 2), 112, '', {
+            fontFamily: 'Minecraft, monospace',
+            fontSize: '28px',
+            color: '#f2e9dd',
+            stroke: '#2a1f12',
+            strokeThickness: 4
+        })
+            .setOrigin(0.5, 0.5)
+            .setScrollFactor(0)
+            .setDepth(1005)
+            .setVisible(false);
         this.inventoryChangeMonitor = new InventoryChangeMonitor(this);
         this.subtitleStack = new SubtitleStack(this);
         this.dialogueUI = new DialogueUI(this);
@@ -267,6 +215,7 @@ export class UIScene extends Phaser.Scene {
             if (focused) markActivity();
             // Notify GameScene that chat is focused/unfocused
             this.registry.set('chatFocused', focused);
+            this.keybindManager.clearPressedActions();
             this.networkManager.sendChatFocus(focused);
         });
 
@@ -291,9 +240,11 @@ export class UIScene extends Phaser.Scene {
         if (typeof currentHearts === 'number' && typeof maxHearts === 'number') {
             this.playerHud.setHearts(currentHearts, maxHearts);
             this.lastKnownHearts = Math.max(0, Math.floor(currentHearts));
+            this.hasReceivedHeartsSnapshot = true;
         } else {
             this.playerHud.setHearts(9, 9);
             this.lastKnownHearts = 9;
+            this.hasReceivedHeartsSnapshot = false;
         }
 
         const currentPlayers = this.registry.get('tablistPlayers') as TabListEntry[] | undefined;
@@ -306,6 +257,21 @@ export class UIScene extends Phaser.Scene {
                 this.headbarUI.setPlayers(value);
             }
         });
+
+        this.dangerCountdownRegistryHandler = (_parent: any, value: string | null) => {
+            if (!this.dangerCountdownText) return;
+            const text = typeof value === 'string' ? value.trim() : '';
+            if (!text) {
+                this.dangerCountdownText.setVisible(false);
+                return;
+            }
+            this.dangerCountdownText.setText(text);
+            this.dangerCountdownText.setVisible(true);
+        };
+        this.registry.events.on('changedata-dangerZoneCountdown', this.dangerCountdownRegistryHandler);
+
+        const initialDangerCountdown = this.registry.get('dangerZoneCountdown') as string | null | undefined;
+        this.dangerCountdownRegistryHandler(null as any, initialDangerCountdown ?? null);
 
         // Intercept Tab at the window level to prevent default focus behavior
         this.tabKeyDownHandler = (event: KeyboardEvent) => {
@@ -334,6 +300,9 @@ export class UIScene extends Phaser.Scene {
         this.chatKeyHandler = (event: KeyboardEvent) => {
             if (this.registry.get('inputBlocked') === true) return;
             if (this.registry.get('guiOpen') === true) return;
+            if (this.chat?.isChatFocused()) {
+                this.keybindManager.clearPressedActions();
+            }
             // Let the chat handle all keys when focused, or open keys when not
             if (this.chat?.handleKeyDown(event)) {
                 markActivity();
@@ -461,6 +430,10 @@ export class UIScene extends Phaser.Scene {
             if (this.nearWaterHandler) {
                 this.registry.events.off('changedata-nearWater', this.nearWaterHandler);
             }
+            if (this.dangerCountdownRegistryHandler) {
+                this.registry.events.off('changedata-dangerZoneCountdown', this.dangerCountdownRegistryHandler);
+                this.dangerCountdownRegistryHandler = undefined;
+            }
             if (this.subtitleEventHandler) {
                 window.removeEventListener('audio:subtitle', this.subtitleEventHandler as EventListener);
             }
@@ -485,6 +458,8 @@ export class UIScene extends Phaser.Scene {
             this.guideOverlay?.destroy();
             this.damageBorderTween?.stop();
             this.damageBorderGlow?.destroy();
+            this.dangerCountdownText?.destroy();
+            this.dangerCountdownText = undefined;
             this.chat?.destroy();
             this.bookUI?.destroy();
             this.headbarUI?.destroy();
@@ -522,6 +497,7 @@ export class UIScene extends Phaser.Scene {
     setDialogueActive(active: boolean) {
         if (this.dialogueActive === active) return;
         this.dialogueActive = active;
+        this.registry.set('dialogueActive', active);
 
         if (active) {
             this.headbarUI?.hideTabList();
@@ -556,6 +532,9 @@ export class UIScene extends Phaser.Scene {
         allowedPointerRect: Phaser.Geom.Rectangle | null;
         allowedUsableSlotIndex?: number | null;
     }) {
+        if (this.chat?.isChatFocused()) {
+            this.chat.blur();
+        }
         this.guideInputGate?.apply(config);
     }
 
@@ -608,7 +587,7 @@ export class UIScene extends Phaser.Scene {
 
     triggerDamageFeedback(durationMs = 350) {
         const gameScene = this.scene.isActive('GameScene') ? this.scene.get('GameScene') as Phaser.Scene : null;
-        gameScene?.cameras?.main?.shake(durationMs, 0.008, true);
+        gameScene?.cameras?.main?.shake(durationMs, 0.0035, true);
 
         if (!this.damageBorderGlow) return;
         this.redrawDamageBorderGlow();
@@ -745,6 +724,7 @@ export class UIScene extends Phaser.Scene {
         this.bookUI?.layout();
         this.chat?.refreshLayout();
         this.headbarUI?.layout();
+        this.dangerCountdownText?.setPosition(Math.floor(this.scale.width / 2), 112);
         this.playerHud?.layout();
         this.inventoryChangeMonitor?.layout();
         this.subtitleStack?.layout();
@@ -784,34 +764,23 @@ export class UIScene extends Phaser.Scene {
         room.onMessage('advancement:alert', (data: IAdvancementAlertMessage) => {
             if (!this.headbarUI) return;
             this.headbarUI.enqueueAdvancementAlert(data);
-            const audio = this.getAudioManager();
-            if (audio) {
-                if (data.type === 'quest-started') {
-                    audio.playQuestStarted?.();
-                } else if (data.type === 'quest-objective') {
-                    audio.playQuestObjective?.();
-                } else if (data.type === 'quest-completed') {
-                    audio.playQuestCompleted?.();
-                } else if (data.type === 'achievement-unlocked') {
-                    audio.playAchievementUnlocked?.();
-                } else if (data.type === 'area-discovered') {
-                    audio.playLocationDiscovered?.();
-                }
-            }
             this.networkManager.requestAdvancementsState();
         });
 
         room.onMessage('player:hearts', (data: { currentHearts?: number; maxHearts?: number }) => {
             const currentHearts = typeof data?.currentHearts === 'number' ? data.currentHearts : 9;
             const maxHearts = typeof data?.maxHearts === 'number' ? data.maxHearts : 9;
-            if (currentHearts < this.lastKnownHearts) {
+            if (this.hasReceivedHeartsSnapshot && currentHearts < this.lastKnownHearts) {
                 this.triggerDamageFeedback();
             }
+            this.hasReceivedHeartsSnapshot = true;
             this.lastKnownHearts = Math.max(0, Math.floor(currentHearts));
             this.registry.set('playerHeartsCurrent', currentHearts);
             this.registry.set('playerHeartsMax', maxHearts);
             this.playerHud?.setHearts(currentHearts, maxHearts);
         });
+
+        room.send('player:hearts:request', {});
     }
 
     update(_time: number, delta: number) {
@@ -831,6 +800,10 @@ export class UIScene extends Phaser.Scene {
 
         if (this.headbarUI) {
             this.headbarUI.update();
+        }
+
+        if (this.dangerCountdownText?.visible) {
+            this.dangerCountdownText.setPosition(Math.floor(this.scale.width / 2), 112);
         }
     }
 

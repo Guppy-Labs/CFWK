@@ -54,6 +54,7 @@ export interface ServerMovementReconcile {
   authority: MovementAuthorityMode;
   hardOverride: boolean;
   errorDistance: number;
+  hardThreshold?: number;
   reason?: string;
 }
 
@@ -79,9 +80,9 @@ export const SOFT_COLLISION_FORCE = {
   epsilon: 0.0001
 } as const;
 
-export type AINpcAnim = 'idle' | 'walk';
+export type AINpcAnim = 'idle' | 'walk' | 'attack' | 'death';
 
-export type AINpcKind = 'evil_tim';
+export type AINpcKind = 'evil_tim' | 'gremlin';
 
 export type AINpcControllerId = 'general-enemy';
 
@@ -104,6 +105,8 @@ export interface IAiNpcState {
   anim: AINpcAnim;
   tint: number;
   hitbox: IAiNpcHitbox;
+  currentHealth: number;
+  maxHealth: number;
   pathDebug?: string;
 }
 
@@ -115,6 +118,9 @@ export interface IGeneralEnemyControllerConfig {
   idleMoveRangeMaxMeters: number;
   chaseRangeMeters: number;
   pathRecomputeFrequencyTicks: number;
+  attackCooldownMs: number;
+  meleeRangePx: number;
+  meleeDamageHearts: number;
 }
 
 export const DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG: IGeneralEnemyControllerConfig = {
@@ -124,7 +130,10 @@ export const DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG: IGeneralEnemyControllerCon
   idleMoveRangeMinMeters: 2,
   idleMoveRangeMaxMeters: 4,
   chaseRangeMeters: 20,
-  pathRecomputeFrequencyTicks: 5
+  pathRecomputeFrequencyTicks: 5,
+  attackCooldownMs: 6000,
+  meleeRangePx: 16,
+  meleeDamageHearts: 1
 };
 
 export type PlayerAnim = 'idle' | 'walk' | 'run' | 'cast' | 'reel';
@@ -505,13 +514,16 @@ export type IQuestCatalogEntry = {
   objective?: IQuestObjectiveEntry;
 };
 
-export type QuestObjectiveKind = 'fish-catch' | 'talk-to-npc' | 'harvest-interactive';
+export type QuestObjectiveKind = 'fish-catch' | 'talk-to-npc' | 'harvest-interactive' | 'stay-in-region';
 
 export type IQuestObjectiveEntry = {
   kind: QuestObjectiveKind;
   npcId?: string;
   componentId?: string;
   mapObjectId?: number;
+  regionName?: string;
+  durationMs?: number;
+  resetOnExit?: boolean;
 };
 
 export type IAchievementCatalogEntry = {
@@ -533,7 +545,7 @@ export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
   {
     id: 'first_catch',
     dependencyQuestId: null,
-    nextQuestIds: ['travellers_errand', 'anti_death_measures'],
+    nextQuestIds: ['heed_the_warning', 'anti_death_measures'],
     startObjective: { kind: 'talk-to-npc', npcId: 'fisherman' },
     objectives: [
       { kind: 'fish-catch' },
@@ -542,14 +554,15 @@ export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
     objective: { kind: 'fish-catch' }
   },
   {
-    id: 'travellers_errand',
+    id: 'heed_the_warning',
     dependencyQuestId: 'first_catch',
     dependencyQuestIds: ['first_catch'],
-    startObjective: { kind: 'talk-to-npc', npcId: 'traveller' },
+    startObjective: { kind: 'talk-to-npc', npcId: 'guard' },
     objectives: [
+      { kind: 'stay-in-region', regionName: 'Danger', durationMs: 60_000, resetOnExit: true },
       { kind: 'talk-to-npc', npcId: 'guard' }
     ],
-    objective: { kind: 'talk-to-npc', npcId: 'guard' }
+    objective: { kind: 'stay-in-region', regionName: 'Danger', durationMs: 60_000, resetOnExit: true }
   },
   {
     id: 'anti_death_measures',
@@ -565,7 +578,7 @@ export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
   {
     id: 'placeholder_main_quest_3',
     dependencyQuestId: null,
-    dependencyQuestIds: ['travellers_errand', 'anti_death_measures'],
+    dependencyQuestIds: ['heed_the_warning', 'anti_death_measures'],
     startObjective: { kind: 'talk-to-npc', npcId: 'wiseman' },
     objectives: [
       { kind: 'talk-to-npc', npcId: 'wiseman' }

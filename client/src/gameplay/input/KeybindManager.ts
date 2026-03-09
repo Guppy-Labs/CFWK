@@ -100,6 +100,19 @@ export class KeybindManager {
         return this.formatCode(this.bindings[action]);
     }
 
+    clearPressedActions(actions?: ControlActionKey[]) {
+        if (!actions || actions.length === 0) {
+            this.pressedCodes.clear();
+            return;
+        }
+
+        for (const action of actions) {
+            const code = this.bindings[action];
+            if (!code) continue;
+            this.pressedCodes.delete(code);
+        }
+    }
+
     formatCode(code: string | null): string {
         if (!code) return 'Unbound';
 
@@ -255,6 +268,10 @@ export class KeybindManager {
         const code = this.normalizeCode(event.code);
         if (!code) return;
 
+        if (code === 'Tab' && this.isCodeBoundToAnyAction(code) && !this.isEditableTarget(event.target)) {
+            event.preventDefault();
+        }
+
         if (!this.downCodes.has(code) && !event.repeat) {
             this.pressedCodes.add(code);
         }
@@ -278,4 +295,20 @@ export class KeybindManager {
             this.clearRuntimeState();
         }
     };
+
+    private isCodeBoundToAnyAction(code: string): boolean {
+        for (const action of CONTROL_ACTION_KEYS) {
+            if (this.bindings[action] === code) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private isEditableTarget(target: EventTarget | null): boolean {
+        if (!(target instanceof HTMLElement)) return false;
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+        return target.isContentEditable;
+    }
 }

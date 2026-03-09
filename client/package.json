@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "vite --host",
-    "build": "tsc && vite build",
+    "generate:asset-manifest": "node ../tools/generate-game-assets-manifest.js",
+    "build": "npm run generate:asset-manifest && tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

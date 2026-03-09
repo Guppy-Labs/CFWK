@@ -80,6 +80,22 @@
 .mm-toast.success { border-left-color: #4caf50; }
 .mm-toast.info { border-left-color: var(--mm-primary, #ff66aa); }
 
+.mm-toast-action {
+    margin-left: 12px;
+    border: 1px solid var(--mm-border, #333333);
+    background: var(--mm-bg-main, #141414);
+    color: var(--mm-text-main, #e0e0e0);
+    font-family: 'Minecraft', sans-serif;
+    font-size: 12px;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
+.mm-toast-action:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
 @keyframes toast-drop {
     0% { transform: translateY(-100px); opacity: 0; }
     50% { opacity: 1; }

@@ -118,6 +118,24 @@ export function setLoaderText(text: string) {
     if (loaderText) loaderText.textContent = text;
 }
 
+export function setLoaderProgress(value: number) {
+    const clamped = Math.max(0, Math.min(1, value));
+    const fill = document.getElementById('loader-progress-fill');
+    const percent = document.getElementById('loader-progress-percent');
+    if (fill) {
+        (fill as HTMLDivElement).style.width = `${Math.round(clamped * 100)}%`;
+    }
+    if (percent) {
+        percent.textContent = `${Math.round(clamped * 100)}%`;
+    }
+}
+
+export function setLoaderProgressVisible(visible: boolean) {
+    const progress = document.getElementById('loader-progress');
+    if (!progress) return;
+    progress.style.display = visible ? 'flex' : 'none';
+}
+
 let gameInstance: Phaser.Game | undefined;
 
 // Store user data globally for scenes to access

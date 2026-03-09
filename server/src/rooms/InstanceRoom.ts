@@ -2,7 +2,7 @@ import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
 import fs from "fs";
 import path from "path";
-import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX, IAdvancementAlertMessage, IGuideTutorialState, DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_HEARTS_STATE, IPlayerHeartsState, isEquippableUsableItem } from "@cfwk/shared";
+import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, AINpcKind, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX, IAdvancementAlertMessage, IAdvancementsState, IGuideTutorialState, DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_HEARTS_STATE, IPlayerHeartsState, isEquippableUsableItem } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { GlimmerbowlCache } from "../managers/GlimmerbowlCache";
@@ -14,6 +14,7 @@ import { AI_METERS_TO_PIXELS, AI_NPC_DEFINITIONS, getAiControllerById } from "..
 import { ServerMapNavService } from "../ai/ServerMapNavService";
 import { AiNpcRuntimeState } from "../ai/types";
 import { AdvancementsManager } from "../managers/AdvancementsManager";
+import { CommandAuditLogger } from "../utils/CommandAuditLogger";
 
 /**
  * Player state for instance rooms
@@ -67,6 +68,8 @@ export class InstanceAiNpcSchema extends Schema {
     @type("number") direction: number = 0;
     @type("string") anim: AINpcAnim = 'idle';
     @type("number") tint: number = 0xffffff;
+        @type("number") currentHealth: number = 1;
+        @type("number") maxHealth: number = 1;
     @type("string") pathDebug: string = "";
     @type(AiNpcHitboxSchema) hitbox = new AiNpcHitboxSchema();
 }
@@ -126,11 +129,19 @@ const MAX_STEP_DT_MS = 120;
 const HISTORY_SIZE = 120;
 const SOFT_DISCREPANCY = 18;
 const HARD_DISCREPANCY = 90;
+const MAX_LATENCY_ESTIMATE_MS = 350;
+const MAX_LATENCY_THRESHOLD_SCALE = 2.25;
 const RECONCILE_INTERVAL_MS = 80;
 const GAME_TPS = 20;
 const YEKBUSH_COMPONENT_ID = 'yekbush';
 const YEKBUSH_INTERACTION_RADIUS_PX = 3 * 32;
 const YEKBUSH_COOLDOWN_MS = 40_000;
+const HEED_THE_WARNING_QUEST_ID = 'heed_the_warning';
+const ENEMY_BRIDGE_CUSTOM_ID = 'ah-enemy-dialogue-check';
+const ENEMY_BRIDGE_WARN_COOLDOWN_MS = 10_000;
+const ENEMY_BRIDGE_IMPULSE_SPEED = 220;
+const ENEMY_BRIDGE_IMPULSE_DURATION_MS = 220;
+const DANGER_REGION_NAME = 'Danger';
 
 type TiledProperty = { name: string; value: unknown };
 
@@ -161,6 +172,34 @@ type InteractiveHarvestTarget = {
     centerY: number;
     radiusPx: number;
 };
+
+type SpawnRegionRuntime = {
+    id: number;
+    npcKind: AINpcKind;
+    polygon: Array<{ x: number; y: number }>;
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    maxSpawned: number;
+    restoreRateMs: number;
+    aliveNpcIds: Set<string>;
+    nextSpawnAtMs: number;
+};
+
+type CustomTriggerRuntime = {
+    customId: string;
+    polygon: Array<{ x: number; y: number }>;
+    centerX: number;
+    centerY: number;
+};
+
+type RegionRuntime = {
+    name: string;
+    polygon: Array<{ x: number; y: number }>;
+};
+
+const GREMLIN_DEATH_ANIM_MS = 1400;
 
 type SoftCollisionBody = {
     id: string;
@@ -198,10 +237,19 @@ export class InstanceRoom extends Room<InstanceState> {
     private tutorialStateBySession = new Map<string, IGuideTutorialState>();
     private glimmerbowlUnlockedByUserId = new Map<string, boolean>();
     private heartsByUserId = new Map<string, IPlayerHeartsState>();
+    private wipedUserIds = new Set<string>();
     private harvestTargetsByObjectId = new Map<number, InteractiveHarvestTarget>();
     private harvestCooldownByUserId = new Map<string, Map<number, number>>();
     private navService = new ServerMapNavService();
     private aiRuntimeById = new Map<string, AiNpcRuntimeState>();
+    private spawnRegions: SpawnRegionRuntime[] = [];
+    private aiSpawnRegionByNpcId = new Map<string, SpawnRegionRuntime>();
+    private customTriggersById = new Map<string, CustomTriggerRuntime>();
+    private enemyBridgeWarnCooldownByUserId = new Map<string, number>();
+    private enemyBridgeUnlockedByUserId = new Map<string, boolean>();
+    private heedTheWarningStayObjectiveByUserId = new Map<string, boolean>();
+    private dangerRegion: RegionRuntime | null = null;
+    private wasInDangerByUserId = new Map<string, boolean>();
     private advancementsManager = new AdvancementsManager('lobby.tmj');
 
     onCreate(options: { instanceId: string; locationId: string; mapFile: string; maxPlayers: number }) {
@@ -316,6 +364,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
                 void this.advancementsManager.getStateForUser(data.userId)
                     .then((state) => {
+                        this.updateHeedTheWarningUnlockState(data.userId, state);
                         client.send('advancements:state', state);
                     })
                     .catch((error) => {
@@ -328,6 +377,12 @@ export class InstanceRoom extends Room<InstanceState> {
             this.advancementsManager.clearCachedUser(data.userId);
             PlayerStatsCache.getInstance().resetUser(data.userId);
             this.glimmerbowlUnlockedByUserId.set(data.userId, false);
+            this.heartsByUserId.set(data.userId, { ...DEFAULT_PLAYER_HEARTS_STATE });
+            this.enemyBridgeWarnCooldownByUserId.delete(data.userId);
+            this.enemyBridgeUnlockedByUserId.delete(data.userId);
+            this.heedTheWarningStayObjectiveByUserId.delete(data.userId);
+            this.wasInDangerByUserId.delete(data.userId);
+            this.wipedUserIds.add(data.userId);
 
             this.clients.forEach((client) => {
                 const player = this.state.players.get(client.sessionId);
@@ -350,6 +405,14 @@ export class InstanceRoom extends Room<InstanceState> {
 
         this.harvestTargetsByObjectId = this.loadHarvestTargets(options.mapFile);
         this.harvestCooldownByUserId.clear();
+        this.spawnRegions = this.loadSpawnRegions(options.mapFile);
+        this.aiSpawnRegionByNpcId.clear();
+        this.customTriggersById = this.loadCustomTriggers(options.mapFile);
+        this.dangerRegion = this.loadRegionByName(options.mapFile, DANGER_REGION_NAME);
+        this.enemyBridgeWarnCooldownByUserId.clear();
+        this.enemyBridgeUnlockedByUserId.clear();
+        this.heedTheWarningStayObjectiveByUserId.clear();
+        this.wasInDangerByUserId.clear();
 
         this.navService.initializeFromMap(options.mapFile);
         this.advancementsManager = new AdvancementsManager(options.mapFile);
@@ -429,9 +492,10 @@ export class InstanceRoom extends Room<InstanceState> {
             this.stepHardAuthorityMotion(deltaTime);
             this.stepAiNpcSimulation(deltaTime);
             this.stepSoftEntityCollisions(deltaTime);
+            this.stepEnemySpawning();
         }, 1000 / GAME_TPS);
 
-        this.onMessage("ai:spawn", (client, data: { kind?: 'evil_tim'; x?: number; y?: number }) => {
+        this.onMessage("ai:spawn", (client, data: { kind?: AINpcKind; x?: number; y?: number }) => {
             this.markActivity(client);
             const player = this.state.players.get(client.sessionId);
             const kind = data?.kind || 'evil_tim';
@@ -550,6 +614,10 @@ export class InstanceRoom extends Room<InstanceState> {
             }
         });
 
+        this.onMessage('player:hearts:request', (client) => {
+            this.sendPlayerHeartsSnapshot(client);
+        });
+
         // Handle shove interactions
         this.onMessage("shove", (client, data: { targetSessionId: string; clientTime?: number }) => {
             this.markActivity(client);
@@ -622,6 +690,25 @@ export class InstanceRoom extends Room<InstanceState> {
         // Handle fishing start (bubble sync)
         this.onMessage("fishing:start", (client, data: { rodItemId: string }) => {
             this.markActivity(client);
+            const player = this.state.players.get(client.sessionId);
+            if (player) {
+                player.isFishing = true;
+                player.vx = 0;
+                player.vy = 0;
+                player.anim = 'idle';
+                player.moveTs = Date.now();
+
+                const runtime = this.movementRuntimeBySession.get(client.sessionId);
+                if (runtime) {
+                    runtime.vx = 0;
+                    runtime.vy = 0;
+                    runtime.input = { up: false, down: false, left: false, right: false, sprint: false };
+                    runtime.impulseVx = 0;
+                    runtime.impulseVy = 0;
+                    runtime.impulseActiveUntil = 0;
+                    runtime.lastServerTime = Date.now();
+                }
+            }
             this.broadcast("fishing:start", {
                 sessionId: client.sessionId,
                 rodItemId: data?.rodItemId ?? null
@@ -631,6 +718,11 @@ export class InstanceRoom extends Room<InstanceState> {
         // Handle fishing stop (bubble sync)
         this.onMessage("fishing:stop", (client) => {
             this.markActivity(client);
+            const player = this.state.players.get(client.sessionId);
+            if (player) {
+                player.isFishing = false;
+                player.moveTs = Date.now();
+            }
             this.broadcast("fishing:stop", {
                 sessionId: client.sessionId
             });
@@ -981,37 +1073,65 @@ export class InstanceRoom extends Room<InstanceState> {
 
                 // --- Command Handling ---
                 if (messageHelper.startsWith('/')) {
-                    if (messageHelper === '/spawn_evil_tim') {
+                    const parts = messageHelper.slice(1).split(' ').filter(Boolean);
+                    const command = (parts[0] || '').toLowerCase();
+                    const args = parts.slice(1);
+                    const auditBase = {
+                        timestamp: new Date().toISOString(),
+                        playerId: player.odcid,
+                        playerUsername: player.username,
+                        command,
+                        args
+                    };
+
+                    if (command === 'spawn_evil_tim') {
                         const aiId = this.spawnAiNpc('evil_tim', player.x + 48, player.y);
+                        const message = aiId
+                            ? `Spawned Evil Tim (${aiId}) chase=${AI_NPC_DEFINITIONS.evil_tim.controllerConfig.chaseRangeMeters}m.`
+                            : 'Failed to spawn Evil Tim.';
+                        await CommandAuditLogger.log({
+                            ...auditBase,
+                            success: Boolean(aiId),
+                            resultMessage: message
+                        });
                         client.send('chat', {
                             username: 'SYSTEM',
                             odcid: 'SYSTEM',
-                            message: aiId
-                                ? `Spawned Evil Tim (${aiId}) chase=${AI_NPC_DEFINITIONS.evil_tim.controllerConfig.chaseRangeMeters}m.`
-                                : 'Failed to spawn Evil Tim.',
+                            message,
                             timestamp: Date.now(),
                             isSystem: true
                         });
                         return;
                     }
 
-                    const parts = messageHelper.slice(1).split(' ');
-                    const command = parts[0];
-                    const args = parts.slice(1);
-                    
-                    // Execute command logic
-                    const result = await CommandProcessor.handleCommand(
-                        command, 
-                        args, 
-                        player.odcid, 
-                        player.username
-                    );
+                    let commandResultMessage = 'Command failed unexpectedly.';
+                    let commandSuccess = false;
+                    try {
+                        const result = await CommandProcessor.handleCommand(
+                            command,
+                            args,
+                            player.odcid,
+                            player.username
+                        );
+                        commandResultMessage = result.message;
+                        commandSuccess = result.success;
+                    } catch (error) {
+                        commandResultMessage = 'Command failed unexpectedly.';
+                        commandSuccess = false;
+                        console.error('[InstanceRoom] Command execution failed:', error);
+                    }
+
+                    await CommandAuditLogger.log({
+                        ...auditBase,
+                        success: commandSuccess,
+                        resultMessage: commandResultMessage
+                    });
                     
                     // Send result back to issuer only
                     client.send('chat', {
                         username: 'SYSTEM',
                         odcid: 'SYSTEM',
-                        message: result,
+                        message: commandResultMessage,
                         timestamp: Date.now(),
                         isSystem: true
                     });
@@ -1241,7 +1361,7 @@ export class InstanceRoom extends Room<InstanceState> {
             console.error('[InstanceRoom] Error sending initial inventory:', err);
         }
 
-        client.send('player:hearts', initialHearts);
+        this.sendPlayerHeartsSnapshot(client, initialHearts);
 
         try {
             const { entries, unlocked } = await GlimmerbowlCache.getInstance().getState(odcid);
@@ -1253,6 +1373,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         try {
             const advancementsState = await this.advancementsManager.getStateForUser(odcid);
+            this.updateHeedTheWarningUnlockState(odcid, advancementsState);
             this.tutorialStateBySession.set(client.sessionId, advancementsState.tutorial);
             client.send('advancements:state', advancementsState);
         } catch (err) {
@@ -1266,6 +1387,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
             try {
                 const advancementsState = await this.advancementsManager.getStateForUser(player.odcid);
+                this.updateHeedTheWarningUnlockState(player.odcid, advancementsState);
                 this.tutorialStateBySession.set(client.sessionId, advancementsState.tutorial);
                 client.send('advancements:state', advancementsState);
             } catch (err) {
@@ -1284,6 +1406,7 @@ export class InstanceRoom extends Room<InstanceState> {
             try {
                 const advancementsState = await this.advancementsManager.updateTutorialState(player.odcid, tutorialPatch);
                 if (!advancementsState) return;
+                this.updateHeedTheWarningUnlockState(player.odcid, advancementsState);
                 this.tutorialStateBySession.set(client.sessionId, advancementsState.tutorial);
                 client.send('advancements:state', advancementsState);
             } catch (error) {
@@ -1430,13 +1553,18 @@ export class InstanceRoom extends Room<InstanceState> {
         const odcid = (client as any).odcid;
         if (odcid) {
             this.harvestCooldownByUserId.delete(odcid);
+            this.enemyBridgeWarnCooldownByUserId.delete(odcid);
+            this.enemyBridgeUnlockedByUserId.delete(odcid);
+            this.heedTheWarningStayObjectiveByUserId.delete(odcid);
+            this.wasInDangerByUserId.delete(odcid);
         }
         if (odcid && odcid !== client.sessionId) {
             this.instanceManager.unregisterUserConnection(odcid);
             this.glimmerbowlUnlockedByUserId.delete(odcid);
             this.heartsByUserId.delete(odcid);
+            const isWipedSession = this.wipedUserIds.has(odcid);
 
-            if (departingPlayer) {
+            if (departingPlayer && !isWipedSession) {
                 User.updateOne(
                     { _id: odcid },
                     {
@@ -1449,6 +1577,10 @@ export class InstanceRoom extends Room<InstanceState> {
                 ).catch((err) => {
                     console.error('[InstanceRoom] Failed to persist last known player position:', err);
                 });
+            }
+
+            if (isWipedSession) {
+                this.wipedUserIds.delete(odcid);
             }
         }
         
@@ -1469,6 +1601,14 @@ export class InstanceRoom extends Room<InstanceState> {
     onDispose() {
         console.log(`[InstanceRoom] Instance ${this.instanceId} disposed`);
         this.aiRuntimeById.clear();
+        this.spawnRegions = [];
+        this.aiSpawnRegionByNpcId.clear();
+        this.customTriggersById.clear();
+        this.enemyBridgeWarnCooldownByUserId.clear();
+        this.enemyBridgeUnlockedByUserId.clear();
+        this.heedTheWarningStayObjectiveByUserId.clear();
+        this.wasInDangerByUserId.clear();
+        this.dangerRegion = null;
         this.heartsByUserId.clear();
         this.harvestCooldownByUserId.clear();
         this.harvestTargetsByObjectId.clear();
@@ -1599,6 +1739,417 @@ export class InstanceRoom extends Room<InstanceState> {
         return null;
     }
 
+    private loadSpawnRegions(mapFileName: string): SpawnRegionRuntime[] {
+        const regions: SpawnRegionRuntime[] = [];
+        const mapPath = this.resolveMapPath(mapFileName);
+        if (!mapPath) return regions;
+
+        try {
+            const raw = fs.readFileSync(mapPath, 'utf8');
+            const map = JSON.parse(raw) as TiledMap;
+            const spawnLayers = (map.layers ?? []).filter((layer) => layer.type === 'objectgroup' && String(layer.name ?? '').toLowerCase() === 'spawn');
+            const now = Date.now();
+
+            for (const layer of spawnLayers) {
+                for (const object of (layer.objects ?? [])) {
+                    if (!Number.isFinite(object.id) || !Array.isArray(object.polygon) || object.polygon.length < 3) continue;
+                    const npcRaw = this.getTiledPropertyValue(object.properties, 'npc');
+                    const npcKind = typeof npcRaw === 'string' ? npcRaw.trim().toLowerCase() : '';
+                    if (!npcKind || !(npcKind in AI_NPC_DEFINITIONS)) continue;
+
+                    const maxSpawnedRaw = Number(this.getTiledPropertyValue(object.properties, 'maxSpawned'));
+                    const restoreRateRaw = Number(this.getTiledPropertyValue(object.properties, 'restoreRate'));
+                    const maxSpawned = Number.isFinite(maxSpawnedRaw) ? Math.max(1, Math.floor(maxSpawnedRaw)) : 1;
+                    const restoreRateMs = Number.isFinite(restoreRateRaw) ? Math.max(250, Math.floor(restoreRateRaw)) : 10000;
+
+                    const baseX = Number(object.x ?? 0);
+                    const baseY = Number(object.y ?? 0);
+                    const polygon = object.polygon.map((point) => ({
+                        x: baseX + Number(point.x ?? 0),
+                        y: baseY + Number(point.y ?? 0)
+                    }));
+
+                    let minX = Number.POSITIVE_INFINITY;
+                    let minY = Number.POSITIVE_INFINITY;
+                    let maxX = Number.NEGATIVE_INFINITY;
+                    let maxY = Number.NEGATIVE_INFINITY;
+                    polygon.forEach((point) => {
+                        if (point.x < minX) minX = point.x;
+                        if (point.y < minY) minY = point.y;
+                        if (point.x > maxX) maxX = point.x;
+                        if (point.y > maxY) maxY = point.y;
+                    });
+
+                    regions.push({
+                        id: Number(object.id),
+                        npcKind: npcKind as AINpcKind,
+                        polygon,
+                        minX,
+                        minY,
+                        maxX,
+                        maxY,
+                        maxSpawned,
+                        restoreRateMs,
+                        aliveNpcIds: new Set<string>(),
+                        nextSpawnAtMs: now
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('[InstanceRoom] Failed to load spawn regions from map:', error);
+        }
+
+        return regions;
+    }
+
+    private loadCustomTriggers(mapFileName: string): Map<string, CustomTriggerRuntime> {
+        const triggers = new Map<string, CustomTriggerRuntime>();
+        const mapPath = this.resolveMapPath(mapFileName);
+        if (!mapPath) return triggers;
+
+        try {
+            const raw = fs.readFileSync(mapPath, 'utf8');
+            const map = JSON.parse(raw) as TiledMap;
+            const customLayers = (map.layers ?? []).filter(
+                (layer) => layer.type === 'objectgroup' && String(layer.name ?? '').toLowerCase() === 'custom'
+            );
+
+            for (const layer of customLayers) {
+                for (const object of (layer.objects ?? [])) {
+                    if (!Array.isArray(object.polygon) || object.polygon.length < 3) continue;
+                    const customIdRaw = this.getTiledPropertyValue(object.properties, 'customid');
+                    const customId = typeof customIdRaw === 'string' ? customIdRaw.trim().toLowerCase() : '';
+                    if (!customId) continue;
+
+                    const baseX = Number(object.x ?? 0);
+                    const baseY = Number(object.y ?? 0);
+                    const polygon = object.polygon.map((point) => ({
+                        x: baseX + Number(point.x ?? 0),
+                        y: baseY + Number(point.y ?? 0)
+                    }));
+
+                    let sumX = 0;
+                    let sumY = 0;
+                    polygon.forEach((point) => {
+                        sumX += point.x;
+                        sumY += point.y;
+                    });
+                    const count = Math.max(1, polygon.length);
+
+                    triggers.set(customId, {
+                        customId,
+                        polygon,
+                        centerX: sumX / count,
+                        centerY: sumY / count
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('[InstanceRoom] Failed to load custom triggers from map:', error);
+        }
+
+        return triggers;
+    }
+
+    private loadRegionByName(mapFileName: string, regionName: string): RegionRuntime | null {
+        const mapPath = this.resolveMapPath(mapFileName);
+        if (!mapPath) return null;
+
+        try {
+            const raw = fs.readFileSync(mapPath, 'utf8');
+            const map = JSON.parse(raw) as TiledMap;
+            const regionLayers = (map.layers ?? []).filter(
+                (layer) => layer.type === 'objectgroup' && String(layer.name ?? '').toLowerCase() === 'regions'
+            );
+
+            const wantedName = regionName.trim().toLowerCase();
+            for (const layer of regionLayers) {
+                for (const object of (layer.objects ?? [])) {
+                    const objectName = String((object as any).name ?? '').trim();
+                    if (!objectName || objectName.toLowerCase() !== wantedName) continue;
+                    if (!Array.isArray(object.polygon) || object.polygon.length < 3) continue;
+
+                    const baseX = Number(object.x ?? 0);
+                    const baseY = Number(object.y ?? 0);
+                    const polygon = object.polygon.map((point) => ({
+                        x: baseX + Number(point.x ?? 0),
+                        y: baseY + Number(point.y ?? 0)
+                    }));
+
+                    return {
+                        name: objectName,
+                        polygon
+                    };
+                }
+            }
+        } catch (error) {
+            console.error('[InstanceRoom] Failed to load region polygon from map:', error);
+        }
+
+        return null;
+    }
+
+    private handleEnemyBridgeGate(client: Client, player: InstancePlayerSchema, x: number, y: number) {
+        const trigger = this.customTriggersById.get(ENEMY_BRIDGE_CUSTOM_ID);
+        if (!trigger) return;
+        if (this.enemyBridgeUnlockedByUserId.get(player.odcid) === true) return;
+        if (!this.isPointInPolygon(x, y, trigger.polygon)) return;
+
+        const awayX = x - trigger.centerX;
+        const awayY = y - trigger.centerY;
+        const magnitude = Math.hypot(awayX, awayY) || 1;
+        const dirX = magnitude > 0 ? awayX / magnitude : 0;
+        const dirY = magnitude > 0 ? awayY / magnitude : 1;
+
+        this.applyServerImpulse(
+            client.sessionId,
+            dirX * ENEMY_BRIDGE_IMPULSE_SPEED,
+            dirY * ENEMY_BRIDGE_IMPULSE_SPEED,
+            ENEMY_BRIDGE_IMPULSE_DURATION_MS,
+            client.sessionId
+        );
+
+        const now = Date.now();
+        const lastWarnAt = this.enemyBridgeWarnCooldownByUserId.get(player.odcid) ?? 0;
+        if ((now - lastWarnAt) < ENEMY_BRIDGE_WARN_COOLDOWN_MS) return;
+
+        this.enemyBridgeWarnCooldownByUserId.set(player.odcid, now);
+        client.send('quest:bridge-blocked', { npcId: 'guard' });
+    }
+
+    private handleDangerExitHeal(client: Client, player: InstancePlayerSchema, x: number, y: number) {
+        const userId = player.odcid || client.sessionId;
+        const inDangerNow = this.dangerRegion ? this.isPointInPolygon(x, y, this.dangerRegion.polygon) : false;
+        const wasInDanger = this.wasInDangerByUserId.get(userId) === true;
+        this.wasInDangerByUserId.set(userId, inDangerNow);
+
+        if (!this.heedTheWarningStayObjectiveByUserId.get(userId)) return;
+        if (!wasInDanger || inDangerNow) return;
+
+        const current = this.heartsByUserId.get(userId) ?? { ...DEFAULT_PLAYER_HEARTS_STATE };
+        const next = this.normalizeHeartsState({
+            currentHearts: current.maxHearts,
+            maxHearts: current.maxHearts
+        });
+
+        this.heartsByUserId.set(userId, next);
+        client.send('player:hearts', next);
+
+        if (userId !== client.sessionId) {
+            User.updateOne({ _id: userId }, { $set: { hearts: next } }).catch((error) => {
+                console.error('[InstanceRoom] Failed to persist danger exit heart refill:', error);
+            });
+        }
+    }
+
+    private stepEnemySpawning() {
+        if (this.spawnRegions.length === 0) return;
+
+        const now = Date.now();
+        this.spawnRegions.forEach((region) => {
+            Array.from(region.aliveNpcIds).forEach((npcId) => {
+                if (this.aiRuntimeById.has(npcId)) return;
+                region.aliveNpcIds.delete(npcId);
+                this.aiSpawnRegionByNpcId.delete(npcId);
+            });
+
+            if (region.aliveNpcIds.size >= region.maxSpawned) return;
+            if (now < region.nextSpawnAtMs) return;
+
+            const spawned = this.trySpawnFromRegion(region);
+            if (!spawned) {
+                region.nextSpawnAtMs = now + 1000;
+                return;
+            }
+
+            if (region.aliveNpcIds.size < region.maxSpawned) {
+                region.nextSpawnAtMs = now + 250;
+            }
+        });
+    }
+
+    private trySpawnFromRegion(region: SpawnRegionRuntime): boolean {
+        for (let attempt = 0; attempt < 24; attempt += 1) {
+            const point = this.getRandomPointInPolygon(region);
+            if (!point) continue;
+            if (!this.isSpawnPointValid(region.npcKind, point.x, point.y)) continue;
+
+            const id = this.spawnAiNpc(region.npcKind, point.x, point.y, region);
+            if (id) return true;
+        }
+
+        return false;
+    }
+
+    private isSpawnPointValid(kind: AINpcKind, x: number, y: number): boolean {
+        const definition = AI_NPC_DEFINITIONS[kind];
+        if (!definition) return false;
+
+        const path = this.navService.findPath({ x, y }, { x, y }, definition.hitbox);
+        if (!Array.isArray(path) || path.length === 0) return false;
+        const first = path[0];
+        if (Math.hypot(first.x - x, first.y - y) > 18) return false;
+
+        for (const runtime of this.aiRuntimeById.values()) {
+            const minDistance = ((definition.hitbox.width + runtime.hitbox.width) * 0.5) + 4;
+            if (Math.hypot(runtime.x - x, runtime.y - y) < minDistance) return false;
+        }
+
+        return true;
+    }
+
+    private getRandomPointInPolygon(region: SpawnRegionRuntime): { x: number; y: number } | null {
+        for (let attempt = 0; attempt < 32; attempt += 1) {
+            const x = region.minX + (Math.random() * (region.maxX - region.minX));
+            const y = region.minY + (Math.random() * (region.maxY - region.minY));
+            if (this.isPointInPolygon(x, y, region.polygon)) {
+                return { x, y };
+            }
+        }
+
+        let sumX = 0;
+        let sumY = 0;
+        region.polygon.forEach((point) => {
+            sumX += point.x;
+            sumY += point.y;
+        });
+        const count = Math.max(1, region.polygon.length);
+        return { x: sumX / count, y: sumY / count };
+    }
+
+    private isPointInPolygon(x: number, y: number, polygon: Array<{ x: number; y: number }>): boolean {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x;
+            const yi = polygon[i].y;
+            const xj = polygon[j].x;
+            const yj = polygon[j].y;
+            const intersects = ((yi > y) !== (yj > y))
+                && (x < ((xj - xi) * (y - yi)) / ((yj - yi) + 0.0000001) + xi);
+            if (intersects) inside = !inside;
+        }
+        return inside;
+    }
+
+    private scheduleRegionRespawn(region: SpawnRegionRuntime) {
+        const jitter = 0.5 + Math.random();
+        const delayMs = Math.max(250, Math.floor(region.restoreRateMs * jitter));
+        region.nextSpawnAtMs = Date.now() + delayMs;
+    }
+
+    private tryEnemyMeleeAttack(attacker: AiNpcRuntimeState, targetSessionId: string, damageHearts: number) {
+        if (!Number.isFinite(damageHearts) || damageHearts <= 0) return;
+        if (attacker.isDead) return;
+
+        const player = this.state.players.get(targetSessionId);
+        if (!player) return;
+
+        const now = Date.now();
+        if (this.didPlayerDodgeMeleeAttack(targetSessionId, now)) return;
+
+        this.applyDamageToPlayerHearts(targetSessionId, Math.floor(damageHearts));
+    }
+
+    private didPlayerDodgeMeleeAttack(targetSessionId: string, now: number): boolean {
+        const runtime = this.movementRuntimeBySession.get(targetSessionId) as (RuntimeMovementState & {
+            dodgeUntil?: number;
+            dodgeActiveUntil?: number;
+            iFrameUntil?: number;
+            invulnerableUntil?: number;
+        }) | undefined;
+        const player = this.state.players.get(targetSessionId) as (InstancePlayerSchema & {
+            dodgeUntil?: number;
+            iFrameUntil?: number;
+            invulnerableUntil?: number;
+        }) | undefined;
+
+        const candidates = [
+            runtime?.dodgeUntil,
+            runtime?.dodgeActiveUntil,
+            runtime?.iFrameUntil,
+            runtime?.invulnerableUntil,
+            player?.dodgeUntil,
+            player?.iFrameUntil,
+            player?.invulnerableUntil
+        ];
+
+        return candidates.some((value) => Number.isFinite(value) && Number(value) > now);
+    }
+
+    private applyDamageToPlayerHearts(targetSessionId: string, damageHearts: number) {
+        if (!Number.isFinite(damageHearts) || damageHearts <= 0) return;
+
+        const player = this.state.players.get(targetSessionId);
+        if (!player) return;
+
+        const userId = player.odcid || targetSessionId;
+        const current = this.heartsByUserId.get(userId) ?? { ...DEFAULT_PLAYER_HEARTS_STATE };
+        const next = this.normalizeHeartsState({
+            currentHearts: current.currentHearts - Math.floor(damageHearts),
+            maxHearts: current.maxHearts
+        });
+
+        this.heartsByUserId.set(userId, next);
+        const client = this.clients.find((entry) => entry.sessionId === targetSessionId);
+        if (client) {
+            client.send('player:hearts', next);
+        }
+
+        if (userId !== targetSessionId) {
+            User.updateOne({ _id: userId }, { $set: { hearts: next } }).catch((error) => {
+                console.error('[InstanceRoom] Failed to persist enemy melee heart damage:', error);
+            });
+        }
+    }
+
+    private sendPlayerHeartsSnapshot(client: Client, overrideHearts?: IPlayerHeartsState) {
+        const player = this.state.players.get(client.sessionId);
+        const userId = player?.odcid || (client as any)?.odcid || client.sessionId;
+        const hearts = overrideHearts
+            ? this.normalizeHeartsState(overrideHearts)
+            : this.normalizeHeartsState(this.heartsByUserId.get(userId) ?? DEFAULT_PLAYER_HEARTS_STATE);
+
+        this.heartsByUserId.set(userId, hearts);
+        client.send('player:hearts', hearts);
+    }
+
+    private applyEnemyDamage(aiId: string, damageAmount: number): boolean {
+        if (!Number.isFinite(damageAmount) || damageAmount <= 0) return false;
+
+        const runtime = this.aiRuntimeById.get(aiId);
+        const schema = this.state.aiNpcs.get(aiId);
+        if (!runtime || !schema || runtime.isDead) return false;
+
+        runtime.currentHealth = Math.max(0, runtime.currentHealth - Math.floor(damageAmount));
+        schema.currentHealth = runtime.currentHealth;
+
+        if (runtime.currentHealth > 0) return true;
+
+        runtime.isDead = true;
+        runtime.vx = 0;
+        runtime.vy = 0;
+        runtime.attackAnimUntilMs = 0;
+        runtime.deathAnimUntilMs = Date.now() + GREMLIN_DEATH_ANIM_MS;
+        runtime.anim = 'death';
+        schema.vx = 0;
+        schema.vy = 0;
+        schema.anim = 'death';
+        schema.moveTs = Date.now();
+        return true;
+    }
+
+    private despawnAiNpc(id: string) {
+        this.state.aiNpcs.delete(id);
+        this.aiRuntimeById.delete(id);
+
+        const spawnRegion = this.aiSpawnRegionByNpcId.get(id);
+        if (spawnRegion) {
+            spawnRegion.aliveNpcIds.delete(id);
+            this.scheduleRegionRespawn(spawnRegion);
+            this.aiSpawnRegionByNpcId.delete(id);
+        }
+    }
+
     private stepHardAuthorityMotion(deltaTimeMs: number) {
         const now = Date.now();
         const dtSec = this.clampNumber(deltaTimeMs / 1000, 0.001, 0.12);
@@ -1717,6 +2268,21 @@ export class InstanceRoom extends Room<InstanceState> {
         if (!player) return;
 
         const runtime = this.ensureRuntimeState(client, player);
+        if (player.isFishing) {
+            player.vx = 0;
+            player.vy = 0;
+            player.anim = 'idle';
+            player.moveTs = Date.now();
+            runtime.vx = 0;
+            runtime.vy = 0;
+            runtime.input = { up: false, down: false, left: false, right: false, sprint: false };
+            runtime.impulseVx = 0;
+            runtime.impulseVy = 0;
+            runtime.impulseActiveUntil = 0;
+            runtime.lastServerTime = Date.now();
+            this.sendMovementReconcile(client, player, runtime.lastSeq, 'hard-server', false, 0, 'fishing-locked');
+            return;
+        }
         if (!Number.isFinite(frame?.seq) || frame.seq <= runtime.lastSeq) {
             return;
         }
@@ -1751,9 +2317,13 @@ export class InstanceRoom extends Room<InstanceState> {
         const clientVy = Number.isFinite(frame.vy) ? frame.vy : expected.vy;
 
         const errorDistance = Math.hypot(clientX - expected.x, clientY - expected.y);
+        const estimatedLatencyMs = this.estimateClientLatencyMs(frame, now);
+        const latencyThresholdScale = this.getLatencyThresholdScale(estimatedLatencyMs);
         // Widen thresholds during impulse to tolerate decay timing differences
-        const softThreshold = hasActiveImpulse ? SOFT_DISCREPANCY * 3 : SOFT_DISCREPANCY;
-        const hardThreshold = hasActiveImpulse ? HARD_DISCREPANCY * 2.5 : HARD_DISCREPANCY;
+        const softBaseThreshold = hasActiveImpulse ? SOFT_DISCREPANCY * 3 : SOFT_DISCREPANCY;
+        const hardBaseThreshold = hasActiveImpulse ? HARD_DISCREPANCY * 2.5 : HARD_DISCREPANCY;
+        const softThreshold = softBaseThreshold * latencyThresholdScale;
+        const hardThreshold = hardBaseThreshold * latencyThresholdScale;
         const isSpawnBootstrap = runtime.lastSeq === 0 && player.x === 0 && player.y === 0 && frame.seq === 1;
 
         let nextX = expected.x;
@@ -1827,6 +2397,8 @@ export class InstanceRoom extends Room<InstanceState> {
         }
 
         this.recordPositionSnapshot(client.sessionId, nextX, nextY, now);
+        this.handleEnemyBridgeGate(client, player, nextX, nextY);
+        this.handleDangerExitHeal(client, player, nextX, nextY);
         void this.advancementsManager.onPlayerMoved(player.odcid, nextX, nextY)
             .then((alerts) => {
                 alerts.forEach((alert) => client.send('advancement:alert', alert));
@@ -1834,7 +2406,7 @@ export class InstanceRoom extends Room<InstanceState> {
             .catch((error) => {
                 console.error('[InstanceRoom] region advancements failed:', error);
             });
-        this.sendMovementReconcile(client, player, frame.seq, authority, hardOverride, errorDistance, reason);
+        this.sendMovementReconcile(client, player, frame.seq, authority, hardOverride, errorDistance, reason, hardThreshold);
     }
 
     private async sendAdvancements(client: Client, updates: { alerts: IAdvancementAlertMessage[]; delayedNewQuestCounts: number[] }) {
@@ -1846,6 +2418,7 @@ export class InstanceRoom extends Room<InstanceState> {
         if (player) {
             try {
                 const advancementsState = await this.advancementsManager.getStateForUser(player.odcid);
+                this.updateHeedTheWarningUnlockState(player.odcid, advancementsState);
                 this.tutorialStateBySession.set(client.sessionId, advancementsState.tutorial);
                 client.send('advancements:state', advancementsState);
             } catch (error) {
@@ -1864,6 +2437,15 @@ export class InstanceRoom extends Room<InstanceState> {
         });
     }
 
+    private updateHeedTheWarningUnlockState(userId: string, state: IAdvancementsState) {
+        const progress = state.questProgress?.[HEED_THE_WARNING_QUEST_ID];
+        const unlocked = progress?.status === 'active' || progress?.status === 'completed';
+        const onStayObjective = progress?.status === 'active'
+            && (typeof progress.objectiveIndex !== 'number' || Math.floor(progress.objectiveIndex) === 0);
+        this.enemyBridgeUnlockedByUserId.set(userId, unlocked);
+        this.heedTheWarningStayObjectiveByUserId.set(userId, onStayObjective);
+    }
+
     private sendMovementReconcile(
         client: Client,
         player: InstancePlayerSchema,
@@ -1871,7 +2453,8 @@ export class InstanceRoom extends Room<InstanceState> {
         authority: ServerMovementReconcile['authority'],
         hardOverride: boolean,
         errorDistance: number,
-        reason?: string
+        reason?: string,
+        hardThreshold?: number
     ) {
         const now = Date.now();
         const lastSentAt = this.lastReconcileSentAtBySession.get(client.sessionId) || 0;
@@ -1890,10 +2473,23 @@ export class InstanceRoom extends Room<InstanceState> {
             authority,
             hardOverride,
             errorDistance,
+            hardThreshold,
             reason
         };
         client.send('movement:reconcile', payload);
         this.lastReconcileSentAtBySession.set(client.sessionId, now);
+    }
+
+    private estimateClientLatencyMs(frame: ClientMovementFrame, now: number): number {
+        if (!Number.isFinite(frame?.clientTime)) return 0;
+        const delta = now - Number(frame.clientTime);
+        if (!Number.isFinite(delta)) return 0;
+        return this.clampNumber(delta, 0, MAX_LATENCY_ESTIMATE_MS);
+    }
+
+    private getLatencyThresholdScale(latencyMs: number): number {
+        const normalized = this.clampNumber(latencyMs / 220, 0, 1);
+        return 1 + normalized * (MAX_LATENCY_THRESHOLD_SCALE - 1);
     }
 
     private recordPositionSnapshot(sessionId: string, x: number, y: number, time: number) {
@@ -1984,12 +2580,18 @@ export class InstanceRoom extends Room<InstanceState> {
 
         const now = Date.now();
         const deltaSec = this.clampNumber(deltaTimeMs / 1000, 0.001, 0.2);
+        const despawnIds: string[] = [];
         const players: Array<{ sessionId: string; x: number; y: number }> = [];
         this.state.players.forEach((player, sessionId) => {
             players.push({ sessionId, x: player.x, y: player.y });
         });
 
         this.aiRuntimeById.forEach((runtime, id) => {
+            if (runtime.isDead && runtime.deathAnimUntilMs > 0 && now >= runtime.deathAnimUntilMs) {
+                despawnIds.push(id);
+                return;
+            }
+
             const controller = getAiControllerById(runtime.controllerId);
             if (!controller) return;
 
@@ -2000,7 +2602,10 @@ export class InstanceRoom extends Room<InstanceState> {
                 metersToPixels: (meters) => meters * AI_METERS_TO_PIXELS,
                 players,
                 nav: this.navService,
-                random: () => Math.random()
+                random: () => Math.random(),
+                onMeleeAttackAttempt: (attacker, targetSessionId, damageHearts) => {
+                    this.tryEnemyMeleeAttack(attacker, targetSessionId, damageHearts);
+                }
             });
 
             const schema = this.state.aiNpcs.get(id);
@@ -2014,10 +2619,14 @@ export class InstanceRoom extends Room<InstanceState> {
             schema.direction = runtime.direction;
             schema.anim = runtime.anim;
             schema.tint = runtime.tint;
+            schema.currentHealth = runtime.currentHealth;
+            schema.maxHealth = runtime.maxHealth;
             schema.pathDebug = runtime.chasePath.length > 0
                 ? runtime.chasePath.map((point) => `${Math.round(point.x)},${Math.round(point.y)}`).join(';')
                 : '';
         });
+
+        despawnIds.forEach((id) => this.despawnAiNpc(id));
     }
 
     private stepSoftEntityCollisions(deltaTimeMs: number) {
@@ -2027,6 +2636,7 @@ export class InstanceRoom extends Room<InstanceState> {
 
         this.state.players.forEach((player, sessionId) => {
             if (player.isAfk) return;
+            if (player.isFishing) return;
             if (player.x === 0 && player.y === 0) return;
 
             bodies.push({
@@ -2153,7 +2763,7 @@ export class InstanceRoom extends Room<InstanceState> {
         });
     }
 
-    private spawnAiNpc(kind: 'evil_tim', x: number, y: number): string | null {
+    private spawnAiNpc(kind: AINpcKind, x: number, y: number, spawnRegion?: SpawnRegionRuntime): string | null {
         const definition = AI_NPC_DEFINITIONS[kind];
         if (!definition) return null;
 
@@ -2170,6 +2780,8 @@ export class InstanceRoom extends Room<InstanceState> {
         npcSchema.direction = 0;
         npcSchema.anim = 'idle';
         npcSchema.tint = definition.tint;
+        npcSchema.currentHealth = definition.maxHealth;
+        npcSchema.maxHealth = definition.maxHealth;
         npcSchema.pathDebug = '';
         npcSchema.hitbox.width = definition.hitbox.width;
         npcSchema.hitbox.height = definition.hitbox.height;
@@ -2178,6 +2790,9 @@ export class InstanceRoom extends Room<InstanceState> {
         this.state.aiNpcs.set(id, npcSchema);
 
         const pathTickOffset = Math.floor(Math.random() * Math.max(1, definition.controllerConfig.pathRecomputeFrequencyTicks));
+        const initialIdleTick = definition.kind === 'gremlin'
+            ? this.gameTick + (160 + Math.floor(Math.random() * 81))
+            : this.gameTick;
         this.aiRuntimeById.set(id, {
             id,
             kind: definition.kind,
@@ -2190,6 +2805,8 @@ export class InstanceRoom extends Room<InstanceState> {
             direction: 0,
             anim: 'idle',
             tint: definition.tint,
+            currentHealth: definition.maxHealth,
+            maxHealth: definition.maxHealth,
             hitbox: {
                 width: definition.hitbox.width,
                 height: definition.hitbox.height,
@@ -2198,10 +2815,19 @@ export class InstanceRoom extends Room<InstanceState> {
             mode: 'idle',
             chasePath: [],
             chasePathIndex: 0,
-            lastIdleCheckTick: this.gameTick,
+            lastIdleCheckTick: initialIdleTick,
             lastPathRecomputeTick: this.gameTick - pathTickOffset,
+            lastAttackMs: 0,
+            attackAnimUntilMs: 0,
+            deathAnimUntilMs: 0,
+            isDead: false,
             controllerConfig: { ...definition.controllerConfig }
         });
+
+        if (spawnRegion) {
+            spawnRegion.aliveNpcIds.add(id);
+            this.aiSpawnRegionByNpcId.set(id, spawnRegion);
+        }
 
         return id;
     }

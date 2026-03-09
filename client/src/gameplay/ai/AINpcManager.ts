@@ -7,6 +7,25 @@ import { AINpcEntity } from './AINpcEntity';
 import { getAiNpcVisualDefinition } from './AINpcRegistry';
 import type { DepthManager } from '../rendering/DepthManager';
 
+type TrimMetaAnimation = {
+    frameWidth: number;
+    frameHeight: number;
+    frames: number;
+    file: string;
+};
+
+type GremlinTrimMeta = {
+    version: number;
+    sourceFrame: { width: number; height: number };
+    generatedAt: string;
+    animations: {
+        idle: TrimMetaAnimation;
+        walk: TrimMetaAnimation;
+        attack: TrimMetaAnimation;
+        death: TrimMetaAnimation;
+    };
+};
+
 export type AINpcManagerConfig = {
     baseDepth: number;
     occlusionManager?: OcclusionManager;
@@ -21,6 +40,7 @@ export class AINpcManager {
     private networkManager = NetworkManager.getInstance();
     private entities = new Map<string, AINpcEntity>();
     private debugGraphics?: Phaser.GameObjects.Graphics;
+    private trimMetaPromiseByKind = new Map<AINpcKind, Promise<GremlinTrimMeta | null>>();
 
     constructor(scene: Phaser.Scene, config: AINpcManagerConfig) {
         this.scene = scene;
@@ -66,6 +86,8 @@ export class AINpcManager {
                     direction: runtimeNpc.direction,
                     anim: runtimeNpc.anim,
                     tint: runtimeNpc.tint,
+                    currentHealth: runtimeNpc.currentHealth,
+                    maxHealth: runtimeNpc.maxHealth,
                     hitbox: runtimeNpc.hitbox,
                     pathDebug: runtimeNpc.pathDebug
                 });
@@ -146,12 +168,37 @@ export class AINpcManager {
         const definition = getAiNpcVisualDefinition(kind);
         if (!definition) return;
 
+        const stateFrameSize = (state: 'idle' | 'walk' | 'attack' | 'death') => ({
+            width: Math.max(1, definition.frameWidthByState?.[state] ?? definition.frameWidth),
+            height: Math.max(1, definition.frameHeightByState?.[state] ?? definition.frameHeight)
+        });
+
         const idleTextureKey = `ai-npc-${definition.kind}-idle-sheet`;
         const walkTextureKey = `ai-npc-${definition.kind}-walk-sheet`;
+        const attackTextureKey = `ai-npc-${definition.kind}-attack-sheet`;
+        const deathTextureKey = `ai-npc-${definition.kind}-death-sheet`;
 
         const maybeCreateAnimations = () => {
-            this.ensureDirectionalAnimations(definition.kind, 'idle', idleTextureKey, definition.idleFrameRate, definition.frameCount);
-            this.ensureDirectionalAnimations(definition.kind, 'walk', walkTextureKey, definition.walkFrameRate, definition.frameCount);
+            this.ensureDirectionalAnimations(definition, 'idle', idleTextureKey, definition.idleFrameRate, definition.idleFrameCount);
+            this.ensureDirectionalAnimations(definition, 'walk', walkTextureKey, definition.walkFrameRate, definition.walkFrameCount);
+            if (definition.attackTexturePath && definition.attackFrameCount) {
+                this.ensureDirectionalAnimations(
+                    definition,
+                    'attack',
+                    attackTextureKey,
+                    definition.attackFrameRate ?? 14,
+                    definition.attackFrameCount
+                );
+            }
+            if (definition.deathTexturePath && definition.deathFrameCount) {
+                this.ensureDirectionalAnimations(
+                    definition,
+                    'death',
+                    deathTextureKey,
+                    definition.deathFrameRate ?? 10,
+                    definition.deathFrameCount
+                );
+            }
         };
 
         const finalize = () => {
@@ -161,39 +208,120 @@ export class AINpcManager {
 
         const idleReady = this.scene.textures.exists(idleTextureKey);
         const walkReady = this.scene.textures.exists(walkTextureKey);
-        if (idleReady && walkReady) {
+        const attackReady = !definition.attackTexturePath || this.scene.textures.exists(attackTextureKey);
+        const deathReady = !definition.deathTexturePath || this.scene.textures.exists(deathTextureKey);
+
+        if (idleReady && walkReady && attackReady && deathReady) {
             finalize();
             return;
         }
 
-        if (!idleReady) {
-            this.scene.load.spritesheet(idleTextureKey, definition.idleTexturePath, {
-                frameWidth: definition.frameWidth,
-                frameHeight: definition.frameHeight
+        const primeFrameSizesAndLoad = () => {
+            const idleFrameSize = stateFrameSize('idle');
+            const walkFrameSize = stateFrameSize('walk');
+            const attackFrameSize = stateFrameSize('attack');
+            const deathFrameSize = stateFrameSize('death');
+
+            if (!idleReady) {
+                this.scene.load.spritesheet(idleTextureKey, definition.idleTexturePath, {
+                    frameWidth: idleFrameSize.width,
+                    frameHeight: idleFrameSize.height
+                });
+            }
+
+            if (!walkReady) {
+                this.scene.load.spritesheet(walkTextureKey, definition.walkTexturePath, {
+                    frameWidth: walkFrameSize.width,
+                    frameHeight: walkFrameSize.height
+                });
+            }
+
+            if (definition.attackTexturePath && !attackReady) {
+                this.scene.load.spritesheet(attackTextureKey, definition.attackTexturePath, {
+                    frameWidth: attackFrameSize.width,
+                    frameHeight: attackFrameSize.height
+                });
+            }
+
+            if (definition.deathTexturePath && !deathReady) {
+                this.scene.load.spritesheet(deathTextureKey, definition.deathTexturePath, {
+                    frameWidth: deathFrameSize.width,
+                    frameHeight: deathFrameSize.height
+                });
+            }
+
+            this.scene.load.once('complete', finalize);
+            this.scene.load.start();
+        };
+
+        this.loadTrimMetadataIntoDefinition(kind, definition)
+            .catch((error) => {
+                console.warn(`[AINpcManager] Failed to load trim metadata for ${definition.kind}:`, error);
+            })
+            .finally(() => {
+                primeFrameSizesAndLoad();
+            });
+    }
+
+    private loadTrimMetadataIntoDefinition(kind: AINpcKind, definition: NonNullable<ReturnType<typeof getAiNpcVisualDefinition>>): Promise<GremlinTrimMeta | null> {
+        if (!definition.trimMetadataPath) {
+            return Promise.resolve(null);
+        }
+
+        const existing = this.trimMetaPromiseByKind.get(kind);
+        if (existing) {
+            return existing.then((meta) => {
+                this.applyTrimMetaToDefinition(definition, meta);
+                return meta;
             });
         }
 
-        if (!walkReady) {
-            this.scene.load.spritesheet(walkTextureKey, definition.walkTexturePath, {
-                frameWidth: definition.frameWidth,
-                frameHeight: definition.frameHeight
-            });
-        }
+        const request = fetch(`${definition.trimMetadataPath}?t=${Date.now()}`)
+            .then(async (response) => {
+                if (!response.ok) return null;
+                const meta = (await response.json()) as GremlinTrimMeta;
+                this.applyTrimMetaToDefinition(definition, meta);
+                return meta;
+            })
+            .catch(() => null);
 
-        this.scene.load.once('complete', finalize);
-        this.scene.load.start();
+        this.trimMetaPromiseByKind.set(kind, request);
+        return request;
+    }
+
+    private applyTrimMetaToDefinition(definition: NonNullable<ReturnType<typeof getAiNpcVisualDefinition>>, meta: GremlinTrimMeta | null) {
+        if (!meta?.animations) return;
+
+        const { idle, walk, attack, death } = meta.animations;
+        const frameWidthByState = {
+            idle: Math.max(1, Number(idle?.frameWidth) || definition.frameWidth),
+            walk: Math.max(1, Number(walk?.frameWidth) || definition.frameWidth),
+            attack: Math.max(1, Number(attack?.frameWidth) || definition.frameWidth),
+            death: Math.max(1, Number(death?.frameWidth) || definition.frameWidth)
+        };
+        const frameHeightByState = {
+            idle: Math.max(1, Number(idle?.frameHeight) || definition.frameHeight),
+            walk: Math.max(1, Number(walk?.frameHeight) || definition.frameHeight),
+            attack: Math.max(1, Number(attack?.frameHeight) || definition.frameHeight),
+            death: Math.max(1, Number(death?.frameHeight) || definition.frameHeight)
+        };
+
+        definition.frameWidthByState = frameWidthByState;
+        definition.frameHeightByState = frameHeightByState;
+        definition.frameWidth = frameWidthByState.idle;
+        definition.frameHeight = frameHeightByState.idle;
     }
 
     private ensureDirectionalAnimations(
-        kind: AINpcKind,
-        state: 'idle' | 'walk',
+        definition: NonNullable<ReturnType<typeof getAiNpcVisualDefinition>>,
+        state: 'idle' | 'walk' | 'attack' | 'death',
         textureKey: string,
         frameRate: number,
         framesPerRow: number
     ) {
         for (let direction = 0; direction < 8; direction += 1) {
-            const { row } = this.getRowAndMirrorForDirection(direction);
-            const animKey = this.getAnimKey(kind, state, direction);
+            const { row } = this.getRowAndMirrorForDirection(direction, definition.directionalMode ?? 'octant-rows');
+            const animKey = this.getAnimKey(definition.kind, state, direction);
             if (this.scene.anims.exists(animKey)) continue;
 
             const start = row * framesPerRow;
@@ -203,16 +331,21 @@ export class AINpcManager {
                 key: animKey,
                 frames: this.scene.anims.generateFrameNumbers(textureKey, { start, end }),
                 frameRate,
-                repeat: -1
+                repeat: (state === 'attack' || state === 'death') ? 0 : -1
             });
         }
     }
 
-    private getAnimKey(kind: AINpcKind, state: 'idle' | 'walk', direction: number): string {
+    private getAnimKey(kind: AINpcKind, state: 'idle' | 'walk' | 'attack' | 'death', direction: number): string {
         return `ai-npc-${kind}-${state}-d${direction}`;
     }
 
-    private getRowAndMirrorForDirection(direction: number): { row: number; mirrored: boolean } {
+    private getRowAndMirrorForDirection(direction: number, directionalMode: 'octant-rows' | 'horizontal-only'): { row: number; mirrored: boolean } {
+        if (directionalMode === 'horizontal-only') {
+            const mirrored = direction === 5 || direction === 6 || direction === 7;
+            return { row: 0, mirrored };
+        }
+
         switch (direction) {
             case 0: return { row: 0, mirrored: false }; // S
             case 1: return { row: 1, mirrored: false }; // SE

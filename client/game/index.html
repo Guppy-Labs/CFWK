@@ -375,6 +375,36 @@
             font-family: 'Minecraft', monospace;
         }
 
+        .loader-progress {
+            width: min(420px, 78vw);
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .loader-progress-track {
+            width: 100%;
+            height: 10px;
+            border: 1px solid #3d3d3d;
+            background: rgba(255, 255, 255, 0.05);
+            overflow: hidden;
+        }
+
+        .loader-progress-fill {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, rgba(255, 102, 170, 0.75), rgba(255, 148, 197, 0.95));
+            transition: width 0.2s ease;
+        }
+
+        .loader-progress-percent {
+            font-size: 0.7rem;
+            color: var(--mm-text-muted);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
         @keyframes text-pulse {
             0%, 100% { opacity: 0.5; }
             50% { opacity: 1; }
@@ -443,6 +473,11 @@
             opacity: 0;
             animation: text-fade-up 0.4s ease-out 0.5s forwards,
                        text-pulse 2s ease-in-out 0.9s infinite;
+        }
+
+        .game-loader .loader-progress {
+            opacity: 0;
+            animation: text-fade-up 0.4s ease-out 0.6s forwards;
         }
 
         /* === EXIT ANIMATIONS === */
@@ -528,6 +563,10 @@
         }
         
         .game-loader.exiting .loader-text {
+            animation: text-fade-down 0.4s ease-out forwards;
+        }
+
+        .game-loader.exiting .loader-progress {
             animation: text-fade-down 0.4s ease-out forwards;
         }
 
@@ -647,6 +686,12 @@
                 </div>
             </div>
             <div id="loader-text" class="loader-text">Loading world...</div>
+            <div id="loader-progress" class="loader-progress" aria-label="Download progress">
+                <div class="loader-progress-track">
+                    <div id="loader-progress-fill" class="loader-progress-fill"></div>
+                </div>
+                <div id="loader-progress-percent" class="loader-progress-percent">0%</div>
+            </div>
         </div>
         <div id="app"></div>
     </div>

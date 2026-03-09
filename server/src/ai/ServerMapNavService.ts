@@ -97,7 +97,10 @@ export class ServerMapNavService implements NavCollisionAdapter {
         const objectLayers = (map.layers || []).filter((layer) => layer.type === 'objectgroup');
         const collisionLayers = objectLayers.filter((layer) => {
             const collidableProp = getProp(layer, 'Collidable');
-            return collidableProp === true || layer.name.toLowerCase().includes('collision');
+            const normalizedName = String(layer.name || '').toLowerCase();
+            return collidableProp === true
+                || normalizedName.includes('collision')
+                || normalizedName.includes('avoidance');
         });
 
         collisionLayers.forEach((layer) => {

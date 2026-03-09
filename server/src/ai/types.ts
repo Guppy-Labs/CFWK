@@ -17,6 +17,8 @@ export type AiNpcRuntimeState = {
     anim: AINpcAnim;
     tint: number;
     hitbox: IAiNpcHitbox;
+    currentHealth: number;
+    maxHealth: number;
     mode: EnemyBrainMode;
     targetSessionId?: string;
     wanderTarget?: Vec2;
@@ -24,6 +26,10 @@ export type AiNpcRuntimeState = {
     chasePathIndex: number;
     lastIdleCheckTick: number;
     lastPathRecomputeTick: number;
+    lastAttackMs: number;
+    attackAnimUntilMs: number;
+    deathAnimUntilMs: number;
+    isDead: boolean;
     controllerConfig: IGeneralEnemyControllerConfig;
 };
 
@@ -46,4 +52,5 @@ export interface AiControllerContext {
     players: AiObservedPlayer[];
     nav: NavCollisionAdapter;
     random: () => number;
+    onMeleeAttackAttempt: (attacker: AiNpcRuntimeState, targetSessionId: string, damageHearts: number) => void;
 }

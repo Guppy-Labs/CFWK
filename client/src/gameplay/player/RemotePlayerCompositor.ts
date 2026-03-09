@@ -80,10 +80,10 @@ export class RemotePlayerCompositor {
     private createAnimations(sessionId: string, compositorResult: CompositorResult): string[] {
         const animationKeys: string[] = [];
         const directions: MCDirection[] = ['N', 'S', 'E', 'W', 'NE', 'SE', 'NW', 'SW'];
-        const animTypes: MCAnimationType[] = ['walk', 'idle'];
+        const animTypes: MCAnimationType[] = ['walk', 'run', 'idle'];
 
         for (const animType of animTypes) {
-            const frameRate = animType === 'idle' ? 6 : 10;
+            const frameRate = animType === 'idle' ? 6 : (animType === 'run' ? 14 : 10);
             const frameCount = MC_FRAMES_PER_ANIMATION_BY_ANIM[animType];
 
             for (const direction of directions) {
@@ -162,7 +162,7 @@ export class RemotePlayerCompositor {
         this.compositors.set(sessionId, compositor);
         
         // Generate textures
-        const compositorResult = await compositor.compositeCharacter(appearance, ['walk', 'idle']);
+        const compositorResult = await compositor.compositeCharacter(appearance, ['walk', 'run', 'idle']);
         
         // Create animations
         const animationKeys = this.createAnimations(sessionId, compositorResult);

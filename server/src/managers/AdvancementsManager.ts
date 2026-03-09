@@ -17,7 +17,8 @@ import { AI_METERS_TO_PIXELS } from '../ai/registry';
 type QuestEvent =
     | { kind: 'npc'; npcId: string }
     | { kind: 'fish-catch' }
-    | { kind: 'harvest-interactive'; componentId: string; mapObjectId?: number };
+    | { kind: 'harvest-interactive'; componentId: string; mapObjectId?: number }
+    | { kind: 'stay-in-region'; regionName: string; durationMs: number; resetOnExit: boolean };
 
 type QuestDefinition = {
     id: string;
@@ -30,6 +31,7 @@ type QuestDefinition = {
 type RegionDefinition = {
     name: string;
     polygon: Array<{ x: number; y: number }>;
+    area: number;
 };
 
 type AdvancementsUpdate = {
@@ -76,6 +78,17 @@ function toQuestEvent(objective: IQuestObjectiveEntry | undefined | null): Quest
             mapObjectId: typeof objective.mapObjectId === 'number' ? objective.mapObjectId : undefined
         };
     }
+    if (objective.kind === 'stay-in-region') {
+        const regionName = typeof objective.regionName === 'string' ? objective.regionName.trim() : '';
+        if (!regionName) return null;
+        const durationMs = Number.isFinite(objective.durationMs) ? Math.max(1000, Math.floor(objective.durationMs!)) : 60_000;
+        return {
+            kind: 'stay-in-region',
+            regionName,
+            durationMs,
+            resetOnExit: objective.resetOnExit !== false
+        };
+    }
     return null;
 }
 
@@ -117,6 +130,8 @@ const QUEST_DEFINITIONS: QuestDefinition[] = ADVANCEMENT_QUEST_CATALOG
 
 const QUEST_DEFINITION_BY_ID = new Map(QUEST_DEFINITIONS.map((quest) => [quest.id, quest]));
 const CAMPFIRE_STORIES_ID = 'campfire_stories';
+const LEGACY_HEED_THE_WARNING_ID = 'travellers_errand';
+const HEED_THE_WARNING_ID = 'heed_the_warning';
 
 function createDefaultAdvancementsState(): IAdvancementsState {
     return {
@@ -152,6 +167,9 @@ function matchesQuestEvent(expected: QuestEvent, received: QuestEvent): boolean 
         if (typeof expected.mapObjectId !== 'number') return true;
         return expected.mapObjectId === received.mapObjectId;
     }
+    if (expected.kind === 'stay-in-region' && received.kind === 'stay-in-region') {
+        return expected.regionName === received.regionName;
+    }
     return expected.kind === 'fish-catch' && received.kind === 'fish-catch';
 }
 
@@ -163,6 +181,7 @@ export class AdvancementsManager {
     private readonly fireAchievementRadiusPx = 6 * AI_METERS_TO_PIXELS;
     private readonly stateByUserId = new Map<string, IAdvancementsState>();
     private readonly currentRegionByUserId = new Map<string, string | null>();
+    private readonly timedRegionStartByUserId = new Map<string, Map<string, number>>();
 
     constructor(mapFileName: string) {
         this.mapFileName = mapFileName;
@@ -229,6 +248,7 @@ export class AdvancementsManager {
     clearCachedUser(userId: string): void {
         this.stateByUserId.delete(userId);
         this.currentRegionByUserId.delete(userId);
+        this.timedRegionStartByUserId.delete(userId);
     }
 
     async onNpcInteract(userId: string, npcId: string): Promise<AdvancementsUpdate> {
@@ -320,30 +340,124 @@ export class AdvancementsManager {
         if (!this.isPersistentUserId(userId)) return [];
         if (this.regions.length === 0) return [];
 
+        const now = Date.now();
         const regionName = this.findRegionAtPosition(x, y);
         const previousRegion = this.currentRegionByUserId.get(userId) ?? null;
-        if (regionName === previousRegion) return [];
+        const changedRegion = regionName !== previousRegion;
 
-        this.currentRegionByUserId.set(userId, regionName);
-
-        if (!regionName) return [];
+        if (changedRegion) {
+            this.currentRegionByUserId.set(userId, regionName);
+        }
 
         const state = await this.getOrLoadState(userId);
         if (!state) return [];
 
+        const timedUpdates = this.applyTimedRegionObjectives(state, userId, regionName, now);
+        const alerts: IAdvancementAlertMessage[] = [...timedUpdates.alerts];
+        let shouldPersist = timedUpdates.alerts.length > 0 || timedUpdates.delayedNewQuestCounts.length > 0;
+
+        if (!changedRegion || !regionName) {
+            if (shouldPersist) {
+                await this.persistState(userId, state);
+            }
+            return alerts;
+        }
+
         const discoveredForMap = state.discoveredRegions[this.mapFileName] ?? [];
         if (discoveredForMap.includes(regionName)) {
-            return [];
+            if (shouldPersist) {
+                await this.persistState(userId, state);
+            }
+            return alerts;
         }
 
         state.discoveredRegions[this.mapFileName] = [...discoveredForMap, regionName];
-        await this.persistState(userId, state);
+        shouldPersist = true;
 
-        return [{
+        if (shouldPersist) {
+            await this.persistState(userId, state);
+        }
+
+        alerts.push({
             type: 'area-discovered',
             mapName: this.mapDisplayName,
             regionName
-        }];
+        });
+
+        return alerts;
+    }
+
+    private applyTimedRegionObjectives(
+        state: IAdvancementsState,
+        userId: string,
+        regionName: string | null,
+        now: number
+    ): AdvancementsUpdate {
+        let runtime = this.timedRegionStartByUserId.get(userId);
+        if (!runtime) {
+            runtime = new Map<string, number>();
+            this.timedRegionStartByUserId.set(userId, runtime);
+        }
+
+        const dueEvents: QuestEvent[] = [];
+        const activeQuestIds = Object.keys(state.questProgress);
+        const activeQuestIdSet = new Set(activeQuestIds);
+        Array.from(runtime.keys()).forEach((questId) => {
+            if (!activeQuestIdSet.has(questId)) {
+                runtime.delete(questId);
+            }
+        });
+
+        for (const [questId, progress] of Object.entries(state.questProgress)) {
+            if (progress.status !== 'active') {
+                runtime.delete(questId);
+                continue;
+            }
+
+            const definition = QUEST_DEFINITION_BY_ID.get(questId);
+            if (!definition) {
+                runtime.delete(questId);
+                continue;
+            }
+
+            const objectives = definition.objectives.length > 0 ? definition.objectives : [definition.start];
+            const currentIndexRaw = typeof progress.objectiveIndex === 'number' ? Math.floor(progress.objectiveIndex) : 0;
+            const currentIndex = Math.max(0, Math.min(currentIndexRaw, objectives.length - 1));
+            const objective = objectives[currentIndex];
+
+            if (!objective || objective.kind !== 'stay-in-region') {
+                runtime.delete(questId);
+                continue;
+            }
+
+            if (regionName !== objective.regionName) {
+                if (objective.resetOnExit !== false) {
+                    runtime.delete(questId);
+                }
+                continue;
+            }
+
+            const startedAt = runtime.get(questId) ?? now;
+            runtime.set(questId, startedAt);
+            if ((now - startedAt) >= objective.durationMs) {
+                dueEvents.push({
+                    kind: 'stay-in-region',
+                    regionName: objective.regionName,
+                    durationMs: objective.durationMs,
+                    resetOnExit: objective.resetOnExit
+                });
+                runtime.delete(questId);
+            }
+        }
+
+        const merged: AdvancementsUpdate = { alerts: [], delayedNewQuestCounts: [] };
+        for (const event of dueEvents) {
+            const update = this.applyQuestEvent(state, event);
+            merged.alerts.push(...update.alerts);
+            merged.delayedNewQuestCounts.push(...update.delayedNewQuestCounts);
+        }
+
+        return merged;
     }
 
     private applyQuestEvent(state: IAdvancementsState, event: QuestEvent): AdvancementsUpdate {
@@ -451,12 +565,36 @@ export class AdvancementsManager {
     }
 
     private findRegionAtPosition(x: number, y: number): string | null {
+        let bestRegion: RegionDefinition | null = null;
         for (const region of this.regions) {
-            if (this.isPointInPolygon(x, y, region.polygon)) {
-                return region.name;
+            if (!this.isPointInPolygon(x, y, region.polygon)) {
+                continue;
+            }
+
+            if (!bestRegion || region.area < bestRegion.area) {
+                bestRegion = region;
             }
         }
+
+        if (bestRegion) {
+            return bestRegion.name;
+        }
+
         return null;
+    }
+
+    private computePolygonArea(polygon: Array<{ x: number; y: number }>): number {
+        if (!Array.isArray(polygon) || polygon.length < 3) {
+            return Number.POSITIVE_INFINITY;
+        }
+
+        let sum = 0;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            sum += (polygon[j].x * polygon[i].y) - (polygon[i].x * polygon[j].y);
+        }
+
+        const area = Math.abs(sum * 0.5);
+        return Number.isFinite(area) && area > 0 ? area : Number.POSITIVE_INFINITY;
     }
 
     private isPointInPolygon(x: number, y: number, polygon: Array<{ x: number; y: number }>): boolean {
@@ -521,6 +659,19 @@ export class AdvancementsManager {
                     ? Math.max(0, Math.floor(questValue.objectiveIndex))
                     : 0
             };
+        }
+
+        if (questProgress[LEGACY_HEED_THE_WARNING_ID] && !questProgress[HEED_THE_WARNING_ID]) {
+            const legacy = questProgress[LEGACY_HEED_THE_WARNING_ID];
+            questProgress[HEED_THE_WARNING_ID] = {
+                ...legacy,
+                questId: HEED_THE_WARNING_ID
+            };
+            delete questProgress[LEGACY_HEED_THE_WARNING_ID];
+            changed = true;
+        } else if (questProgress[LEGACY_HEED_THE_WARNING_ID]) {
+            delete questProgress[LEGACY_HEED_THE_WARNING_ID];
+            changed = true;
         }
 
         const completedAchievements = Array.isArray(raw.completedAchievements)
@@ -679,7 +830,8 @@ export class AdvancementsManager {
 
             results.push({
                 name: object.name,
-                polygon
+                polygon,
+                area: this.computePolygonArea(polygon)
             });
         }
 

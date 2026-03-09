@@ -35,6 +35,11 @@ type ResolvedHeadbarAlert = {
     size?: 'default' | 'compact';
 };
 
+type QueuedHeadbarAlert = {
+    resolved: ResolvedHeadbarAlert;
+    type: IAdvancementAlertMessage['type'];
+};
+
 export class HeadbarUI {
     private scene: Phaser.Scene;
     private container: Phaser.GameObjects.Container;
@@ -70,11 +75,12 @@ export class HeadbarUI {
     private isAnimating = false;
     private currentBannerWidth = 0;
     private currentBannerHeight = 0;
-    private alertQueue: ResolvedHeadbarAlert[] = [];
+    private alertQueue: QueuedHeadbarAlert[] = [];
     private alertTitleTextureKey?: string;
     private alertSubtitleTextureKey?: string;
     private currentAlertTitleScale = 0;
     private currentAlertSubtitleScale = 0;
+    private alertDisplayedHandler?: (type: IAdvancementAlertMessage['type']) => void;
 
     // Font rendering
     private readonly fontCharSize = 8;
@@ -213,8 +219,12 @@ export class HeadbarUI {
     enqueueAdvancementAlert(alert: IAdvancementAlertMessage) {
         const resolved = this.resolveAdvancementAlert(alert);
         if (!resolved) return;
-        this.alertQueue.push(resolved);
+        this.alertQueue.push({ resolved, type: alert.type });
         this.processAlertQueue();
+    }
+
+    setOnAdvancementAlertDisplayed(handler?: (type: IAdvancementAlertMessage['type']) => void) {
+        this.alertDisplayedHandler = handler;
     }
 
     /**
@@ -343,8 +353,10 @@ export class HeadbarUI {
         this.playAlert(next);
     }
 
-    private playAlert(alert: ResolvedHeadbarAlert) {
+    private playAlert(queuedAlert: QueuedHeadbarAlert) {
+        const alert = queuedAlert.resolved;
         this.isAnimating = true;
+        this.alertDisplayedHandler?.(queuedAlert.type);
 
         const compact = alert.size === 'compact';
         this.currentAlertTitleScale = compact ? this.compactAlertTitleScale : this.alertTitleScale;
@@ -537,6 +549,17 @@ export class HeadbarUI {
         if (objective.kind === 'talk-to-npc' && objective.npcId) {
             const npcName = this.localeManager.t(`npc.${objective.npcId}.name`, undefined, objective.npcId);
             return this.localeManager.t('finbook.quest.objective.talkToNpc', { name: npcName }, `Talk to ${npcName}`);
+        }
+
+        if (objective.kind === 'stay-in-region' && objective.regionName) {
+            const seconds = Number.isFinite(objective.durationMs)
+                ? Math.max(1, Math.round((objective.durationMs as number) / 1000))
+                : 60;
+            return this.localeManager.t(
+                'finbook.quest.objective.stayInRegion',
+                { region: objective.regionName, seconds },
+                `Stay in ${objective.regionName} for ${seconds}s`
+            );
         }
 
         return this.localeManager.t('finbook.quest.objective.generic', undefined, 'Complete the next task');

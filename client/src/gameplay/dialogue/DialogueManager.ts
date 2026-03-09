@@ -21,6 +21,12 @@ type NpcInteractionDetail = {
     npcName?: string;
 };
 
+type ForcedDialogueDetail = {
+    npcId?: string;
+    npcName?: string;
+    lines?: DialogueLine[];
+};
+
 export class DialogueManager {
     private repository = new DialogueRepository();
     private networkManager = NetworkManager.getInstance();
@@ -37,6 +43,8 @@ export class DialogueManager {
 
     private npcInteractHandler?: (event: Event) => void;
     private inventoryUpdateHandler?: (event: Event) => void;
+    private forcedDialogueHandler?: (event: Event) => void;
+    private suppressNpcInteractSend = false;
 
     constructor(private readonly gameScene: GameScene, private readonly uiScene: UIScene) {
         this.npcInteractHandler = (event: Event) => {
@@ -45,6 +53,13 @@ export class DialogueManager {
             void this.startDialogue(detail.npcId, detail.npcName);
         };
         window.addEventListener('npc:interact', this.npcInteractHandler as EventListener);
+
+        this.forcedDialogueHandler = (event: Event) => {
+            const detail = (event as CustomEvent<ForcedDialogueDetail>).detail;
+            if (!detail || !Array.isArray(detail.lines) || detail.lines.length === 0) return;
+            void this.startForcedDialogue(detail);
+        };
+        window.addEventListener('dialogue:forced', this.forcedDialogueHandler as EventListener);
 
         this.inventoryUpdateHandler = (event: Event) => {
             const customEvent = event as CustomEvent<IInventoryResponse>;
@@ -64,6 +79,10 @@ export class DialogueManager {
         if (this.npcInteractHandler) {
             window.removeEventListener('npc:interact', this.npcInteractHandler as EventListener);
             this.npcInteractHandler = undefined;
+        }
+        if (this.forcedDialogueHandler) {
+            window.removeEventListener('dialogue:forced', this.forcedDialogueHandler as EventListener);
+            this.forcedDialogueHandler = undefined;
         }
         if (this.inventoryUpdateHandler) {
             window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
@@ -88,6 +107,28 @@ export class DialogueManager {
         this.npcName = npcName;
         this.hasShownLine = false;
         this.grantedRodDuringDialogue = false;
+        this.suppressNpcInteractSend = false;
+
+        this.enterDialogueMode();
+        this.renderCurrentLine();
+    }
+
+    private async startForcedDialogue(detail: ForcedDialogueDetail) {
+        if (this.active) return;
+
+        const npcId = typeof detail.npcId === 'string' && detail.npcId.trim().length > 0 ? detail.npcId : 'guard';
+        const lines = this.cloneLines(detail.lines ?? []);
+        if (lines.length === 0) return;
+
+        this.currentDialogue = { id: `forced:${npcId}`, lines };
+        this.pendingActions = [];
+        this.currentIndex = 0;
+        this.active = true;
+        this.npcId = npcId;
+        this.npcName = detail.npcName;
+        this.hasShownLine = false;
+        this.grantedRodDuringDialogue = false;
+        this.suppressNpcInteractSend = true;
 
         this.enterDialogueMode();
         this.renderCurrentLine();
@@ -112,6 +153,8 @@ export class DialogueManager {
         this.npcName = undefined;
         this.pendingActions = [];
         this.hasShownLine = false;
+        const shouldSendNpcInteract = !this.suppressNpcInteractSend;
+        this.suppressNpcInteractSend = false;
 
         if (completedNpcId && this.grantedRodDuringDialogue) {
             window.dispatchEvent(new CustomEvent('guide:rod-granted-dialogue-complete', {
@@ -123,7 +166,7 @@ export class DialogueManager {
         }
         this.grantedRodDuringDialogue = false;
 
-        if (completedNpcId) {
+        if (completedNpcId && shouldSendNpcInteract) {
             this.networkManager.sendNpcInteract(completedNpcId);
         }
     }
@@ -175,6 +218,10 @@ export class DialogueManager {
             options,
             hideSpeakerVisuals: line.hideSpeakerVisuals ?? Boolean(line.options && line.options.length > 0)
         };
+
+        if (line.shake === 'mild') {
+            this.gameScene.cameras.main.shake(180, 0.0025);
+        }
 
         if (this.hasShownLine) {
             this.playDialogueNext();

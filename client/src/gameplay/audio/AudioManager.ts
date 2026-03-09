@@ -238,47 +238,7 @@ export class AudioManager {
      * Preload audio assets
      */
     preload() {
-        // Music tracks
-        this.scene.load.audio('music-beach', '/audio/tracks/beach.m4a');
-        this.scene.load.audio('music-anchor-hollow', '/audio/tracks/anchor-hollow.m4a');
-        
-        // Ambient loops
-        this.scene.load.audio('ambient-fire', '/audio/ambient/scene/fire.mp3');
-        this.scene.load.audio('ambient-ocean', '/audio/ambient/scene/ocean.mp3');
-        
-        // Player sounds
-        this.scene.load.audio('footstep-grass', '/audio/ambient/player/walk/grass.mp3');
-        this.scene.load.audio('footstep-sand', '/audio/ambient/player/walk/sand.mp3');
-        this.scene.load.audio('footstep-stone', '/audio/ambient/player/walk/stone.mp3');
-        this.scene.load.audio('footstep-water', '/audio/ambient/player/walk/water.mp3');
-        this.scene.load.audio('footstep-wood', '/audio/ambient/player/walk/wood.mp3');
-        this.scene.load.audio('item-eat-yekberries', '/audio/ambient/player/eat.mp3');
-        
-        // Meow sounds
-        this.scene.load.audio('meow1', '/audio/ambient/player/meows/meow1.mp3');
-        this.scene.load.audio('meow2', '/audio/ambient/player/meows/meow2.mp3');
-        this.scene.load.audio('meow3', '/audio/ambient/player/meows/meow3.mp3');
-        this.scene.load.audio('meow4', '/audio/ambient/player/meows/meow4.mp3');
-
-        // Fishing + UI SFX
-        this.scene.load.audio('rod-cast', '/audio/ambient/action/rod-cast.mp3');
-        this.scene.load.audio('rod-reel', '/audio/ambient/action/rod-reel.mp3');
-        this.scene.load.audio('water-splash', '/audio/ambient/action/water-splash.mp3');
-        this.scene.load.audio('bite-alert', '/audio/ambient/ui/alert-1.mp3');
-        this.scene.load.audio('reel-click', '/audio/ambient/ui/click-note.mp3');
-        this.scene.load.audio('item-collected', '/audio/ambient/ui/item-collected.mp3');
-        this.scene.load.audio('item-drop', '/audio/ambient/ui/item-drop.mp3');
-        this.scene.load.audio('item-skip', '/audio/ambient/ui/item-skip.mp3');
-        this.scene.load.audio('ui-click', '/audio/ambient/ui/click.mp3');
-        this.scene.load.audio('advancement-quest-started', '/audio/ambient/ui/advancements/quests/start.mp3');
-        this.scene.load.audio('advancement-quest-objective', '/audio/ambient/ui/advancements/quests/objective.mp3');
-        this.scene.load.audio('advancement-quest-completed', '/audio/ambient/ui/advancements/quests/complete.mp3');
-        this.scene.load.audio('advancement-quest-track', '/audio/ambient/ui/advancements/quests/track.mp3');
-        this.scene.load.audio('advancement-achievement-unlocked', '/audio/ambient/ui/advancements/achivement.mp3');
-        this.scene.load.audio('advancement-location-discovered', '/audio/ambient/ui/advancements/location.mp3');
-        this.scene.load.audio('dialogue-click', '/audio/ambient/dialogue/click.mp3');
-        this.scene.load.audio('dialogue-next', '/audio/ambient/dialogue/next.mp3');
-        this.scene.load.audio('dialogue-end', '/audio/ambient/dialogue/end.mp3');
+        this.scene.load.pack('audio-core-pack', '/packs/audio-core.pack.json');
     }
     
     /**

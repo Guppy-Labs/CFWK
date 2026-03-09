@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 export type SettingsToggleConfig = {
     value: boolean;
     onChange?: (value: boolean) => void;
+    allowToggleOff?: boolean;
 };
 
 export class SettingsToggle {
@@ -11,18 +12,23 @@ export class SettingsToggle {
     private toggle: Phaser.GameObjects.Image;
     private value: boolean;
     private onChange?: (value: boolean) => void;
+    private allowToggleOff: boolean;
 
     constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container, config: SettingsToggleConfig) {
         this.scene = scene;
         this.value = config.value;
         this.onChange = config.onChange;
+        this.allowToggleOff = config.allowToggleOff ?? true;
 
         this.toggle = this.scene.add.image(0, 0, this.value ? 'ui-toggle-on' : 'ui-toggle-off').setOrigin(0, 0.5);
         this.container = this.scene.add.container(0, 0, [this.toggle]);
         parent.add(this.container);
 
         this.toggle.setInteractive({ useHandCursor: true });
-        this.toggle.on('pointerdown', () => this.setValue(!this.value, true));
+        this.toggle.on('pointerdown', () => {
+            if (this.value && !this.allowToggleOff) return;
+            this.setValue(!this.value, true);
+        });
     }
 
     setPosition(x: number, y: number) {

@@ -1,7 +1,47 @@
-import { startGame, setLoaderText } from './gameplay';
+import { startGame, setLoaderProgress, setLoaderProgressVisible, setLoaderText } from './gameplay';
 import { ErrorModal } from './ui/ErrorModal';
+import { Toast } from './ui/Toast';
 import { LocaleManager } from './gameplay/i18n/LocaleManager';
 import { bootstrapLocale } from './gameplay/i18n/localeBootstrap';
+import { clearNonAuthCaches, prepareGameAssets } from './gameplay/assets/AssetCacheBootstrap';
+
+const SLOW_LOAD_RETRY_DELAY_MS = 20_000;
+let slowLoadRetryTimer: number | null = null;
+let dismissSlowLoadToast: (() => void) | null = null;
+let retryPending = false;
+
+function clearSlowLoadRetryPrompt() {
+    if (slowLoadRetryTimer !== null) {
+        window.clearTimeout(slowLoadRetryTimer);
+        slowLoadRetryTimer = null;
+    }
+    if (dismissSlowLoadToast) {
+        dismissSlowLoadToast();
+        dismissSlowLoadToast = null;
+    }
+}
+
+function startSlowLoadRetryPrompt() {
+    clearSlowLoadRetryPrompt();
+    slowLoadRetryTimer = window.setTimeout(() => {
+        dismissSlowLoadToast = Toast.showAction(
+            'Not Working?',
+            'Retry',
+            async () => {
+                if (retryPending) return;
+                retryPending = true;
+                try {
+                    setLoaderText('Retrying...');
+                    await clearNonAuthCaches();
+                } finally {
+                    window.location.reload();
+                }
+            },
+            'info',
+            0
+        );
+    }, SLOW_LOAD_RETRY_DELAY_MS);
+}
 
 function isIgnorableClientError(err: unknown): boolean {
     const message =
@@ -50,22 +90,51 @@ function formatRemaining(ms: number): string {
 // Auth check
 async function checkAuth() {
     try {
+        startSlowLoadRetryPrompt();
         await bootstrapLocale({ fetchFromServer: true });
         const localeManager = LocaleManager.getInstance();
+
+        const cacheStatus = await prepareGameAssets({
+            onModeChanged: (mode) => {
+                if (mode === 'up-to-date') {
+                    setLoaderProgressVisible(false);
+                    return;
+                }
+
+                setLoaderProgressVisible(true);
+                setLoaderProgress(0);
+                if (mode === 'first-download') {
+                    setLoaderText(localeManager.t('loader.downloadingGame', undefined, 'Downloading Game...'));
+                } else {
+                    setLoaderText(localeManager.t('loader.updatingGame', undefined, 'Updating Game...'));
+                }
+            },
+            onProgress: (progress) => {
+                setLoaderProgress(progress);
+            }
+        });
+
+        if (cacheStatus.mode !== 'up-to-date') {
+            setLoaderProgress(1);
+        }
+
         setLoaderText(localeManager.t('loader.authenticating', undefined, 'Authenticating...'));
         
         const res = await fetch('/api/auth/me');
         if (!res.ok) {
+            clearSlowLoadRetryPrompt();
             window.location.href = '/login';
             return;
         }
         const data = await res.json();
         if (!data.user) {
+            clearSlowLoadRetryPrompt();
             window.location.href = '/login';
             return;
         }
 
         if (!data.user.username) {
+            clearSlowLoadRetryPrompt();
             window.location.href = '/onboarding';
             return;
         }
@@ -74,6 +143,7 @@ async function checkAuth() {
         const betaAccessUntil = data.user.betaAccessUntil ? new Date(data.user.betaAccessUntil) : null;
         const hasBetaAccess = !!(betaAccessUntil && betaAccessUntil.getTime() > Date.now());
            if (!perms.includes('access.game') && !hasBetaAccess) {
+                         clearSlowLoadRetryPrompt();
              window.location.href = '/account'; 
              return;
         }
@@ -90,6 +160,7 @@ async function checkAuth() {
         }
 
         setLoaderText(localeManager.t('loader.initializingGame', undefined, 'Initializing game...'));
+        setLoaderProgressVisible(false);
         
         // Update the upgrade button based on premium status
         updateUpgradeButton(data.user);
@@ -100,7 +171,9 @@ async function checkAuth() {
             permissions: perms,
             isPremium: perms.includes('premium.shark')
         });
+        clearSlowLoadRetryPrompt();
     } catch (e) {
+        clearSlowLoadRetryPrompt();
         window.location.href = '/login';
     }
 }

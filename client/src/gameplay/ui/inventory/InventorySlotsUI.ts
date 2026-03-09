@@ -812,6 +812,7 @@ export class InventorySlotsUI {
     }
 
     private startDragVisual(slotIndex: number, pointer: Phaser.Input.Pointer) {
+        if (this.scene.registry.get('guideBlockAll') === true) return;
         const item = this.slotIndexToItem.get(slotIndex);
         const icon = this.slotIndexToIcon.get(slotIndex);
         const count = this.slotIndexToStackCount.get(slotIndex) ?? 0;

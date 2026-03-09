@@ -343,6 +343,24 @@ export class NetworkManager {
             if (!data?.locationId) return;
             this.transferCallbacks.forEach((callback) => callback(data.locationId!));
         });
+
+        this.currentRoom.onMessage('quest:bridge-blocked', (data: { npcId?: string }) => {
+            const npcId = typeof data?.npcId === 'string' && data.npcId.trim().length > 0
+                ? data.npcId.trim()
+                : 'guard';
+            window.dispatchEvent(new CustomEvent('dialogue:forced', {
+                detail: {
+                    npcId,
+                    lines: [
+                        {
+                            speaker: 'npc',
+                            textKey: 'dialogue.npc.guard.bridgeBlocked.0',
+                            text: 'HOLD YOUR HORSES! Who said you could cross this bridge?'
+                        }
+                    ]
+                }
+            }));
+        });
         
         // Mark that we have an active connection
         this.wasConnected = true;

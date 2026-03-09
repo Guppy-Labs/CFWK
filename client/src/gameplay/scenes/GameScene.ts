@@ -119,6 +119,10 @@ export class GameScene extends Phaser.Scene {
     private questTargetMarker?: Phaser.GameObjects.Container;
     private harvestTargets: StaticInteractiveTarget[] = [];
     private harvestCooldownUiByObjectId = new Map<number, HarvestCooldownUiEntry>();
+    private dangerRegionPolygon: Array<{ x: number; y: number }> | null = null;
+    private dangerStayStartedAtMs: number | null = null;
+    private dangerStayDurationMs = 60_000;
+    private dangerCountdownDisplay: string | null = null;
     
     // Character appearance (fetched async)
     private characterAppearance: ICharacterAppearance = DEFAULT_CHARACTER_APPEARANCE;
@@ -638,6 +642,70 @@ export class GameScene extends Phaser.Scene {
         return null;
     }
 
+    private updateDangerCountdownUi(timeMs: number) {
+        const progress = this.advancementsState.questProgress?.heed_the_warning;
+        const questIsOnStayObjective = progress?.status === 'active'
+            && (typeof progress.objectiveIndex !== 'number' || Math.floor(progress.objectiveIndex) === 0);
+
+        const player = this.getActivePlayer();
+        if (!questIsOnStayObjective || !player || !this.dangerRegionPolygon) {
+            this.dangerStayStartedAtMs = null;
+            this.setDangerCountdownDisplay(null);
+            return;
+        }
+
+        const inDanger = this.isPointInPolygon(player.x, player.y, this.dangerRegionPolygon);
+        if (!inDanger) {
+            this.dangerStayStartedAtMs = null;
+            this.setDangerCountdownDisplay(null);
+            return;
+        }
+
+        if (this.dangerStayStartedAtMs === null) {
+            this.dangerStayStartedAtMs = timeMs;
+        }
+
+        const elapsed = Math.max(0, timeMs - this.dangerStayStartedAtMs);
+        const remainingMs = Math.max(0, this.dangerStayDurationMs - elapsed);
+        const remainingSeconds = (remainingMs / 1000).toFixed(1);
+        this.setDangerCountdownDisplay(`${remainingSeconds}s`);
+    }
+
+    private setDangerCountdownDisplay(value: string | null) {
+        if (this.dangerCountdownDisplay === value) return;
+        this.dangerCountdownDisplay = value;
+        this.registry.set('dangerZoneCountdown', value);
+    }
+
+    private extractRegionPolygon(map: Phaser.Tilemaps.Tilemap, regionName: string): Array<{ x: number; y: number }> | null {
+        const objectLayer = map.getObjectLayer('Regions') as TiledObjectLayer | null;
+        if (!objectLayer || !Array.isArray(objectLayer.objects)) return null;
+
+        const target = objectLayer.objects.find((object) => object.name === regionName && Array.isArray(object.polygon) && object.polygon.length >= 3);
+        if (!target || !Array.isArray(target.polygon)) return null;
+
+        const baseX = Number(target.x ?? 0);
+        const baseY = Number(target.y ?? 0);
+        return target.polygon.map((point) => ({
+            x: baseX + Number(point.x ?? 0),
+            y: baseY + Number(point.y ?? 0)
+        }));
+    }
+
+    private isPointInPolygon(x: number, y: number, polygon: Array<{ x: number; y: number }>): boolean {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x;
+            const yi = polygon[i].y;
+            const xj = polygon[j].x;
+            const yj = polygon[j].y;
+            const intersects = ((yi > y) !== (yj > y))
+                && (x < ((xj - xi) * (y - yi)) / ((yj - yi) + 0.0000001) + xi);
+            if (intersects) inside = !inside;
+        }
+        return inside;
+    }
+
     private updateQuestIndicators(time: number) {
         const objectiveData = this.getTargetedQuestObjective();
         if (!objectiveData) {
@@ -770,6 +838,13 @@ export class GameScene extends Phaser.Scene {
 
         this.harvestTargets = this.extractHarvestTargets(map);
         this.mcPlayerController?.setStaticInteractives(this.harvestTargets);
+        this.dangerRegionPolygon = this.extractRegionPolygon(map, 'Danger');
+        const heedQuestEntry = ADVANCEMENT_QUEST_CATALOG.find((entry) => entry.id === 'heed_the_warning');
+        const stayObjective = heedQuestEntry?.objectives?.find((objective) => objective.kind === 'stay-in-region' && objective.regionName === 'Danger');
+        if (stayObjective && typeof stayObjective.durationMs === 'number' && Number.isFinite(stayObjective.durationMs)) {
+            this.dangerStayDurationMs = Math.max(1000, Math.floor(stayObjective.durationMs));
+        }
+        this.setDangerCountdownDisplay(null);
 
         // Initial occlusion update
         if (player) {
@@ -1258,6 +1333,7 @@ export class GameScene extends Phaser.Scene {
 
         this.updateHarvestCooldownUi(Date.now());
         this.updateQuestIndicators(_time);
+        this.updateDangerCountdownUi(Date.now());
 
         // Update tablist registry
         this.updateTablistRegistry();
@@ -1358,6 +1434,9 @@ export class GameScene extends Phaser.Scene {
     }
     
     shutdown() {
+        this.dangerRegionPolygon = null;
+        this.dangerStayStartedAtMs = null;
+        this.setDangerCountdownDisplay(null);
         this.audioManager?.destroy();
         this.remotePlayerManager?.destroy();
         this.aiNpcManager?.destroy();

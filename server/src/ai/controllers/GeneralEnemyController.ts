@@ -18,6 +18,13 @@ export class GeneralEnemyController implements AIController {
     readonly id = 'general-enemy';
 
     update(entity: AiNpcRuntimeState, context: AiControllerContext): void {
+        if (entity.isDead) {
+            entity.vx = 0;
+            entity.vy = 0;
+            entity.anim = 'death';
+            return;
+        }
+
         const config = {
             speedPxPerSecond: numberOrDefault(entity.controllerConfig?.speedPxPerSecond, DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG.speedPxPerSecond, 1),
             idleCheckFrequencyTicks: numberOrDefault(entity.controllerConfig?.idleCheckFrequencyTicks, DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG.idleCheckFrequencyTicks, 1),
@@ -25,7 +32,10 @@ export class GeneralEnemyController implements AIController {
             idleMoveRangeMinMeters: numberOrDefault(entity.controllerConfig?.idleMoveRangeMinMeters, DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG.idleMoveRangeMinMeters, 0.1),
             idleMoveRangeMaxMeters: numberOrDefault(entity.controllerConfig?.idleMoveRangeMaxMeters, DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG.idleMoveRangeMaxMeters, 0.1),
             chaseRangeMeters: numberOrDefault(entity.controllerConfig?.chaseRangeMeters, DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG.chaseRangeMeters, 0.1),
-            pathRecomputeFrequencyTicks: numberOrDefault(entity.controllerConfig?.pathRecomputeFrequencyTicks, DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG.pathRecomputeFrequencyTicks, 1)
+            pathRecomputeFrequencyTicks: numberOrDefault(entity.controllerConfig?.pathRecomputeFrequencyTicks, DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG.pathRecomputeFrequencyTicks, 1),
+            attackCooldownMs: numberOrDefault(entity.controllerConfig?.attackCooldownMs, DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG.attackCooldownMs, 1),
+            meleeRangePx: numberOrDefault(entity.controllerConfig?.meleeRangePx, DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG.meleeRangePx, 1),
+            meleeDamageHearts: numberOrDefault(entity.controllerConfig?.meleeDamageHearts, DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG.meleeDamageHearts, 0)
         };
         if (config.idleMoveRangeMaxMeters < config.idleMoveRangeMinMeters) {
             config.idleMoveRangeMaxMeters = config.idleMoveRangeMinMeters;
@@ -80,11 +90,53 @@ export class GeneralEnemyController implements AIController {
             this.stepIdle(entity, context);
         }
 
+        if (entity.kind === 'gremlin') {
+            const target = entity.targetSessionId
+                ? context.players.find((player) => player.sessionId === entity.targetSessionId)
+                : undefined;
+            entity.direction = this.getGremlinDirection(entity, target);
+            if (context.now < entity.attackAnimUntilMs) {
+                entity.anim = 'attack';
+            } else {
+                entity.anim = (Math.abs(entity.vx) > 0.2 || Math.abs(entity.vy) > 0.2) ? 'walk' : 'idle';
+            }
+            return;
+        }
+
         entity.direction = toFacingDirectionIndex(entity.vx, entity.vy, entity.direction);
         entity.anim = (Math.abs(entity.vx) > 0.2 || Math.abs(entity.vy) > 0.2) ? 'walk' : 'idle';
     }
 
     private stepIdle(entity: AiNpcRuntimeState, context: AiControllerContext) {
+        if (entity.kind === 'gremlin') {
+            if (!entity.wanderTarget) {
+                if (context.tick < entity.lastIdleCheckTick) {
+                    entity.vx = 0;
+                    entity.vy = 0;
+                    return;
+                }
+
+                const distanceMeters = 3 + (2 * context.random());
+                const distancePx = context.metersToPixels(distanceMeters);
+                const angle = context.random() * Math.PI * 2;
+                entity.wanderTarget = {
+                    x: entity.x + Math.cos(angle) * distancePx,
+                    y: entity.y + Math.sin(angle) * distancePx
+                };
+
+                const nextDelayTicks = 160 + Math.floor(context.random() * 81);
+                entity.lastIdleCheckTick = context.tick + nextDelayTicks;
+            }
+
+            const reachedGremlinTarget = this.moveToward(entity, context, entity.wanderTarget, entity.controllerConfig.speedPxPerSecond);
+            if (reachedGremlinTarget) {
+                entity.wanderTarget = undefined;
+                entity.vx = 0;
+                entity.vy = 0;
+            }
+            return;
+        }
+
         const config = entity.controllerConfig;
         if (context.tick - entity.lastIdleCheckTick >= config.idleCheckFrequencyTicks) {
             entity.lastIdleCheckTick = context.tick;
@@ -126,6 +178,28 @@ export class GeneralEnemyController implements AIController {
 
         const chaseRangePx = context.metersToPixels(entity.controllerConfig.chaseRangeMeters);
         const distanceToTarget = Math.hypot(target.x - entity.x, target.y - entity.y);
+
+        const horizontalDelta = target.x - entity.x;
+        const canAttemptMelee = distanceToTarget <= entity.controllerConfig.meleeRangePx
+            && Math.abs(horizontalDelta) > 0.5
+            && (context.now - entity.lastAttackMs) >= entity.controllerConfig.attackCooldownMs
+            && entity.controllerConfig.meleeDamageHearts > 0;
+
+        if (canAttemptMelee) {
+            entity.vx = 0;
+            entity.vy = 0;
+            entity.attackAnimUntilMs = context.now + 900;
+            entity.lastAttackMs = context.now;
+            context.onMeleeAttackAttempt(entity, target.sessionId, entity.controllerConfig.meleeDamageHearts);
+            return;
+        }
+
+        if (context.now < entity.attackAnimUntilMs) {
+            entity.vx = 0;
+            entity.vy = 0;
+            return;
+        }
+
         if (distanceToTarget > chaseRangePx) {
             entity.targetSessionId = undefined;
             entity.mode = 'idle';
@@ -192,5 +266,15 @@ export class GeneralEnemyController implements AIController {
         }
 
         return Math.hypot(target.x - entity.x, target.y - entity.y) <= 2;
+    }
+
+    private getGremlinDirection(entity: AiNpcRuntimeState, target?: Vec2): number {
+        if (target && Math.abs(target.x - entity.x) > 0.5) {
+            return target.x < entity.x ? 6 : 2;
+        }
+        if (Math.abs(entity.vx) > 0.01) {
+            return entity.vx < 0 ? 6 : 2;
+        }
+        return entity.direction === 6 ? 6 : 2;
     }
 }

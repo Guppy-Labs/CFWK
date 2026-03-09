@@ -52,8 +52,8 @@ export class GuideOverlay {
             return;
         }
 
-        this.layoutCard();
         this.cardText.setText(state.message);
+        this.layoutCard();
         this.drawMask(state.targetRect ?? null, state.secondaryVisibleRect ?? null, state.dimBackground !== false);
         this.layoutPulse(state.targetRect ?? null);
 
@@ -97,10 +97,30 @@ export class GuideOverlay {
     private layoutCard() {
         const width = this.scene.scale.width;
         const height = this.scene.scale.height;
-        const cardWidth = Math.min(620, Math.max(420, width * 0.75));
-        this.cardBg.setSize(cardWidth, 92);
-        this.cardText.setWordWrapWidth(cardWidth - 60, true);
-        const bottomOffset = Math.max(120, Math.round(height * 0.18));
+        const mobileLike = width <= 900 || height <= 700;
+        const shortSide = Math.min(width, height);
+        const fontSize = mobileLike
+            ? Phaser.Math.Clamp(Math.round(shortSide * 0.03), 12, 16)
+            : Phaser.Math.Clamp(Math.round(shortSide * 0.024), 16, 18);
+        const cardWidth = mobileLike
+            ? Math.min(620, Math.max(300, width * 0.9))
+            : Math.min(620, Math.max(420, width * 0.75));
+        const wrapPadding = mobileLike ? 34 : 60;
+        const wrapWidth = Math.max(220, cardWidth - wrapPadding);
+
+        this.cardText.setFontSize(fontSize);
+        this.cardText.setWordWrapWidth(wrapWidth, true);
+
+        const textBounds = this.cardText.getTextBounds(false);
+        const textHeight = Math.ceil(textBounds.local.height);
+        const verticalPadding = mobileLike ? 24 : 30;
+        const cardHeight = Math.max(mobileLike ? 76 : 92, textHeight + verticalPadding);
+
+        this.cardBg.setSize(cardWidth, cardHeight);
+
+        const bottomOffset = mobileLike
+            ? Math.max(86, Math.round(height * 0.15))
+            : Math.max(120, Math.round(height * 0.18));
         this.card.setPosition(width / 2, height - bottomOffset);
     }
 
