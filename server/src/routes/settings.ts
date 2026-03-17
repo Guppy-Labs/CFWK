@@ -41,6 +41,7 @@ const normalizeVideo = (video: any, fallback: IVideoSettings): IVideoSettings =>
     bloomEnabled: typeof video?.bloomEnabled === 'boolean' ? video.bloomEnabled : fallback.bloomEnabled,
     vignetteEnabled: typeof video?.vignetteEnabled === 'boolean' ? video.vignetteEnabled : fallback.vignetteEnabled,
     tiltShiftEnabled: typeof video?.tiltShiftEnabled === 'boolean' ? video.tiltShiftEnabled : fallback.tiltShiftEnabled,
+    crtEnabled: typeof video?.crtEnabled === 'boolean' ? video.crtEnabled : fallback.crtEnabled,
     dustParticlesEnabled: typeof video?.dustParticlesEnabled === 'boolean' ? video.dustParticlesEnabled : fallback.dustParticlesEnabled
 });
 

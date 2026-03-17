@@ -42,6 +42,7 @@
 			"bloomEnabled": "Lueur",
 			"vignetteEnabled": "Vignettage",
 			"tiltShiftEnabled": "Tilt-shift",
+			"crtEnabled": "CRT",
 			"dustParticlesEnabled": "Particules de poussière"
 		},
 		"controls": {
@@ -94,6 +95,36 @@
 			"rod": "Canne"
 		}
 	},
+	"glimmerbowl": {
+		"placeholder": "Aperçu du bocal",
+		"section": {
+			"all": "Tous",
+			"regular": "Normal",
+			"awakened": "Éveillé"
+		},
+		"action": {
+			"awake": "Éveiller"
+		},
+		"details": {
+			"view": "Voir"
+		},
+		"popup": {
+			"noScarsOwned": "Aucune cicatrice possédée",
+			"scarsTitle": "Choisir une cicatrice",
+			"back": "Retour"
+		},
+		"view": {
+			"back": "Retour",
+			"knifePlaceholder": "Equiper un couteau",
+			"stats": {
+				"damage": "Degats",
+				"speed": "Vitesse",
+				"energy": "Energie",
+				"critRate": "Taux crit.",
+				"critDamage": "Degats crit."
+			}
+		}
+	},
 	"headbar": {
 		"playersOnline": "Joueurs en ligne",
 		"datePattern": "{season} Jour {day}",
@@ -103,6 +134,47 @@
 			"spring": "Printemps",
 			"summer": "Été",
 			"autumn": "Automne"
+		}
+	},
+	"advancements": {
+		"quest": {
+			"merchant_side_brew": {
+				"name": "Infusion secondaire du Marchand"
+			},
+			"village_weirdo": {
+				"name": "L'étrange du village"
+			},
+			"wares_galore": {
+				"name": "Marchandises à Gogo"
+			},
+			"bowl_that_shines": {
+				"name": "Le Bol qui Brille"
+			}
+		}
+	},
+	"finbook": {
+		"quest": {
+			"objective": {
+				"inventoryCount": "Collecter {count} {item}",
+				"refineFood": "Raffiner {item} en liquide",
+				"bottleLiquid": "Collecter {liquid} avec {container}",
+				"waitForTimeWindow": "Attendre la nuit ({start}:00-{end}:00)",
+				"fishNearLocation": "Pêcher près de {location}",
+				"harvestInteractive": "Utiliser l'interactable à proximité",
+				"openGlimmeringChest": "Ouvrir le Coffre Étincelant"
+			},
+			"merchant_side_brew": {
+				"description": "Apprenez le raffinage alimentaire avec le Marchand : écrasez des yekberries au sol pour faire un liquide, mettez-le en bocal, puis revenez le voir."
+			},
+			"village_weirdo": {
+				"description": "Parlez au Voyageur, récupérez 5 yekberries, puis revenez pour votre récompense."
+			},
+			"wares_galore": {
+				"description": "Parlez au Marchand de votre nouvelle pièce et découvrez ses marchandises."
+			},
+			"bowl_that_shines": {
+				"description": "Parlez au Sage puis suivez sa piste jusqu'au Maître des Mers."
+			}
 		}
 	},
 	"loader": {
@@ -155,7 +227,17 @@
 		"biteHint": "Cliquez encore {clicks} fois en {seconds} secondes !",
 		"caughtItem": "Vous avez attrapé {item} !"
 	},
+	"cinematic": {
+		"glimmerbowlUnlocked": {
+			"title": "GLIMMERBOWL",
+			"subtitle": "DÉBLOQUÉ"
+		}
+	},
 	"guide": {
+		"bowlThatShines": {
+			"travellerHint": "Hm... et si le voyageur avait cette info depuis le début.",
+			"returnToSeamaster": "Montrez au Maître des Mers ce que vous avez trouvé."
+		},
 		"rod": {
 			"openInventory": "Pour équiper votre nouvelle canne, ouvrez votre inventaire (appuyez sur {key} sur PC).",
 			"openInventoryMobile": "Pour équiper votre nouvelle canne, touchez le bouton d'inventaire.",
@@ -239,6 +321,37 @@
 				"seamaster": {
 					"greeting": {
 						"0": "Les marées sont honnêtes. Garde ta lame affûtée, et ton cœur plus encore."
+					},
+					"bowlThatShines": {
+						"passphrase": {
+							"prompt": "Si vous avez affaire à moi, parlez clairement.",
+							"choice": {
+								"0": "Le collectionneur de verre m'a envoyé.",
+								"1": "Le collectionneur de verre t'a envoyé ici.",
+								"2": "Le gardien des éclats m'a envoyé."
+							},
+							"wrong": {
+								"0": "Mauvaise formule. Revenez quand vous saurez quoi dire.",
+								"1": "Non. Ce n'est pas la phrase. Réessayez quand vous serez prêt."
+							},
+							"correct": {
+								"0": "...",
+								"1": "Texte temporaire : la voie s'ouvrira bientôt. Revenez dans un prochain chapitre."
+							}
+						},
+						"postKey": {
+							"0": "Par les marées... c'est la Clé Étincelante.",
+							"1": "Je suis sincèrement impressionné. Vous avez trouvé ce que je n'ai pas pu trouver.",
+							"2": "Et voici le retournement : gardez le trésor pour vous. J'ai déjà assez pris à la mer dans ma vie.",
+							"3": "Le coffre vous attend. Allez l'ouvrir.",
+							"player": {
+								"0": "Merci... sincèrement."
+							}
+						},
+						"finalPlaceholder": {
+							"0": "Alors, qu'a révélé le coffre ? Ha, ne me le dites pas encore.",
+							"1": "Nous reparlerons bientôt. Pour l'instant, que ceci soit votre commencement."
+						}
 					}
 				},
 				"guard": {
@@ -254,16 +367,117 @@
 				"merchant": {
 					"greeting": {
 						"0": "Si votre sac semble léger, mon étal peut y remédier."
+					},
+					"antiDeath": {
+						"return": {
+							"1": "Pour l'instant. Revenez quand vous voudrez la méthode avancée, je vous apprendrai à raffiner la nourriture.",
+							"2": "Gardez-en quelques-unes équipées et utilisez-les avant de paniquer. Ensuite, on améliorera votre menu."
+						}
+					},
+					"sideBrew": {
+						"intro": {
+							"0": "De retour pour la leçon deux ? Bien. La nourriture brute vous maintient en vie ; la nourriture raffinée gagne les combats.",
+							"1": "Toujours. Première astuce : l'extraction par pression.",
+							"2": "Jetez vos baies, piétinez-les jusqu'à en faire du liquide, puis revenez me voir.",
+							"player": {
+								"0": "Donc passer du temps à préparer, ça change vraiment tout ?"
+							}
+						},
+						"stomp": {
+							"0": "Déposez vos yekberries au sol et marchez dessus plusieurs fois.",
+							"1": "Pas de petits pas. Écrasez-les comme si elles avaient insulté votre couteau."
+						},
+						"jar": {
+							"0": "Parfait. Vous avez transformé ces baies en liquide.",
+							"1": "On ne ramasse pas une flaque à mains nues, alors utilisez un bocal. Je vous en offre un.",
+							"2": "La prochaine fois, vous payez. Le verre ne pousse pas sur les arbres."
+						},
+						"collect": {
+							"0": "Vous avez fait du jus, maintenant mettez-le en bocal. Cliquez la flaque puis confirmez le versement.",
+							"1": "Un bocal consommé, une portion de Jus Yek obtenue. De la chimie avec des conséquences."
+						},
+						"finish": {
+							"0": "LÀ, c'est du vrai carburant. Doux, puissant, et ça garde vraiment un chat-lame debout.",
+							"1": "Exactement. Le talent en cuisine, c'est aussi du talent en combat, juste avec moins de cris.",
+							"2": "Revenez plus tard et je vous montrerai des recettes plus dangereuses. Anchor Hollow nourrit celles et ceux qui expérimentent.",
+							"player": {
+								"0": "Ça soigne bien mieux que les baies crues."
+							}
+						}
+					},
+					"waresGalore": {
+						"intro": {
+							"0": "J'ai entendu dire que tu avais un peu d'argent maintenant... c'est vrai ?",
+							"1": "Merveilleux ! Un client avec des pièces, c'est mon genre de miracle préféré.",
+							"2": "Viens voir mes marchandises quand tu veux. Bientôt, je t'ouvrirai l'étal complet.",
+							"player": {
+								"0": "J'imagine..."
+							}
+						},
+						"post": {
+							"0": "Tu as l'allure d'un vrai client maintenant. Mes marchandises t'attendent."
+						}
 					}
 				},
 				"traveller": {
 					"greeting": {
 						"0": "La poussière de la route s'efface. Pas les histoires."
+					},
+					"villageWeirdo": {
+						"intro": {
+							"0": "Demande de voyageur : peux-tu me rapporter 5 yekberries ?",
+							"1": "Les objectifs précis forgent le caractère. S'il te plaît, merci.",
+							"player": {
+								"0": "Cinq ? C'est étrangement précis."
+							}
+						},
+						"collect": {
+							"0": "Il me faut toujours 5 yekberries. Reviens avec les cinq et ce sera rentable."
+						},
+						"return": {
+							"0": "Tu es vraiment revenu avec cinq yekberries. C'est très généreux.",
+							"1": "Aveu : c'était une expérience sociale. Je voulais voir s'il restait des gens généreux à Anchor Hollow.",
+							"2": "D'accord, c'est vrai. Mon budget est... moins spectaculaire.",
+							"3": "Je peux te donner une pièce d'argent. Ce n'est pas grand-chose, mais ça te servira.",
+							"4": "Tu n'as jamais eu de pièce ? Quoi, tu vis sous un rocher ?",
+							"5": "Une pièce d'argent vaut 100 pièces de bronze.",
+							"6": "Et 100 pièces d'argent font une pièce d'or.",
+							"7": "Une pièce d'argent, ça peut sembler peu, mais bien utilisée, elle peut t'obtenir ce dont tu as besoin.",
+							"player": {
+								"0": "Bro is NOT MrBeast.",
+								"1": "Je n'ai jamais eu de pièce avant..."
+							}
+						},
+						"post": {
+							"0": "Alors, cette pièce d'argent ? Dépense-la utilement, pas juste élégamment."
+						}
 					}
 				},
 				"wiseman": {
 					"greeting": {
 						"0": "Un esprit calme entend ce que les vagues bruyantes cachent."
+					},
+					"bowlThatShines": {
+						"intro": {
+							"0": "Tu as l'air fatigué.",
+							"1": "J'ai toujours été doté.",
+							"2": "Ha ! Tu es drôle.",
+							"3": "Je peux te confier un secret. Un qui allègera ton fardeau et t'ouvrira un tout nouveau monde.",
+							"4": "Bien. Va parler au Maître des Mers.",
+							"5": "Dis-lui exactement ceci : \"le collectionneur de verre t'a envoyé\".",
+							"6": "N'improvise pas.",
+							"choice": {
+								"prompt": "Je veux l'entendre ?",
+								"yes": "Oui."
+							},
+							"player": {
+								"0": "Comment le sais-tu ?",
+								"1": "À quel point es-tu doté ?"
+							}
+						},
+						"reminder": {
+							"0": "Trouve le Maître des Mers et dis : \"le collectionneur de verre t'a envoyé\"."
+						}
 					}
 			}
 		}
@@ -276,6 +490,26 @@
 		"yekberries": {
 			"name": "Baies yek",
 			"description": "Des baies acidulées d'un yekbush. Une nourriture de soin simple et fiable."
+		},
+		"yekjuice": {
+			"name": "Jus Yek",
+			"description": "Du jus yek pressé et mis en bocal. Bien plus nourrissant que des baies crues."
+		},
+		"yekjuiceliquid": {
+			"name": "Liquide de jus Yek",
+			"description": "Une flaque de jus yek fraîchement écrasé. À collecter avec un bocal."
+		},
+		"jar": {
+			"name": "Bocal",
+			"description": "Un bocal en verre pour collecter des liquides."
+		},
+		"glimmeringkey": {
+			"name": "Clé Scintillante",
+			"description": "Une clé pâle qui capte la lumière de la lune, même dans une eau trouble."
+		},
+		"nightfire_scar": {
+			"name": "Cicatrice Nocteflamme",
+			"description": "Un sceau brûlant capable d'éveiller un poisson et de lui donner une volonté propre."
 		},
 		"tuna": {
 			"name": "Thon",
@@ -373,6 +607,10 @@
 			"name": "Coffre en ruine",
 			"description": "Un coffre au trésor gorgé d'eau. La plupart du contenu a pourri."
 		}
+	},
+	"drops": {
+		"needContainerToCollect": "Il faut {container} pour collecter",
+		"confirmConsumeJar": "Confirmer la consommation de 1 bocal"
 	},
 	"system": {
 		"on": "ACTIVÉ",

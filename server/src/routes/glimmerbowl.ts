@@ -1,6 +1,7 @@
 import express from 'express';
 import { IGlimmerbowlResponse } from '@cfwk/shared';
 import { GlimmerbowlCache } from '../managers/GlimmerbowlCache';
+import User from '../models/User';
 
 const router = express.Router();
 
@@ -15,10 +16,12 @@ router.get('/', async (req, res) => {
     try {
         const userId = (req.user as any).id;
         const { entries, unlocked } = await GlimmerbowlCache.getInstance().getState(userId);
+        const user = await User.findById(userId).select('hasOwnedScar').lean();
 
         const response: IGlimmerbowlResponse = {
             entries,
-            unlocked
+            unlocked,
+            hasOwnedScar: Boolean((user as any)?.hasOwnedScar)
         };
         res.json(response);
     } catch (err) {

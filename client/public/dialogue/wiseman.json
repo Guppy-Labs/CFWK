@@ -1,5 +1,118 @@
 {
     "id": "wiseman",
+    "forks": [
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "bowl_that_shines",
+                    "status": "active",
+                    "objectiveIndex": 0
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.wiseman.bowlThatShines.reminder.0",
+                    "text": "Find the Sea Master and say the collector of glass sent you."
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "bowl_that_shines",
+                    "status": "active",
+                    "negate": true
+                },
+                {
+                    "type": "questObjective",
+                    "questId": "bowl_that_shines",
+                    "status": "completed",
+                    "negate": true
+                },
+                {
+                    "type": "questObjective",
+                    "questId": "village_weirdo",
+                    "status": "completed"
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.wiseman.bowlThatShines.intro.0",
+                    "text": "You look tired."
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.wiseman.bowlThatShines.intro.player.0",
+                    "text": "How do you know?"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.wiseman.bowlThatShines.intro.1",
+                    "text": "I've always been gifted."
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.wiseman.bowlThatShines.intro.player.1",
+                    "text": "How gifted are we talking?"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "shake": "mild",
+                    "textKey": "dialogue.npc.wiseman.bowlThatShines.intro.2",
+                    "text": "Ha! You're funny."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.wiseman.bowlThatShines.intro.3",
+                    "text": "I can share a secret. One that lifts weight from your shoulders and opens a whole new world."
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.wiseman.bowlThatShines.intro.choice.prompt",
+                    "text": "Do I want to hear it?",
+                    "options": [
+                        {
+                            "id": "yes",
+                            "textKey": "dialogue.npc.wiseman.bowlThatShines.intro.choice.yes",
+                            "text": "Yes.",
+                            "lines": [
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "happy",
+                                    "textKey": "dialogue.npc.wiseman.bowlThatShines.intro.4",
+                                    "text": "Good. Speak to the Sea Master."
+                                },
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "surprise",
+                                    "textKey": "dialogue.npc.wiseman.bowlThatShines.intro.5",
+                                    "text": "Tell him the collector of glass sent you."
+                                },
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "happy",
+                                    "textKey": "dialogue.npc.wiseman.bowlThatShines.intro.6",
+                                    "text": "Do not improvise."
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
     "lines": [
         {
             "speaker": "npc",

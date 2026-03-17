@@ -10,7 +10,8 @@ export enum InteractionType {
     None = 'none',
     Shove = 'shove',
     Talk = 'talk',
-    Harvest = 'harvest'
+    Harvest = 'harvest',
+    Chest = 'chest'
 }
 
 export type StaticInteractiveTarget = {
@@ -51,6 +52,7 @@ const DEFAULT_CONFIG: InteractionConfig = {
 };
 
 const INTERACTION_PRIORITY = {
+    [InteractionType.Chest]: 90,
     [InteractionType.Talk]: 75,
     [InteractionType.Harvest]: 70,
     [InteractionType.Shove]: 50
@@ -180,13 +182,18 @@ export class InteractionManager {
             if (distance > showDistance) return;
 
             const readyAt = this.interactiveCooldownByObjectId.get(target.objectId) ?? 0;
-            const canExecute = readyAt <= now;
-            const priority = INTERACTION_PRIORITY[InteractionType.Harvest];
+            const interactionType = target.componentId === 'glimmeringchest'
+                ? InteractionType.Chest
+                : InteractionType.Harvest;
+            const canExecute = interactionType === InteractionType.Chest
+                ? true
+                : readyAt <= now;
+            const priority = INTERACTION_PRIORITY[interactionType];
             if (priority > bestPriority || (priority === bestPriority && distance < bestDistance)) {
                 bestPriority = priority;
                 bestDistance = distance;
                 bestInteraction = {
-                    type: InteractionType.Harvest,
+                    type: interactionType,
                     objectId: target.objectId,
                     componentId: target.componentId,
                     distance,
@@ -222,6 +229,11 @@ export class InteractionManager {
             return this.executeHarvest(this.currentInteraction.objectId, this.currentInteraction.componentId);
         }
 
+        if (this.currentInteraction.type === InteractionType.Chest) {
+            if (!this.currentInteraction.objectId || !this.currentInteraction.componentId) return false;
+            return this.executeChest(this.currentInteraction.objectId, this.currentInteraction.componentId);
+        }
+
         return false;
     }
 
@@ -240,6 +252,11 @@ export class InteractionManager {
 
     private executeHarvest(objectId: number, componentId: string): boolean {
         this.networkManager.sendHarvestInteractive(objectId, componentId);
+        return true;
+    }
+
+    private executeChest(objectId: number, componentId: string): boolean {
+        this.networkManager.sendChestInteract(objectId, componentId);
         return true;
     }
 

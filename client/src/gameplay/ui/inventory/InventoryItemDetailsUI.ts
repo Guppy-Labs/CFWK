@@ -18,6 +18,7 @@ export type InventoryItemDetailsConfig = {
     descriptionTextColor?: string;
     amountTextColor?: string;
     secondaryActionLabel?: string;
+    tertiaryActionLabel?: string;
 };
 
 export type InventoryItemDetailsData = {
@@ -28,6 +29,7 @@ export type InventoryItemDetailsData = {
     amount?: number;
     stackSize?: number;
     scoreText?: string;
+    rarity?: string;
 };
 
 export const DEFAULT_ITEM_DETAILS_CONFIG: Required<InventoryItemDetailsConfig> = {
@@ -45,7 +47,8 @@ export const DEFAULT_ITEM_DETAILS_CONFIG: Required<InventoryItemDetailsConfig> =
     textColor: '#BABEC7',
     descriptionTextColor: '#9A9EA7',
     amountTextColor: '#9A9EA7',
-    secondaryActionLabel: ''
+    secondaryActionLabel: '',
+    tertiaryActionLabel: ''
 };
 
 export class InventoryItemDetailsUI {
@@ -59,6 +62,7 @@ export class InventoryItemDetailsUI {
     private amountImage: Phaser.GameObjects.Image;
     private scoreImage: Phaser.GameObjects.Image;
     private descriptionImage: Phaser.GameObjects.Image;
+    private rarityIconImage: Phaser.GameObjects.Image;
     private dropButtonBg: Phaser.GameObjects.Image;
     private dropButtonLabel: Phaser.GameObjects.Image;
     private dropButton: Phaser.GameObjects.Container;
@@ -76,6 +80,14 @@ export class InventoryItemDetailsUI {
     private secondaryButtonWidth = 0;
     private secondaryButtonHeight = 0;
     private onSecondaryAction?: (itemId: string, amount: number, slotIndex: number) => void;
+    private tertiaryButtonBg: Phaser.GameObjects.Image;
+    private tertiaryButtonLabel: Phaser.GameObjects.Image;
+    private tertiaryButton: Phaser.GameObjects.Container;
+    private tertiaryButtonTextureKey?: string;
+    private tertiaryLabelTextureKey?: string;
+    private tertiaryButtonWidth = 0;
+    private tertiaryButtonHeight = 0;
+    private onTertiaryAction?: (itemId: string, amount: number, slotIndex: number) => void;
     private currentItem?: { itemId: string; amount: number; slotIndex: number };
     private localeManager = LocaleManager.getInstance();
     private localeChangedHandler?: (event: Event) => void;
@@ -115,7 +127,8 @@ export class InventoryItemDetailsUI {
             textColor: config.textColor ?? DEFAULT_ITEM_DETAILS_CONFIG.textColor,
             descriptionTextColor: config.descriptionTextColor ?? DEFAULT_ITEM_DETAILS_CONFIG.descriptionTextColor,
             amountTextColor: config.amountTextColor ?? DEFAULT_ITEM_DETAILS_CONFIG.amountTextColor,
-            secondaryActionLabel: config.secondaryActionLabel ?? DEFAULT_ITEM_DETAILS_CONFIG.secondaryActionLabel
+            secondaryActionLabel: config.secondaryActionLabel ?? DEFAULT_ITEM_DETAILS_CONFIG.secondaryActionLabel,
+            tertiaryActionLabel: config.tertiaryActionLabel ?? DEFAULT_ITEM_DETAILS_CONFIG.tertiaryActionLabel
         };
         this.fontRenderer = new BitmapFontRenderer(this.scene, this.fontCharSize);
 
@@ -142,6 +155,9 @@ export class InventoryItemDetailsUI {
 
         this.descriptionTextureKey = this.createTextTexture('', this.config.width - this.config.descriptionOffsetX * 2);
         this.descriptionImage = this.scene.add.image(0, 0, this.descriptionTextureKey).setOrigin(0, 0);
+        this.rarityIconImage = this.scene.add.image(0, 0, 'ui-rarity-common').setOrigin(1, 1);
+        this.rarityIconImage.setScale(0.5);
+        this.rarityIconImage.setVisible(false);
 
         const dropLabel = this.localeManager.t('inventory.details.drop', undefined, 'Drop');
         const dropLabelWidth = Math.max(1, this.measureBitmapTextWidth(dropLabel));
@@ -161,10 +177,20 @@ export class InventoryItemDetailsUI {
         this.secondaryButtonBg.setInteractive({ useHandCursor: false });
         this.secondaryButtonBg.on('pointerdown', () => this.handleSecondaryAction());
 
+        const tertiaryLabel = this.config.tertiaryActionLabel || '';
+        const tertiaryLabelWidth = Math.max(1, this.measureBitmapTextWidth(tertiaryLabel));
+        this.tertiaryLabelTextureKey = this.createTextTexture(tertiaryLabel, tertiaryLabelWidth, false, '#f2e9dd');
+        this.tertiaryButtonLabel = this.scene.add.image(0, 0, this.tertiaryLabelTextureKey).setOrigin(0.5, 0.5);
+        this.tertiaryButtonBg = this.scene.add.image(0, 0, 'ui-group-button-selected').setOrigin(0.5, 0.5);
+        this.tertiaryButton = this.scene.add.container(0, 0, [this.tertiaryButtonBg, this.tertiaryButtonLabel]);
+        this.tertiaryButtonBg.setInteractive({ useHandCursor: false });
+        this.tertiaryButtonBg.on('pointerdown', () => this.handleTertiaryAction());
+
         this.dropButton.setVisible(false);
         this.secondaryButton.setVisible(false);
+        this.tertiaryButton.setVisible(false);
 
-        this.container.add([this.frame, this.divider, this.nameImage, this.scoreImage, this.amountImage, this.descriptionImage, this.dropButton, this.secondaryButton]);
+        this.container.add([this.frame, this.divider, this.nameImage, this.scoreImage, this.amountImage, this.descriptionImage, this.rarityIconImage, this.dropButton, this.secondaryButton, this.tertiaryButton]);
         this.container.setVisible(false);
 
         this.localeChangedHandler = () => this.refreshLocalizedLabels();
@@ -194,6 +220,25 @@ export class InventoryItemDetailsUI {
         }
     }
 
+    setTertiaryAction(callback?: (itemId: string, amount: number, slotIndex: number) => void, label?: string) {
+        this.onTertiaryAction = callback;
+        if (typeof label === 'string') {
+            const labelWidth = Math.max(1, this.measureBitmapTextWidth(label));
+            const newKey = this.createTextTexture(label, labelWidth, false, '#f2e9dd');
+            const oldKey = this.tertiaryLabelTextureKey;
+            this.tertiaryLabelTextureKey = newKey;
+            this.tertiaryButtonLabel.setTexture(newKey);
+            if (oldKey && this.scene.textures.exists(oldKey)) {
+                this.scene.textures.remove(oldKey);
+            }
+        }
+
+        if (this.currentItem) {
+            this.tertiaryButton.setVisible(this.currentItem.slotIndex >= 0 && Boolean(this.onTertiaryAction));
+            this.updateDropButtonLayout();
+        }
+    }
+
     setVisible(visible: boolean) {
         this.container.setVisible(visible);
     }
@@ -203,7 +248,9 @@ export class InventoryItemDetailsUI {
             this.setVisible(false);
             this.dropButton.setVisible(false);
             this.secondaryButton.setVisible(false);
+            this.tertiaryButton.setVisible(false);
             this.scoreImage.setVisible(false);
+            this.rarityIconImage.setVisible(false);
             this.currentItem = undefined;
             return;
         }
@@ -231,6 +278,14 @@ export class InventoryItemDetailsUI {
         this.scoreImage.setTexture(scoreKey);
         this.scoreImage.setVisible(Boolean(scoreText));
         this.descriptionImage.setTexture(descKey);
+        const rarityKey = this.getRarityIconKey(data.rarity);
+        const hasRarityIcon = Boolean(rarityKey) && this.scene.textures.exists(rarityKey!);
+        if (hasRarityIcon && rarityKey) {
+            this.rarityIconImage.setTexture(rarityKey);
+            this.rarityIconImage.setVisible(true);
+        } else {
+            this.rarityIconImage.setVisible(false);
+        }
 
         if (oldName && this.scene.textures.exists(oldName)) this.scene.textures.remove(oldName);
         if (oldAmount && this.scene.textures.exists(oldAmount)) this.scene.textures.remove(oldAmount);
@@ -244,6 +299,7 @@ export class InventoryItemDetailsUI {
         };
         this.dropButton.setVisible(data.slotIndex >= 0);
         this.secondaryButton.setVisible(data.slotIndex >= 0 && Boolean(this.onSecondaryAction));
+        this.tertiaryButton.setVisible(data.slotIndex >= 0 && Boolean(this.onTertiaryAction));
         this.updateHeaderLayout();
         this.updateDropButtonLayout();
         this.setVisible(true);
@@ -267,6 +323,7 @@ export class InventoryItemDetailsUI {
 
         const descriptionY = dividerY + this.getDividerHeight() + this.config.descriptionOffsetY;
         this.descriptionImage.setPosition(this.config.descriptionOffsetX, descriptionY);
+        this.updateRarityIconLayout();
 
         this.updateDropButtonLayout();
     }
@@ -283,31 +340,37 @@ export class InventoryItemDetailsUI {
 
     private updateDropButtonLayout() {
         const hasSecondary = this.secondaryButton.visible;
-        const targetWidth = hasSecondary
-            ? Math.round(Math.max(28, Math.min(34, this.config.width * 0.24)))
-            : Math.round(Math.max(30, Math.min(36, this.config.width * 0.25)));
+        const hasTertiary = this.tertiaryButton.visible;
+        const visibleButtons = 1 + (hasSecondary ? 1 : 0) + (hasTertiary ? 1 : 0);
+        const targetWidth = visibleButtons >= 3
+            ? 38
+            : hasSecondary
+                ? 46
+                : 52;
         const targetHeight = 12;
         this.updateDropButtonTexture(targetWidth, targetHeight);
         this.updateSecondaryButtonTexture(targetWidth, targetHeight);
+        this.updateTertiaryButtonTexture(targetWidth, targetHeight);
 
         this.dropButtonBg.setDisplaySize(targetWidth, targetHeight);
         this.dropButtonLabel.setPosition(0, -1);
         this.secondaryButtonBg.setDisplaySize(targetWidth, targetHeight);
         this.secondaryButtonLabel.setPosition(0, -1);
+        this.tertiaryButtonBg.setDisplaySize(targetWidth, targetHeight);
+        this.tertiaryButtonLabel.setPosition(0, -1);
 
         const leftPadding = this.config.nameOffsetX;
         const y = this.config.height - targetHeight / 2 - 6;
-        if (hasSecondary) {
-            const gap = 5;
-            const firstX = leftPadding + targetWidth / 2;
-            const secondX = firstX + targetWidth + gap;
-            this.dropButton.setPosition(firstX, y);
-            this.secondaryButton.setPosition(secondX, y);
-        } else {
-            const x = leftPadding + targetWidth / 2;
-            this.dropButton.setPosition(x, y);
-            this.secondaryButton.setPosition(x, y);
-        }
+        const gap = visibleButtons >= 3 ? 3 : 5;
+        const firstX = leftPadding + targetWidth / 2;
+        this.dropButton.setPosition(firstX, y);
+        this.secondaryButton.setPosition(hasSecondary ? firstX + targetWidth + gap : firstX, y);
+        this.tertiaryButton.setPosition(
+            hasTertiary
+                ? firstX + (targetWidth + gap) * (hasSecondary ? 2 : 1)
+                : firstX,
+            y
+        );
     }
 
     private updateHeaderLayout() {
@@ -318,6 +381,15 @@ export class InventoryItemDetailsUI {
         const amountWidth = this.amountImage.width * this.amountImage.scaleX;
         const scoreX = amountX - amountWidth - 4;
         this.scoreImage.setPosition(scoreX, this.config.nameOffsetY + 1);
+    }
+
+    private updateRarityIconLayout() {
+        const x = this.config.width - 3;
+        const y = this.config.height - 3;
+        this.rarityIconImage.setPosition(x, y);
+        if (this.rarityIconImage.texture.key === 'ui-rarity-supreme') {
+            this.rarityIconImage.y += 1;
+        }
     }
 
     private refreshLocalizedLabels() {
@@ -339,6 +411,16 @@ export class InventoryItemDetailsUI {
             this.secondaryButtonLabel.setTexture(secondaryKey);
             if (oldSecondary && this.scene.textures.exists(oldSecondary)) {
                 this.scene.textures.remove(oldSecondary);
+            }
+        }
+        if (this.config.tertiaryActionLabel) {
+            const tertiaryLabelWidth = Math.max(1, this.measureBitmapTextWidth(this.config.tertiaryActionLabel));
+            const tertiaryKey = this.createTextTexture(this.config.tertiaryActionLabel, tertiaryLabelWidth, false, '#f2e9dd');
+            const oldTertiary = this.tertiaryLabelTextureKey;
+            this.tertiaryLabelTextureKey = tertiaryKey;
+            this.tertiaryButtonLabel.setTexture(tertiaryKey);
+            if (oldTertiary && this.scene.textures.exists(oldTertiary)) {
+                this.scene.textures.remove(oldTertiary);
             }
         }
     }
@@ -385,6 +467,30 @@ export class InventoryItemDetailsUI {
         const oldKey = this.secondaryButtonTextureKey;
         this.secondaryButtonTextureKey = newKey;
         this.secondaryButtonBg.setTexture(newKey);
+
+        if (oldKey && oldKey !== newKey && this.scene.textures.exists(oldKey)) {
+            this.scene.textures.remove(oldKey);
+        }
+    }
+
+    private updateTertiaryButtonTexture(width: number, height: number) {
+        if (width === this.tertiaryButtonWidth && height === this.tertiaryButtonHeight && this.tertiaryButtonTextureKey) {
+            return;
+        }
+        this.tertiaryButtonWidth = width;
+        this.tertiaryButtonHeight = height;
+
+        const newKey = this.createNineSliceTexture(
+            'ui-group-button-selected',
+            width,
+            height,
+            6,
+            6,
+            `${this.instanceTexturePrefix}_tertiary_btn_${this.dropButtonTextureCounter++}`
+        );
+        const oldKey = this.tertiaryButtonTextureKey;
+        this.tertiaryButtonTextureKey = newKey;
+        this.tertiaryButtonBg.setTexture(newKey);
 
         if (oldKey && oldKey !== newKey && this.scene.textures.exists(oldKey)) {
             this.scene.textures.remove(oldKey);
@@ -505,6 +611,20 @@ export class InventoryItemDetailsUI {
         return `${data.amount}/${data.stackSize}`;
     }
 
+    private getRarityIconKey(rarity?: string): string | undefined {
+        switch ((rarity ?? '').toLowerCase()) {
+            case 'common': return 'ui-rarity-common';
+            case 'uncommon': return 'ui-rarity-uncommon';
+            case 'rare': return 'ui-rarity-rare';
+            case 'epic': return 'ui-rarity-epic';
+            case 'legendary': return 'ui-rarity-legendary';
+            case 'mythic': return 'ui-rarity-mythic';
+            case 'divine': return 'ui-rarity-divine';
+            case 'supreme': return 'ui-rarity-supreme';
+            default: return undefined;
+        }
+    }
+
     private handleDrop() {
         if (!this.currentItem) return;
         if (this.currentItem.slotIndex < 0) return;
@@ -515,6 +635,12 @@ export class InventoryItemDetailsUI {
         if (!this.currentItem) return;
         if (this.currentItem.slotIndex < 0) return;
         this.onSecondaryAction?.(this.currentItem.itemId, this.currentItem.amount, this.currentItem.slotIndex);
+    }
+
+    private handleTertiaryAction() {
+        if (!this.currentItem) return;
+        if (this.currentItem.slotIndex < 0) return;
+        this.onTertiaryAction?.(this.currentItem.itemId, this.currentItem.amount, this.currentItem.slotIndex);
     }
 
     private createTextTexture(text: string, maxWidth: number, wrap = false, color?: string) {

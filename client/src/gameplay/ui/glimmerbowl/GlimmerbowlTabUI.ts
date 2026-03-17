@@ -7,7 +7,7 @@ import { getLocalizedItemDescription, getLocalizedItemName } from '../../i18n/it
 import { BitmapFontRenderer } from '../BitmapFontRenderer';
 
 type TierButton = {
-    tier: GlimmerFishTier;
+    tier: 'all' | 'awakened';
     button: Phaser.GameObjects.Image;
     labelImage: Phaser.GameObjects.Image;
     container: Phaser.GameObjects.Container;
@@ -44,12 +44,18 @@ export class GlimmerbowlTabUI {
     private detailsUI: InventoryItemDetailsUI;
 
     private entries: GlimmerbowlEntry[] = [];
-    private activeTier: GlimmerFishTier = 'regular';
+    private activeTier: 'all' | 'awakened' = 'all';
     private displayEntries: GlimmerDisplayEntry[] = [];
     private slotEntryMap = new Map<number, GlimmerDisplayEntry>();
 
     private onDrop?: (itemId: string, amount: number) => void;
-    private onView?: (itemId: string, amount: number) => void;
+    private onView?: (entry: GlimmerbowlEntry) => void;
+    private onAwakenRequest?: (fishEntryId: string, scarItemId: string) => void;
+    private ownedScars: Array<{ itemId: string; count: number; name: string }> = [];
+    private hasOwnedScar = false;
+    private scarPopup?: Phaser.GameObjects.Container;
+    private scarPopupButtons: Phaser.GameObjects.Container[] = [];
+    private transientMessageText?: Phaser.GameObjects.Text;
 
     private lastLayout?: {
         leftPageLeftEdgeX: number;
@@ -80,7 +86,7 @@ export class GlimmerbowlTabUI {
         this.bowlSprite = this.scene.add.sprite(0, 0, GlimmerbowlTabUI.BOWL_TEXTURE_KEY, 0).setOrigin(0.5, 0.5);
         this.bowlSprite.play(GlimmerbowlTabUI.BOWL_ANIM_KEY);
 
-        this.regularButton = this.createTierButton('regular');
+        this.regularButton = this.createTierButton('all');
         this.awakenedButton = this.createTierButton('awakened');
 
         this.slotsUI = new InventorySlotsUI(this.scene, this.container, {
@@ -108,9 +114,12 @@ export class GlimmerbowlTabUI {
             this.slotsUI.setBottomReservedHeight(0);
             this.slotsUI.clearSelection();
         });
-        this.detailsUI.setSecondaryAction((itemId, amount, _slotIndex) => {
-            this.onView?.(itemId, amount);
+        this.detailsUI.setSecondaryAction((_itemId, _amount, _slotIndex) => {
+            const selectedEntry = this.getSelectedEntry();
+            if (!selectedEntry) return;
+            this.onView?.(selectedEntry.entry);
         }, this.localeManager.t('glimmerbowl.details.view', undefined, 'View'));
+        this.detailsUI.setTertiaryAction(undefined, this.localeManager.t('glimmerbowl.action.awake', undefined, 'Awake'));
 
         this.slotsUI.setOnItemSelect((item, slotIndex, stackCount) => {
             if (!item || slotIndex < 0) {
@@ -127,6 +136,7 @@ export class GlimmerbowlTabUI {
                 amount: stackCount ?? item.count,
                 stackSize: item.stackSize
             });
+            this.refreshAwakeDetailsAction(slotIndex);
             this.slotsUI.setBottomReservedHeight(this.detailsUI.getReservedHeight() + this.detailsReserveExtra);
         });
 
@@ -152,14 +162,16 @@ export class GlimmerbowlTabUI {
     setEntries(entries: GlimmerbowlEntry[]) {
         this.entries = entries
             .map((entry) => ({
+                id: entry.id,
                 itemId: entry.itemId,
-                count: Math.max(0, Math.floor(entry.count ?? 0)),
-                tier: (entry.tier === 'awakened' ? 'awakened' : 'regular') as GlimmerFishTier
+                tier: (entry.tier === 'awakened' ? 'awakened' : 'regular') as GlimmerFishTier,
+                stats: entry.stats,
+                awakenedByScarId: entry.awakenedByScarId ?? null
             }))
-            .filter((entry) => entry.itemId && entry.count > 0);
+            .filter((entry) => Boolean(entry.id) && Boolean(entry.itemId));
 
         if (this.activeTier === 'awakened' && !this.hasAwakenedFish()) {
-            this.activeTier = 'regular';
+            this.activeTier = 'all';
         }
 
         this.render();
@@ -169,8 +181,22 @@ export class GlimmerbowlTabUI {
         this.onDrop = callback;
     }
 
-    setOnView(callback?: (itemId: string, amount: number) => void) {
+    setOnView(callback?: (entry: GlimmerbowlEntry) => void) {
         this.onView = callback;
+    }
+
+    setOnAwakenRequest(callback?: (fishEntryId: string, scarItemId: string) => void) {
+        this.onAwakenRequest = callback;
+    }
+
+    setOwnedScars(scars: Array<{ itemId: string; count: number; name: string }>) {
+        this.ownedScars = scars.filter((entry) => entry.count > 0);
+    }
+
+    setHasOwnedScar(value: boolean) {
+        this.hasOwnedScar = value;
+        this.refreshAwakeDetailsAction(this.slotsUI.getSelectedDisplayIndex());
+        this.updateButtons();
     }
 
     layout(
@@ -220,6 +246,7 @@ export class GlimmerbowlTabUI {
         const rightContentX = Math.floor(rightPageLeftEdgeX + rightInwardOffset * scale);
         this.slotsUI.layout(rightContentX, rightPageTopEdgeY, pageHeight, scale);
         this.detailsUI.layout(rightContentX, rightPageTopEdgeY, pageHeight, scale);
+        this.layoutScarPopup();
     }
 
     destroy() {
@@ -234,13 +261,16 @@ export class GlimmerbowlTabUI {
             }
         });
         this.generatedTextureKeys.clear();
+        this.closeScarPopup();
+        this.transientMessageText?.destroy();
+        this.transientMessageText = undefined;
 
         this.slotsUI.destroy();
         this.detailsUI.destroy();
         this.container.destroy();
     }
 
-    private createTierButton(tier: GlimmerFishTier): TierButton {
+    private createTierButton(tier: 'all' | 'awakened'): TierButton {
         const label = this.getTierLabel(tier);
         const key = this.createTextTexture(label, '#f2e9dd');
         const labelImage = this.scene.add.image(0, 0, key).setOrigin(0.5, 0.5);
@@ -292,7 +322,7 @@ export class GlimmerbowlTabUI {
             slots[index] = {
                 index,
                 item: entry.display,
-                count: entry.entry.count,
+                count: 1,
                 sourceIndex: index
             };
             this.slotEntryMap.set(index, entry);
@@ -313,9 +343,9 @@ export class GlimmerbowlTabUI {
         }
     }
 
-    private getFilteredDisplayEntries(tier: GlimmerFishTier): GlimmerDisplayEntry[] {
+    private getFilteredDisplayEntries(tier: 'all' | 'awakened'): GlimmerDisplayEntry[] {
         return this.entries
-            .filter((entry) => entry.tier === tier)
+            .filter((entry) => (tier === 'all' ? true : entry.tier === 'awakened'))
             .map((entry) => {
                 const def = getItemDefinition(entry.itemId);
                 if (!def || def.category !== 'Fish') return null;
@@ -324,10 +354,13 @@ export class GlimmerbowlTabUI {
                     id: def.id,
                     name: getLocalizedItemName(def.id, def.name),
                     description: getLocalizedItemDescription(def.id, def.description),
-                    count: entry.count,
+                    count: 1,
                     stackSize: def.stackSize,
                     iconKey: `item-${def.id}-18`,
-                    category: def.category
+                    category: def.category,
+                    glowColor: entry.tier === 'awakened' ? this.getRarityGlowColor(def.rarity) : undefined,
+                    backgroundIconKey: entry.tier === 'awakened' && entry.awakenedByScarId ? `item-${entry.awakenedByScarId}-18` : undefined,
+                    backgroundAlpha: entry.tier === 'awakened' ? 0.33 : undefined
                 };
 
                 return { entry, display };
@@ -338,7 +371,7 @@ export class GlimmerbowlTabUI {
     private updateButtons() {
         const awakenedDisabled = !this.hasAwakenedFish();
 
-        this.applyButtonState(this.regularButton, this.activeTier === 'regular', false);
+        this.applyButtonState(this.regularButton, this.activeTier === 'all', false);
         this.applyButtonState(this.awakenedButton, this.activeTier === 'awakened', awakenedDisabled);
     }
 
@@ -380,14 +413,24 @@ export class GlimmerbowlTabUI {
     }
 
     private hasAwakenedFish() {
-        return this.entries.some((entry) => entry.tier === 'awakened' && entry.count > 0);
+        return this.entries.some((entry) => entry.tier === 'awakened');
     }
 
     private refreshLocalizedLabels() {
-        this.updateTierLabel(this.regularButton, this.getTierLabel('regular'));
+        this.updateTierLabel(this.regularButton, this.getTierLabel('all'));
         this.updateTierLabel(this.awakenedButton, this.getTierLabel('awakened'));
 
-        this.detailsUI.setSecondaryAction(this.onView ? (itemId, amount, _slotIndex) => this.onView?.(itemId, amount) : undefined, this.localeManager.t('glimmerbowl.details.view', undefined, 'View'));
+        this.detailsUI.setSecondaryAction(
+            this.onView
+                ? (_itemId, _amount, _slotIndex) => {
+                    const selectedEntry = this.getSelectedEntry();
+                    if (!selectedEntry) return;
+                    this.onView?.(selectedEntry.entry);
+                }
+                : undefined,
+            this.localeManager.t('glimmerbowl.details.view', undefined, 'View')
+        );
+        this.refreshAwakeDetailsAction(this.slotsUI.getSelectedDisplayIndex());
 
         if (this.lastLayout) {
             this.layout(
@@ -411,11 +454,147 @@ export class GlimmerbowlTabUI {
         }
     }
 
-    private getTierLabel(tier: GlimmerFishTier) {
-        if (tier === 'regular') {
-            return this.localeManager.t('glimmerbowl.section.regular', undefined, 'Regular');
+    private getTierLabel(tier: 'all' | 'awakened') {
+        if (tier === 'all') {
+            return this.localeManager.t('glimmerbowl.section.all', undefined, 'All');
         }
         return this.localeManager.t('glimmerbowl.section.awakened', undefined, 'Awakened');
+    }
+
+    private getSelectedEntry(): GlimmerDisplayEntry | null {
+        const selectedDisplayIndex = this.slotsUI.getSelectedDisplayIndex();
+        if (selectedDisplayIndex === undefined || selectedDisplayIndex < 0) return null;
+        return this.slotEntryMap.get(selectedDisplayIndex) ?? null;
+    }
+
+    private refreshAwakeDetailsAction(selectedDisplayIndex?: number) {
+        const selectedEntry = selectedDisplayIndex === undefined
+            ? null
+            : this.slotEntryMap.get(selectedDisplayIndex) ?? null;
+        const canShowAwake = this.hasOwnedScar && Boolean(selectedEntry) && selectedEntry?.entry.tier === 'regular';
+        this.detailsUI.setTertiaryAction(
+            canShowAwake
+                ? (_itemId, _amount, _slotIndex) => {
+                    if (this.ownedScars.length <= 0) {
+                        this.showTransientMessage(this.localeManager.t('glimmerbowl.popup.noScarsOwned', undefined, 'No Scars Owned'));
+                        return;
+                    }
+                    if (!selectedEntry) return;
+                    this.openScarPopup(selectedEntry.entry.id);
+                }
+                : undefined,
+            this.localeManager.t('glimmerbowl.action.awake', undefined, 'Awake')
+        );
+    }
+
+    private openScarPopup(fishEntryId: string) {
+        this.closeScarPopup();
+        const popupWidth = 180;
+        const popupHeight = 130;
+        const bg = this.scene.add.rectangle(0, 0, popupWidth, popupHeight, 0x1a120f, 0.95).setOrigin(0.5, 0.5);
+        bg.setStrokeStyle(2, 0x9e7a4f, 1);
+        const title = this.scene.add.text(0, -50, this.localeManager.t('glimmerbowl.popup.scarsTitle', undefined, 'Select Scar'), {
+            fontFamily: 'Minecraft, monospace',
+            fontSize: '14px',
+            color: '#f2e9dd'
+        }).setOrigin(0.5, 0.5);
+        const container = this.scene.add.container(0, 0, [bg, title]);
+        this.scarPopup = container;
+        this.container.add(container);
+        this.scarPopupButtons = [];
+
+        const scarButtons = this.ownedScars.slice(0, 4);
+        scarButtons.forEach((scar, index) => {
+            const y = -24 + index * 22;
+            const buttonBg = this.scene.add.rectangle(0, y, 150, 18, 0x3a2a21, 1).setOrigin(0.5, 0.5);
+            buttonBg.setStrokeStyle(1, 0xb28a5d, 1);
+            const label = this.scene.add.text(0, y, `${scar.name} x${scar.count}`, {
+                fontFamily: 'Minecraft, monospace',
+                fontSize: '11px',
+                color: '#ffd84d'
+            }).setOrigin(0.5, 0.5);
+            buttonBg.setInteractive({ useHandCursor: true });
+            buttonBg.on('pointerdown', () => {
+                this.onAwakenRequest?.(fishEntryId, scar.itemId);
+                this.closeScarPopup();
+            });
+            const row = this.scene.add.container(0, 0, [buttonBg, label]);
+            this.scarPopupButtons.push(row);
+            container.add(row);
+        });
+
+        const backBg = this.scene.add.rectangle(0, 45, 72, 16, 0x4b2e20, 1).setOrigin(0.5, 0.5);
+        backBg.setStrokeStyle(1, 0xb28a5d, 1);
+        const backLabel = this.scene.add.text(0, 45, this.localeManager.t('glimmerbowl.popup.back', undefined, 'Back'), {
+            fontFamily: 'Minecraft, monospace',
+            fontSize: '10px',
+            color: '#f2e9dd'
+        }).setOrigin(0.5, 0.5);
+        backBg.setInteractive({ useHandCursor: true });
+        backBg.on('pointerdown', () => this.closeScarPopup());
+        container.add([backBg, backLabel]);
+        this.layoutScarPopup();
+    }
+
+    private closeScarPopup() {
+        this.scarPopupButtons.forEach((button) => button.destroy());
+        this.scarPopupButtons = [];
+        this.scarPopup?.destroy();
+        this.scarPopup = undefined;
+    }
+
+    private layoutScarPopup() {
+        if (!this.scarPopup || !this.lastLayout) return;
+        const x = Math.floor(this.lastLayout.rightPageLeftEdgeX + 70 * this.lastLayout.scale);
+        const y = Math.floor(this.lastLayout.rightPageTopEdgeY + 66 * this.lastLayout.scale);
+        this.scarPopup.setPosition(x, y);
+    }
+
+    private showTransientMessage(text: string) {
+        if (!this.transientMessageText) {
+            this.transientMessageText = this.scene.add.text(0, 0, '', {
+                fontFamily: 'Minecraft, monospace',
+                fontSize: '14px',
+                color: '#ffd84d',
+                stroke: '#3a1f12',
+                strokeThickness: 3
+            }).setOrigin(0.5, 0.5).setDepth(13010).setVisible(false);
+            this.container.add(this.transientMessageText);
+        }
+        this.transientMessageText.setText(text);
+        this.transientMessageText.setPosition(205, 24);
+        this.transientMessageText.setAlpha(1);
+        this.transientMessageText.setVisible(true);
+        this.scene.tweens.killTweensOf(this.transientMessageText);
+        this.scene.tweens.add({
+            targets: this.transientMessageText,
+            alpha: 0,
+            duration: 1000,
+            delay: 650,
+            onComplete: () => this.transientMessageText?.setVisible(false)
+        });
+    }
+
+    private getRarityGlowColor(rarity?: string): number {
+        switch ((rarity ?? 'common').toLowerCase()) {
+            case 'uncommon':
+                return 0xb7ff63;
+            case 'rare':
+                return 0x8fd7ff;
+            case 'epic':
+                return 0xd2a3ff;
+            case 'legendary':
+                return 0xffbf52;
+            case 'mythic':
+                return 0xff7fd1;
+            case 'divine':
+                return 0x8fd7ff;
+            case 'supreme':
+                return 0x8fd7ff;
+            case 'common':
+            default:
+                return 0xffffff;
+        }
     }
 
     private ensureBowlAnimation() {

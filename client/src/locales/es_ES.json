@@ -43,6 +43,7 @@
 			"bloomEnabled": "Brillo",
 			"vignetteEnabled": "Viñeta",
 			"tiltShiftEnabled": "Desenfoque tilt-shift",
+			"crtEnabled": "CRT",
 			"dustParticlesEnabled": "Partículas de polvo"
 		},
 		"controls": {
@@ -98,11 +99,31 @@
 	"glimmerbowl": {
 		"placeholder": "Vista previa de pecera",
 		"section": {
+			"all": "Todo",
 			"regular": "Regular",
 			"awakened": "Despertado"
 		},
+		"action": {
+			"awake": "Despertar"
+		},
 		"details": {
 			"view": "Ver"
+		},
+		"popup": {
+			"noScarsOwned": "No tienes cicatrices",
+			"scarsTitle": "Seleccionar cicatriz",
+			"back": "Atrás"
+		},
+		"view": {
+			"back": "Atrás",
+			"knifePlaceholder": "Equipar un cuchillo",
+			"stats": {
+				"damage": "Daño",
+				"speed": "Velocidad",
+				"energy": "Energía",
+				"critRate": "Prob. crit.",
+				"critDamage": "Daño crit."
+			}
 		}
 	},
 	"headbar": {
@@ -114,6 +135,47 @@
 			"spring": "Primavera",
 			"summer": "Verano",
 			"autumn": "Otoño"
+		}
+	},
+	"advancements": {
+		"quest": {
+			"merchant_side_brew": {
+				"name": "Brebaje secundario del Mercader"
+			},
+			"village_weirdo": {
+				"name": "El raro del pueblo"
+			},
+			"wares_galore": {
+				"name": "Mercancías a Montones"
+			},
+			"bowl_that_shines": {
+				"name": "El Cuenco que Brilla"
+			}
+		}
+	},
+	"finbook": {
+		"quest": {
+			"objective": {
+				"inventoryCount": "Recolecta {count} {item}",
+				"refineFood": "Refina {item} hasta volverlo líquido",
+				"bottleLiquid": "Recoge {liquid} usando {container}",
+				"waitForTimeWindow": "Espera a la noche ({start}:00-{end}:00)",
+				"fishNearLocation": "Pesca cerca de {location}",
+				"harvestInteractive": "Usa un interactuable cercano",
+				"openGlimmeringChest": "Abre el Cofre Reluciente"
+			},
+			"merchant_side_brew": {
+				"description": "Aprende refinado de comida con el Mercader: pisa yekberries soltadas para hacer líquido, embotéllalo con un frasco y vuelve con él."
+			},
+			"village_weirdo": {
+				"description": "Habla con el Viajero, consigue 5 yekberries y vuelve para cobrar tu recompensa."
+			},
+			"wares_galore": {
+				"description": "Habla con el Mercader sobre tu nueva moneda y escucha su oferta de mercancías."
+			},
+			"bowl_that_shines": {
+				"description": "Habla con el Sabio y sigue su guía hasta el Maestro del Mar."
+			}
 		}
 	},
 	"loader": {
@@ -166,7 +228,17 @@
 		"biteHint": "¡Haz clic {clicks} veces más en {seconds} segundos!",
 		"caughtItem": "¡Has atrapado {item}!"
 	},
+	"cinematic": {
+		"glimmerbowlUnlocked": {
+			"title": "GLIMMERBOWL",
+			"subtitle": "DESBLOQUEADO"
+		}
+	},
 	"guide": {
+		"bowlThatShines": {
+			"travellerHint": "Hm... me pregunto si la viajera tuvo la información todo este tiempo.",
+			"returnToSeamaster": "Muéstrale al Maestro del Mar lo que encontraste."
+		},
 		"rod": {
 			"openInventory": "Para equipar tu nueva caña, abre tu inventario (pulsa {key} en escritorio).",
 			"openInventoryMobile": "Para equipar tu nueva caña, toca el botón de inventario.",
@@ -250,6 +322,37 @@
 				"seamaster": {
 					"greeting": {
 						"0": "Las mareas son honestas. Mantén tu hoja afilada, y tu corazón aún más."
+					},
+					"bowlThatShines": {
+						"passphrase": {
+							"prompt": "Si tienes asuntos conmigo, dilo sin rodeos.",
+							"choice": {
+								"0": "El coleccionista de vidrio me envió.",
+								"1": "El coleccionista de cristal te envió.",
+								"2": "El guardián de fragmentos me envió."
+							},
+							"wrong": {
+								"0": "Palabras equivocadas. Vuelve cuando sepas qué decir.",
+								"1": "No. Esa no es la frase. Inténtalo otra vez cuando estés listo."
+							},
+							"correct": {
+								"0": "...",
+								"1": "Marcador de posición: el camino se abrirá pronto. Vuelve en un capítulo posterior."
+							}
+						},
+						"postKey": {
+							"0": "Por la marea... esa es la Llave Reluciente.",
+							"1": "Estoy de verdad impresionado. Encontraste lo que yo no pude.",
+							"2": "Y aquí viene el giro: quédate tú con el tesoro. Ya he tomado suficiente del mar en mi vida.",
+							"3": "El cofre te está esperando. Ve y ábrelo.",
+							"player": {
+								"0": "Gracias... de verdad."
+							}
+						},
+						"finalPlaceholder": {
+							"0": "Entonces, ¿qué reveló el cofre? Ja, no me lo digas todavía.",
+							"1": "Volveremos a hablar pronto. Por ahora, que este sea tu comienzo."
+						}
 					}
 				},
 				"guard": {
@@ -265,16 +368,117 @@
 				"merchant": {
 					"greeting": {
 						"0": "Si tu mochila pesa poco, mi puesto puede arreglar eso."
+					},
+					"antiDeath": {
+						"return": {
+							"1": "Por ahora. Vuelve cuando quieras el método avanzado y te enseñaré a refinar comida.",
+							"2": "Lleva unas cuantas equipadas y úsalas antes de entrar en pánico. Luego mejoramos tu menú."
+						}
+					},
+					"sideBrew": {
+						"intro": {
+							"0": "¿Volviste por la lección dos? Bien. La comida cruda te mantiene vivo; la refinada gana peleas.",
+							"1": "Siempre. Primer truco: extracción por presión.",
+							"2": "Suelta tus bayas, písalas hasta volverlas líquido y luego vuelve conmigo.",
+							"player": {
+								"0": "¿Entonces dedicar tiempo a preparar sí importa?"
+							}
+						},
+						"stomp": {
+							"0": "Suelta tus yekberries en el suelo y camina sobre ellas unas cuantas veces.",
+							"1": "Nada de pasitos suaves. Machácalas como si insultaran tu cuchillo."
+						},
+						"jar": {
+							"0": "Perfecto pisoteo. Exprimiste esas bayas hasta hacer líquido.",
+							"1": "Las manos no sujetan un charco, así que usa un frasco. Te regalo uno.",
+							"2": "La próxima pagas. El vidrio no crece en los árboles."
+						},
+						"collect": {
+							"0": "Ya hiciste jugo, ahora embotéllalo. Haz clic en el charco y confirma el vertido.",
+							"1": "Entra un frasco, sale una ración de Jugo Yek. Química con consecuencias."
+						},
+						"finish": {
+							"0": "AHORA sí es combustible de verdad. Suave, potente y sí mantiene en pie a un gato con cuchillos.",
+							"1": "Exacto. La habilidad en la cocina también es habilidad en combate, pero con menos gritos.",
+							"2": "Vuelve luego y te enseño recetas más peligrosas. Anchor Hollow alimenta a quien experimenta.",
+							"player": {
+								"0": "Eso curó muchísimo mejor que las bayas crudas."
+							}
+						}
+					},
+					"waresGalore": {
+						"intro": {
+							"0": "Me llegó por ahí que ahora tienes algo de dinero... ¿es verdad lo que cuentan?",
+							"1": "¡Maravilloso! Un cliente con monedas es mi tipo favorito de milagro.",
+							"2": "Ven a ver mis mercancías cuando quieras. Pronto te abriré el puesto completo.",
+							"player": {
+								"0": "Supongo..."
+							}
+						},
+						"post": {
+							"0": "Ya tienes pinta de cliente. Mis mercancías te esperan."
+						}
 					}
 				},
 				"traveller": {
 					"greeting": {
 						"0": "El polvo del camino se va. Las historias no."
+					},
+					"villageWeirdo": {
+						"intro": {
+							"0": "Petición de viajero: ¿me traes 5 yekberries?",
+							"1": "Los objetivos específicos forman carácter. Por favor y gracias.",
+							"player": {
+								"0": "¿Cinco? Eso es sospechosamente específico."
+							}
+						},
+						"collect": {
+							"0": "Aún necesito 5 yekberries. Tráeme las cinco y valdrá la pena."
+						},
+						"return": {
+							"0": "Volviste con cinco yekberries de verdad. Eres increíblemente amable.",
+							"1": "Confesión: esto era un experimento social. Quería ver si Anchor Hollow seguía teniendo gente generosa.",
+							"2": "Vale, justo. Mi presupuesto es... menos espectacular.",
+							"3": "Puedo darte una moneda de plata. No es mucho, pero te servirá.",
+							"4": "¿Nunca has tenido una moneda? ¿Qué pasa, vives bajo una roca?",
+							"5": "Una moneda de plata vale 100 monedas de bronce.",
+							"6": "Y 100 monedas de plata hacen una moneda de oro.",
+							"7": "Una plata puede no parecer mucho, pero si la usas bien, puede conseguirte lo que necesitas.",
+							"player": {
+								"0": "Bro is NOT MrBeast.",
+								"1": "Nunca había tenido una moneda..."
+							}
+						},
+						"post": {
+							"0": "¿Qué tal la plata? Gástala con cabeza, no por estilo."
+						}
 					}
 				},
 				"wiseman": {
 					"greeting": {
 						"0": "Una mente en calma oye lo que las olas ruidosas esconden."
+					},
+					"bowlThatShines": {
+						"intro": {
+							"0": "Te ves cansado.",
+							"1": "Siempre he sido un hombre dotado.",
+							"2": "¡Ja! Eres gracioso.",
+							"3": "Puedo compartirte un secreto. Uno que te quitará peso de los hombros y te mostrará un mundo nuevo.",
+							"4": "Bien. Habla con el Maestro del Mar.",
+							"5": "Dile esto exactamente: \"el coleccionista de cristal te envió\".",
+							"6": "No improvises.",
+							"choice": {
+								"prompt": "¿Quiero escucharlo?",
+								"yes": "Sí."
+							},
+							"player": {
+								"0": "¿Cómo lo sabes?",
+								"1": "¿Qué tan dotado estamos hablando?"
+							}
+						},
+						"reminder": {
+							"0": "Encuentra al Maestro del Mar y di: \"el coleccionista de cristal te envió\"."
+						}
 					}
 			}
 		}
@@ -287,6 +491,26 @@
 		"yekberries": {
 			"name": "Bayas yek",
 			"description": "Bayas ácidas de un yekbush. Comida de curación simple y fiable."
+		},
+		"yekjuice": {
+			"name": "Jugo Yek",
+			"description": "Jugo de yek prensado y embotellado. Mucho más nutritivo que las bayas crudas."
+		},
+		"yekjuiceliquid": {
+			"name": "Líquido de jugo Yek",
+			"description": "Un charco de jugo yek recién exprimido. Recógelo con un frasco."
+		},
+		"jar": {
+			"name": "Frasco",
+			"description": "Un frasco de vidrio para recolectar líquidos."
+		},
+		"glimmeringkey": {
+			"name": "Llave Reluciente",
+			"description": "Una llave pálida que atrapa la luz de la luna incluso en agua turbia."
+		},
+		"nightfire_scar": {
+			"name": "Cicatriz Fuego Nocturno",
+			"description": "Un sigilo ardiente que puede despertar a un pez y darle libre albedrío."
 		},
 		"tuna": {
 			"name": "Atún",
@@ -384,6 +608,10 @@
 			"name": "Cofre arruinado",
 			"description": "Un cofre del tesoro anegado. La mayoría del contenido se pudrió."
 		}
+	},
+	"drops": {
+		"needContainerToCollect": "Necesitas {container} para recoger",
+		"confirmConsumeJar": "Confirmar consumo de 1 frasco"
 	},
 	"system": {
 		"on": "ACTIVADO",

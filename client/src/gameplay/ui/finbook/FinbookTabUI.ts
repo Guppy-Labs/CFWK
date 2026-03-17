@@ -66,6 +66,7 @@ export class FinbookTabUI {
     private readonly targetQuestStorageKey = 'cfwk_finbook_target_quest';
     private seenQuestIds = new Set<string>();
     private targetedQuestId: string | null = null;
+    private hasLoadedAdvancementsState = false;
 
     constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container) {
         this.scene = scene;
@@ -87,6 +88,7 @@ export class FinbookTabUI {
         this.advancementsUpdateHandler = (event: Event) => {
             const detail = (event as CustomEvent<IAdvancementsState>).detail;
             if (!detail) return;
+            this.hasLoadedAdvancementsState = true;
             const previousState = this.advancementsState;
             const targetedBeforeUpdate = this.targetedQuestId;
             this.advancementsState = {
@@ -106,6 +108,7 @@ export class FinbookTabUI {
             this.reconcileTargetedQuest();
             if (isResetState) {
                 this.selectTopQuest();
+                this.autoTrackFirstQuest(true);
             } else {
                 this.autoTargetNextQuestAfterCompletion(previousState, targetedBeforeUpdate);
                 this.autoTrackFirstQuest(false);
@@ -117,6 +120,7 @@ export class FinbookTabUI {
         const cached = this.networkManager.getCachedAdvancementsState();
         if (cached) {
             this.advancementsState = cached;
+            this.hasLoadedAdvancementsState = true;
         }
     }
 
@@ -256,16 +260,7 @@ export class FinbookTabUI {
 
         this.addNineSliceImage(this.leftContainer, leftX, listY, 'ui-item-info-frame', listWidth, listHeight);
 
-        const availableQuestIds = ADVANCEMENT_QUEST_CATALOG
-            .filter((quest) => this.isQuestVisible(quest))
-            .map((quest) => quest.id);
-
-        const sorted = [...availableQuestIds].sort((a, b) => {
-            const aCompleted = this.isQuestCompleted(a);
-            const bCompleted = this.isQuestCompleted(b);
-            if (aCompleted !== bCompleted) return aCompleted ? 1 : -1;
-            return 0;
-        });
+        const sorted = this.getSortedAvailableQuestIds();
 
         if (!sorted.includes(this.selectedQuestId)) {
             this.selectedQuestId = sorted[0] ?? '';
@@ -287,7 +282,7 @@ export class FinbookTabUI {
             const y = rowStartY + index * (this.rowHeight + this.questRowGap) * this.scale;
             const isCompleted = this.isQuestCompleted(questId);
             const isSelected = this.selectedQuestId === questId;
-            const isNew = !this.seenQuestIds.has(questId);
+            const isNew = !isCompleted && !this.seenQuestIds.has(questId);
             const rowX = Math.floor(leftX + 3 * this.scale);
             const rowWidth = Math.floor(listWidth - 6 * this.scale - scrollbarGutter);
             if (y + this.rowHeight * this.scale > listY + listHeight - 3 * this.scale) {
@@ -318,7 +313,31 @@ export class FinbookTabUI {
 
             const newText = this.t('finbook.quest.new', 'NEW');
             const newBadgeWidth = isNew ? this.font.measureBitmapTextWidth(newText) * this.scale : 0;
-            const textX = Math.floor(rowX + 3 * this.scale);
+            const isMainQuest = this.isMainQuest(questId);
+            const hasMainQuestIcon = isMainQuest && this.scene.textures.exists('ui-quest-main-star');
+            const iconSize = Math.max(8, Math.floor(11 * this.scale));
+            const iconGap = Math.floor(1 * this.scale);
+            const iconLeftPad = Math.floor(2 * this.scale);
+            // Always reserve the main-quest icon slot so marquee width/overflow
+            // calculations remain correct and independent from texture timing.
+            const iconReserved = isMainQuest ? (iconSize + iconGap) : 0;
+            if (hasMainQuestIcon) {
+                const star = this.scene.add.image(
+                    Math.floor(rowX + iconLeftPad + iconSize / 2),
+                    Math.floor(y + (this.rowHeight * this.scale) / 2),
+                    'ui-quest-main-star'
+                );
+                star.setDisplaySize(iconSize, iconSize);
+                if (isCompleted) {
+                    star.setTint(0x8a8a8a);
+                    star.setAlpha(0.9);
+                } else {
+                    star.setTint(0xffffff);
+                    star.setAlpha(1);
+                }
+                this.leftContainer.add(star);
+            }
+            const textX = Math.floor(rowX + 3 * this.scale + iconReserved);
             const textReservedRight = Math.floor(3 * this.scale + (isNew ? newBadgeWidth + 6 * this.scale : 0));
             const textWidth = Math.max(1, Math.floor(rowWidth - (textX - rowX) - textReservedRight));
 
@@ -415,42 +434,58 @@ export class FinbookTabUI {
         this.addNineSliceImage(this.rightContainer, rightX, topY, 'ui-item-info-frame', rightWidth, panelHeight);
 
         const isCompleted = this.isQuestCompleted(questId);
+        const isMainQuest = this.isMainQuest(questId);
         const progress = this.getQuestProgress(questId);
         const status = isCompleted
             ? this.t('finbook.quest.status.completed', 'Completed')
             : progress?.status === 'active'
                 ? this.t('finbook.quest.status.inProgress', 'In Progress')
                 : this.t('finbook.quest.status.notStarted', 'Not Started');
+        const contentX = Math.floor(rightX + 4 * this.scale);
+        const contentWidth = Math.floor(rightWidth - 8 * this.scale);
 
         this.addMarqueeText(
             this.rightContainer,
             this.t(`advancements.quest.${questId}.name`, questId),
-            Math.floor(rightX + 4 * this.scale),
+            contentX,
             Math.floor(topY + 4 * this.scale),
-            Math.floor(rightWidth - 8 * this.scale),
+            contentWidth,
             '#f2e9dd',
             this.scale * 1.1,
             12 * this.scale
         );
 
+        const questType = isMainQuest
+            ? this.t('finbook.quest.type.main', 'MAIN QUEST')
+            : this.t('finbook.quest.type.side', 'SIDE QUEST');
+        const questTypeImage = this.makeTextImage(questType, isMainQuest ? '#ffcc4d' : '#8e9199');
+        questTypeImage.setOrigin(0, 0);
+        questTypeImage.setScale(this.scale * 0.58);
+        // Small extra breathing room under the title.
+        questTypeImage.setPosition(contentX, Math.floor(topY + 16 * this.scale));
+        this.rightContainer.add(questTypeImage);
+        this.addQuestDetailDivider(contentX, contentWidth, Math.floor(topY + 27 * this.scale));
+
         const statusValue = this.makeTextImage(status, isCompleted ? '#7f848d' : '#f2e9dd');
         statusValue.setOrigin(0, 0);
         statusValue.setScale(this.scale);
-        statusValue.setPosition(Math.floor(rightX + 4 * this.scale), Math.floor(topY + 22 * this.scale));
+        statusValue.setPosition(contentX, Math.floor(topY + 31 * this.scale));
+        this.rightContainer.add(statusValue);
+        this.addQuestDetailDivider(contentX, contentWidth, Math.floor(topY + 43 * this.scale));
 
         const objectiveText = this.getQuestObjectiveText(questId);
-        let contentStartY = Math.floor(topY + 36 * this.scale);
+        let contentStartY = Math.floor(topY + 49 * this.scale);
 
         if (objectiveText) {
             const objectiveLabel = this.makeTextImage(this.t('finbook.quest.objective.nextLabel', 'Next Objective'), '#9A9EA7');
             objectiveLabel.setOrigin(0, 0);
             objectiveLabel.setScale(this.scale * 0.92);
-            objectiveLabel.setPosition(Math.floor(rightX + 4 * this.scale), Math.floor(topY + 34 * this.scale));
+            objectiveLabel.setPosition(contentX, Math.floor(topY + 49 * this.scale));
             this.rightContainer.add(objectiveLabel);
 
-            const objectiveCardX = Math.floor(rightX + 4 * this.scale);
-            const objectiveCardY = Math.floor(topY + 43 * this.scale);
-            const objectiveCardW = Math.floor(rightWidth - 8 * this.scale);
+            const objectiveCardX = contentX;
+            const objectiveCardY = Math.floor(topY + 58 * this.scale);
+            const objectiveCardW = contentWidth;
             const objectiveCardH = Math.floor(18 * this.scale);
             const objectiveCard = this.addNineSliceImage(
                 this.rightContainer,
@@ -473,7 +508,9 @@ export class FinbookTabUI {
                 objectiveCard
             );
 
-            contentStartY = Math.floor(objectiveCardY + objectiveCardH + 6 * this.scale);
+            const objectiveDividerY = Math.floor(objectiveCardY + objectiveCardH + 6 * this.scale);
+            this.addQuestDetailDivider(contentX, contentWidth, objectiveDividerY);
+            contentStartY = Math.floor(objectiveDividerY + 6 * this.scale);
         }
 
         const desc = this.t(`finbook.quest.${questId}.description`, this.t('finbook.quest.descriptionFallback', 'Details coming soon.'));
@@ -542,7 +579,7 @@ export class FinbookTabUI {
             Math.floor(buttonY + buttonHeight / 2)
         );
 
-        this.rightContainer.add([statusValue, buttonBg, buttonLabel]);
+        this.rightContainer.add([buttonBg, buttonLabel]);
 
         if (targetActive) {
             this.scene.tweens.add({
@@ -573,17 +610,26 @@ export class FinbookTabUI {
         }
     }
 
+    private addQuestDetailDivider(x: number, width: number, centerY: number) {
+        const dividerHeight = Math.max(1, Math.floor(2 * this.scale));
+        const dividerY = Math.floor(centerY - dividerHeight / 2);
+        const divider = this.addNineSliceImage(
+            this.rightContainer,
+            x,
+            dividerY,
+            'ui-item-info-divider',
+            Math.max(1, width),
+            dividerHeight
+        );
+        divider.setAlpha(0.9);
+    }
+
     private getSortedAvailableQuestIds(): string[] {
         const availableQuestIds = ADVANCEMENT_QUEST_CATALOG
             .filter((quest) => this.isQuestVisible(quest))
             .map((quest) => quest.id);
 
-        return [...availableQuestIds].sort((a, b) => {
-            const aCompleted = this.isQuestCompleted(a);
-            const bCompleted = this.isQuestCompleted(b);
-            if (aCompleted !== bCompleted) return aCompleted ? 1 : -1;
-            return 0;
-        });
+        return [...availableQuestIds].sort((a, b) => this.compareQuestListOrder(a, b));
     }
 
     private selectTopQuest() {
@@ -602,6 +648,7 @@ export class FinbookTabUI {
     }
 
     private reconcileTargetedQuest() {
+        if (!this.hasLoadedAdvancementsState) return;
         if (!this.targetedQuestId) return;
         const targetQuestId = this.targetedQuestId;
         const isVisible = this.isQuestVisibleById(targetQuestId);
@@ -613,7 +660,10 @@ export class FinbookTabUI {
 
     private autoTrackFirstQuest(force: boolean) {
         if (!force && this.targetedQuestId) return;
-        const firstQuestId = this.getSortedAvailableQuestIds().find((questId) => !this.isQuestCompleted(questId));
+        const firstQuestId = this.getSortedAvailableQuestIds().find((questId) => {
+            if (this.isQuestCompleted(questId)) return false;
+            return this.shouldAutoTrackQuest(questId);
+        });
         if (!firstQuestId) return;
         this.setTargetedQuest(firstQuestId, false);
     }
@@ -645,6 +695,7 @@ export class FinbookTabUI {
             for (const nextQuestId of nextQuestIds) {
                 if (this.isQuestCompleted(nextQuestId)) continue;
                 if (!this.getSortedAvailableQuestIds().includes(nextQuestId)) continue;
+                if (!this.shouldAutoTrackQuest(nextQuestId)) continue;
 
                 this.setTargetedQuest(nextQuestId, false);
                 return;
@@ -1126,7 +1177,101 @@ export class FinbookTabUI {
             );
         }
 
+        if (objective.kind === 'wait-for-time-window') {
+            const startHour = Number.isFinite(objective.startHour)
+                ? Math.max(0, Math.min(23, Math.floor(objective.startHour as number)))
+                : 23;
+            const endHour = Number.isFinite(objective.endHourExclusive)
+                ? Math.max(0, Math.min(23, Math.floor(objective.endHourExclusive as number)))
+                : 4;
+            return this.t(
+                'finbook.quest.objective.waitForTimeWindow',
+                `Wait until night (${startHour}:00-${endHour}:00)`,
+                { start: startHour, end: endHour }
+            );
+        }
+
+        if (objective.kind === 'fish-near-location') {
+            const location = typeof objective.locationName === 'string' && objective.locationName.trim().length > 0
+                ? objective.locationName.trim()
+                : this.t('finbook.quest.objective.generic', 'Complete the next task');
+            return this.t(
+                'finbook.quest.objective.fishNearLocation',
+                `Fish near ${location}`,
+                { location }
+            );
+        }
+
+        if (objective.kind === 'harvest-interactive') {
+            if (objective.componentId === 'glimmeringchest') {
+                return this.t('finbook.quest.objective.openGlimmeringChest', 'Open the Glimmering Chest');
+            }
+            return this.t('finbook.quest.objective.harvestInteractive', 'Use nearby interactable');
+        }
+
+        if (objective.kind === 'inventory-count' && objective.itemId) {
+            const itemName = this.localeManager.t(`items.${objective.itemId}.name`, undefined, objective.itemId);
+            const count = Number.isFinite(objective.requiredCount)
+                ? Math.max(1, Math.floor(objective.requiredCount as number))
+                : 1;
+            return this.t('finbook.quest.objective.inventoryCount', `Collect ${count} {item}`, {
+                item: itemName,
+                count
+            });
+        }
+
+        if (objective.kind === 'refine-food') {
+            const itemName = objective.itemId
+                ? this.localeManager.t(`items.${objective.itemId}.name`, undefined, objective.itemId)
+                : this.t('finbook.quest.objective.generic', 'Complete the next task');
+            return this.t('finbook.quest.objective.refineFood', 'Refine {item} into liquid', { item: itemName });
+        }
+
+        if (objective.kind === 'bottle-liquid') {
+            const liquidName = objective.liquidItemId
+                ? this.localeManager.t(`items.${objective.liquidItemId}.name`, undefined, objective.liquidItemId)
+                : this.t('finbook.quest.objective.generic', 'Complete the next task');
+            const containerName = objective.containerItemId
+                ? this.localeManager.t(`items.${objective.containerItemId}.name`, undefined, objective.containerItemId)
+                : this.localeManager.t('items.jar.name', undefined, 'Jar');
+            return this.t('finbook.quest.objective.bottleLiquid', 'Collect {liquid} using {container}', {
+                liquid: liquidName,
+                container: containerName
+            });
+        }
+
         return this.t('finbook.quest.objective.generic', 'Complete the next task');
+    }
+
+    private shouldAutoTrackQuest(questId: string): boolean {
+        const entry = ADVANCEMENT_QUEST_CATALOG.find((quest) => quest.id === questId);
+        if (!entry) return true;
+        if (entry.allowAutoTrack === false) return false;
+        if (entry.isSideQuest === true) return false;
+        return true;
+    }
+
+    private isMainQuest(questId: string): boolean {
+        const entry = ADVANCEMENT_QUEST_CATALOG.find((quest) => quest.id === questId);
+        if (!entry) return true;
+        return entry.isSideQuest !== true;
+    }
+
+    private compareQuestListOrder(aQuestId: string, bQuestId: string): number {
+        const bucketFor = (questId: string): number => {
+            if (this.isQuestCompleted(questId)) return 2;
+            return this.isMainQuest(questId) ? 0 : 1;
+        };
+
+        const aBucket = bucketFor(aQuestId);
+        const bBucket = bucketFor(bQuestId);
+        if (aBucket !== bBucket) return aBucket - bBucket;
+
+        const aIndex = ADVANCEMENT_QUEST_CATALOG.findIndex((quest) => quest.id === aQuestId);
+        const bIndex = ADVANCEMENT_QUEST_CATALOG.findIndex((quest) => quest.id === bQuestId);
+        const safeA = aIndex < 0 ? Number.MAX_SAFE_INTEGER : aIndex;
+        const safeB = bIndex < 0 ? Number.MAX_SAFE_INTEGER : bIndex;
+        return safeA - safeB;
     }
 
     private isQuestCompleted(questId: string): boolean {

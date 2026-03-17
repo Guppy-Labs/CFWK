@@ -1,11 +1,24 @@
 export type ItemCategory = 'Food' | 'Tools' | 'Loot' | 'Fish' | 'Junk' | 'Treasure';
 
-export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultimate';
+export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'supreme';
 
 export type RodStats = {
     speedMultiplier: number;
     rarityMultiplier: number;
     strength: number;
+};
+
+export type FishBaseStats = {
+    damage: number;
+    speed: number;
+    energy: number;
+    critRate: number;
+    critDamage: number;
+};
+
+export type ScarDefinition = {
+    awakenTier?: 'awakened';
+    effectTag: string;
 };
 
 export type ItemConsumeEffect = {
@@ -32,6 +45,8 @@ export type ItemDefinition = {
     consumableKind?: ConsumableKind;
     equippableSlotType?: EquippableSlotType;
     foodScore?: number;
+    fishBaseStats?: FishBaseStats;
+    scar?: ScarDefinition;
     /**
      * Optional custom file path relative to /public for the item image.
      * If not specified, defaults to: items/{category}/{id}.png
@@ -47,6 +62,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Golden Berries',
         category: 'Food',
         description: 'A rare, sweet berry that restores vitality.',
+        rarity: 'rare',
         stackSize: 80,
         usableType: 'consumable',
         consumableKind: 'standard',
@@ -62,6 +78,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Yek Berries',
         category: 'Food',
         description: 'Tiny tart berries from a yek bush. Barely nourishing, but better than nothing.',
+        rarity: 'common',
         stackSize: 80,
         usableType: 'consumable',
         consumableKind: 'standard',
@@ -71,6 +88,42 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
             type: 'heal'
         },
         file: 'items/food/yekberries.png'
+    },
+    {
+        id: 'yekjuice',
+        name: 'Yek Juice',
+        category: 'Food',
+        description: 'Pressed and gathered yek juice. A much stronger heal than raw berries.',
+        rarity: 'uncommon',
+        stackSize: 80,
+        usableType: 'consumable',
+        consumableKind: 'standard',
+        equippableSlotType: 'usable',
+        foodScore: 60,
+        consumeEffect: {
+            type: 'heal'
+        },
+        file: 'items/food/yekjuice.png'
+    },
+    {
+        id: 'yekjuiceliquid',
+        name: 'Yek Juice Liquid',
+        category: 'Loot',
+        description: 'Freshly crushed yek juice pooling on the ground. Needs a jar to collect.',
+        rarity: 'common',
+        stackSize: 20,
+        consumeEffect: { type: 'none' },
+        file: 'items/itementities/yekjuiceliquid.png'
+    },
+    {
+        id: 'jar',
+        name: 'Jar',
+        category: 'Tools',
+        description: 'A simple glass jar for collecting liquids.',
+        rarity: 'common',
+        stackSize: 40,
+        consumeEffect: { type: 'none' },
+        file: 'items/storage/jar.png'
     },
 
     // === FISH (Common) ===
@@ -82,6 +135,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         rarity: 'common',
         mass: 3,
         stackSize: 50,
+        fishBaseStats: { damage: 5, speed: 6, energy: 6, critRate: 0.02, critDamage: 1.25 },
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile000.png'
     },
@@ -93,6 +147,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         rarity: 'common',
         mass: 2,
         stackSize: 50,
+        fishBaseStats: { damage: 4, speed: 7, energy: 5, critRate: 0.02, critDamage: 1.25 },
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile001.png'
     },
@@ -104,6 +159,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         rarity: 'common',
         mass: 3,
         stackSize: 50,
+        fishBaseStats: { damage: 5, speed: 5, energy: 6, critRate: 0.02, critDamage: 1.25 },
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile005.png'
     },
@@ -115,6 +171,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         rarity: 'common',
         mass: 5,
         stackSize: 50,
+        fishBaseStats: { damage: 6, speed: 5, energy: 6, critRate: 0.025, critDamage: 1.3 },
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile007.png'
     },
@@ -126,6 +183,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         rarity: 'common',
         mass: 4,
         stackSize: 50,
+        fishBaseStats: { damage: 5, speed: 4, energy: 7, critRate: 0.02, critDamage: 1.25 },
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile004.png'
     },
@@ -139,6 +197,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         rarity: 'uncommon',
         mass: 6,
         stackSize: 30,
+        fishBaseStats: { damage: 7, speed: 6, energy: 7, critRate: 0.03, critDamage: 1.35 },
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile002.png'
     },
@@ -150,6 +209,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         rarity: 'uncommon',
         mass: 5,
         stackSize: 30,
+        fishBaseStats: { damage: 6, speed: 7, energy: 6, critRate: 0.03, critDamage: 1.35 },
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile003.png'
     },
@@ -161,6 +221,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         rarity: 'uncommon',
         mass: 7,
         stackSize: 30,
+        fishBaseStats: { damage: 7, speed: 5, energy: 7, critRate: 0.03, critDamage: 1.35 },
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile006.png'
     },
@@ -172,6 +233,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         rarity: 'uncommon',
         mass: 9,
         stackSize: 30,
+        fishBaseStats: { damage: 8, speed: 5, energy: 7, critRate: 0.032, critDamage: 1.38 },
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile008.png'
     },
@@ -183,6 +245,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         rarity: 'uncommon',
         mass: 8,
         stackSize: 30,
+        fishBaseStats: { damage: 7, speed: 4, energy: 8, critRate: 0.03, critDamage: 1.35 },
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile010.png'
     },
@@ -194,6 +257,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         rarity: 'uncommon',
         mass: 6,
         stackSize: 30,
+        fishBaseStats: { damage: 7, speed: 6, energy: 7, critRate: 0.03, critDamage: 1.35 },
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile009.png'
     },
@@ -204,6 +268,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Rickety Rod',
         category: 'Tools',
         description: 'A worn fishing rod held together with hope and string.',
+        rarity: 'common',
         rodStats: { speedMultiplier: 0.75, rarityMultiplier: 0.4, strength: 0.5 },
         stackSize: 1,
         equippableSlotType: 'rod',
@@ -215,6 +280,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: "Fisherman's Rod",
         category: 'Tools',
         description: 'A reliable fishing rod used by experienced anglers.',
+        rarity: 'uncommon',
         rodStats: { speedMultiplier: 0.75, rarityMultiplier: 0.5, strength: 0.75 },
         stackSize: 1,
         equippableSlotType: 'rod',
@@ -226,6 +292,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         name: 'Developer Rod',
         category: 'Tools',
         description: 'A debug rod tuned for very fast test catches.',
+        rarity: 'supreme',
         rodStats: { speedMultiplier: 8, rarityMultiplier: 2.0, strength: 4.0 },
         stackSize: 1,
         equippableSlotType: 'rod',
@@ -345,6 +412,31 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
         stackSize: 10,
         consumeEffect: { type: 'none' },
         file: 'assets/fish/tile236.png'
+    },
+    {
+        id: 'glimmeringkey',
+        name: 'Glimmering Key',
+        category: 'Treasure',
+        description: 'A pale key that catches moonlight even in murky water.',
+        rarity: 'rare',
+        mass: 1,
+        stackSize: 1,
+        consumeEffect: { type: 'none' },
+        file: 'items/quest/glimmeringkey.png'
+    },
+    {
+        id: 'nightfire_scar',
+        name: 'Nightfire Scar',
+        category: 'Loot',
+        description: 'A burning sigil that can awaken a fish into free will.',
+        rarity: 'legendary',
+        stackSize: 1,
+        consumeEffect: { type: 'none' },
+        scar: {
+            awakenTier: 'awakened',
+            effectTag: 'nightfire'
+        },
+        file: 'items/scars/nightfire.png'
     }
 ];
 

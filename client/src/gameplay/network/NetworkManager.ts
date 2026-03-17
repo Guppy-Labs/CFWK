@@ -1,6 +1,6 @@
 import * as Colyseus from "colyseus.js";
 import { Config } from "../../config";
-import { DEFAULT_USER_SETTINGS, IAdvancementsState, IGuideTutorialState, IGlimmerbowlResponse, IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, IPlayerStatsDelta, IPlayerStatsResponse, ISettingsResponse, PLAYER_STAT_KEYS, IUserSettings, ClientMovementFrame } from "@cfwk/shared";
+import { DEFAULT_USER_SETTINGS, IAdvancementsState, IGuideTutorialState, IGlimmerbowlResponse, IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, IPlayerMoneyState, IPlayerStatsDelta, IPlayerStatsResponse, ISettingsResponse, PLAYER_STAT_KEYS, IUserSettings, ClientMovementFrame } from "@cfwk/shared";
 
 /**
  * NetworkManager - Handles all server communication for multiplayer.
@@ -30,7 +30,9 @@ export class NetworkManager {
     private glimmerbowlCache: IGlimmerbowlResponse | null = null;
     private settingsCache: IUserSettings | null = null;
     private statsCache: IPlayerStatsResponse | null = null;
+    private moneyCache: IPlayerMoneyState | null = null;
     private advancementsCache: IAdvancementsState | null = null;
+    private pendingAdvancementsStatePromise: Promise<IAdvancementsState | null> | null = null;
     private statsDeltaCallbacks: Array<(delta: IPlayerStatsDelta) => void> = [];
 
     private constructor() {
@@ -157,6 +159,11 @@ export class NetworkManager {
         } : null;
     }
 
+    getCachedMoney(): IPlayerMoneyState | null {
+        if (!this.moneyCache) return null;
+        return { money: this.moneyCache.money };
+    }
+
     primeSettingsCache(settings: IUserSettings) {
         this.settingsCache = {
             ...settings,
@@ -207,6 +214,29 @@ export class NetworkManager {
             return data;
         } catch (error) {
             console.error('[NetworkManager] Error fetching stats:', error);
+            return null;
+        }
+    }
+
+    async getMoney(forceRefresh = false): Promise<IPlayerMoneyState | null> {
+        try {
+            if (!forceRefresh && this.moneyCache) return this.moneyCache;
+            const response = await fetch('/api/money', {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch money: ${response.statusText}`);
+            }
+
+            const data: IPlayerMoneyState = await response.json();
+            this.moneyCache = {
+                money: Math.max(0, Math.floor(Number.isFinite(data?.money) ? data.money : 0))
+            };
+            return this.moneyCache;
+        } catch (error) {
+            console.error('[NetworkManager] Error fetching money:', error);
             return null;
         }
     }
@@ -339,6 +369,13 @@ export class NetworkManager {
             window.dispatchEvent(new CustomEvent('advancements:update', { detail: state }));
         });
 
+        this.currentRoom.onMessage('player:money', (data: IPlayerMoneyState) => {
+            this.moneyCache = {
+                money: Math.max(0, Math.floor(Number.isFinite(data?.money) ? data.money : 0))
+            };
+            window.dispatchEvent(new CustomEvent('money:update', { detail: this.moneyCache }));
+        });
+
         this.currentRoom.onMessage('server:transfer', (data: { locationId?: string }) => {
             if (!data?.locationId) return;
             this.transferCallbacks.forEach((callback) => callback(data.locationId!));
@@ -452,6 +489,11 @@ export class NetworkManager {
         this.currentRoom.send('interactive:harvest', { objectId, componentId });
     }
 
+    sendChestInteract(objectId: number, componentId: string) {
+        if (!this.currentRoom) return;
+        this.currentRoom.send('interactive:chest', { objectId, componentId });
+    }
+
     /**
      * Send AFK status to the server
      */
@@ -495,6 +537,11 @@ export class NetworkManager {
         if (this.currentRoom) {
             this.currentRoom.send("dropItem", { itemId, amount });
         }
+    }
+
+    sendGlimmerbowlAwaken(fishEntryId: string, scarItemId: string) {
+        if (!this.currentRoom) return;
+        this.currentRoom.send('glimmerbowl:awaken', { fishEntryId, scarItemId });
     }
 
     /**
@@ -594,6 +641,49 @@ export class NetworkManager {
         };
     }
 
+    async awaitAdvancementsState(timeoutMs = 1200, forceRefresh = false): Promise<IAdvancementsState | null> {
+        const cached = this.getCachedAdvancementsState();
+        if (cached && !forceRefresh) return cached;
+
+        if (this.pendingAdvancementsStatePromise) {
+            return this.pendingAdvancementsStatePromise;
+        }
+
+        if (!this.currentRoom) {
+            return null;
+        }
+
+        this.pendingAdvancementsStatePromise = new Promise<IAdvancementsState | null>((resolve) => {
+            let settled = false;
+            let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+            const finish = (state: IAdvancementsState | null) => {
+                if (settled) return;
+                settled = true;
+                window.removeEventListener('advancements:update', onAdvancementsUpdate as EventListener);
+                if (timeoutHandle) {
+                    clearTimeout(timeoutHandle);
+                }
+                this.pendingAdvancementsStatePromise = null;
+                resolve(state);
+            };
+
+            const onAdvancementsUpdate = (event: Event) => {
+                const detail = (event as CustomEvent<IAdvancementsState>).detail;
+                finish(detail ?? this.getCachedAdvancementsState());
+            };
+
+            window.addEventListener('advancements:update', onAdvancementsUpdate as EventListener);
+            timeoutHandle = setTimeout(() => {
+                finish(this.getCachedAdvancementsState() ?? cached);
+            }, Math.max(100, Math.floor(timeoutMs)));
+
+            this.requestAdvancementsState();
+        });
+
+        return this.pendingAdvancementsStatePromise;
+    }
+
     sendGuideTutorialUpdate(tutorial: Partial<IGuideTutorialState>) {
         if (this.currentRoom) {
             this.currentRoom.send('guide:update', { tutorial });
@@ -624,6 +714,7 @@ export class NetworkManager {
         }
         this.currentInstance = null;
         this.glimmerbowlCache = null;
+        this.moneyCache = null;
     }
 
     /**

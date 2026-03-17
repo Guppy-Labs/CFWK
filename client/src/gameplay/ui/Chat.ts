@@ -38,6 +38,7 @@ export class Chat {
         { name: 'drop', args: ['player', 'item', 'count'] },
         { name: 'give', args: ['player', 'item', 'count'] },
         { name: 'mute', args: ['player'] },
+        { name: 'pay', args: ['player', 'count'] },
         { name: 'reboot', args: [] },
         { name: 'tempban', args: ['player', 'duration'] },
         { name: 'tempmute', args: ['player', 'duration'] },

@@ -5,6 +5,280 @@
             "checks": [
                 {
                     "type": "questObjective",
+                    "questId": "merchant_side_brew",
+                    "status": "active",
+                    "objectiveIndex": 4
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.sideBrew.finish.0",
+                    "text": "Now THAT is proper fuel. Smooth, sharp, and it actually keeps a blade-cat standing."
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.sideBrew.finish.player.0",
+                    "text": "That healed way better than the raw berries."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.sideBrew.finish.1",
+                    "text": "Exactly. Skill in the kitchen is skill in combat, just with fewer screams."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.sideBrew.finish.2",
+                    "text": "Come back later and I'll teach you deadlier recipes. Anchor Hollow feeds those who experiment."
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "merchant_side_brew",
+                    "status": "active",
+                    "objectiveIndex": 3
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.sideBrew.collect.0",
+                    "text": "You made juice, now bottle it. Click the puddle and confirm the pour."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.sideBrew.collect.1",
+                    "text": "One jar in, one serving of Yek Juice out. Chemistry with consequences."
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "merchant_side_brew",
+                    "status": "active",
+                    "objectiveIndex": 2
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.sideBrew.jar.0",
+                    "text": "Perfect stomp-work. You wrung those berries into liquid."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.sideBrew.jar.1",
+                    "text": "Hands can't hold a puddle, so use a jar. I'll spot you one for free."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.sideBrew.jar.2",
+                    "text": "Next time, you pay. Glass doesn't grow on trees."
+                }
+            ],
+            "actions": [
+                {
+                    "type": "giveItem",
+                    "itemId": "jar",
+                    "amount": 1,
+                    "ifMissing": true
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "merchant_side_brew",
+                    "status": "active",
+                    "objectiveIndex": 1
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.sideBrew.stomp.0",
+                    "text": "Drop your yekberries on the ground and walk over them a few times."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.sideBrew.stomp.1",
+                    "text": "No dainty steps. Mash them like they insulted your knife."
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "merchant_side_brew",
+                    "status": "active",
+                    "negate": true
+                },
+                {
+                    "type": "questObjective",
+                    "questId": "merchant_side_brew",
+                    "status": "completed",
+                    "negate": true
+                },
+                {
+                    "type": "questObjective",
+                    "questId": "anti_death_measures",
+                    "status": "completed"
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.sideBrew.intro.0",
+                    "text": "Back for lesson two? Good. Raw food keeps you alive, refined food wins fights."
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.sideBrew.intro.player.0",
+                    "text": "So spending time on prep actually matters?"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.sideBrew.intro.1",
+                    "text": "Always. First trick: pressure extraction."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.sideBrew.intro.2",
+                    "text": "Drop your berries, stomp them into liquid, then report back."
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "wares_galore",
+                    "status": "completed"
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.waresGalore.post.0",
+                    "text": "You've got the look of a customer now. My wares are ready when you are."
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "wares_galore",
+                    "status": "active",
+                    "objectiveIndex": 0
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.0",
+                    "text": "I heard through the grapevine that you have some money now... are the stories true?"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.player.0",
+                    "text": "I guess..."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.1",
+                    "text": "Marvelous! A customer with coin is my favorite kind of miracle."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.2",
+                    "text": "Come see my wares any time. Soon I'll open the full stall for you."
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "wares_galore",
+                    "status": "active",
+                    "negate": true
+                },
+                {
+                    "type": "questObjective",
+                    "questId": "wares_galore",
+                    "status": "completed",
+                    "negate": true
+                },
+                {
+                    "type": "questObjective",
+                    "questId": "merchant_side_brew",
+                    "status": "completed"
+                },
+                {
+                    "type": "questObjective",
+                    "questId": "village_weirdo",
+                    "status": "completed"
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.0",
+                    "text": "I heard through the grapevine that you have some money now... are the stories true?"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.player.0",
+                    "text": "I guess..."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.1",
+                    "text": "Marvelous! A customer with coin is my favorite kind of miracle."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.2",
+                    "text": "Come see my wares any time. Soon I'll open the full stall for you."
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
                     "questId": "anti_death_measures",
                     "status": "active",
                     "objectiveIndex": 1
@@ -27,13 +301,13 @@
                     "speaker": "npc",
                     "emotion": "happy",
                     "textKey": "dialogue.npc.merchant.antiDeath.return.1",
-                    "text": "For now. Soon I'll teach you how to turn yekfruits into a more nourishing meal."
+                    "text": "For now. Come back when you want the advanced method, and I'll show you how to refine food."
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
                     "textKey": "dialogue.npc.merchant.antiDeath.return.2",
-                    "text": "Keep a few slotted and use them before panic takes over."
+                    "text": "Keep a few slotted and use them before panic takes over. Then we'll upgrade your menu."
                 }
             ]
         },

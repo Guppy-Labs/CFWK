@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import {
     ADVANCEMENT_QUEST_CATALOG,
+    calculateWorldTime,
     DEFAULT_GUIDE_TUTORIAL_STATE,
     DEFAULT_USER_ADVANCEMENTS,
     IAdvancementAlertMessage,
@@ -18,12 +19,18 @@ type QuestEvent =
     | { kind: 'npc'; npcId: string }
     | { kind: 'fish-catch' }
     | { kind: 'harvest-interactive'; componentId: string; mapObjectId?: number }
-    | { kind: 'stay-in-region'; regionName: string; durationMs: number; resetOnExit: boolean };
+    | { kind: 'stay-in-region'; regionName: string; durationMs: number; resetOnExit: boolean }
+    | { kind: 'time-window'; hour: number; startHour: number; endHourExclusive: number }
+    | { kind: 'fish-near-location'; locationName: string }
+    | { kind: 'inventory-count'; itemId: string; count: number }
+    | { kind: 'refine-food'; itemId?: string; liquidItemId?: string }
+    | { kind: 'bottle-liquid'; liquidItemId?: string; containerItemId?: string; outputItemId?: string };
 
 type QuestDefinition = {
     id: string;
     dependencyQuestIds: string[];
     isolated: boolean;
+    completeOnStartEvent: boolean;
     start: QuestEvent | null;
     objectives: QuestEvent[];
 };
@@ -89,7 +96,65 @@ function toQuestEvent(objective: IQuestObjectiveEntry | undefined | null): Quest
             resetOnExit: objective.resetOnExit !== false
         };
     }
+    if (objective.kind === 'wait-for-time-window') {
+        const startHourRaw = Number.isFinite(objective.startHour) ? Number(objective.startHour) : 23;
+        const endHourRaw = Number.isFinite(objective.endHourExclusive) ? Number(objective.endHourExclusive) : 4;
+        const startHour = Math.max(0, Math.min(23, Math.floor(startHourRaw)));
+        const endHourExclusive = Math.max(0, Math.min(23, Math.floor(endHourRaw)));
+        return {
+            kind: 'time-window',
+            hour: startHour,
+            startHour,
+            endHourExclusive
+        };
+    }
+    if (objective.kind === 'fish-near-location') {
+        const locationName = typeof objective.locationName === 'string' ? objective.locationName.trim() : '';
+        if (!locationName) return null;
+        return {
+            kind: 'fish-near-location',
+            locationName
+        };
+    }
+    if (objective.kind === 'inventory-count') {
+        const itemId = typeof objective.itemId === 'string' ? objective.itemId.trim() : '';
+        if (!itemId) return null;
+        const count = Number.isFinite(objective.requiredCount)
+            ? Math.max(1, Math.floor(objective.requiredCount as number))
+            : 1;
+        return {
+            kind: 'inventory-count',
+            itemId,
+            count
+        };
+    }
+    if (objective.kind === 'refine-food') {
+        return {
+            kind: 'refine-food',
+            itemId: typeof objective.itemId === 'string' ? objective.itemId : undefined,
+            liquidItemId: typeof objective.liquidItemId === 'string' ? objective.liquidItemId : undefined
+        };
+    }
+    if (objective.kind === 'bottle-liquid') {
+        return {
+            kind: 'bottle-liquid',
+            liquidItemId: typeof objective.liquidItemId === 'string' ? objective.liquidItemId : undefined,
+            containerItemId: typeof objective.containerItemId === 'string' ? objective.containerItemId : undefined,
+            outputItemId: typeof objective.outputItemId === 'string' ? objective.outputItemId : undefined
+        };
+    }
     return null;
+}
+
+function isHourInWindow(hour: number, startHour: number, endHourExclusive: number): boolean {
+    const normalizedHour = Math.max(0, Math.min(23, Math.floor(hour)));
+    const normalizedStart = Math.max(0, Math.min(23, Math.floor(startHour)));
+    const normalizedEnd = Math.max(0, Math.min(23, Math.floor(endHourExclusive)));
+    if (normalizedStart === normalizedEnd) return true;
+    if (normalizedStart < normalizedEnd) {
+        return normalizedHour >= normalizedStart && normalizedHour < normalizedEnd;
+    }
+    return normalizedHour >= normalizedStart || normalizedHour < normalizedEnd;
 }
 
 function toQuestDefinition(entry: IQuestCatalogEntry): QuestDefinition | null {
@@ -119,6 +184,7 @@ function toQuestDefinition(entry: IQuestCatalogEntry): QuestDefinition | null {
         id: entry.id,
         dependencyQuestIds,
         isolated: false,
+        completeOnStartEvent: entry.completeOnStartEvent === true,
         start: startEvent,
         objectives
     };
@@ -170,6 +236,26 @@ function matchesQuestEvent(expected: QuestEvent, received: QuestEvent): boolean 
     if (expected.kind === 'stay-in-region' && received.kind === 'stay-in-region') {
         return expected.regionName === received.regionName;
     }
+    if (expected.kind === 'time-window' && received.kind === 'time-window') {
+        return isHourInWindow(received.hour, expected.startHour, expected.endHourExclusive);
+    }
+    if (expected.kind === 'fish-near-location' && received.kind === 'fish-near-location') {
+        return expected.locationName === received.locationName;
+    }
+    if (expected.kind === 'inventory-count' && received.kind === 'inventory-count') {
+        return expected.itemId === received.itemId && received.count >= expected.count;
+    }
+    if (expected.kind === 'refine-food' && received.kind === 'refine-food') {
+        if (expected.itemId && received.itemId && expected.itemId !== received.itemId) return false;
+        if (expected.liquidItemId && received.liquidItemId && expected.liquidItemId !== received.liquidItemId) return false;
+        return true;
+    }
+    if (expected.kind === 'bottle-liquid' && received.kind === 'bottle-liquid') {
+        if (expected.liquidItemId && received.liquidItemId && expected.liquidItemId !== received.liquidItemId) return false;
+        if (expected.containerItemId && received.containerItemId && expected.containerItemId !== received.containerItemId) return false;
+        if (expected.outputItemId && received.outputItemId && expected.outputItemId !== received.outputItemId) return false;
+        return true;
+    }
     return expected.kind === 'fish-catch' && received.kind === 'fish-catch';
 }
 
@@ -177,6 +263,7 @@ export class AdvancementsManager {
     private readonly mapFileName: string;
     private readonly mapDisplayName: string;
     private readonly firePoints: Array<{ x: number; y: number }>;
+    private readonly poiPointsByName: Map<string, Array<{ x: number; y: number }>>;
     private readonly regions: RegionDefinition[];
     private readonly fireAchievementRadiusPx = 6 * AI_METERS_TO_PIXELS;
     private readonly stateByUserId = new Map<string, IAdvancementsState>();
@@ -188,12 +275,93 @@ export class AdvancementsManager {
         const mapData = this.loadMapData(mapFileName);
         this.mapDisplayName = mapData.mapName;
         this.firePoints = mapData.firePoints;
+        this.poiPointsByName = mapData.poiPointsByName;
         this.regions = mapData.regions;
     }
 
     async initializeUser(userId: string): Promise<void> {
         if (!this.isPersistentUserId(userId)) return;
         await this.getOrLoadState(userId);
+    }
+
+    getPoiPointsByName(name: string): Array<{ x: number; y: number }> {
+        const normalizedName = typeof name === 'string' ? name.trim() : '';
+        if (!normalizedName) return [];
+        const points = this.poiPointsByName.get(normalizedName);
+        if (!points) return [];
+        return points.map((point) => ({ x: point.x, y: point.y }));
+    }
+
+    async getActiveFishNearLocationObjective(
+        userId: string,
+        locationName: string
+    ): Promise<{ radiusMeters: number } | null> {
+        if (!this.isPersistentUserId(userId)) return null;
+        const normalizedLocationName = typeof locationName === 'string' ? locationName.trim() : '';
+        if (!normalizedLocationName) return null;
+
+        const state = await this.getOrLoadState(userId);
+        if (!state) return null;
+
+        for (const [questId, progress] of Object.entries(state.questProgress)) {
+            if (progress.status !== 'active') continue;
+            const entry = ADVANCEMENT_QUEST_CATALOG.find((quest) => quest.id === questId);
+            if (!entry) continue;
+            const stagedObjectives = entry.objectives ?? (entry.objective ? [entry.objective] : []);
+            if (stagedObjectives.length === 0) continue;
+            const objectiveIndex = Math.max(
+                0,
+                Math.min(
+                    stagedObjectives.length - 1,
+                    typeof progress.objectiveIndex === 'number' ? Math.floor(progress.objectiveIndex) : 0
+                )
+            );
+            const objective = stagedObjectives[objectiveIndex];
+            if (!objective || objective.kind !== 'fish-near-location') continue;
+            if ((objective.locationName ?? '').trim() !== normalizedLocationName) continue;
+
+            const radiusMeters = Number.isFinite(objective.radiusMeters)
+                ? Math.max(1, Number(objective.radiusMeters))
+                : 6;
+            return { radiusMeters };
+        }
+
+        return null;
+    }
+
+    async getActiveHarvestObjective(
+        userId: string,
+        componentId: string
+    ): Promise<{ mapObjectId?: number } | null> {
+        if (!this.isPersistentUserId(userId)) return null;
+        const normalizedComponentId = typeof componentId === 'string' ? componentId.trim().toLowerCase() : '';
+        if (!normalizedComponentId) return null;
+
+        const state = await this.getOrLoadState(userId);
+        if (!state) return null;
+
+        for (const [questId, progress] of Object.entries(state.questProgress)) {
+            if (progress.status !== 'active') continue;
+            const entry = ADVANCEMENT_QUEST_CATALOG.find((quest) => quest.id === questId);
+            if (!entry) continue;
+            const stagedObjectives = entry.objectives ?? (entry.objective ? [entry.objective] : []);
+            if (stagedObjectives.length === 0) continue;
+            const objectiveIndex = Math.max(
+                0,
+                Math.min(
+                    stagedObjectives.length - 1,
+                    typeof progress.objectiveIndex === 'number' ? Math.floor(progress.objectiveIndex) : 0
+                )
+            );
+            const objective = stagedObjectives[objectiveIndex];
+            if (!objective || objective.kind !== 'harvest-interactive') continue;
+            if ((objective.componentId ?? '').trim().toLowerCase() !== normalizedComponentId) continue;
+            return {
+                mapObjectId: typeof objective.mapObjectId === 'number' ? Math.floor(objective.mapObjectId) : undefined
+            };
+        }
+
+        return null;
     }
 
     async getStateForUser(userId: string): Promise<IAdvancementsState> {
@@ -285,6 +453,27 @@ export class AdvancementsManager {
         return updates;
     }
 
+    async onFishCatchNearLocation(userId: string, locationName: string): Promise<AdvancementsUpdate> {
+        if (!this.isPersistentUserId(userId)) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+        const normalizedLocationName = typeof locationName === 'string' ? locationName.trim() : '';
+        if (!normalizedLocationName) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+
+        const state = await this.getOrLoadState(userId);
+        if (!state) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+
+        const updates = this.applyQuestEvent(state, { kind: 'fish-near-location', locationName: normalizedLocationName });
+        if (updates.alerts.length > 0 || updates.delayedNewQuestCounts.length > 0) {
+            await this.persistState(userId, state);
+        }
+        return updates;
+    }
+
     async onHarvestInteractive(userId: string, componentId: string, mapObjectId?: number): Promise<AdvancementsUpdate> {
         if (!this.isPersistentUserId(userId)) {
             return { alerts: [], delayedNewQuestCounts: [] };
@@ -304,6 +493,32 @@ export class AdvancementsManager {
             kind: 'harvest-interactive',
             componentId: normalizedComponentId,
             mapObjectId: typeof mapObjectId === 'number' ? Math.floor(mapObjectId) : undefined
+        });
+        if (updates.alerts.length > 0 || updates.delayedNewQuestCounts.length > 0) {
+            await this.persistState(userId, state);
+        }
+        return updates;
+    }
+
+    async onInventoryCount(userId: string, itemId: string, count: number): Promise<AdvancementsUpdate> {
+        if (!this.isPersistentUserId(userId)) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+        const normalizedItemId = typeof itemId === 'string' ? itemId.trim() : '';
+        if (!normalizedItemId) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+        const normalizedCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+
+        const state = await this.getOrLoadState(userId);
+        if (!state) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+
+        const updates = this.applyQuestEvent(state, {
+            kind: 'inventory-count',
+            itemId: normalizedItemId,
+            count: normalizedCount
         });
         if (updates.alerts.length > 0 || updates.delayedNewQuestCounts.length > 0) {
             await this.persistState(userId, state);
@@ -336,6 +551,49 @@ export class AdvancementsManager {
         return [{ type: 'achievement-unlocked', achievementId: CAMPFIRE_STORIES_ID }];
     }
 
+    async onFoodRefined(userId: string, itemId: string, liquidItemId: string): Promise<AdvancementsUpdate> {
+        if (!this.isPersistentUserId(userId)) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+
+        const state = await this.getOrLoadState(userId);
+        if (!state) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+
+        const updates = this.applyQuestEvent(state, {
+            kind: 'refine-food',
+            itemId: typeof itemId === 'string' ? itemId : undefined,
+            liquidItemId: typeof liquidItemId === 'string' ? liquidItemId : undefined
+        });
+        if (updates.alerts.length > 0 || updates.delayedNewQuestCounts.length > 0) {
+            await this.persistState(userId, state);
+        }
+        return updates;
+    }
+
+    async onLiquidBottled(userId: string, liquidItemId: string, containerItemId: string, outputItemId: string): Promise<AdvancementsUpdate> {
+        if (!this.isPersistentUserId(userId)) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+
+        const state = await this.getOrLoadState(userId);
+        if (!state) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+
+        const updates = this.applyQuestEvent(state, {
+            kind: 'bottle-liquid',
+            liquidItemId: typeof liquidItemId === 'string' ? liquidItemId : undefined,
+            containerItemId: typeof containerItemId === 'string' ? containerItemId : undefined,
+            outputItemId: typeof outputItemId === 'string' ? outputItemId : undefined
+        });
+        if (updates.alerts.length > 0 || updates.delayedNewQuestCounts.length > 0) {
+            await this.persistState(userId, state);
+        }
+        return updates;
+    }
+
     async onPlayerMoved(userId: string, x: number, y: number): Promise<IAdvancementAlertMessage[]> {
         if (!this.isPersistentUserId(userId)) return [];
         if (this.regions.length === 0) return [];
@@ -355,6 +613,18 @@ export class AdvancementsManager {
         const timedUpdates = this.applyTimedRegionObjectives(state, userId, regionName, now);
         const alerts: IAdvancementAlertMessage[] = [...timedUpdates.alerts];
         let shouldPersist = timedUpdates.alerts.length > 0 || timedUpdates.delayedNewQuestCounts.length > 0;
+
+        const currentHour = this.getCurrentWorldHour();
+        const timeWindowUpdates = this.applyQuestEvent(state, {
+            kind: 'time-window',
+            hour: currentHour,
+            startHour: currentHour,
+            endHourExclusive: currentHour
+        });
+        if (timeWindowUpdates.alerts.length > 0 || timeWindowUpdates.delayedNewQuestCounts.length > 0) {
+            alerts.push(...timeWindowUpdates.alerts);
+            shouldPersist = true;
+        }
 
         if (!changedRegion || !regionName) {
             if (shouldPersist) {
@@ -473,6 +743,7 @@ export class AdvancementsManager {
             const currentIndexRaw = typeof progress.objectiveIndex === 'number' ? Math.floor(progress.objectiveIndex) : 0;
             const currentIndex = Math.max(0, Math.min(currentIndexRaw, objectives.length - 1));
             const expectedObjective = objectives[currentIndex];
+            if (this.shouldIgnoreQuestObjectiveEvent(questId, expectedObjective, event)) continue;
             if (!expectedObjective || !matchesQuestEvent(expectedObjective, event)) continue;
 
             if (currentIndex < objectives.length - 1) {
@@ -492,7 +763,12 @@ export class AdvancementsManager {
             }
         }
 
-        for (const quest of QUEST_DEFINITIONS) {
+        let startedQuestForNpcEvent = false;
+        for (let questIndex = 0; questIndex < QUEST_DEFINITIONS.length; questIndex += 1) {
+            const quest = QUEST_DEFINITIONS[questIndex];
+            if (event.kind === 'npc' && startedQuestForNpcEvent) {
+                break;
+            }
             if (state.questProgress[quest.id]) continue;
 
             if (!this.areQuestDependenciesMet(state, quest.dependencyQuestIds)) {
@@ -500,6 +776,14 @@ export class AdvancementsManager {
             }
 
             if (!quest.start || !matchesQuestEvent(quest.start, event)) {
+                continue;
+            }
+
+            if (
+                event.kind === 'npc'
+                && quest.start.kind === 'npc'
+                && this.hasEarlierUncompletedNpcStartQuest(state, questIndex, event.npcId)
+            ) {
                 continue;
             }
 
@@ -516,12 +800,45 @@ export class AdvancementsManager {
             };
             state.questProgress[quest.id] = nextEntry;
             alerts.push({ type: 'quest-started', questId: quest.id });
-            if (quest.objectives.length > 0) {
-                alerts.push({ type: 'quest-objective', questId: quest.id, objectiveIndex: 0 });
+            const firstObjective = quest.objectives[0];
+            const firstObjectiveMatchesStartEvent = Boolean(
+                firstObjective && matchesQuestEvent(firstObjective, event)
+            );
+            if (
+                quest.completeOnStartEvent
+                && quest.objectives.length === 1
+                && firstObjectiveMatchesStartEvent
+            ) {
+                nextEntry.status = 'completed';
+                nextEntry.completedAt = now;
+                nextEntry.objectiveIndex = 0;
+                alerts.push({ type: 'quest-completed', questId: quest.id });
+
+                const newlyAvailableCount = this.countNewlyAvailableQuests(state, quest.id);
+                if (newlyAvailableCount > 0) {
+                    delayedNewQuestCounts.push(newlyAvailableCount);
+                }
+            } else if (quest.objectives.length > 0) {
+                // If the start event is also the first objective, consume it immediately
+                // so the player is moved to the next actionable objective step.
+                if (firstObjectiveMatchesStartEvent && quest.objectives.length > 1) {
+                    nextEntry.objectiveIndex = 1;
+                    alerts.push({ type: 'quest-objective', questId: quest.id, objectiveIndex: 1 });
+                } else {
+                    alerts.push({ type: 'quest-objective', questId: quest.id, objectiveIndex: 0 });
+                }
+            }
+
+            if (event.kind === 'npc') {
+                startedQuestForNpcEvent = true;
             }
         }
 
         return { alerts, delayedNewQuestCounts };
+    }
+
+    private shouldIgnoreQuestObjectiveEvent(_questId: string, _expectedObjective: QuestEvent | null | undefined, _event: QuestEvent): boolean {
+        return false;
     }
 
     private countNewlyAvailableQuests(state: IAdvancementsState, completedQuestId: string): number {
@@ -562,6 +879,43 @@ export class AdvancementsManager {
 
     private isQuestCompleted(state: IAdvancementsState, questId: string): boolean {
         return state.questProgress[questId]?.status === 'completed';
+    }
+
+    private hasEarlierUncompletedNpcStartQuest(
+        state: IAdvancementsState,
+        currentQuestIndex: number,
+        npcId: string
+    ): boolean {
+        for (let index = 0; index < currentQuestIndex; index += 1) {
+            const quest = QUEST_DEFINITIONS[index];
+            if (!quest.start || quest.start.kind !== 'npc' || quest.start.npcId !== npcId) {
+                continue;
+            }
+
+            const progress = state.questProgress[quest.id];
+            if (progress?.status === 'completed') {
+                continue;
+            }
+            if (progress?.status === 'active') {
+                return true;
+            }
+
+            if (!this.areQuestDependenciesMet(state, quest.dependencyQuestIds)) {
+                continue;
+            }
+            if (this.isQuestStartBlocked(state, quest.id, quest.isolated)) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private getCurrentWorldHour(): number {
+        const worldTime = calculateWorldTime();
+        return Math.max(0, Math.min(23, Math.floor(worldTime.hour)));
     }
 
     private findRegionAtPosition(x: number, y: number): string | null {
@@ -766,6 +1120,7 @@ export class AdvancementsManager {
     private loadMapData(mapFileName: string): {
         mapName: string;
         firePoints: Array<{ x: number; y: number }>;
+        poiPointsByName: Map<string, Array<{ x: number; y: number }>>;
         regions: RegionDefinition[];
     } {
         const fullPath = this.resolveMapPath(mapFileName);
@@ -773,6 +1128,7 @@ export class AdvancementsManager {
             return {
                 mapName: humanizeMapName(mapFileName),
                 firePoints: [],
+                poiPointsByName: new Map<string, Array<{ x: number; y: number }>>(),
                 regions: []
             };
         }
@@ -781,17 +1137,38 @@ export class AdvancementsManager {
             const raw = fs.readFileSync(fullPath, 'utf8');
             const map = JSON.parse(raw) as TiledMap;
             const mapName = this.extractMapName(map, mapFileName);
+            const poiPointsByName = this.extractPoiPointsByName(map);
             const firePoints = this.extractFirePoints(map);
             const regions = this.extractRegions(map);
-            return { mapName, firePoints, regions };
+            return { mapName, firePoints, poiPointsByName, regions };
         } catch (error) {
             console.error('[AdvancementsManager] Failed to parse map data:', error);
             return {
                 mapName: humanizeMapName(mapFileName),
                 firePoints: [],
+                poiPointsByName: new Map<string, Array<{ x: number; y: number }>>(),
                 regions: []
             };
         }
+    }
+
+    private extractPoiPointsByName(map: TiledMap): Map<string, Array<{ x: number; y: number }>> {
+        const results = new Map<string, Array<{ x: number; y: number }>>();
+        const poiLayer = (map.layers || []).find((layer) => layer.name === 'POI' && layer.type === 'objectgroup');
+        if (!poiLayer || !Array.isArray(poiLayer.objects)) {
+            return results;
+        }
+
+        poiLayer.objects.forEach((object) => {
+            const name = typeof object.name === 'string' ? object.name.trim() : '';
+            if (!name) return;
+            const x = (object.x ?? 0) + ((object.width ?? 0) / 2);
+            const y = (object.y ?? 0) + ((object.height ?? 0) / 2);
+            const current = results.get(name) ?? [];
+            current.push({ x, y });
+            results.set(name, current);
+        });
+        return results;
     }
 
     private extractMapName(map: TiledMap, mapFileName: string): string {

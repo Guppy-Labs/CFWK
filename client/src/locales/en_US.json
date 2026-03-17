@@ -43,6 +43,7 @@
       "bloomEnabled": "Bloom",
       "vignetteEnabled": "Vignette",
       "tiltShiftEnabled": "Tilt Shift",
+      "crtEnabled": "CRT",
       "dustParticlesEnabled": "Dust Particles"
     },
     "controls": {
@@ -98,11 +99,31 @@
   "glimmerbowl": {
     "placeholder": "Fishbowl Preview",
     "section": {
+      "all": "All",
       "regular": "Regular",
       "awakened": "Awakened"
     },
+    "action": {
+      "awake": "Awake"
+    },
     "details": {
       "view": "View"
+    },
+    "popup": {
+      "noScarsOwned": "No Scars Owned",
+      "scarsTitle": "Select Scar",
+      "back": "Back"
+    },
+    "view": {
+      "back": "Back",
+      "knifePlaceholder": "Equip a Knife",
+      "stats": {
+        "damage": "Damage",
+        "speed": "Speed",
+        "energy": "Energy",
+        "critRate": "Crit Rate",
+        "critDamage": "Crit Damage"
+      }
     }
   },
   "headbar": {
@@ -140,8 +161,17 @@
       "anti_death_measures": {
         "name": "Anti-death Measures"
       },
-      "placeholder_main_quest_3": {
-        "name": "The Path Ahead"
+      "merchant_side_brew": {
+        "name": "Merchant's Brew"
+      },
+      "village_weirdo": {
+        "name": "The Village Weirdo"
+      },
+      "wares_galore": {
+        "name": "Wares Galore"
+      },
+      "bowl_that_shines": {
+        "name": "The Bowl that Shines"
       }
     },
     "achievement": {
@@ -168,6 +198,13 @@
         "fishCatch": "Catch a fish",
         "talkToNpc": "Talk to {name}",
         "stayInRegion": "Stay in {region} for {seconds}s",
+        "waitForTimeWindow": "Wait until night ({start}:00-{end}:00)",
+        "fishNearLocation": "Fish near {location}",
+        "harvestInteractive": "Use nearby interactable",
+        "openGlimmeringChest": "Open the Glimmering Chest",
+        "inventoryCount": "Collect {count} {item}",
+        "refineFood": "Refine {item} into liquid",
+        "bottleLiquid": "Collect {liquid} using {container}",
         "generic": "Complete the next task"
       },
       "status": {
@@ -188,8 +225,17 @@
       "anti_death_measures": {
         "description": "Talk to the Merchant, harvest yekberries, then return to the Merchant."
       },
-      "placeholder_main_quest_3": {
-        "description": "A new chapter opens once your parallel errands are complete."
+      "merchant_side_brew": {
+        "description": "Learn food refinement from the Merchant: stomp dropped yekberries into liquid, bottle it with a jar, then report back."
+      },
+      "village_weirdo": {
+        "description": "Talk to the Traveller, collect 5 yekberries, then return for your reward."
+      },
+      "wares_galore": {
+        "description": "Talk to the Merchant about your new coin and hear about his wares."
+      },
+      "bowl_that_shines": {
+        "description": "Speak with the Wise Man and follow his lead to the Sea Master."
       }
     },
     "achievementCategory": {
@@ -248,7 +294,17 @@
     "biteHint": "Click {clicks} more times in {seconds} seconds!",
     "caughtItem": "Caught {item}!"
   },
+  "cinematic": {
+    "glimmerbowlUnlocked": {
+      "title": "GLIMMERBOWL",
+      "subtitle": "UNLOCKED"
+    }
+  },
   "guide": {
+    "bowlThatShines": {
+      "travellerHint": "Hm... I wonder if the traveller has had the info all along.",
+      "returnToSeamaster": "Show the Sea Master what you found."
+    },
     "rod": {
       "openInventory": "To equip your new rod, open your inventory (press {key} on desktop).",
       "openInventoryMobile": "To equip your new rod, tap the inventory button.",
@@ -346,6 +402,57 @@
       "seamaster": {
         "greeting": {
           "0": "Tides are honest. Keep your blade sharp, and your heart sharper."
+        },
+        "bowlThatShines": {
+          "passphrase": {
+            "prompt": "If you have business with me, say it plainly.",
+            "choice": {
+              "0": "The glass collector sent me.",
+              "1": "The collector of glass sent me.",
+              "2": "The shard keeper sent me."
+            },
+            "wrong": {
+              "0": "What?? Is that supposed to mean something to me? SCRAM KID!",
+              "1": "What?? Is that supposed to mean something to me? SCRAM KID!"
+            }
+          },
+          "story": {
+            "0": "The Wise Man would only hand out that code if he trusted you.",
+            "1": "Listen closely. I used to be an archaeologist in the desert, always setting out on expeditions.",
+            "2": "One day, I found a chest unlike anything I'd seen.",
+            "3": "My top-secret sources said the key to that chest, the Glimmering Chest, was likely lost somewhere in the desert.",
+            "4": "So I brought the chest to Anchor Hollow and stayed. I set my sights on the sea and learned every current I could.",
+            "5": "In trying to find that key, I became the Sea Master.",
+            "6": "And now I grant you the privilege of helping me search for it.",
+            "7": "I know it's somewhere around the docks.",
+            "8": "You might ask around Anchor Hollow for new rumors... though avoid the Traveller. She's suspicious. Weird.",
+            "9": "Good luck.",
+            "choice": {
+              "prompt": "How should I answer?",
+              "justMet": "... I kinda met him 30 seconds ago",
+              "pals": "Yes, we've been pals for life!"
+            },
+            "choiceResponse": {
+              "justMet": "Thirty seconds? Hmph. Then your timing is suspiciously perfect.",
+              "pals": "Pals for life, huh? You don't look old enough for that claim."
+            },
+            "player": {
+              "0": "What info have you collected so far?"
+            }
+          },
+          "postKey": {
+            "0": "By the rolling tide... that's the Glimmering Key.",
+            "1": "I am genuinely impressed. You found what I could not.",
+            "2": "And here's the twist: keep the treasure for yourself. I've taken enough from the sea in my lifetime.",
+            "3": "The chest is waiting. Go open it.",
+            "player": {
+              "0": "Thank you... seriously."
+            }
+          },
+          "finalPlaceholder": {
+            "0": "So, what did the chest reveal? Hah, don't tell me yet.",
+            "1": "We'll speak again soon. For now, let this be your beginning."
+          }
         }
       },
       "guard": {
@@ -428,10 +535,54 @@
           },
           "return": {
             "0": "Good haul. Those yekberries keep fighters standing.",
-            "1": "For now. Soon I'll teach you how to turn yekfruits into a more nourishing meal.",
-            "2": "Keep a few slotted and use them before panic takes over.",
+            "1": "For now. Come back when you want the advanced method, and I'll show you how to refine food.",
+            "2": "Keep a few slotted and use them before panic takes over. Then we'll upgrade your menu.",
             "player": {
               "0": "So this is just... survival food?"
+            }
+          },
+          "sideBrew": {
+            "intro": {
+              "0": "Back for lesson two? Good. Raw food keeps you alive, refined food wins fights.",
+              "1": "Always. First trick: pressure extraction.",
+              "2": "Drop your berries, stomp them into liquid, then report back.",
+              "player": {
+                "0": "So spending time on prep actually matters?"
+              }
+            },
+            "stomp": {
+              "0": "Drop your yekberries on the ground and walk over them a few times.",
+              "1": "No dainty steps. Mash them like they insulted your knife."
+            },
+            "jar": {
+              "0": "Perfect stomp-work. You wrung those berries into liquid.",
+              "1": "Hands can't hold a puddle, so use a jar. I'll spot you one for free.",
+              "2": "Next time, you pay. Glass doesn't grow on trees."
+            },
+            "collect": {
+              "0": "You made juice, now bottle it. Click the puddle and confirm the pour.",
+              "1": "One jar in, one serving of Yek Juice out. Chemistry with consequences."
+            },
+            "finish": {
+              "0": "Now THAT is proper fuel. Smooth, sharp, and it actually keeps a blade-cat standing.",
+              "1": "Exactly. Skill in the kitchen is skill in combat, just with fewer screams.",
+              "2": "Come back later and I'll teach you deadlier recipes. Anchor Hollow feeds those who experiment.",
+              "player": {
+                "0": "That healed way better than the raw berries."
+              }
+            }
+          },
+          "waresGalore": {
+            "intro": {
+              "0": "I heard through the grapevine that you have some money now... are the stories true?",
+              "1": "Marvelous! A customer with coin is my favorite kind of miracle.",
+              "2": "Come see my wares any time. Soon I'll open the full stall for you.",
+              "player": {
+                "0": "I guess..."
+              }
+            },
+            "post": {
+              "0": "You've got the look of a customer now. My wares are ready when you are."
             }
           }
         }
@@ -439,11 +590,72 @@
       "traveller": {
         "greeting": {
           "0": "Road dust fades. Stories don't."
+        },
+        "bowlThatShines": {
+          "clue": {
+            "0": "What's up?",
+            "1": "Nope. But I heard this: when the sky is dark and the stars glimmer, the moon reveals treasure reflections in the water.",
+            "2": "If you're key hunting, check the docks at night.",
+            "player": {
+              "0": "Have you seen a key?"
+            }
+          }
+        },
+        "villageWeirdo": {
+          "intro": {
+            "0": "Traveler's request: could you bring me 5 yekberries?",
+            "1": "Specific goals build character. Please and thank you.",
+            "player": {
+              "0": "Five? That's oddly specific."
+            }
+          },
+          "collect": {
+            "0": "I still need 5 yekberries. Bring all five and I'll make it worth your time."
+          },
+          "return": {
+            "0": "You actually came back with five yekberries. You're incredibly kind.",
+            "1": "Confession: this was a social experiment. I wanted to see if Anchor Hollow still had generous people.",
+            "2": "Fair. My budget is... less theatrical.",
+            "3": "I can spare one silver coin. It's not much, but it'll be useful.",
+            "4": "You've never had a coin? What, do you live under a rock?",
+            "5": "A silver coin is worth 100 bronze coins.",
+            "6": "And 100 silver coins make one gold coin.",
+            "7": "One silver might not look like much, but used properly, it can get you what you need.",
+            "player": {
+              "0": "Bro is NOT MrBeast.",
+              "1": "I've never had a coin before..."
+            }
+          },
+          "post": {
+            "0": "How's the silver treating you? Spend it wisely, not stylishly."
+          }
         }
       },
       "wiseman": {
         "greeting": {
           "0": "A quiet mind hears what loud waves hide."
+        },
+        "bowlThatShines": {
+          "intro": {
+            "0": "You look tired.",
+            "1": "I've always been gifted.",
+            "2": "Ha! You're funny.",
+            "3": "I can share a secret. One that lifts weight from your shoulders and opens a whole new world.",
+            "4": "Good. Speak to the Sea Master.",
+            "5": "Tell him the collector of glass sent you.",
+            "6": "Do not improvise.",
+            "choice": {
+              "prompt": "Do I want to hear it?",
+              "yes": "Yes."
+            },
+            "player": {
+              "0": "How do you know?",
+              "1": "How gifted are we talking?"
+            }
+          },
+          "reminder": {
+            "0": "Find the Sea Master and say the collector of glass sent you."
+          }
         }
       }
     }
@@ -456,6 +668,26 @@
     "yekberries": {
       "name": "Yek Berries",
       "description": "Tart berries from a yekbush. Simple, reliable healing food."
+    },
+    "yekjuice": {
+      "name": "Yek Juice",
+      "description": "Pressed yek juice in drinkable form. Much more nourishing than raw berries."
+    },
+    "yekjuiceliquid": {
+      "name": "Yek Juice Liquid",
+      "description": "A fresh puddle of crushed yek juice. Collect it with a jar."
+    },
+    "jar": {
+      "name": "Jar",
+      "description": "A glass jar used to gather liquids."
+    },
+    "glimmeringkey": {
+      "name": "Glimmering Key",
+      "description": "A pale key that catches moonlight even in murky water."
+    },
+    "nightfire_scar": {
+      "name": "Nightfire Scar",
+      "description": "A burning sigil that can awaken a fish into free will."
     },
     "tuna": {
       "name": "Tuna",
@@ -553,6 +785,10 @@
       "name": "Ruined Chest",
       "description": "A waterlogged treasure chest. Most contents have rotted away."
     }
+  },
+  "drops": {
+    "needContainerToCollect": "Need {container} to collect",
+    "confirmConsumeJar": "Confirm Consuming 1 Jar"
   },
   "system": {
     "on": "ON",

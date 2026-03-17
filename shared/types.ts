@@ -316,17 +316,36 @@ export const DEFAULT_PLAYER_HEARTS_STATE: IPlayerHeartsState = {
   maxHearts: 9
 };
 
+export interface IPlayerMoneyState {
+  money: number;
+}
+
+export const DEFAULT_PLAYER_MONEY_STATE: IPlayerMoneyState = {
+  money: 0
+};
+
 export type GlimmerFishTier = 'regular' | 'awakened';
 
+export interface FishCombatStats {
+  damage: number;
+  speed: number;
+  energy: number;
+  critRate: number;
+  critDamage: number;
+}
+
 export interface GlimmerbowlEntry {
+  id: string;
   itemId: string;
-  count: number;
   tier: GlimmerFishTier;
+  stats: FishCombatStats;
+  awakenedByScarId?: string | null;
 }
 
 export interface IGlimmerbowlResponse {
   entries: GlimmerbowlEntry[];
   unlocked: boolean;
+  hasOwnedScar?: boolean;
 }
 
 // --- User Settings Types ---
@@ -351,6 +370,7 @@ export interface IVideoSettings {
   bloomEnabled: boolean;
   vignetteEnabled: boolean;
   tiltShiftEnabled: boolean;
+  crtEnabled: boolean;
   dustParticlesEnabled: boolean;
 }
 
@@ -507,6 +527,9 @@ export type IQuestCatalogEntry = {
   id: string;
   dependencyQuestId: string | null;
   dependencyQuestIds?: string[];
+  isSideQuest?: boolean;
+  allowAutoTrack?: boolean;
+  completeOnStartEvent?: boolean;
   nextQuestId?: string;
   nextQuestIds?: string[];
   startObjective?: IQuestObjectiveEntry;
@@ -514,7 +537,16 @@ export type IQuestCatalogEntry = {
   objective?: IQuestObjectiveEntry;
 };
 
-export type QuestObjectiveKind = 'fish-catch' | 'talk-to-npc' | 'harvest-interactive' | 'stay-in-region';
+export type QuestObjectiveKind =
+  | 'fish-catch'
+  | 'talk-to-npc'
+  | 'harvest-interactive'
+  | 'stay-in-region'
+  | 'wait-for-time-window'
+  | 'fish-near-location'
+  | 'inventory-count'
+  | 'refine-food'
+  | 'bottle-liquid';
 
 export type IQuestObjectiveEntry = {
   kind: QuestObjectiveKind;
@@ -524,6 +556,15 @@ export type IQuestObjectiveEntry = {
   regionName?: string;
   durationMs?: number;
   resetOnExit?: boolean;
+  startHour?: number;
+  endHourExclusive?: number;
+  locationName?: string;
+  radiusMeters?: number;
+  itemId?: string;
+  requiredCount?: number;
+  liquidItemId?: string;
+  containerItemId?: string;
+  outputItemId?: string;
 };
 
 export type IAchievementCatalogEntry = {
@@ -576,14 +617,60 @@ export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
     objective: { kind: 'harvest-interactive', componentId: 'yekbush' }
   },
   {
-    id: 'placeholder_main_quest_3',
+    id: 'merchant_side_brew',
+    dependencyQuestId: 'anti_death_measures',
+    dependencyQuestIds: ['anti_death_measures'],
+    isSideQuest: true,
+    allowAutoTrack: false,
+    startObjective: { kind: 'talk-to-npc', npcId: 'merchant' },
+    objectives: [
+      { kind: 'talk-to-npc', npcId: 'merchant' },
+      { kind: 'refine-food', itemId: 'yekberries', liquidItemId: 'yekjuiceliquid' },
+      { kind: 'talk-to-npc', npcId: 'merchant' },
+      { kind: 'bottle-liquid', liquidItemId: 'yekjuiceliquid', containerItemId: 'jar', outputItemId: 'yekjuice' },
+      { kind: 'talk-to-npc', npcId: 'merchant' }
+    ],
+    objective: { kind: 'talk-to-npc', npcId: 'merchant' }
+  },
+  {
+    id: 'village_weirdo',
     dependencyQuestId: null,
     dependencyQuestIds: ['heed_the_warning', 'anti_death_measures'],
+    startObjective: { kind: 'talk-to-npc', npcId: 'traveller' },
+    objectives: [
+      { kind: 'inventory-count', itemId: 'yekberries', requiredCount: 5 },
+      { kind: 'talk-to-npc', npcId: 'traveller' }
+    ],
+    objective: { kind: 'inventory-count', itemId: 'yekberries', requiredCount: 5 }
+  },
+  {
+    id: 'wares_galore',
+    dependencyQuestId: 'village_weirdo',
+    dependencyQuestIds: ['village_weirdo'],
+    isSideQuest: true,
+    allowAutoTrack: false,
+    completeOnStartEvent: true,
+    startObjective: { kind: 'talk-to-npc', npcId: 'merchant' },
+    objectives: [
+      { kind: 'talk-to-npc', npcId: 'merchant' }
+    ],
+    objective: { kind: 'talk-to-npc', npcId: 'merchant' }
+  },
+  {
+    id: 'bowl_that_shines',
+    dependencyQuestId: 'village_weirdo',
+    dependencyQuestIds: ['village_weirdo'],
     startObjective: { kind: 'talk-to-npc', npcId: 'wiseman' },
     objectives: [
-      { kind: 'talk-to-npc', npcId: 'wiseman' }
+      { kind: 'talk-to-npc', npcId: 'seamaster' },
+      { kind: 'talk-to-npc', npcId: 'traveller' },
+      { kind: 'wait-for-time-window', startHour: 23, endHourExclusive: 4 },
+      { kind: 'fish-near-location', locationName: 'KeyLocation', radiusMeters: 6 },
+      { kind: 'talk-to-npc', npcId: 'seamaster' },
+      { kind: 'harvest-interactive', componentId: 'glimmeringchest' },
+      { kind: 'talk-to-npc', npcId: 'seamaster' }
     ],
-    objective: { kind: 'talk-to-npc', npcId: 'wiseman' }
+    objective: { kind: 'talk-to-npc', npcId: 'seamaster' }
   }
 ];
 
@@ -638,6 +725,7 @@ export const DEFAULT_USER_SETTINGS: IUserSettings = {
     bloomEnabled: false,
     vignetteEnabled: true,
     tiltShiftEnabled: true,
+    crtEnabled: true,
     dustParticlesEnabled: true
   },
   controls: {

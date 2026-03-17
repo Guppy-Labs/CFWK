@@ -3,6 +3,7 @@ import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
 import { FishingScene } from './scenes/FishingScene';
 import { UIScene } from './scenes/UIScene';
+import CrtPipelinePlugin from 'phaser3-rex-plugins/plugins/crtpipeline-plugin.js';
 
 function updateAppSize() {
     const container = document.getElementById('game-container');
@@ -21,6 +22,8 @@ function updateAppSize() {
 }
 
 let orientationOverlayDismissed = false;
+const loaderDebugLines: string[] = [];
+const LOADER_DEBUG_MAX_LINES = 8;
 
 function getOrientationOverlay(): HTMLDivElement {
     let overlay = document.getElementById('orientation-overlay') as HTMLDivElement | null;
@@ -118,6 +121,58 @@ export function setLoaderText(text: string) {
     if (loaderText) loaderText.textContent = text;
 }
 
+function getLoaderDebugElement(): HTMLDivElement | null {
+    const loader = document.getElementById('game-loader');
+    if (!loader) return null;
+
+    let debug = document.getElementById('loader-debug') as HTMLDivElement | null;
+    if (debug) return debug;
+
+    debug = document.createElement('div');
+    debug.id = 'loader-debug';
+    debug.style.display = 'none';
+    debug.style.width = 'min(420px, 86vw)';
+    debug.style.maxHeight = '160px';
+    debug.style.overflow = 'auto';
+    debug.style.fontFamily = 'monospace';
+    debug.style.fontSize = '11px';
+    debug.style.lineHeight = '1.35';
+    debug.style.color = 'rgba(255, 255, 255, 0.78)';
+    debug.style.background = 'rgba(0, 0, 0, 0.24)';
+    debug.style.border = '1px solid rgba(255, 255, 255, 0.18)';
+    debug.style.padding = '8px';
+    debug.style.whiteSpace = 'pre-wrap';
+    debug.style.wordBreak = 'break-word';
+    loader.appendChild(debug);
+    return debug;
+}
+
+export function setLoaderDebugVisible(visible: boolean) {
+    const debug = getLoaderDebugElement();
+    if (!debug) return;
+    debug.style.display = visible ? 'block' : 'none';
+}
+
+export function clearLoaderDebug() {
+    loaderDebugLines.length = 0;
+    const debug = getLoaderDebugElement();
+    if (!debug) return;
+    debug.textContent = '';
+}
+
+export function appendLoaderDebug(message: string) {
+    const debug = getLoaderDebugElement();
+    if (!debug) return;
+    const now = new Date();
+    const stamp = now.toISOString().split('T')[1]?.slice(0, 8) ?? '00:00:00';
+    loaderDebugLines.push(`${stamp} ${message}`);
+    while (loaderDebugLines.length > LOADER_DEBUG_MAX_LINES) {
+        loaderDebugLines.shift();
+    }
+    debug.textContent = loaderDebugLines.join('\n');
+    debug.scrollTop = debug.scrollHeight;
+}
+
 export function setLoaderProgress(value: number) {
     const clamped = Math.max(0, Math.min(1, value));
     const fill = document.getElementById('loader-progress-fill');
@@ -167,6 +222,15 @@ export function startGame(userData: { _id: string; username: string; isPremium?:
         },
         dom: {
             createContainer: true
+        },
+        plugins: {
+            global: [
+                {
+                    key: 'rexCrtPipeline',
+                    plugin: CrtPipelinePlugin,
+                    start: true
+                }
+            ]
         }
     };
 

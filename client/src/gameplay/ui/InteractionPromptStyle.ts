@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { AvailableInteraction } from '../interaction/InteractionManager';
 import { InteractionType } from '../interaction/InteractionManager';
 
-export type DesktopInteractionIconKey = 'none' | 'shove' | 'talk' | 'harvest';
+export type DesktopInteractionIconKey = 'none' | 'shove' | 'talk' | 'harvest' | 'chest';
 
 export type InteractionPromptStyle = {
     mobileButtonTexture: string;
@@ -47,6 +47,16 @@ export function getInteractionPromptStyle(
             mobileButtonTexture: 'ui-interact-blank',
             mobileOverlayTexture: hasBerryTexture ? berryTexture : null,
             desktopIcon: 'harvest'
+        };
+    }
+
+    if (interaction.type === InteractionType.Chest) {
+        const keyTexture = 'item-glimmeringkey-18';
+        const hasKeyTexture = textures ? textures.exists(keyTexture) : true;
+        return {
+            mobileButtonTexture: 'ui-interact-blank',
+            mobileOverlayTexture: hasKeyTexture ? keyTexture : null,
+            desktopIcon: 'chest'
         };
     }
 

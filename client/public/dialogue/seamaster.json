@@ -1,5 +1,286 @@
 {
     "id": "seamaster",
+    "forks": [
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "bowl_that_shines",
+                    "status": "active",
+                    "objectiveIndex": 0
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.seamaster.bowlThatShines.passphrase.prompt",
+                    "text": "If you have business with me, say it plainly.",
+                    "options": [
+                        {
+                            "id": "phrase_wrong_1",
+                            "textKey": "dialogue.npc.seamaster.bowlThatShines.passphrase.choice.0",
+                            "text": "The glass collector sent me.",
+                            "lines": [
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "angry",
+                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.passphrase.wrong.0",
+                                    "text": "What?? Is that supposed to mean something to me? SCRAM KID!"
+                                }
+                            ]
+                        },
+                        {
+                            "id": "phrase_correct",
+                            "textKey": "dialogue.npc.seamaster.bowlThatShines.passphrase.choice.1",
+                            "text": "The collector of glass sent me.",
+                            "lines": [
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "happy",
+                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.0",
+                                    "text": "The Wise Man would only hand out that code if he trusted you."
+                                },
+                                {
+                                    "speaker": "player",
+                                    "emotion": "surprise",
+                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.choice.prompt",
+                                    "text": "How should I answer?",
+                                    "options": [
+                                        {
+                                            "id": "just_met_him",
+                                            "textKey": "dialogue.npc.seamaster.bowlThatShines.story.choice.justMet",
+                                            "text": "... I kinda met him 30 seconds ago",
+                                            "lines": [
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.choiceResponse.justMet",
+                                                    "text": "Thirty seconds? Hmph. Then your timing is suspiciously perfect."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.1",
+                                                    "text": "Listen closely. I used to be an archaeologist in the desert, always setting out on expeditions."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.2",
+                                                    "text": "One day, I found a chest unlike anything I'd seen."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.3",
+                                                    "text": "My top-secret sources said the key to that chest, the Glimmering Chest, was likely lost somewhere in the desert."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.4",
+                                                    "text": "So I brought the chest to Anchor Hollow and stayed. I set my sights on the sea and learned every current I could."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.5",
+                                                    "text": "In trying to find that key, I became the Sea Master."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.6",
+                                                    "text": "And now I grant you the privilege of helping me search for it."
+                                                },
+                                                {
+                                                    "speaker": "player",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.player.0",
+                                                    "text": "What info have you collected so far?"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.7",
+                                                    "text": "I know it's somewhere around the docks."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.8",
+                                                    "text": "You might ask around Anchor Hollow for new rumors... though avoid the Traveller. She's suspicious. Weird."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.9",
+                                                    "text": "Good luck."
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "id": "pals_for_life",
+                                            "textKey": "dialogue.npc.seamaster.bowlThatShines.story.choice.pals",
+                                            "text": "Yes, we've been pals for life!",
+                                            "lines": [
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.choiceResponse.pals",
+                                                    "text": "Pals for life, huh? You don't look old enough for that claim."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.1",
+                                                    "text": "Listen closely. I used to be an archaeologist in the desert, always setting out on expeditions."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.2",
+                                                    "text": "One day, I found a chest unlike anything I'd seen."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.3",
+                                                    "text": "My top-secret sources said the key to that chest, the Glimmering Chest, was likely lost somewhere in the desert."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.4",
+                                                    "text": "So I brought the chest to Anchor Hollow and stayed. I set my sights on the sea and learned every current I could."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.5",
+                                                    "text": "In trying to find that key, I became the Sea Master."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.6",
+                                                    "text": "And now I grant you the privilege of helping me search for it."
+                                                },
+                                                {
+                                                    "speaker": "player",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.player.0",
+                                                    "text": "What info have you collected so far?"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.7",
+                                                    "text": "I know it's somewhere around the docks."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "surprise",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.8",
+                                                    "text": "You might ask around Anchor Hollow for new rumors... though avoid the Traveller. She's suspicious. Weird."
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.story.9",
+                                                    "text": "Good luck."
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "id": "phrase_wrong_2",
+                            "textKey": "dialogue.npc.seamaster.bowlThatShines.passphrase.choice.2",
+                            "text": "The shard keeper sent me.",
+                            "lines": [
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "angry",
+                                    "textKey": "dialogue.npc.seamaster.bowlThatShines.passphrase.wrong.1",
+                                    "text": "What?? Is that supposed to mean something to me? SCRAM KID!"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "bowl_that_shines",
+                    "status": "active",
+                    "objectiveIndex": 4
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.seamaster.bowlThatShines.postKey.0",
+                    "text": "By the rolling tide... that's the Glimmering Key."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.seamaster.bowlThatShines.postKey.1",
+                    "text": "I am genuinely impressed. You found what I could not."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.seamaster.bowlThatShines.postKey.2",
+                    "text": "And here's the twist: keep the treasure for yourself. I've taken enough from the sea in my lifetime."
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.seamaster.bowlThatShines.postKey.player.0",
+                    "text": "Thank you... seriously."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.seamaster.bowlThatShines.postKey.3",
+                    "text": "The chest is waiting. Go open it."
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "bowl_that_shines",
+                    "status": "active",
+                    "objectiveIndex": 6
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.seamaster.bowlThatShines.finalPlaceholder.0",
+                    "text": "So, what did the chest reveal? Hah, don't tell me yet."
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.seamaster.bowlThatShines.finalPlaceholder.1",
+                    "text": "We'll speak again soon. For now, let this be your beginning."
+                }
+            ]
+        }
+    ],
     "lines": [
         {
             "speaker": "npc",

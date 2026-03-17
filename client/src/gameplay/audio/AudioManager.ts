@@ -926,7 +926,7 @@ export class AudioManager {
     }
 
     playConsumableEat(itemId: string) {
-        if (itemId !== 'yekberries') return;
+        if (itemId !== 'yekberries' && itemId !== 'yekjuice') return;
         const soundKey = 'item-eat-yekberries';
         if (!this.scene.cache.audio.exists(soundKey)) return;
         const cfg = AUDIO_CONFIG.sfx.eat;

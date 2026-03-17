@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { getItemDefinition } from '@cfwk/shared';
 import { MobileControls } from '../MobileControls';
 import { BitmapFontRenderer } from '../BitmapFontRenderer';
 
@@ -30,6 +31,9 @@ export type InventoryDisplayItem = {
     stackSize: number;
     iconKey: string;
     category: string;
+    glowColor?: number;
+    backgroundIconKey?: string;
+    backgroundAlpha?: number;
 };
 
 export type InventorySlotDisplay = {
@@ -112,6 +116,11 @@ export class InventorySlotsUI {
     private readonly trackSourceHeight = 5;
     private readonly trackBorder = 2;
     private readonly trackThickness = 5;
+    private scarGlimmerTextureKeys = new Map<number, string>();
+    private readonly rarityFrameInsetPx = 0;
+    // Compensates slight source-frame visual overflow at 24x24.
+    private readonly rarityFrameSizeAdjustPx = 0;
+    private readonly rarityFrameAlpha = 0.6;
 
     private config: Required<InventorySlotsConfig>;
 
@@ -267,6 +276,10 @@ export class InventorySlotsUI {
     getSelectedItem(): InventoryDisplayItem | null {
         if (this.selectedSlotIndex === undefined) return null;
         return this.slotIndexToItem.get(this.selectedSlotIndex) ?? null;
+    }
+
+    getSelectedDisplayIndex(): number | undefined {
+        return this.selectedSlotIndex;
     }
 
     /**
@@ -586,25 +599,181 @@ export class InventorySlotsUI {
                 return;
             }
 
+            if (typeof item.glowColor === 'number') {
+                const glow = this.scene.add.rectangle(
+                    x + slotSize / 2,
+                    y + slotSize / 2,
+                    slotSize - 2,
+                    slotSize - 2,
+                    item.glowColor,
+                    0.16
+                ).setOrigin(0.5, 0.5);
+                glow.setBlendMode(Phaser.BlendModes.ADD);
+                this.itemsContent.add(glow);
+            }
+
+            if (item.backgroundIconKey) {
+                const bgIcon = this.scene.add.image(
+                    x + slotSize / 2,
+                    y + slotSize / 2,
+                    item.backgroundIconKey
+                ).setOrigin(0.5, 0.5);
+                bgIcon.setScale(itemScale * 0.95);
+                bgIcon.setAlpha(item.backgroundAlpha ?? 0.34);
+                this.itemsContent.add(bgIcon);
+            }
+
+            const definition = getItemDefinition(item.id);
+            const frameTextureKey = this.getRarityFrameTextureKey(definition?.rarity);
+            if (frameTextureKey && this.scene.textures.exists(frameTextureKey)) {
+                const frame = this.scene.add.image(
+                    Math.round(x + slotSize / 2),
+                    Math.round(y + slotSize / 2),
+                    frameTextureKey
+                ).setOrigin(0.5, 0.5);
+                const frameSize = Math.max(1, slotSize - this.rarityFrameInsetPx * 2 - this.rarityFrameSizeAdjustPx);
+                frame.setDisplaySize(frameSize, frameSize);
+                frame.setAlpha(this.rarityFrameAlpha);
+                this.itemsContent.add(frame);
+            }
+
             const icon = this.scene.add.image(x + slotSize / 2, y + slotSize / 2, item.iconKey).setOrigin(0.5, 0.5);
-            icon.setScale(itemScale);
+            const isScarItem = Boolean(definition?.scar);
+            const slotCenterX = x + slotSize / 2;
+            const slotCenterY = y + slotSize / 2;
+            icon.setPosition(slotCenterX, slotCenterY);
+            icon.setScale(itemScale * (isScarItem ? 0.9 : 1));
             icon.setInteractive();
             icon.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
                 this.handleSlotPointerDown(displayIndex, pointer);
             });
             this.itemsContent.add(icon);
             this.slotIndexToIcon.set(displayIndex, icon);
+            if (isScarItem) {
+                this.addScarGlimmer(icon, definition?.rarity);
+            }
 
-            const countText = String(slot.count);
-            const countTextureKey = this.getCountTexture(countText);
-            const countImage = this.scene.add.image(0, 0, countTextureKey).setOrigin(0, 0);
-            const countWidth = (this.scene.textures.get(countTextureKey).getSourceImage() as HTMLImageElement).width;
-            const countX = x + slotSize - countWidth - countOffsetX;
-            const countY = y + slotSize - this.fontCharSize - countOffsetY;
-            countImage.setPosition(Math.round(countX), Math.round(countY));
-            this.itemsContent.add(countImage);
-            this.slotIndexToCountImage.set(displayIndex, countImage);
+            if (slot.count > 1) {
+                const countText = String(slot.count);
+                const countTextureKey = this.getCountTexture(countText);
+                const countImage = this.scene.add.image(0, 0, countTextureKey).setOrigin(0, 0);
+                const countSource = this.scene.textures.get(countTextureKey).getSourceImage() as HTMLImageElement;
+                const countWidth = countSource.width;
+                const countHeight = countSource.height;
+                const countX = x + slotSize - countWidth - countOffsetX;
+                const countY = y + slotSize - countHeight - countOffsetY;
+                countImage.setPosition(Math.round(countX), Math.round(countY));
+                this.itemsContent.add(countImage);
+                this.slotIndexToCountImage.set(displayIndex, countImage);
+            }
         });
+    }
+
+    private addScarGlimmer(icon: Phaser.GameObjects.Image, rarity?: string) {
+        const glimmerColor = this.getRarityColor(rarity);
+        const textureKey = this.getScarGlimmerTextureKey(glimmerColor);
+        const centerX = icon.x;
+        const centerY = icon.y;
+        const iconW = Math.max(2, icon.displayWidth);
+        const iconH = Math.max(2, icon.displayHeight);
+        const glimmer = this.scene.add.image(centerX, centerY, textureKey).setOrigin(0.5, 0.5);
+        glimmer.setAlpha(0);
+        glimmer.setBlendMode(Phaser.BlendModes.SCREEN);
+        glimmer.setRotation(-Math.PI / 4);
+        glimmer.setScale(iconW / 22, iconH / 8);
+
+        const maskGraphics = this.scene.add.graphics();
+        maskGraphics.fillStyle(0xffffff, 1);
+        maskGraphics.fillRect(centerX - iconW / 2, centerY - iconH / 2, iconW, iconH);
+        maskGraphics.setVisible(false);
+        glimmer.setMask(maskGraphics.createGeometryMask());
+
+        this.itemsContent.add(maskGraphics);
+        this.itemsContent.add(glimmer);
+
+        const travel = Math.max(iconW, iconH) * 0.95;
+        this.scene.tweens.add({
+            targets: glimmer,
+            x: { from: centerX - travel, to: centerX + travel },
+            y: { from: centerY - travel, to: centerY + travel },
+            duration: 300,
+            yoyo: false,
+            repeat: -1,
+            repeatDelay: 2600,
+            ease: 'Linear',
+            onStart: () => {
+                glimmer.setPosition(centerX - travel, centerY - travel);
+            },
+            onRepeat: () => {
+                glimmer.setPosition(centerX - travel, centerY - travel);
+            },
+            onUpdate: () => {
+                const progress = Phaser.Math.Clamp((glimmer.x - (centerX - travel)) / (travel * 2), 0, 1);
+                const fade = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
+                glimmer.setAlpha(0.36 * fade);
+            }
+        });
+    }
+
+    private getScarGlimmerTextureKey(color: number) {
+        const existingKey = this.scarGlimmerTextureKeys.get(color);
+        if (existingKey && this.scene.textures.exists(existingKey)) {
+            return existingKey;
+        }
+        const width = 28;
+        const height = 8;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        const r = (color >> 16) & 0xff;
+        const g = (color >> 8) & 0xff;
+        const b = color & 0xff;
+        const gradient = ctx.createLinearGradient(0, height / 2, width, height / 2);
+        gradient.addColorStop(0, `rgba(${r},${g},${b},0)`);
+        gradient.addColorStop(0.3, `rgba(${r},${g},${b},0.22)`);
+        gradient.addColorStop(0.5, `rgba(${r},${g},${b},0.64)`);
+        gradient.addColorStop(0.7, `rgba(${r},${g},${b},0.22)`);
+        gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
+        ctx.fillStyle = gradient;
+        ctx.filter = 'blur(1.4px)';
+        ctx.fillRect(0, 0, width, height);
+        const textureKey = `${this.instanceTexturePrefix}_scar_glimmer_${color.toString(16)}`;
+        if (this.scene.textures.exists(textureKey)) {
+            this.scene.textures.remove(textureKey);
+        }
+        this.scene.textures.addCanvas(textureKey, canvas);
+        this.generatedTextureKeys.add(textureKey);
+        this.scarGlimmerTextureKeys.set(color, textureKey);
+        return textureKey;
+    }
+
+    private getRarityColor(rarity?: string): number {
+        switch ((rarity ?? 'common').toLowerCase()) {
+            case 'uncommon': return 0xb7ff63;
+            case 'rare': return 0x8fd7ff;
+            case 'epic': return 0xd2a3ff;
+            case 'legendary': return 0xffbf52;
+            case 'mythic': return 0xff7fd1;
+            case 'supreme': return 0x8fd7ff;
+            case 'common':
+            default: return 0xffffff;
+        }
+    }
+
+    private getRarityFrameTextureKey(rarity?: string): string | undefined {
+        switch ((rarity ?? 'common').toLowerCase()) {
+            case 'uncommon': return 'ui-rarity-frame-uncommon';
+            case 'rare': return 'ui-rarity-frame-rare';
+            case 'epic': return 'ui-rarity-frame-epic';
+            case 'legendary': return 'ui-rarity-frame-legendary';
+            case 'mythic': return 'ui-rarity-frame-mythic';
+            case 'divine': return 'ui-rarity-frame-mythic';
+            case 'supreme': return 'ui-rarity-frame-supreme';
+            case 'common':
+            default:
+                return 'ui-rarity-frame-common';
+        }
     }
 
     private createSelectionIndicators() {
@@ -857,8 +1026,9 @@ export class InventorySlotsUI {
         this.dragGhost.setPosition(pointer.x, pointer.y);
         if (this.dragCountGhost) {
             const { slotSize, countOffsetX, countOffsetY } = this.config;
+            const countHeight = this.dragCountGhost.displayHeight || this.fontCharSize;
             const x = pointer.x + slotSize / 2 - countOffsetX;
-            const y = pointer.y + slotSize / 2 - this.fontCharSize - countOffsetY;
+            const y = pointer.y + slotSize / 2 - countHeight - countOffsetY;
             this.dragCountGhost.setPosition(Math.round(x), Math.round(y));
         }
     }
@@ -922,17 +1092,32 @@ export class InventorySlotsUI {
 
         const width = this.measureBitmapTextWidth(text);
         const height = this.fontCharSize;
+        const shadowOffset = 1;
 
         const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, width);
-        canvas.height = height;
+        canvas.width = Math.max(1, width + shadowOffset);
+        canvas.height = height + shadowOffset;
         const ctx = canvas.getContext('2d')!;
 
-        this.fontRenderer.drawText(ctx, text, 0, 0, { charGap: this.fontCharGap });
+        const shadowCanvas = document.createElement('canvas');
+        shadowCanvas.width = Math.max(1, width);
+        shadowCanvas.height = height;
+        const shadowCtx = shadowCanvas.getContext('2d')!;
+        this.fontRenderer.drawText(shadowCtx, text, 0, 0, { charGap: this.fontCharGap });
+        shadowCtx.globalCompositeOperation = 'source-in';
+        shadowCtx.fillStyle = '#000000';
+        shadowCtx.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
+        ctx.drawImage(shadowCanvas, shadowOffset, shadowOffset);
 
-        ctx.globalCompositeOperation = 'source-in';
-        ctx.fillStyle = `#${this.config.countColor.toString(16).padStart(6, '0')}`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const textCanvas = document.createElement('canvas');
+        textCanvas.width = Math.max(1, width);
+        textCanvas.height = height;
+        const textCtx = textCanvas.getContext('2d')!;
+        this.fontRenderer.drawText(textCtx, text, 0, 0, { charGap: this.fontCharGap });
+        textCtx.globalCompositeOperation = 'source-in';
+        textCtx.fillStyle = `#${this.config.countColor.toString(16).padStart(6, '0')}`;
+        textCtx.fillRect(0, 0, textCanvas.width, textCanvas.height);
+        ctx.drawImage(textCanvas, 0, 0);
 
         const key = `${this.instanceTexturePrefix}_count_${this.countTextureCounter++}`;
         if (this.scene.textures.exists(key)) {

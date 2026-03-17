@@ -13,7 +13,8 @@ import {
   DEFAULT_USER_ADVANCEMENTS,
   DEFAULT_GUIDE_TUTORIAL_STATE,
   DEFAULT_PLAYER_HEARTS_STATE,
-  IPlayerHeartsState
+  IPlayerHeartsState,
+  DEFAULT_PLAYER_MONEY_STATE
 } from '@cfwk/shared';
 
 // Re-export for convenience
@@ -43,6 +44,7 @@ export interface IUser extends Document {
   equippedUsableIds?: Array<string | null>;
   glimmerbowl?: GlimmerbowlEntry[];
   glimmerbowlUnlocked?: boolean;
+  hasOwnedScar?: boolean;
   characterAppearance?: ICharacterAppearance;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -56,6 +58,7 @@ export interface IUser extends Document {
   settings?: IUserSettings;
   playerStats?: IPlayerStats;
   hearts?: IPlayerHeartsState;
+  money?: number;
   advancements?: IAdvancementsState;
 }
 
@@ -175,14 +178,23 @@ const UserSchema: Schema = new Schema({
   glimmerbowl: {
     type: [
       {
+        id: { type: String, required: true },
         itemId: { type: String, required: true },
-        count: { type: Number, required: true, default: 1 },
-        tier: { type: String, enum: ['regular', 'awakened'], required: true, default: 'regular' }
+        tier: { type: String, enum: ['regular', 'awakened'], required: true, default: 'regular' },
+        awakenedByScarId: { type: String, default: null },
+        stats: {
+          damage: { type: Number, required: true, default: 1 },
+          speed: { type: Number, required: true, default: 1 },
+          energy: { type: Number, required: true, default: 1 },
+          critRate: { type: Number, required: true, default: 0 },
+          critDamage: { type: Number, required: true, default: 1 }
+        }
       }
     ],
     default: []
   },
   glimmerbowlUnlocked: { type: Boolean, default: false },
+  hasOwnedScar: { type: Boolean, default: false },
   characterAppearance: {
     type: {
       body: {
@@ -239,6 +251,7 @@ const UserSchema: Schema = new Schema({
         bloomEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.bloomEnabled },
         vignetteEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.vignetteEnabled },
         tiltShiftEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.tiltShiftEnabled },
+        crtEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.crtEnabled },
         dustParticlesEnabled: { type: Boolean, default: DEFAULT_USER_SETTINGS.video.dustParticlesEnabled }
       },
       controls: {
@@ -279,6 +292,7 @@ const UserSchema: Schema = new Schema({
     },
     default: () => ({ ...DEFAULT_PLAYER_HEARTS_STATE })
   },
+  money: { type: Number, default: DEFAULT_PLAYER_MONEY_STATE.money },
   advancements: {
     type: Schema.Types.Mixed,
     default: () => createDefaultAdvancements()

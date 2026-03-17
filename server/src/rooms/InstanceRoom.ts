@@ -2,7 +2,7 @@ import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
 import fs from "fs";
 import path from "path";
-import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, AINpcKind, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX, IAdvancementAlertMessage, IAdvancementsState, IGuideTutorialState, DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_HEARTS_STATE, IPlayerHeartsState, isEquippableUsableItem } from "@cfwk/shared";
+import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, AINpcKind, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX, IAdvancementAlertMessage, IAdvancementsState, IGuideTutorialState, DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_HEARTS_STATE, IPlayerHeartsState, isEquippableUsableItem, DEFAULT_PLAYER_MONEY_STATE, GlimmerbowlEntry } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { GlimmerbowlCache } from "../managers/GlimmerbowlCache";
@@ -48,6 +48,12 @@ export class DroppedItemSchema extends Schema {
     @type("number") x: number = 0;
     @type("number") y: number = 0;
     @type("number") createdAt: number = 0;
+    @type("number") refinementProgress: number = 0;
+    @type("number") refinementRequiredSteps: number = 0;
+    @type("string") refinementResultItemId: string = "";
+    @type("string") liquidContainerItemId: string = "";
+    @type("string") liquidOutputItemId: string = "";
+    @type("string") liquidConfirmText: string = "";
 }
 
 export class AiNpcHitboxSchema extends Schema {
@@ -136,12 +142,47 @@ const GAME_TPS = 20;
 const YEKBUSH_COMPONENT_ID = 'yekbush';
 const YEKBUSH_INTERACTION_RADIUS_PX = 3 * 32;
 const YEKBUSH_COOLDOWN_MS = 40_000;
+const GLIMMERING_CHEST_COMPONENT_ID = 'glimmeringchest';
+const GLIMMERING_KEY_ITEM_ID = 'glimmeringkey';
+const GLIMMERING_CHEST_INTERACTION_RADIUS_PX = 3 * 32;
 const HEED_THE_WARNING_QUEST_ID = 'heed_the_warning';
 const ENEMY_BRIDGE_CUSTOM_ID = 'ah-enemy-dialogue-check';
 const ENEMY_BRIDGE_WARN_COOLDOWN_MS = 10_000;
 const ENEMY_BRIDGE_IMPULSE_SPEED = 220;
 const ENEMY_BRIDGE_IMPULSE_DURATION_MS = 220;
 const DANGER_REGION_NAME = 'Danger';
+const DROP_REFINEMENT_TOUCH_RADIUS_PX = 18;
+const DROP_REFINEMENT_TOUCH_COOLDOWN_MS = 220;
+
+type DropRefinementRecipe = {
+    sourceItemId: string;
+    requiredSteps: number;
+    liquidItemId: string;
+};
+
+type LiquidCollectionRecipe = {
+    liquidItemId: string;
+    containerItemId: string;
+    outputItemId: string;
+    confirmText: string;
+};
+
+const DROP_REFINEMENT_RECIPES_BY_SOURCE = new Map<string, DropRefinementRecipe>([
+    ['yekberries', {
+        sourceItemId: 'yekberries',
+        requiredSteps: 4,
+        liquidItemId: 'yekjuiceliquid'
+    }]
+]);
+
+const LIQUID_COLLECTION_RECIPES_BY_LIQUID = new Map<string, LiquidCollectionRecipe>([
+    ['yekjuiceliquid', {
+        liquidItemId: 'yekjuiceliquid',
+        containerItemId: 'jar',
+        outputItemId: 'yekjuice',
+        confirmText: 'Confirm Consuming 1 Jar'
+    }]
+]);
 
 type TiledProperty = { name: string; value: unknown };
 
@@ -158,6 +199,11 @@ type TiledMapObject = {
 type TiledLayer = {
     name?: string;
     type?: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    data?: unknown[];
     objects?: TiledMapObject[];
 };
 
@@ -167,6 +213,13 @@ type TiledMap = {
 
 type InteractiveHarvestTarget = {
     objectId: number;
+    componentId: string;
+    centerX: number;
+    centerY: number;
+    radiusPx: number;
+};
+
+type ChestInteractionTarget = {
     componentId: string;
     centerX: number;
     centerY: number;
@@ -236,10 +289,13 @@ export class InstanceRoom extends Room<InstanceState> {
     private pendingStatsDeltasBySession = new Map<string, IPlayerStatsDelta>();
     private tutorialStateBySession = new Map<string, IGuideTutorialState>();
     private glimmerbowlUnlockedByUserId = new Map<string, boolean>();
+    private hasOwnedScarByUserId = new Map<string, boolean>();
     private heartsByUserId = new Map<string, IPlayerHeartsState>();
+    private moneyByUserId = new Map<string, number>();
     private wipedUserIds = new Set<string>();
     private harvestTargetsByObjectId = new Map<number, InteractiveHarvestTarget>();
     private harvestCooldownByUserId = new Map<string, Map<number, number>>();
+    private chestInteractionTarget: ChestInteractionTarget | null = null;
     private navService = new ServerMapNavService();
     private aiRuntimeById = new Map<string, AiNpcRuntimeState>();
     private spawnRegions: SpawnRegionRuntime[] = [];
@@ -250,6 +306,7 @@ export class InstanceRoom extends Room<InstanceState> {
     private heedTheWarningStayObjectiveByUserId = new Map<string, boolean>();
     private dangerRegion: RegionRuntime | null = null;
     private wasInDangerByUserId = new Map<string, boolean>();
+    private dropRefineTouchByUserAndDrop = new Map<string, number>();
     private advancementsManager = new AdvancementsManager('lobby.tmj');
 
     onCreate(options: { instanceId: string; locationId: string; mapFile: string; maxPlayers: number }) {
@@ -296,6 +353,7 @@ export class InstanceRoom extends Room<InstanceState> {
         });
 
         this.instanceManager.events.on('inventory_update', (data: { userId: string; items: { index: number; itemId: string | null; count: number }[] }) => {
+            void this.setHasOwnedScarFromInventory(data.userId, data.items);
             this.clients.forEach(client => {
                 const player = this.state.players.get(client.sessionId);
                 if (player && player.odcid === data.userId) {
@@ -311,14 +369,31 @@ export class InstanceRoom extends Room<InstanceState> {
             });
         });
 
-        this.instanceManager.events.on('glimmerbowl_update', (data: { userId: string; entries: { itemId: string; count: number; tier: 'regular' | 'awakened' }[]; unlocked?: boolean }) => {
-            this.clients.forEach(client => {
+        this.instanceManager.events.on('glimmerbowl_update', (data: { userId: string; entries: GlimmerbowlEntry[]; unlocked?: boolean; hasOwnedScar?: boolean }) => {
+            void (async () => {
+                const hasOwnedScar = typeof data.hasOwnedScar === 'boolean'
+                    ? data.hasOwnedScar
+                    : await this.hasOwnedScar(data.userId);
+                this.clients.forEach(client => {
+                    const player = this.state.players.get(client.sessionId);
+                    if (player && player.odcid === data.userId) {
+                        client.send('glimmerbowl', {
+                            entries: data.entries,
+                            unlocked: data.unlocked ?? true,
+                            hasOwnedScar
+                        });
+                    }
+                });
+            })();
+        });
+
+        this.instanceManager.events.on('money_update', (data: { userId: string; money: number }) => {
+            const nextMoney = this.normalizeMoneyAmount(data.money);
+            this.moneyByUserId.set(data.userId, nextMoney);
+            this.clients.forEach((client) => {
                 const player = this.state.players.get(client.sessionId);
                 if (player && player.odcid === data.userId) {
-                    client.send('glimmerbowl', {
-                        entries: data.entries,
-                        unlocked: data.unlocked ?? true
-                    });
+                    client.send('player:money', { money: nextMoney });
                 }
             });
         });
@@ -377,7 +452,9 @@ export class InstanceRoom extends Room<InstanceState> {
             this.advancementsManager.clearCachedUser(data.userId);
             PlayerStatsCache.getInstance().resetUser(data.userId);
             this.glimmerbowlUnlockedByUserId.set(data.userId, false);
+            this.hasOwnedScarByUserId.set(data.userId, false);
             this.heartsByUserId.set(data.userId, { ...DEFAULT_PLAYER_HEARTS_STATE });
+            this.moneyByUserId.set(data.userId, DEFAULT_PLAYER_MONEY_STATE.money);
             this.enemyBridgeWarnCooldownByUserId.delete(data.userId);
             this.enemyBridgeUnlockedByUserId.delete(data.userId);
             this.heedTheWarningStayObjectiveByUserId.delete(data.userId);
@@ -404,6 +481,7 @@ export class InstanceRoom extends Room<InstanceState> {
         this.setState(state);
 
         this.harvestTargetsByObjectId = this.loadHarvestTargets(options.mapFile);
+        this.chestInteractionTarget = this.loadChestInteractionTarget(options.mapFile);
         this.harvestCooldownByUserId.clear();
         this.spawnRegions = this.loadSpawnRegions(options.mapFile);
         this.aiSpawnRegionByNpcId.clear();
@@ -784,7 +862,10 @@ export class InstanceRoom extends Room<InstanceState> {
             const rodStats = getRodStats(equippedRodIdCurrent);
             const guidedTutorial = this.tutorialStateBySession.get(client.sessionId);
             const forcedItemId = guidedTutorial?.forceSalmonCatch ? 'salmon' : null;
-            const itemId = forcedItemId ?? cast.itemId ?? selectFromLootTable(entries, cast.depth, 'rickety', null, rodStats.rarityMultiplier);
+            const forceGlimmeringKey = await this.shouldForceGlimmeringKeyCatch(player.odcid, player.x, player.y);
+            const itemId = forceGlimmeringKey
+                ? 'glimmeringkey'
+                : (forcedItemId ?? cast.itemId ?? selectFromLootTable(entries, cast.depth, 'rickety', null, rodStats.rarityMultiplier));
             this.fishingCasts.delete(client.sessionId);
             if (!itemId) return;
 
@@ -792,7 +873,10 @@ export class InstanceRoom extends Room<InstanceState> {
             if (!itemDef) return;
 
             this.incrementStat(client, player, 'catches', 1);
-            await this.sendAdvancements(client, await this.advancementsManager.onFishCatch(player.odcid));
+            const advancementUpdates = forceGlimmeringKey
+                ? await this.advancementsManager.onFishCatchNearLocation(player.odcid, 'KeyLocation')
+                : await this.advancementsManager.onFishCatch(player.odcid);
+            await this.sendAdvancements(client, advancementUpdates);
 
             const glimmerbowlUnlocked = await this.isGlimmerbowlUnlocked(player.odcid);
             if (itemDef.category === 'Fish' && glimmerbowlUnlocked) {
@@ -805,7 +889,11 @@ export class InstanceRoom extends Room<InstanceState> {
                     });
                 }
                 const glimmerEntries = await GlimmerbowlCache.getInstance().addFish(player.odcid, itemId, 1, 'regular');
-                client.send('glimmerbowl', { entries: glimmerEntries, unlocked: true });
+                client.send('glimmerbowl', {
+                    entries: glimmerEntries,
+                    unlocked: true,
+                    hasOwnedScar: await this.hasOwnedScar(player.odcid)
+                });
                 client.send('fishing:catchResult', { itemId });
                 return;
             }
@@ -824,6 +912,7 @@ export class InstanceRoom extends Room<InstanceState> {
             }
 
             const slots = await InventoryCache.getInstance().addItem(player.odcid, itemId, 1);
+            await this.setHasOwnedScarFromInventory(player.odcid, slots);
             client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId: equippedRodIdFromState });
             client.send('fishing:catchResult', { itemId });
         });
@@ -836,7 +925,10 @@ export class InstanceRoom extends Room<InstanceState> {
 
             this.incrementStat(client, player, 'npcInteractions', 1);
             void this.advancementsManager.onNpcInteract(player.odcid, data.npcId.trim())
-                .then((updates) => this.sendAdvancements(client, updates))
+                .then(async (updates) => {
+                    await this.sendAdvancements(client, updates);
+                    await this.syncInventoryCountObjectives(client, player.odcid);
+                })
                 .catch((error) => {
                     console.error('[InstanceRoom] npc advancements failed:', error);
                 });
@@ -918,10 +1010,64 @@ export class InstanceRoom extends Room<InstanceState> {
             });
 
             void this.advancementsManager.onHarvestInteractive(player.odcid, componentId, objectId)
-                .then((updates) => this.sendAdvancements(client, updates))
+                .then(async (updates) => {
+                    await this.sendAdvancements(client, updates);
+                    await this.sendInventoryCountObjectiveForItem(client, player.odcid, itemId, updatedSlots);
+                })
                 .catch((error) => {
                     console.error('[InstanceRoom] harvest advancements failed:', error);
                 });
+        });
+
+        this.onMessage('interactive:chest', async (client, data: { objectId?: number; componentId?: string }) => {
+            this.markActivity(client);
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+
+            const componentId = typeof data?.componentId === 'string'
+                ? data.componentId.trim().toLowerCase()
+                : '';
+            if (componentId !== GLIMMERING_CHEST_COMPONENT_ID) return;
+
+            const target = this.chestInteractionTarget;
+            if (!target || target.componentId !== componentId) return;
+
+            const distance = Math.hypot(player.x - target.centerX, player.y - target.centerY);
+            if (distance > target.radiusPx) return;
+
+            const activeChestObjective = await this.advancementsManager.getActiveHarvestObjective(player.odcid, componentId);
+            if (!activeChestObjective) return;
+
+            const updatedSlots = await InventoryCache.getInstance().removeItem(player.odcid, GLIMMERING_KEY_ITEM_ID, 1);
+            if (!updatedSlots) return;
+
+            const unlockState = await GlimmerbowlCache.getInstance().unlockForUser(player.odcid);
+            this.glimmerbowlUnlockedByUserId.set(player.odcid, true);
+
+            const inventorySlotsToSend = unlockState.movedFish && Array.isArray(unlockState.slots)
+                ? unlockState.slots
+                : updatedSlots;
+            const { equippedRodId, equippedUsableIds } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+            client.send('inventory', {
+                slots: inventorySlotsToSend,
+                totalSlots: DEFAULT_INVENTORY_SLOTS,
+                equippedRodId,
+                equippedUsableIds
+            });
+            client.send('glimmerbowl', {
+                entries: unlockState.entries,
+                unlocked: true,
+                hasOwnedScar: await this.hasOwnedScar(player.odcid)
+            });
+
+            const advancementUpdates = await this.advancementsManager.onHarvestInteractive(player.odcid, componentId);
+            await this.sendAdvancements(client, advancementUpdates);
+
+            client.send('interactive:chest:opened', {
+                componentId,
+                centerX: target.centerX,
+                centerY: target.centerY
+            });
         });
 
         // Handle pickup item interactions
@@ -939,6 +1085,42 @@ export class InstanceRoom extends Room<InstanceState> {
             const maxPickupDistance = 42;
 
             if (distance > maxPickupDistance) return;
+
+            const liquidContainerItemId = typeof droppedItem.liquidContainerItemId === 'string' ? droppedItem.liquidContainerItemId : '';
+            const liquidOutputItemId = typeof droppedItem.liquidOutputItemId === 'string' ? droppedItem.liquidOutputItemId : '';
+            if (liquidContainerItemId && liquidOutputItemId) {
+                const { items: currentSlots } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+                const hasContainer = currentSlots.some((slot) => slot.itemId === liquidContainerItemId && slot.count > 0);
+                if (!hasContainer) return;
+
+                const removedContainerSlots = await InventoryCache.getInstance().removeItem(player.odcid, liquidContainerItemId, 1);
+                if (!removedContainerSlots) return;
+
+                this.state.droppedItems.delete(data.droppedItemId);
+                const outputSlots = await InventoryCache.getInstance().addItem(
+                    player.odcid,
+                    liquidOutputItemId,
+                    Math.max(1, Math.floor(droppedItem.amount || 1))
+                );
+                const { equippedRodId, equippedUsableIds } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+                client.send('inventory', {
+                    slots: outputSlots,
+                    totalSlots: DEFAULT_INVENTORY_SLOTS,
+                    equippedRodId,
+                    equippedUsableIds
+                });
+
+                void this.advancementsManager.onLiquidBottled(
+                    player.odcid,
+                    droppedItem.itemId,
+                    liquidContainerItemId,
+                    liquidOutputItemId
+                ).then((updates) => this.sendAdvancements(client, updates))
+                    .catch((error) => {
+                        console.error('[InstanceRoom] liquid bottling advancements failed:', error);
+                    });
+                return;
+            }
 
             const droppedItemDef = getItemDefinition(droppedItem.itemId);
             if (!droppedItemDef) return;
@@ -961,7 +1143,11 @@ export class InstanceRoom extends Room<InstanceState> {
                     droppedItem.amount,
                     'regular'
                 );
-                client.send('glimmerbowl', { entries, unlocked: true });
+                client.send('glimmerbowl', {
+                    entries,
+                    unlocked: true,
+                    hasOwnedScar: await this.hasOwnedScar(player.odcid)
+                });
                 return;
             }
 
@@ -982,9 +1168,11 @@ export class InstanceRoom extends Room<InstanceState> {
                 droppedItem.itemId,
                 droppedItem.amount
             );
+            await this.setHasOwnedScarFromInventory(player.odcid, slots);
             const { equippedRodId } = await InventoryCache.getInstance().getInventoryState(player.odcid);
 
             client.send('inventory', { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+            await this.sendInventoryCountObjectiveForItem(client, player.odcid, droppedItem.itemId, slots);
         });
 
         // Handle dropping items from player inventory
@@ -1017,7 +1205,11 @@ export class InstanceRoom extends Room<InstanceState> {
                 if (!glimmerUpdated) return;
 
                 this.createDroppedItem(data.itemId, amount, player.x, player.y);
-                client.send('glimmerbowl', { entries: glimmerUpdated, unlocked: true });
+                client.send('glimmerbowl', {
+                    entries: glimmerUpdated,
+                    unlocked: true,
+                    hasOwnedScar: await this.hasOwnedScar(player.odcid)
+                });
                 return;
             }
 
@@ -1032,6 +1224,37 @@ export class InstanceRoom extends Room<InstanceState> {
             this.createDroppedItem(data.itemId, amount, player.x, player.y);
             const { equippedRodId } = await InventoryCache.getInstance().getInventoryState(player.odcid);
             client.send('inventory', { slots: updated, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+        });
+
+        this.onMessage('glimmerbowl:awaken', async (client, data: { fishEntryId?: string; scarItemId?: string }) => {
+            this.markActivity(client);
+            const player = this.state.players.get(client.sessionId);
+            if (!player) return;
+            const fishEntryId = typeof data?.fishEntryId === 'string' ? data.fishEntryId.trim() : '';
+            const scarItemId = typeof data?.scarItemId === 'string' ? data.scarItemId.trim() : '';
+            if (!fishEntryId || !scarItemId) return;
+
+            const glimmerbowlUnlocked = await this.isGlimmerbowlUnlocked(player.odcid);
+            if (!glimmerbowlUnlocked) return;
+
+            try {
+                const result = await GlimmerbowlCache.getInstance().awakenFish(player.odcid, fishEntryId, scarItemId);
+                const { equippedRodId, equippedUsableIds } = await InventoryCache.getInstance().getInventoryState(player.odcid);
+                client.send('inventory', {
+                    slots: result.slots,
+                    totalSlots: DEFAULT_INVENTORY_SLOTS,
+                    equippedRodId,
+                    equippedUsableIds
+                });
+                client.send('glimmerbowl', {
+                    entries: result.entries,
+                    unlocked: true,
+                    hasOwnedScar: await this.hasOwnedScar(player.odcid)
+                });
+            } catch (error) {
+                // Ignore invalid awaken attempts silently to match existing room message behavior.
+                console.warn('[InstanceRoom] glimmerbowl awaken rejected:', error);
+            }
         });
 
         // Handle inventory slot updates from client
@@ -1194,7 +1417,54 @@ export class InstanceRoom extends Room<InstanceState> {
         drop.x = x;
         drop.y = y;
         drop.createdAt = Date.now();
+        const refinementRecipe = DROP_REFINEMENT_RECIPES_BY_SOURCE.get(itemId);
+        if (refinementRecipe) {
+            drop.refinementProgress = 0;
+            drop.refinementRequiredSteps = Math.max(1, refinementRecipe.requiredSteps);
+            drop.refinementResultItemId = refinementRecipe.liquidItemId;
+        }
+        const liquidRecipe = LIQUID_COLLECTION_RECIPES_BY_LIQUID.get(itemId);
+        if (liquidRecipe) {
+            drop.liquidContainerItemId = liquidRecipe.containerItemId;
+            drop.liquidOutputItemId = liquidRecipe.outputItemId;
+            drop.liquidConfirmText = liquidRecipe.confirmText;
+        }
         this.state.droppedItems.set(drop.id, drop);
+    }
+
+    private tryRefineDropsFromMovement(client: Client, player: InstancePlayerSchema, nextX: number, nextY: number, now: number) {
+        this.state.droppedItems.forEach((drop, dropId) => {
+            if (!drop.refinementResultItemId || drop.refinementRequiredSteps <= 0) return;
+            if (!drop.itemId || !DROP_REFINEMENT_RECIPES_BY_SOURCE.has(drop.itemId)) return;
+            const distance = Math.hypot(drop.x - nextX, drop.y - nextY);
+            if (distance > DROP_REFINEMENT_TOUCH_RADIUS_PX) return;
+
+            const touchKey = `${player.odcid}:${dropId}`;
+            const lastTouchAt = this.dropRefineTouchByUserAndDrop.get(touchKey) ?? 0;
+            if ((now - lastTouchAt) < DROP_REFINEMENT_TOUCH_COOLDOWN_MS) return;
+            this.dropRefineTouchByUserAndDrop.set(touchKey, now);
+
+            drop.refinementProgress = Math.max(0, drop.refinementProgress) + 1;
+            if (drop.refinementProgress < Math.max(1, drop.refinementRequiredSteps)) return;
+
+            const fromItemId = drop.itemId;
+            const toLiquidItemId = drop.refinementResultItemId;
+            const liquidRecipe = LIQUID_COLLECTION_RECIPES_BY_LIQUID.get(toLiquidItemId);
+            drop.itemId = toLiquidItemId;
+            drop.amount = 1;
+            drop.refinementProgress = 0;
+            drop.refinementRequiredSteps = 0;
+            drop.refinementResultItemId = '';
+            drop.liquidContainerItemId = liquidRecipe?.containerItemId ?? '';
+            drop.liquidOutputItemId = liquidRecipe?.outputItemId ?? '';
+            drop.liquidConfirmText = liquidRecipe?.confirmText ?? '';
+
+            void this.advancementsManager.onFoodRefined(player.odcid, fromItemId, toLiquidItemId)
+                .then((updates) => this.sendAdvancements(client, updates))
+                .catch((error) => {
+                    console.error('[InstanceRoom] food refinement advancements failed:', error);
+                });
+        });
     }
 
     private markActivity(client: Client) {
@@ -1234,6 +1504,7 @@ export class InstanceRoom extends Room<InstanceState> {
         let hasGameAccess = false;
         let userAppearance: string = ""; // JSON-encoded appearance
         let initialHearts: IPlayerHeartsState = { ...DEFAULT_PLAYER_HEARTS_STATE };
+        let initialMoney = DEFAULT_PLAYER_MONEY_STATE.money;
         let persistedJoinX: number | null = null;
         let persistedJoinY: number | null = null;
         if (odcid !== client.sessionId) {
@@ -1269,6 +1540,7 @@ export class InstanceRoom extends Room<InstanceState> {
                     persistedJoinX = Number((user as any).lastPositionX);
                     persistedJoinY = Number((user as any).lastPositionY);
                 }
+                initialMoney = this.normalizeMoneyAmount((user as any)?.money);
                 
                 // Track user's IP for future ban enforcement
                 if (user && clientIP && user.lastKnownIP !== clientIP) {
@@ -1331,6 +1603,7 @@ export class InstanceRoom extends Room<InstanceState> {
         
         this.state.players.set(client.sessionId, player);
         this.heartsByUserId.set(odcid, initialHearts);
+        this.moneyByUserId.set(odcid, initialMoney);
         this.lastActivityBySession.set(client.sessionId, Date.now());
         this.pendingStatsDeltasBySession.set(client.sessionId, {});
         this.sprintStateBySession.set(client.sessionId, false);
@@ -1362,11 +1635,13 @@ export class InstanceRoom extends Room<InstanceState> {
         }
 
         this.sendPlayerHeartsSnapshot(client, initialHearts);
+        this.sendPlayerMoneySnapshot(client, initialMoney);
 
         try {
             const { entries, unlocked } = await GlimmerbowlCache.getInstance().getState(odcid);
+            const hasOwnedScar = await this.hasOwnedScar(odcid);
             this.glimmerbowlUnlockedByUserId.set(odcid, unlocked);
-            client.send('glimmerbowl', { entries, unlocked });
+            client.send('glimmerbowl', { entries, unlocked, hasOwnedScar });
         } catch (err) {
             console.error('[InstanceRoom] Error sending initial glimmerbowl:', err);
         }
@@ -1557,11 +1832,19 @@ export class InstanceRoom extends Room<InstanceState> {
             this.enemyBridgeUnlockedByUserId.delete(odcid);
             this.heedTheWarningStayObjectiveByUserId.delete(odcid);
             this.wasInDangerByUserId.delete(odcid);
+            const prefix = `${odcid}:`;
+            Array.from(this.dropRefineTouchByUserAndDrop.keys()).forEach((key) => {
+                if (key.startsWith(prefix)) {
+                    this.dropRefineTouchByUserAndDrop.delete(key);
+                }
+            });
         }
         if (odcid && odcid !== client.sessionId) {
             this.instanceManager.unregisterUserConnection(odcid);
             this.glimmerbowlUnlockedByUserId.delete(odcid);
+            this.hasOwnedScarByUserId.delete(odcid);
             this.heartsByUserId.delete(odcid);
+            this.moneyByUserId.delete(odcid);
             const isWipedSession = this.wipedUserIds.has(odcid);
 
             if (departingPlayer && !isWipedSession) {
@@ -1608,10 +1891,15 @@ export class InstanceRoom extends Room<InstanceState> {
         this.enemyBridgeUnlockedByUserId.clear();
         this.heedTheWarningStayObjectiveByUserId.clear();
         this.wasInDangerByUserId.clear();
+        this.dropRefineTouchByUserAndDrop.clear();
         this.dangerRegion = null;
+        this.glimmerbowlUnlockedByUserId.clear();
+        this.hasOwnedScarByUserId.clear();
         this.heartsByUserId.clear();
+        this.moneyByUserId.clear();
         this.harvestCooldownByUserId.clear();
         this.harvestTargetsByObjectId.clear();
+        this.chestInteractionTarget = null;
         if (this.timeUpdateInterval) {
             clearInterval(this.timeUpdateInterval);
         }
@@ -1638,6 +1926,40 @@ export class InstanceRoom extends Room<InstanceState> {
         return unlocked;
     }
 
+    private async hasOwnedScar(userId: string): Promise<boolean> {
+        const cached = this.hasOwnedScarByUserId.get(userId);
+        if (cached !== undefined) return cached;
+
+        const user = await User.findById(userId).select('hasOwnedScar').lean();
+        const hasOwnedScar = Boolean((user as any)?.hasOwnedScar);
+        this.hasOwnedScarByUserId.set(userId, hasOwnedScar);
+        return hasOwnedScar;
+    }
+
+    private async setHasOwnedScar(userId: string): Promise<void> {
+        const cached = this.hasOwnedScarByUserId.get(userId);
+        if (cached) return;
+        this.hasOwnedScarByUserId.set(userId, true);
+        await User.updateOne({ _id: userId }, { $set: { hasOwnedScar: true } });
+    }
+
+    private async setHasOwnedScarFromInventory(userId: string, items: Array<{ itemId: string | null; count: number }>): Promise<void> {
+        if (await this.hasOwnedScar(userId)) return;
+        const hasScarInInventory = items.some((slot) => {
+            if (!slot.itemId || slot.count <= 0) return false;
+            return Boolean(getItemDefinition(slot.itemId)?.scar);
+        });
+        if (!hasScarInInventory) return;
+        await this.setHasOwnedScar(userId);
+        const glimmerState = await GlimmerbowlCache.getInstance().getState(userId);
+        this.instanceManager.events.emit('glimmerbowl_update', {
+            userId,
+            entries: glimmerState.entries,
+            unlocked: glimmerState.unlocked,
+            hasOwnedScar: true
+        });
+    }
+
     private normalizeHeartsState(input: IPlayerHeartsState): IPlayerHeartsState {
         const maxHearts = Math.max(1, Math.floor(Number.isFinite(input.maxHearts) ? input.maxHearts : DEFAULT_PLAYER_HEARTS_STATE.maxHearts));
         const currentHearts = Math.max(0, Math.min(maxHearts, Math.floor(Number.isFinite(input.currentHearts) ? input.currentHearts : maxHearts)));
@@ -1645,6 +1967,10 @@ export class InstanceRoom extends Room<InstanceState> {
             currentHearts,
             maxHearts
         };
+    }
+
+    private normalizeMoneyAmount(input: number): number {
+        return Math.max(0, Math.floor(Number.isFinite(input) ? input : DEFAULT_PLAYER_MONEY_STATE.money));
     }
 
     private getOrCreateHarvestCooldownMap(userId: string): Map<number, number> {
@@ -1691,6 +2017,44 @@ export class InstanceRoom extends Room<InstanceState> {
         }
 
         return targets;
+    }
+
+    private loadChestInteractionTarget(mapFileName: string): ChestInteractionTarget | null {
+        const mapPath = this.resolveMapPath(mapFileName);
+        if (!mapPath) return null;
+
+        try {
+            const raw = fs.readFileSync(mapPath, 'utf8');
+            const map = JSON.parse(raw) as TiledMap;
+            const chestLayer = (map.layers ?? []).find(
+                (layer) => layer.type === 'tilelayer' && String(layer.name ?? '').toLowerCase() === 'chest'
+            );
+            if (!chestLayer || !Array.isArray(chestLayer.data)) return null;
+
+            const width = Number.isFinite(chestLayer.width) ? Math.max(1, Math.floor(Number(chestLayer.width))) : 0;
+            if (width <= 0) return null;
+
+            const layerOffsetX = Number(chestLayer.x ?? 0);
+            const layerOffsetY = Number(chestLayer.y ?? 0);
+            const tileSize = 32;
+
+            for (let index = 0; index < chestLayer.data.length; index += 1) {
+                const tileId = Number(chestLayer.data[index] ?? 0);
+                if (!Number.isFinite(tileId) || tileId <= 0) continue;
+                const tileX = index % width;
+                const tileY = Math.floor(index / width);
+                return {
+                    componentId: GLIMMERING_CHEST_COMPONENT_ID,
+                    centerX: layerOffsetX + (tileX * tileSize) + tileSize * 0.5,
+                    centerY: layerOffsetY + (tileY * tileSize) + tileSize * 0.5,
+                    radiusPx: GLIMMERING_CHEST_INTERACTION_RADIUS_PX
+                };
+            }
+        } catch (error) {
+            console.error('[InstanceRoom] Failed to load chest interaction target from map:', error);
+        }
+
+        return null;
     }
 
     private computeObjectCenter(object: TiledMapObject): { x: number; y: number } | null {
@@ -2113,6 +2477,18 @@ export class InstanceRoom extends Room<InstanceState> {
         client.send('player:hearts', hearts);
     }
 
+    private sendPlayerMoneySnapshot(client: Client, overrideMoney?: number) {
+        const player = this.state.players.get(client.sessionId);
+        const userId = player?.odcid || (client as any)?.odcid || client.sessionId;
+        const money = this.normalizeMoneyAmount(
+            typeof overrideMoney === 'number'
+                ? overrideMoney
+                : (this.moneyByUserId.get(userId) ?? DEFAULT_PLAYER_MONEY_STATE.money)
+        );
+        this.moneyByUserId.set(userId, money);
+        client.send('player:money', { money });
+    }
+
     private applyEnemyDamage(aiId: string, damageAmount: number): boolean {
         if (!Number.isFinite(damageAmount) || damageAmount <= 0) return false;
 
@@ -2397,6 +2773,7 @@ export class InstanceRoom extends Room<InstanceState> {
         }
 
         this.recordPositionSnapshot(client.sessionId, nextX, nextY, now);
+        this.tryRefineDropsFromMovement(client, player, nextX, nextY, now);
         this.handleEnemyBridgeGate(client, player, nextX, nextY);
         this.handleDangerExitHeal(client, player, nextX, nextY);
         void this.advancementsManager.onPlayerMoved(player.odcid, nextX, nextY)
@@ -2415,6 +2792,9 @@ export class InstanceRoom extends Room<InstanceState> {
         });
 
         const player = this.state.players.get(client.sessionId);
+        if (player) {
+            await this.processQuestCompletionRewards(client, player.odcid, updates.alerts);
+        }
         if (player) {
             try {
                 const advancementsState = await this.advancementsManager.getStateForUser(player.odcid);
@@ -2435,6 +2815,82 @@ export class InstanceRoom extends Room<InstanceState> {
                 } satisfies IAdvancementAlertMessage);
             }, 6000);
         });
+    }
+
+    private async shouldForceGlimmeringKeyCatch(userId: string, x: number, y: number): Promise<boolean> {
+        if (!this.isNightWindowForGlimmeringKey()) {
+            return false;
+        }
+
+        const activeObjective = await this.advancementsManager.getActiveFishNearLocationObjective(userId, 'KeyLocation');
+        if (!activeObjective) {
+            return false;
+        }
+
+        const radiusPx = Math.max(1, activeObjective.radiusMeters) * AI_METERS_TO_PIXELS;
+        const keyLocations = this.advancementsManager.getPoiPointsByName('KeyLocation');
+        if (keyLocations.length === 0) {
+            return false;
+        }
+
+        return keyLocations.some((location) => Math.hypot(location.x - x, location.y - y) <= radiusPx);
+    }
+
+    private isNightWindowForGlimmeringKey(): boolean {
+        const hour = calculateWorldTime().hour;
+        return hour >= 23 || hour < 4;
+    }
+
+    private async processQuestCompletionRewards(client: Client, userId: string, alerts: IAdvancementAlertMessage[]) {
+        const completedQuestIds = alerts
+            .filter((alert) => alert.type === 'quest-completed' && typeof alert.questId === 'string')
+            .map((alert) => alert.questId as string);
+
+        if (!completedQuestIds.includes('village_weirdo')) return;
+
+        const currentMoney = this.moneyByUserId.get(userId) ?? DEFAULT_PLAYER_MONEY_STATE.money;
+        const nextMoney = this.normalizeMoneyAmount(currentMoney + 100);
+        this.moneyByUserId.set(userId, nextMoney);
+        if (userId !== client.sessionId) {
+            await User.updateOne({ _id: userId }, { $set: { money: nextMoney } });
+        }
+        client.send('player:money', { money: nextMoney });
+    }
+
+    private getItemCountFromSlots(slots: Array<{ itemId: string | null; count: number }>, itemId: string): number {
+        return slots.reduce((sum, slot) => {
+            if (slot.itemId !== itemId) return sum;
+            return sum + Math.max(0, Math.floor(slot.count || 0));
+        }, 0);
+    }
+
+    private async sendInventoryCountObjectiveForItem(
+        client: Client,
+        userId: string,
+        itemId: string,
+        slots: Array<{ itemId: string | null; count: number }>
+    ) {
+        if (!itemId) return;
+        const count = this.getItemCountFromSlots(slots, itemId);
+        const updates = await this.advancementsManager.onInventoryCount(userId, itemId, count);
+        if (updates.alerts.length > 0 || updates.delayedNewQuestCounts.length > 0) {
+            await this.sendAdvancements(client, updates);
+        }
+    }
+
+    private async syncInventoryCountObjectives(client: Client, userId: string) {
+        const { items } = await InventoryCache.getInstance().getInventoryState(userId);
+        const trackedItemIds = new Set<string>();
+        items.forEach((slot) => {
+            if (typeof slot.itemId === 'string' && slot.itemId.trim().length > 0) {
+                trackedItemIds.add(slot.itemId);
+            }
+        });
+        trackedItemIds.add('yekberries');
+
+        for (const itemId of trackedItemIds) {
+            await this.sendInventoryCountObjectiveForItem(client, userId, itemId, items);
+        }
     }
 
     private updateHeedTheWarningUnlockState(userId: string, state: IAdvancementsState) {

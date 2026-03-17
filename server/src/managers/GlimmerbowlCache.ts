@@ -1,5 +1,6 @@
 import User from '../models/User';
-import { GlimmerFishTier, GlimmerbowlEntry, getItemDefinition } from '@cfwk/shared';
+import { randomUUID } from 'crypto';
+import { FishCombatStats, GlimmerFishTier, GlimmerbowlEntry, getItemDefinition } from '@cfwk/shared';
 import { InventoryCache } from './InventoryCache';
 
 type CacheEntry = {
@@ -74,7 +75,7 @@ export class GlimmerbowlCache {
     async migrateInventoryFishToGlimmerbowl(userId: string): Promise<{ movedFish: boolean; slots?: { index: number; itemId: string | null; count: number }[]; equippedRodId?: string | null }> {
         const inventoryCache = InventoryCache.getInstance();
         const { items: slots, equippedRodId } = await inventoryCache.getInventoryState(userId);
-        const fishCounts = new Map<string, number>();
+        const fishItemIds: string[] = [];
         let changed = false;
 
         const nextSlots = slots.map((slot) => {
@@ -82,7 +83,9 @@ export class GlimmerbowlCache {
             const itemDef = getItemDefinition(slot.itemId);
             if (!itemDef || itemDef.category !== 'Fish') return slot;
 
-            fishCounts.set(slot.itemId, (fishCounts.get(slot.itemId) ?? 0) + slot.count);
+            for (let i = 0; i < slot.count; i += 1) {
+                fishItemIds.push(slot.itemId);
+            }
             changed = true;
             return {
                 index: slot.index,
@@ -98,18 +101,8 @@ export class GlimmerbowlCache {
         inventoryCache.setInventory(userId, nextSlots);
 
         const entries = await this.getEntries(userId);
-        fishCounts.forEach((count, itemId) => {
-            const existing = entries.find((entry) => entry.itemId === itemId && entry.tier === 'regular');
-            if (existing) {
-                existing.count += count;
-                return;
-            }
-
-            entries.push({
-                itemId,
-                count,
-                tier: 'regular'
-            });
+        fishItemIds.forEach((itemId) => {
+            entries.push(this.createFishEntry(itemId, 'regular'));
         });
 
         this.markDirty(userId, entries);
@@ -128,13 +121,11 @@ export class GlimmerbowlCache {
 
         const entries = await this.getEntries(userId);
         const quantity = Math.max(1, Math.floor(amount || 1));
-        const existing = entries.find((entry) => entry.itemId === itemId && entry.tier === tier);
-        if (existing) {
-            existing.count += quantity;
-        } else {
-            entries.push({ itemId, count: quantity, tier });
+        for (let i = 0; i < quantity; i += 1) {
+            entries.push(this.createFishEntry(itemId, tier));
         }
 
+        this.sortEntries(entries);
         this.markDirty(userId, entries);
         return entries;
     }
@@ -150,23 +141,51 @@ export class GlimmerbowlCache {
                 return a.tier === 'regular' ? -1 : 1;
             });
 
-        const totalAvailable = matching.reduce((sum, entry) => sum + entry.count, 0);
+        const totalAvailable = matching.length;
         if (totalAvailable < quantity) return null;
 
-        let remaining = quantity;
-        for (const entry of matching) {
-            if (remaining <= 0) break;
-            const used = Math.min(entry.count, remaining);
-            entry.count -= used;
-            remaining -= used;
-        }
+        const idsToRemove = new Set(matching.slice(0, quantity).map((entry) => entry.id));
+        const compacted = entries.filter((entry) => !idsToRemove.has(entry.id));
+        if (compacted.length === entries.length) return null;
 
-        const compacted = entries.filter((entry) => entry.count > 0);
         entries.length = 0;
         entries.push(...compacted);
+        this.sortEntries(entries);
 
         this.markDirty(userId, entries);
         return entries;
+    }
+
+    async awakenFish(userId: string, fishEntryId: string, scarItemId: string): Promise<{ entries: GlimmerbowlEntry[]; slots: { index: number; itemId: string | null; count: number }[] }> {
+        const scarDef = getItemDefinition(scarItemId);
+        if (!scarDef?.scar) {
+            throw new Error(`Item '${scarItemId}' is not a scar`);
+        }
+
+        const entries = await this.getEntries(userId);
+        const entry = entries.find((item) => item.id === fishEntryId);
+        if (!entry) {
+            throw new Error('Fish not found');
+        }
+        if (entry.tier === 'awakened') {
+            throw new Error('Fish is already awakened');
+        }
+
+        const inventoryCache = InventoryCache.getInstance();
+        const updatedSlots = await inventoryCache.removeItem(userId, scarItemId, 1);
+        if (!updatedSlots) {
+            throw new Error('Scar not owned');
+        }
+
+        entry.tier = scarDef.scar.awakenTier ?? 'awakened';
+        entry.awakenedByScarId = scarItemId;
+        this.sortEntries(entries);
+
+        this.markDirty(userId, entries);
+        return {
+            entries,
+            slots: updatedSlots
+        };
     }
 
     resetUser(userId: string): GlimmerbowlEntry[] {
@@ -230,34 +249,95 @@ export class GlimmerbowlCache {
     }
 
     private normalizeEntries(entries: GlimmerbowlEntry[]): GlimmerbowlEntry[] {
-        const merged = new Map<string, GlimmerbowlEntry>();
+        const normalized: GlimmerbowlEntry[] = [];
 
-        entries.forEach((entry) => {
-            if (!entry?.itemId) return;
-            const def = getItemDefinition(entry.itemId);
+        (entries as any[]).forEach((rawEntry) => {
+            if (!rawEntry?.itemId) return;
+            const def = getItemDefinition(rawEntry.itemId);
             if (!def || def.category !== 'Fish') return;
 
-            const tier: GlimmerFishTier = entry.tier === 'awakened' ? 'awakened' : 'regular';
-            const count = Math.max(0, Math.floor(entry.count ?? 0));
-            if (count <= 0) return;
-
-            const key = `${entry.itemId}::${tier}`;
-            const existing = merged.get(key);
-            if (existing) {
-                existing.count += count;
+            const tier: GlimmerFishTier = rawEntry.tier === 'awakened' ? 'awakened' : 'regular';
+            const legacyCount = Math.max(0, Math.floor(rawEntry.count ?? 0));
+            if (legacyCount > 0) {
+                for (let i = 0; i < legacyCount; i += 1) {
+                    normalized.push(this.createFishEntry(rawEntry.itemId, tier));
+                }
                 return;
             }
 
-            merged.set(key, {
-                itemId: entry.itemId,
-                count,
-                tier
+            const id = typeof rawEntry.id === 'string' && rawEntry.id.trim().length > 0
+                ? rawEntry.id
+                : randomUUID();
+            const awakenedByScarId = typeof rawEntry.awakenedByScarId === 'string'
+                ? rawEntry.awakenedByScarId
+                : null;
+            const stats = this.normalizeStats(rawEntry.stats, rawEntry.itemId);
+            normalized.push({
+                id,
+                itemId: rawEntry.itemId,
+                tier,
+                stats,
+                awakenedByScarId
             });
         });
 
-        return [...merged.values()].sort((a, b) => {
+        this.sortEntries(normalized);
+        return normalized;
+    }
+
+    private createFishEntry(itemId: string, tier: GlimmerFishTier): GlimmerbowlEntry {
+        return {
+            id: randomUUID(),
+            itemId,
+            tier,
+            stats: this.rollFishStats(itemId),
+            awakenedByScarId: null
+        };
+    }
+
+    private rollFishStats(itemId: string): FishCombatStats {
+        const itemDef = getItemDefinition(itemId);
+        const base = itemDef?.fishBaseStats ?? { damage: 4, speed: 4, energy: 4, critRate: 0.02, critDamage: 1.2 };
+        const roll = (value: number, min: number, max: number, precision: number) => {
+            const variation = 1 + (Math.random() * 0.16 - 0.08);
+            const raw = value * variation;
+            const clamped = Math.max(min, Math.min(max, raw));
+            return Number(clamped.toFixed(precision));
+        };
+
+        return {
+            damage: roll(base.damage, 1, 999, 2),
+            speed: roll(base.speed, 1, 999, 2),
+            energy: roll(base.energy, 1, 999, 2),
+            critRate: roll(base.critRate, 0, 1, 4),
+            critDamage: roll(base.critDamage, 1, 99, 3)
+        };
+    }
+
+    private normalizeStats(rawStats: unknown, itemId: string): FishCombatStats {
+        const fallback = this.rollFishStats(itemId);
+        if (!rawStats || typeof rawStats !== 'object') return fallback;
+        const source = rawStats as Partial<FishCombatStats>;
+        const toSafeNumber = (value: unknown, defaultValue: number, min: number, max: number, precision: number) => {
+            if (typeof value !== 'number' || !Number.isFinite(value)) return defaultValue;
+            const clamped = Math.max(min, Math.min(max, value));
+            return Number(clamped.toFixed(precision));
+        };
+        return {
+            damage: toSafeNumber(source.damage, fallback.damage, 1, 999, 2),
+            speed: toSafeNumber(source.speed, fallback.speed, 1, 999, 2),
+            energy: toSafeNumber(source.energy, fallback.energy, 1, 999, 2),
+            critRate: toSafeNumber(source.critRate, fallback.critRate, 0, 1, 4),
+            critDamage: toSafeNumber(source.critDamage, fallback.critDamage, 1, 99, 3)
+        };
+    }
+
+    private sortEntries(entries: GlimmerbowlEntry[]) {
+        entries.sort((a, b) => {
             if (a.tier !== b.tier) return a.tier === 'regular' ? -1 : 1;
-            return a.itemId.localeCompare(b.itemId);
+            const itemOrder = a.itemId.localeCompare(b.itemId);
+            if (itemOrder !== 0) return itemOrder;
+            return a.id.localeCompare(b.id);
         });
     }
 }

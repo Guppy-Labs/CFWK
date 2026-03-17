@@ -3,13 +3,15 @@ import { InventoryGroupsUI, GroupKey } from './inventory/InventoryGroupsUI';
 import { InventorySlotsUI, InventoryDisplayItem } from './inventory/InventorySlotsUI';
 import { InventoryItemDetailsUI, DEFAULT_ITEM_DETAILS_CONFIG } from './inventory/InventoryItemDetailsUI';
 import { EquipmentSlotsUI } from './inventory/EquipmentSlotsUI';
+import { CoinBarUI } from './inventory/CoinBarUI';
 import { SettingsTabUI } from './settings/SettingsTabUI';
 import { FinbookTabUI } from './finbook/FinbookTabUI';
 import { GlimmerbowlTabUI } from './glimmerbowl/GlimmerbowlTabUI';
+import { FishViewCardUI } from './glimmerbowl/FishViewCardUI';
 import { NetworkManager } from '../network/NetworkManager';
 import { LocaleManager } from '../i18n/LocaleManager';
 import { getLocalizedItemDescription, getLocalizedItemName } from '../i18n/itemLocale';
-import { DEFAULT_USABLE_EQUIP_SLOTS, GlimmerbowlEntry, InventorySlot, getItemDefinition, ItemDefinition, ItemCategory, isEquippableUsableItem, isRodItem } from '@cfwk/shared';
+import { DEFAULT_USABLE_EQUIP_SLOTS, GlimmerbowlEntry, InventorySlot, IPlayerMoneyState, getItemDefinition, ItemDefinition, ItemCategory, isEquippableUsableItem, isRodItem } from '@cfwk/shared';
 import { BitmapFontRenderer } from './BitmapFontRenderer';
 
 type TabItem = {
@@ -35,9 +37,11 @@ export class BookUI {
     private inventorySlots: InventorySlotsUI;
     private inventoryDetails: InventoryItemDetailsUI;
     private equipmentSlots: EquipmentSlotsUI;
+    private coinBar: CoinBarUI;
     private settingsTab: SettingsTabUI;
     private finbookTab: FinbookTabUI;
     private glimmerbowlTab: GlimmerbowlTabUI;
+    private fishViewCard: FishViewCardUI;
     private activeTabLabel: 'Inventory' | 'Finbook' | 'Glimmerbowl' | 'Settings' = 'Inventory';
     private glimmerbowlUnlocked = false;
     private inventorySlotsData: InventorySlot[] = [];
@@ -45,8 +49,10 @@ export class BookUI {
     private networkManager = NetworkManager.getInstance();
     private localeManager = LocaleManager.getInstance();
     private inventoryUpdateHandler?: (event: Event) => void;
+    private moneyUpdateHandler?: (event: Event) => void;
     private glimmerbowlUpdateHandler?: (event: Event) => void;
     private localeChangedHandler?: (event: Event) => void;
+    private bookHiddenForFishView = false;
     
     // Track if we're in "rod equip" mode (selected a rod from inventory)
     private pendingRodEquip: InventoryDisplayItem | null = null;
@@ -104,11 +110,17 @@ export class BookUI {
             this.applyInventoryUpdate(slots, equippedRodId, equippedUsableIds);
         };
         window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+        this.moneyUpdateHandler = (event: Event) => {
+            const customEvent = event as CustomEvent<IPlayerMoneyState>;
+            this.applyMoneyUpdate(customEvent.detail?.money ?? 0);
+        };
+        window.addEventListener('money:update', this.moneyUpdateHandler as EventListener);
         this.glimmerbowlUpdateHandler = (event: Event) => {
-            const customEvent = event as CustomEvent<{ entries: GlimmerbowlEntry[]; unlocked: boolean }>;
+            const customEvent = event as CustomEvent<{ entries: GlimmerbowlEntry[]; unlocked: boolean; hasOwnedScar?: boolean }>;
             const entries = customEvent.detail?.entries || [];
             const unlocked = Boolean(customEvent.detail?.unlocked);
-            this.applyGlimmerbowlUpdate(entries, unlocked);
+            const hasOwnedScar = Boolean(customEvent.detail?.hasOwnedScar);
+            this.applyGlimmerbowlUpdate(entries, unlocked, hasOwnedScar);
         };
         window.addEventListener('glimmerbowl:update', this.glimmerbowlUpdateHandler as EventListener);
         this.localeChangedHandler = () => {
@@ -136,14 +148,20 @@ export class BookUI {
         this.inventorySlots = new InventorySlotsUI(this.scene, this.container, {
             bottomReservedHeight: 0
         });
+        this.coinBar = new CoinBarUI(this.scene, this.container);
         this.equipmentSlots = new EquipmentSlotsUI(this.scene, this.container);
         this.settingsTab = new SettingsTabUI(this.scene, this.container);
         this.finbookTab = new FinbookTabUI(this.scene, this.container);
         this.glimmerbowlTab = new GlimmerbowlTabUI(this.scene, this.container);
+        this.fishViewCard = new FishViewCardUI(this.scene);
         this.glimmerbowlTab.setOnDrop((itemId, amount) => {
             this.networkManager.sendDropItem(itemId, amount);
         });
-        this.glimmerbowlTab.setOnView(() => {
+        this.glimmerbowlTab.setOnView((entry) => {
+            this.openFishView(entry);
+        });
+        this.glimmerbowlTab.setOnAwakenRequest((fishEntryId, scarItemId) => {
+            this.networkManager.sendGlimmerbowlAwaken(fishEntryId, scarItemId);
         });
         
         this.inventoryGroups.setOnGroupChange((group) => {
@@ -277,7 +295,8 @@ export class BookUI {
                 slotIndex,
                 amount: stackCount ?? item.count,
                 stackSize: item.stackSize,
-                scoreText: (selectedDef?.foodScore ?? 0) > 0 ? `+${selectedDef?.foodScore ?? 0}` : undefined
+                scoreText: (selectedDef?.foodScore ?? 0) > 0 ? `+${selectedDef?.foodScore ?? 0}` : undefined,
+                rarity: selectedDef?.rarity
             });
         });
 
@@ -369,6 +388,7 @@ export class BookUI {
                 // No rod selected in inventory, but rod slot has a rod - select it and show details
                 this.withSuppressedInventorySelection(() => this.inventorySlots.clearSelection());
                 this.equipmentSlots.setSelected(true);
+                const selectedDef = getItemDefinition(currentRod.id);
                 this.inventoryDetails.setItem({
                     name: currentRod.name,
                     description: currentRod.description,
@@ -376,7 +396,8 @@ export class BookUI {
                     slotIndex: -1,
                     amount: 1,
                     stackSize: currentRod.stackSize,
-                    scoreText: undefined
+                    scoreText: undefined,
+                    rarity: selectedDef?.rarity
                 });
                 this.inventorySlots.setBottomReservedHeight(this.inventoryDetails.getReservedHeight());
             }
@@ -441,7 +462,8 @@ export class BookUI {
                 slotIndex: -1,
                 amount: 1,
                 stackSize: currentItem.stackSize,
-                scoreText: (selectedDef?.foodScore ?? 0) > 0 ? `+${selectedDef?.foodScore ?? 0}` : undefined
+                scoreText: (selectedDef?.foodScore ?? 0) > 0 ? `+${selectedDef?.foodScore ?? 0}` : undefined,
+                rarity: selectedDef?.rarity
             });
             this.inventorySlots.setBottomReservedHeight(this.inventoryDetails.getReservedHeight());
         });
@@ -510,10 +532,12 @@ export class BookUI {
         this.inventoryGroups.layout(leftPageLeftEdgeX, leftPageTopEdgeY, scale);
         this.inventoryDetails.layout(leftPageLeftEdgeX, leftPageTopEdgeY, this.pageHeight, scale);
         this.inventorySlots.layout(leftPageLeftEdgeX, leftPageTopEdgeY, this.pageHeight, scale);
+        this.coinBar.layout(rightPageLeftEdgeX, rightPageTopEdgeY, scale);
         this.equipmentSlots.layout(rightPageLeftEdgeX, rightPageTopEdgeY, this.pageHeight, scale);
         this.settingsTab.layout(leftPageLeftEdgeX, leftPageTopEdgeY, rightPageLeftEdgeX, rightPageTopEdgeY, this.pageHeight, scale);
         this.finbookTab.layout(leftPageLeftEdgeX, leftPageTopEdgeY, rightPageLeftEdgeX, rightPageTopEdgeY, this.pageHeight, scale);
         this.glimmerbowlTab.layout(leftPageLeftEdgeX, leftPageTopEdgeY, rightPageLeftEdgeX, rightPageTopEdgeY, this.pageHeight, scale);
+        this.fishViewCard.layout();
     }
 
     private createTabs() {
@@ -677,6 +701,7 @@ export class BookUI {
         const isFinbook = label === 'Finbook';
         const isGlimmerbowl = label === 'Glimmerbowl';
         this.inventoryGroups.setVisible(isInventory);
+        this.coinBar.setVisible(isInventory);
         this.equipmentSlots.setVisible(isInventory);
         this.settingsTab.setVisible(isSettings);
         this.finbookTab.setVisible(isFinbook);
@@ -684,6 +709,7 @@ export class BookUI {
         if (isInventory) {
             this.inventoryGroups.setActiveGroup('All', true);
             this.refreshInventory();
+            this.refreshMoney();
             this.inventorySlots.setBottomReservedHeight(0);
             this.pendingRodEquip = null;
         } else if (isGlimmerbowl) {
@@ -755,7 +781,13 @@ export class BookUI {
     private async refreshGlimmerbowl() {
         const response = await this.networkManager.getGlimmerbowl();
         if (!response) return;
-        this.applyGlimmerbowlUpdate(response.entries || [], Boolean(response.unlocked));
+        this.applyGlimmerbowlUpdate(response.entries || [], Boolean(response.unlocked), Boolean(response.hasOwnedScar));
+    }
+
+    private async refreshMoney() {
+        const response = await this.networkManager.getMoney();
+        if (!response) return;
+        this.applyMoneyUpdate(response.money);
     }
 
     private applyInventoryUpdate(slots: InventorySlot[], equippedRodId: string | null, equippedUsableIds?: Array<string | null>) {
@@ -764,18 +796,59 @@ export class BookUI {
         if (Array.isArray(equippedUsableIds)) {
             this.equippedUsableIds = Array.from({ length: DEFAULT_USABLE_EQUIP_SLOTS }, (_unused, index) => equippedUsableIds[index] ?? null);
         }
+        this.glimmerbowlTab.setOwnedScars(this.getOwnedScars());
         this.updateInventoryDisplay();
         this.updateEquippedRodFromServer();
         this.updateEquippedUsablesFromServer();
     }
 
-    private applyGlimmerbowlUpdate(entries: GlimmerbowlEntry[], unlocked: boolean) {
+    private applyGlimmerbowlUpdate(entries: GlimmerbowlEntry[], unlocked: boolean, hasOwnedScar?: boolean) {
         const wasUnlocked = this.glimmerbowlUnlocked;
         this.glimmerbowlUnlocked = unlocked;
         if (wasUnlocked !== this.glimmerbowlUnlocked) {
             this.rebuildTabs();
         }
+        this.glimmerbowlTab.setHasOwnedScar(Boolean(hasOwnedScar));
         this.glimmerbowlTab.setEntries(entries);
+    }
+
+    private applyMoneyUpdate(money: number) {
+        this.coinBar.setMoney(money);
+    }
+
+    private openFishView(entry: GlimmerbowlEntry) {
+        const fishDef = getItemDefinition(entry.itemId);
+        if (!fishDef || fishDef.category !== 'Fish') return;
+        const scarDef = entry.awakenedByScarId ? getItemDefinition(entry.awakenedByScarId) : null;
+        this.hideBookForFishView();
+        window.dispatchEvent(new CustomEvent('book:fish-view-changed', { detail: { isOpen: true } }));
+        this.fishViewCard.open({
+            entry,
+            fishDef,
+            fishName: getLocalizedItemName(fishDef.id, fishDef.name),
+            fishDescription: getLocalizedItemDescription(fishDef.id, fishDef.description),
+            scarDef,
+            scarName: scarDef ? getLocalizedItemName(scarDef.id, scarDef.name) : undefined
+        }, () => {
+            window.dispatchEvent(new CustomEvent('book:fish-view-changed', { detail: { isOpen: false } }));
+            if (!this.openState) return;
+            this.showBookAfterFishView();
+        });
+    }
+
+    private hideBookForFishView() {
+        if (this.bookHiddenForFishView) return;
+        this.bookHiddenForFishView = true;
+        this.container.setVisible(false);
+        this.setGuiInputEnabled(false);
+    }
+
+    private showBookAfterFishView() {
+        this.bookHiddenForFishView = false;
+        this.container.setVisible(true);
+        this.setGuiInputEnabled(true);
+        this.setActiveTab(this.activeTabLabel);
+        this.layout();
     }
 
     private updateInventoryDisplay() {
@@ -856,6 +929,24 @@ export class BookUI {
             default:
                 return null;
         }
+    }
+
+    private getOwnedScars(): Array<{ itemId: string; count: number; name: string }> {
+        const scarCounts = new Map<string, number>();
+        this.inventorySlotsData.forEach((slot) => {
+            if (!slot.itemId || slot.count <= 0) return;
+            const def = getItemDefinition(slot.itemId);
+            if (!def?.scar) return;
+            scarCounts.set(def.id, (scarCounts.get(def.id) ?? 0) + slot.count);
+        });
+        return [...scarCounts.entries()].map(([itemId, count]) => {
+            const def = getItemDefinition(itemId)!;
+            return {
+                itemId,
+                count,
+                name: getLocalizedItemName(itemId, def.name)
+            };
+        });
     }
 
     private getSlotByIndex(index: number): InventorySlot | undefined {
@@ -1211,10 +1302,16 @@ export class BookUI {
 
     close() {
         this.openState = false;
+        if (this.fishViewCard.isOpen()) {
+            this.fishViewCard.close();
+            window.dispatchEvent(new CustomEvent('book:fish-view-changed', { detail: { isOpen: false } }));
+        }
+        this.bookHiddenForFishView = false;
         this.container.setVisible(false);
         this.inventoryGroups.setVisible(false);
         this.inventorySlots.setVisible(false);
         this.inventoryDetails.setVisible(false);
+        this.coinBar.setVisible(false);
         this.equipmentSlots.setVisible(false);
         this.settingsTab.setVisible(false);
         this.finbookTab.setVisible(false);
@@ -1299,9 +1396,16 @@ export class BookUI {
     }
 
     destroy() {
+        if (this.fishViewCard?.isOpen()) {
+            window.dispatchEvent(new CustomEvent('book:fish-view-changed', { detail: { isOpen: false } }));
+        }
         if (this.inventoryUpdateHandler) {
             window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
             this.inventoryUpdateHandler = undefined;
+        }
+        if (this.moneyUpdateHandler) {
+            window.removeEventListener('money:update', this.moneyUpdateHandler as EventListener);
+            this.moneyUpdateHandler = undefined;
         }
         if (this.glimmerbowlUpdateHandler) {
             window.removeEventListener('glimmerbowl:update', this.glimmerbowlUpdateHandler as EventListener);
@@ -1313,11 +1417,13 @@ export class BookUI {
         }
         this.inventoryGroups?.destroy();
         this.inventorySlots?.destroy();
+        this.coinBar?.destroy();
         this.equipmentSlots?.destroy();
         this.inventoryDetails?.destroy();
         this.settingsTab?.destroy();
         this.finbookTab?.destroy();
         this.glimmerbowlTab?.destroy();
+        this.fishViewCard?.destroy();
         this.tabs.forEach((tab) => {
             if (this.scene.textures.exists(tab.textureKey)) {
                 this.scene.textures.remove(tab.textureKey);

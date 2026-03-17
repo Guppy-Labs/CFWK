@@ -68,6 +68,7 @@ type HarvestCooldownUiEntry = {
 };
 
 export class GameScene extends Phaser.Scene {
+    private static readonly WORLD_METERS_TO_PIXELS = 16;
     private instanceInfo?: IInstanceInfo;
     private networkManager = NetworkManager.getInstance();
     private keybindManager = KeybindManager.getInstance();
@@ -118,11 +119,20 @@ export class GameScene extends Phaser.Scene {
     private questDirectionArrow?: Phaser.GameObjects.Triangle;
     private questTargetMarker?: Phaser.GameObjects.Container;
     private harvestTargets: StaticInteractiveTarget[] = [];
+    private readonly chestInteractionObjectId = 990001;
     private harvestCooldownUiByObjectId = new Map<number, HarvestCooldownUiEntry>();
     private dangerRegionPolygon: Array<{ x: number; y: number }> | null = null;
     private dangerStayStartedAtMs: number | null = null;
     private dangerStayDurationMs = 60_000;
     private dangerCountdownDisplay: string | null = null;
+    private keyLocationPoi: { x: number; y: number } | null = null;
+    private chestPoi: { x: number; y: number } | null = null;
+    private keyLocationCue?: Phaser.GameObjects.Particles.ParticleEmitter;
+    private bowlTravellerGuideTimer?: Phaser.Time.TimerEvent;
+    private chestCinematicActive = false;
+    private chestCinematicTimers: Phaser.Time.TimerEvent[] = [];
+    private chestCinematicObjects: Phaser.GameObjects.GameObject[] = [];
+    private chestCinematicInputBlockedBefore = false;
     
     // Character appearance (fetched async)
     private characterAppearance: ICharacterAppearance = DEFAULT_CHARACTER_APPEARANCE;
@@ -154,6 +164,10 @@ export class GameScene extends Phaser.Scene {
 
         this.load.image('ui-joystick-base', '/ui/Joystick01a.png');
         this.load.image('ui-joystick-handle', '/ui/Handle01a.png');
+        this.load.spritesheet('quest-chest-open', '/assets/animations/chest-open.png', {
+            frameWidth: 128,
+            frameHeight: 128
+        });
         
         // Initialize map loader and preload map
         this.mapLoader = new MapLoader(this, {
@@ -417,10 +431,16 @@ export class GameScene extends Phaser.Scene {
         this.visualEffectsManager?.setBloomEnabled(video.bloomEnabled);
         this.visualEffectsManager?.setVignetteEnabled(video.vignetteEnabled);
         this.visualEffectsManager?.setTiltShiftEnabled(video.tiltShiftEnabled);
+        this.visualEffectsManager?.setCrtEnabled(video.crtEnabled);
         this.visualEffectsManager?.setAllEffectsEnabled(video.visualEffectsEnabled);
 
         this.seasonalEffectsManager?.setEnabled(video.seasonalEffectsEnabled);
         this.dustParticles?.setEnabled(video.dustParticlesEnabled);
+
+        if (this.scene.isActive('UIScene')) {
+            const uiScene = this.scene.get('UIScene') as { applyUserVideoSettings?: (settings: IVideoSettings) => void } | undefined;
+            uiScene?.applyUserVideoSettings?.(video);
+        }
 
         void FullscreenManager.setEnabled(video.fullscreen);
     }
@@ -565,6 +585,7 @@ export class GameScene extends Phaser.Scene {
         this.advancementsUpdateHandler = (event: Event) => {
             const detail = (event as CustomEvent<IAdvancementsState>).detail;
             if (!detail) return;
+            const previousBowlProgress = this.advancementsState.questProgress['bowl_that_shines'];
             this.advancementsState = {
                 enrolled: detail.enrolled,
                 questProgress: { ...detail.questProgress },
@@ -574,9 +595,61 @@ export class GameScene extends Phaser.Scene {
                 ),
                 tutorial: { ...detail.tutorial }
             };
+            this.maybeShowBowlTravellerGuide(previousBowlProgress, this.advancementsState.questProgress['bowl_that_shines']);
+            this.refreshStaticInteractiveTargets();
         };
 
         window.addEventListener('advancements:update', this.advancementsUpdateHandler as EventListener);
+    }
+
+    private maybeShowBowlTravellerGuide(
+        previousProgress: IAdvancementsState['questProgress'][string] | undefined,
+        nextProgress: IAdvancementsState['questProgress'][string] | undefined
+    ) {
+        const previousIndex = typeof previousProgress?.objectiveIndex === 'number'
+            ? Math.floor(previousProgress.objectiveIndex)
+            : null;
+        const nextIndex = typeof nextProgress?.objectiveIndex === 'number'
+            ? Math.floor(nextProgress.objectiveIndex)
+            : null;
+        const transitionedToTravellerStep = nextProgress?.status === 'active' && nextIndex === 1 && previousIndex !== 1;
+        if (!transitionedToTravellerStep) {
+            return;
+        }
+
+        const uiScene = this.scene.get('UIScene') as UIScene | undefined;
+        if (!uiScene) return;
+
+        const targetRect = this.getGuideNpcScreenRect('traveller');
+        uiScene.showGuideOverlay({
+            message: this.localeManager.t(
+                'guide.bowlThatShines.travellerHint',
+                undefined,
+                'Hm... I wonder if the traveller has had the info all along.'
+            ),
+            targetRect,
+            dimBackground: true
+        });
+
+        this.bowlTravellerGuideTimer?.remove(false);
+        this.bowlTravellerGuideTimer = this.time.delayedCall(4200, () => {
+            uiScene.clearGuideOverlay();
+            this.bowlTravellerGuideTimer = undefined;
+        });
+    }
+
+    private getGuideNpcScreenRect(npcId: string): Phaser.Geom.Rectangle | null {
+        const npc = this.getNpcPosition(npcId);
+        if (!npc) return null;
+        const camera = this.cameras.main;
+        const width = 34;
+        const height = 56;
+        return new Phaser.Geom.Rectangle(
+            npc.x - camera.scrollX - width / 2,
+            npc.y - camera.scrollY - height,
+            width,
+            height
+        );
     }
 
     private getTargetedQuestObjective(): { questId: string; objective: IQuestObjectiveEntry } | null {
@@ -615,6 +688,9 @@ export class GameScene extends Phaser.Scene {
 
         if (objective.kind === 'harvest-interactive' && objective.componentId) {
             const componentId = objective.componentId.trim().toLowerCase();
+            if (componentId === 'glimmeringchest') {
+                return this.chestPoi ? { x: this.chestPoi.x, y: this.chestPoi.y } : null;
+            }
             const matching = this.harvestTargets.filter((target) => target.componentId === componentId);
             if (matching.length === 0) return null;
 
@@ -637,6 +713,12 @@ export class GameScene extends Phaser.Scene {
             }
 
             return { x: best.x, y: best.y };
+        }
+
+        if (objective.kind === 'fish-near-location' && objective.locationName) {
+            if (!this.keyLocationPoi) return null;
+            if (objective.locationName !== 'KeyLocation') return null;
+            return { x: this.keyLocationPoi.x, y: this.keyLocationPoi.y };
         }
 
         return null;
@@ -825,6 +907,8 @@ export class GameScene extends Phaser.Scene {
 
         // Create fire effects from POI points in the map
         this.setupFireEffects(map);
+        this.setupKeyLocationCue(map);
+        this.setupChestPoi(map);
 
         // Load NPCs from POI points in the map
         this.npcManager = new NPCManager(this, {
@@ -837,7 +921,7 @@ export class GameScene extends Phaser.Scene {
         this.mcPlayerController?.setNpcManager(this.npcManager);
 
         this.harvestTargets = this.extractHarvestTargets(map);
-        this.mcPlayerController?.setStaticInteractives(this.harvestTargets);
+        this.refreshStaticInteractiveTargets();
         this.dangerRegionPolygon = this.extractRegionPolygon(map, 'Danger');
         const heedQuestEntry = ADVANCEMENT_QUEST_CATALOG.find((entry) => entry.id === 'heed_the_warning');
         const stayObjective = heedQuestEntry?.objectives?.find((objective) => objective.kind === 'stay-in-region' && objective.regionName === 'Danger');
@@ -890,6 +974,141 @@ export class GameScene extends Phaser.Scene {
         // Register fire positions with audio manager for distance-based volume
         const firePositions = this.fires.map(fire => fire.getPosition());
         this.audioManager?.setFirePositions(firePositions);
+    }
+
+    private setupKeyLocationCue(map: Phaser.Tilemaps.Tilemap) {
+        this.keyLocationPoi = this.findPoiPoint(map, 'KeyLocation');
+        this.keyLocationCue?.stop();
+        this.keyLocationCue?.destroy();
+        this.keyLocationCue = undefined;
+
+        if (!this.keyLocationPoi) {
+            return;
+        }
+
+        const textureKey = 'quest-keylocation-cue';
+        if (!this.textures.exists(textureKey)) {
+            const graphics = this.make.graphics({ x: 0, y: 0 }, false);
+            graphics.fillStyle(0xffffff, 0.7);
+            graphics.fillCircle(4, 4, 4);
+            graphics.fillStyle(0xffffff, 0.3);
+            graphics.fillCircle(4, 4, 2);
+            graphics.generateTexture(textureKey, 8, 8);
+            graphics.destroy();
+        }
+
+        this.keyLocationCue = this.add.particles(
+            this.keyLocationPoi.x,
+            this.keyLocationPoi.y,
+            textureKey,
+            {
+                lifespan: { min: 800, max: 1400 },
+                speed: { min: 1, max: 6 },
+                scale: { start: 0.22, end: 0.02 },
+                alpha: { start: 0.3, end: 0 },
+                frequency: 280,
+                quantity: 1,
+                emitZone: {
+                    type: 'random',
+                    source: new Phaser.Geom.Circle(0, 0, 10)
+                },
+                blendMode: Phaser.BlendModes.ADD
+            }
+        );
+        this.keyLocationCue.setDepth(FIRE_BASE - 2);
+        this.keyLocationCue.stop();
+    }
+
+    private setupChestPoi(map: Phaser.Tilemaps.Tilemap) {
+        this.chestPoi = this.findTileLayerCenter(map, 'Chest');
+    }
+
+    private refreshStaticInteractiveTargets() {
+        const targets = [...this.harvestTargets];
+        if (this.isBowlChestStepActive() && this.chestPoi) {
+            targets.unshift({
+                objectId: this.chestInteractionObjectId,
+                componentId: 'glimmeringchest',
+                x: this.chestPoi.x,
+                y: this.chestPoi.y,
+                rangePx: 3 * GameScene.WORLD_METERS_TO_PIXELS
+            });
+        }
+        this.mcPlayerController?.setStaticInteractives(targets);
+    }
+
+    private findTileLayerCenter(map: Phaser.Tilemaps.Tilemap, layerName: string): { x: number; y: number } | null {
+        const layerData = map.layers.find((layer) => layer.name === layerName);
+        if (!layerData || !Array.isArray(layerData.data)) return null;
+
+        const tileWidth = Number(map.tileWidth || 0);
+        const tileHeight = Number(map.tileHeight || 0);
+        const layerOffsetX = Number((layerData as any).x ?? 0);
+        const layerOffsetY = Number((layerData as any).y ?? 0);
+
+        for (let ty = 0; ty < layerData.data.length; ty += 1) {
+            const row = layerData.data[ty];
+            if (!Array.isArray(row)) continue;
+            for (let tx = 0; tx < row.length; tx += 1) {
+                const tile = row[tx];
+                if (!tile || tile.index < 0) continue;
+                const centerX = layerOffsetX + (tx * tileWidth) + tileWidth * 0.5;
+                const centerY = layerOffsetY + (ty * tileHeight) + tileHeight * 0.5;
+                return { x: centerX, y: centerY };
+            }
+        }
+
+        return null;
+    }
+
+    private findPoiPoint(map: Phaser.Tilemaps.Tilemap, name: string): { x: number; y: number } | null {
+        const poiLayer = map.getObjectLayer('POI') as TiledObjectLayer | null;
+        if (!poiLayer || !Array.isArray(poiLayer.objects)) return null;
+        const poiObject = poiLayer.objects.find((object) => object.name === name);
+        if (!poiObject) return null;
+        return {
+            x: Number(poiObject.x ?? 0) + Number(poiObject.width ?? 0) / 2,
+            y: Number(poiObject.y ?? 0) + Number(poiObject.height ?? 0) / 2
+        };
+    }
+
+    private updateKeyLocationCue(hour: number) {
+        if (!this.keyLocationCue || !this.keyLocationPoi) return;
+        const isNightWindow = hour >= 23 || hour < 4;
+        const isKeyStepActive = this.isBowlFishNearLocationStepActive();
+
+        const shouldEmit = isNightWindow && isKeyStepActive;
+        const isCurrentlyOn = this.keyLocationCue.on;
+        if (shouldEmit && !isCurrentlyOn) {
+            this.keyLocationCue.start();
+        } else if (!shouldEmit && isCurrentlyOn) {
+            this.keyLocationCue.stop();
+        }
+        this.keyLocationCue.setPosition(this.keyLocationPoi.x, this.keyLocationPoi.y);
+    }
+
+    private isBowlFishNearLocationStepActive(): boolean {
+        const progress = this.advancementsState.questProgress['bowl_that_shines'];
+        if (progress?.status !== 'active') return false;
+        const questEntry = ADVANCEMENT_QUEST_CATALOG.find((entry) => entry.id === 'bowl_that_shines');
+        if (!questEntry || !Array.isArray(questEntry.objectives) || questEntry.objectives.length === 0) return false;
+        const objectiveIndex = typeof progress.objectiveIndex === 'number'
+            ? Math.max(0, Math.min(questEntry.objectives.length - 1, Math.floor(progress.objectiveIndex)))
+            : 0;
+        const objective = questEntry.objectives[objectiveIndex];
+        return objective?.kind === 'fish-near-location' && objective.locationName === 'KeyLocation';
+    }
+
+    private isBowlChestStepActive(): boolean {
+        const progress = this.advancementsState.questProgress['bowl_that_shines'];
+        if (progress?.status !== 'active') return false;
+        const questEntry = ADVANCEMENT_QUEST_CATALOG.find((entry) => entry.id === 'bowl_that_shines');
+        if (!questEntry || !Array.isArray(questEntry.objectives) || questEntry.objectives.length === 0) return false;
+        const objectiveIndex = typeof progress.objectiveIndex === 'number'
+            ? Math.max(0, Math.min(questEntry.objectives.length - 1, Math.floor(progress.objectiveIndex)))
+            : 0;
+        const objective = questEntry.objectives[objectiveIndex];
+        return objective?.kind === 'harvest-interactive' && objective.componentId === 'glimmeringchest';
     }
 
     private setupMultiplayer() {
@@ -950,6 +1169,7 @@ export class GameScene extends Phaser.Scene {
         this.setupShoveAttemptListener();
         this.setupFishingListener();
         this.setupHarvestListener();
+        this.setupChestListener();
         
         // Listen for server disconnection
         this.unsubscribeDisconnect = this.networkManager.onDisconnect((code) => {
@@ -1035,6 +1255,14 @@ export class GameScene extends Phaser.Scene {
                              this.questDirectionArrow = undefined;
                              this.questTargetMarker?.destroy();
                              this.questTargetMarker = undefined;
+                        this.keyLocationCue?.stop();
+                        this.keyLocationCue?.destroy();
+                        this.keyLocationCue = undefined;
+                        this.keyLocationPoi = null;
+                        this.chestPoi = null;
+                        this.bowlTravellerGuideTimer?.remove(false);
+                        this.bowlTravellerGuideTimer = undefined;
+                        this.cleanupChestCinematic(true);
                              this.harvestCooldownUiByObjectId.forEach((entry) => entry.container.destroy(true));
                              this.harvestCooldownUiByObjectId.clear();
                this.npcManager?.destroy();
@@ -1235,6 +1463,199 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
+    private setupChestListener() {
+        const room = this.networkManager.getRoom();
+        if (!room) return;
+
+        room.onMessage('interactive:chest:opened', (data: { centerX?: number; centerY?: number; componentId?: string }) => {
+            if (data?.componentId !== 'glimmeringchest') return;
+            const fallback = this.chestPoi;
+            const centerX = Number.isFinite(data?.centerX) ? Number(data.centerX) : (fallback?.x ?? 0);
+            const centerY = Number.isFinite(data?.centerY) ? Number(data.centerY) : (fallback?.y ?? 0);
+            this.playChestOpenCinematic(centerX, centerY);
+        });
+    }
+
+    private playChestOpenCinematic(centerX: number, centerY: number) {
+        if (this.chestCinematicActive) return;
+        this.chestCinematicActive = true;
+        this.chestCinematicInputBlockedBefore = this.registry.get('inputBlocked') === true;
+        this.registry.set('inputBlocked', true);
+        this.mcPlayerController?.getMobileControls()?.setInputBlocked(true);
+
+        const chestAnimKey = 'quest-chest-open-anim';
+        if (!this.anims.exists(chestAnimKey)) {
+            this.anims.create({
+                key: chestAnimKey,
+                frames: this.anims.generateFrameNumbers('quest-chest-open', { start: 0, end: 10 }),
+                frameRate: 14,
+                repeat: 0
+            });
+        }
+
+        const chest = this.add.sprite(centerX, centerY, 'quest-chest-open', 0);
+        chest.setDepth(ENTITY_BASE + 2200);
+        chest.setScale(1.0);
+        this.chestCinematicObjects.push(chest);
+
+        const bowlInChest = this.add.image(centerX, centerY - 4, 'ui-glimmerbowl', 0);
+        bowlInChest.setDepth(ENTITY_BASE + 2201);
+        bowlInChest.setScale(2.2);
+        bowlInChest.setVisible(false);
+        this.chestCinematicObjects.push(bowlInChest);
+
+        let hasShownBowlInChest = false;
+        chest.on(Phaser.Animations.Events.ANIMATION_UPDATE, (_anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
+            const frameIndex = Number(frame.textureFrame);
+            if (!hasShownBowlInChest && Number.isFinite(frameIndex) && frameIndex >= 4) {
+                hasShownBowlInChest = true;
+                bowlInChest.setVisible(true);
+            }
+        });
+
+        chest.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+            const pauseTimer = this.time.delayedCall(750, () => {
+                this.startChestRevealOverlay();
+            });
+            this.chestCinematicTimers.push(pauseTimer);
+        });
+
+        chest.play(chestAnimKey);
+    }
+
+    private startChestRevealOverlay() {
+        const whiteFade = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0xffffff, 0);
+        whiteFade.setOrigin(0, 0);
+        whiteFade.setScrollFactor(0);
+        whiteFade.setDepth(20000);
+        this.chestCinematicObjects.push(whiteFade);
+
+        const bowlReveal = this.add.image(this.scale.width * 0.5, this.scale.height * 0.52, 'ui-glimmerbowl', 0);
+        bowlReveal.setScrollFactor(0);
+        bowlReveal.setDepth(20001);
+        bowlReveal.setScale(2.2);
+        bowlReveal.setAlpha(0.25);
+        this.chestCinematicObjects.push(bowlReveal);
+
+        const topText = this.add.text(this.scale.width * 0.5, this.scale.height * 0.26, '', {
+            fontFamily: 'Minecraft, monospace',
+            fontSize: '48px',
+            color: '#1a1a1a',
+            stroke: '#ffffff',
+            strokeThickness: 4
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(20002).setAlpha(0);
+        this.chestCinematicObjects.push(topText);
+
+        const bottomText = this.add.text(this.scale.width * 0.5, this.scale.height * 0.78, '', {
+            fontFamily: 'Minecraft, monospace',
+            fontSize: '46px',
+            color: '#1a1a1a',
+            stroke: '#ffffff',
+            strokeThickness: 4
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(20002).setAlpha(0);
+        this.chestCinematicObjects.push(bottomText);
+
+        this.tweens.add({
+            targets: whiteFade,
+            alpha: 0.9,
+            duration: 550,
+            ease: 'Quad.easeOut'
+        });
+        this.tweens.add({
+            targets: bowlReveal,
+            alpha: 1,
+            scale: 8.8,
+            duration: 650,
+            ease: 'Back.easeOut'
+        });
+        this.tweens.add({
+            targets: topText,
+            alpha: 1,
+            duration: 220,
+            ease: 'Sine.easeOut'
+        });
+        this.tweens.add({
+            targets: bottomText,
+            alpha: 1,
+            duration: 220,
+            ease: 'Sine.easeOut',
+            delay: 120
+        });
+
+        const unlockTitle = this.localeManager.t('cinematic.glimmerbowlUnlocked.title', undefined, 'GLIMMERBOWL');
+        const unlockSubtitle = this.localeManager.t('cinematic.glimmerbowlUnlocked.subtitle', undefined, 'UNLOCKED');
+        this.typewriterText(topText, unlockTitle, 62);
+        const bottomTimer = this.time.delayedCall(280, () => {
+            this.typewriterText(bottomText, unlockSubtitle, 68);
+        });
+        this.chestCinematicTimers.push(bottomTimer);
+
+        const holdTimer = this.time.delayedCall(3000, () => {
+            this.tweens.add({
+                targets: [whiteFade, bowlReveal, topText, bottomText],
+                alpha: 0,
+                duration: 420,
+                ease: 'Sine.easeIn',
+                onComplete: () => {
+                    this.showBowlReturnToSeaMasterGuide();
+                    this.cleanupChestCinematic();
+                }
+            });
+        });
+        this.chestCinematicTimers.push(holdTimer);
+
+    }
+
+    private typewriterText(textObject: Phaser.GameObjects.Text, fullText: string, stepMs: number) {
+        textObject.setText('');
+        let index = 0;
+        const timer = this.time.addEvent({
+            delay: Math.max(20, Math.floor(stepMs)),
+            loop: true,
+            callback: () => {
+                index += 1;
+                textObject.setText(fullText.slice(0, index));
+                if (index >= fullText.length) {
+                    timer.remove(false);
+                }
+            }
+        });
+        this.chestCinematicTimers.push(timer);
+    }
+
+    private showBowlReturnToSeaMasterGuide() {
+        const uiScene = this.scene.get('UIScene') as UIScene | undefined;
+        if (!uiScene) return;
+
+        const seamasterTarget = this.getGuideNpcScreenRect('seamaster') ?? undefined;
+        uiScene.showGuideOverlay({
+            text: this.localeManager.t('guide.bowlThatShines.returnToSeamaster', undefined, 'Show the Sea Master what you found.'),
+            target: seamasterTarget,
+            targetPadding: 14,
+            dimBackground: true
+        });
+
+        const timer = this.time.delayedCall(4200, () => {
+            uiScene.clearGuideOverlay();
+        });
+        this.chestCinematicTimers.push(timer);
+    }
+
+    private cleanupChestCinematic(force = false) {
+        this.chestCinematicTimers.forEach((timer) => timer.remove(false));
+        this.chestCinematicTimers = [];
+        this.chestCinematicObjects.forEach((object) => {
+            if (!object.active) return;
+            object.destroy();
+        });
+        this.chestCinematicObjects = [];
+        this.chestCinematicActive = false;
+        if (!force) {
+            this.registry.set('inputBlocked', this.chestCinematicInputBlockedBefore);
+            this.mcPlayerController?.getMobileControls()?.setInputBlocked(this.chestCinematicInputBlockedBefore);
+        }
+    }
+
     update(_time: number, delta: number) {
         if (this.isTransferringServer) return;
 
@@ -1295,6 +1716,7 @@ export class GameScene extends Phaser.Scene {
         this.worldTimeManager.update(delta);
         const worldTime = this.worldTimeManager.getTime();
         this.lightingManager?.updateFromWorldTime(worldTime);
+        this.updateKeyLocationCue(worldTime.hour);
         
         // Update seasonal effects (particles + color tints)
         const playerVel = (player?.body as any)?.velocity || { x: 0, y: 0 };

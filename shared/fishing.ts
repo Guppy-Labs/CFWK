@@ -239,7 +239,7 @@ export function selectFromLootTable(
     return weightedEntries[weightedEntries.length - 1].itemId;
 }
 
-const RARITY_ORDER: ItemRarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultimate'];
+const RARITY_ORDER: ItemRarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'supreme'];
 
 function getRarityWeight(itemId: string, rarityMultiplier: number): number {
     const def = getItemDefinition(itemId);

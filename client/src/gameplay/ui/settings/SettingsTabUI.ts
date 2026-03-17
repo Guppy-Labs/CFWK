@@ -373,6 +373,7 @@ export class SettingsTabUI {
                 this.settings.video.bloomEnabled = false;
                 this.settings.video.vignetteEnabled = false;
                 this.settings.video.tiltShiftEnabled = false;
+                this.settings.video.crtEnabled = false;
                 this.settings.video.dustParticlesEnabled = false;
                 break;
             case 'medium':
@@ -381,6 +382,7 @@ export class SettingsTabUI {
                 this.settings.video.bloomEnabled = false;
                 this.settings.video.vignetteEnabled = true;
                 this.settings.video.tiltShiftEnabled = false;
+                this.settings.video.crtEnabled = false;
                 this.settings.video.dustParticlesEnabled = true;
                 break;
             case 'high':
@@ -389,6 +391,7 @@ export class SettingsTabUI {
                 this.settings.video.bloomEnabled = true;
                 this.settings.video.vignetteEnabled = true;
                 this.settings.video.tiltShiftEnabled = true;
+                this.settings.video.crtEnabled = true;
                 this.settings.video.dustParticlesEnabled = true;
                 break;
             case 'custom':

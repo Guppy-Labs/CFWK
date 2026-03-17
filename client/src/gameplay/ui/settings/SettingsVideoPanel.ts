@@ -200,6 +200,7 @@ export class SettingsVideoPanel {
             { key: 'bloomEnabled', labelKey: 'settings.video.bloomEnabled', fallbackLabel: 'Bloom' },
             { key: 'vignetteEnabled', labelKey: 'settings.video.vignetteEnabled', fallbackLabel: 'Vignette' },
             { key: 'tiltShiftEnabled', labelKey: 'settings.video.tiltShiftEnabled', fallbackLabel: 'Tilt Shift' },
+            { key: 'crtEnabled', labelKey: 'settings.video.crtEnabled', fallbackLabel: 'CRT' },
             { key: 'dustParticlesEnabled', labelKey: 'settings.video.dustParticlesEnabled', fallbackLabel: 'Dust Particles' }
         ];
 

@@ -11,6 +11,8 @@
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "npm run dev --workspace=server",
     "dev:client": "npm run dev --workspace=client",
+    "assets:bump-version": "node tools/bump-asset-version.js",
+    "assets:prepare": "npm run assets:bump-version && npm run generate:asset-manifest --workspace=client",
     "pad-tilesets": "node tools/pad-tilesets.js",
     "strip-tmj-prefix": "node tools/strip-tmj-prefix.js"
   },

@@ -39,6 +39,14 @@ const ICONS: Record<DesktopInteractionIconKey, string> = {
             <path d="M11.5 8.2c1.1-2.1 3.2-3.2 5.8-3.2" />
             <path d="M11 8.4c-1.4-1.2-3-1.7-5-1.7" />
         </svg>
+    `,
+    chest: `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="9" width="16" height="10" rx="1.5" />
+            <path d="M4 12h16" />
+            <path d="M9 9V7.5a3 3 0 1 1 6 0V9" />
+            <circle cx="12" cy="14.5" r="0.9" />
+        </svg>
     `
 };
 

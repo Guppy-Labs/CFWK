@@ -1,4 +1,15 @@
 import Phaser from 'phaser';
+import type CrtPostFxPipeline from 'phaser3-rex-plugins/plugins/crtpipeline.js';
+
+type CrtPipelinePlugin = {
+    add: (camera: Phaser.Cameras.Scene2D.Camera, config?: {
+        name?: string;
+        warpX?: number;
+        warpY?: number;
+        scanLineStrength?: number;
+    }) => CrtPostFxPipeline;
+    remove: (camera: Phaser.Cameras.Scene2D.Camera, name?: string) => unknown;
+};
 
 /**
  * Manages post-processing visual effects applied to the game camera.
@@ -13,10 +24,12 @@ export class VisualEffectsManager {
     private vignette?: Phaser.FX.Vignette;
     private tiltShift?: Phaser.FX.Bokeh;
     private colorMatrix?: Phaser.FX.ColorMatrix;
+    private crt?: CrtPostFxPipeline;
     private effectsMasterEnabled = true;
     private bloomEnabled = false;
     private vignetteEnabled = true;
     private tiltShiftEnabled = true;
+    private crtEnabled = true;
 
     // Configuration - carefully tuned for pixel art RPG aesthetic
     private readonly config = {
@@ -45,6 +58,13 @@ export class VisualEffectsManager {
             blurY: 0.1,           // Vertical blur component
             strength: 1         // Overall strength
         },
+        crt: {
+            enabled: true,
+            warpX: 0.1,          // Keep curvature subtle so text remains readable
+            warpY: 0.1,
+            scanLineStrength: 0.2,
+            scanLineWidth: 1650   // Thinner, less intrusive scan lines
+        },
         colorGrade: {
             enabled: false,     // Disabled for now
             saturation: 0.15,   // Slight saturation boost
@@ -58,6 +78,7 @@ export class VisualEffectsManager {
         this.bloomEnabled = this.config.bloom.enabled;
         this.vignetteEnabled = this.config.vignette.enabled;
         this.tiltShiftEnabled = this.config.tiltShift.enabled;
+        this.crtEnabled = this.config.crt.enabled;
         this.syncAllEffects();
     }
 
@@ -117,6 +138,11 @@ export class VisualEffectsManager {
         this.syncTiltShiftEffect();
     }
 
+    setCrtEnabled(enabled: boolean) {
+        this.crtEnabled = enabled;
+        this.syncCrtEffect();
+    }
+
     /**
      * Master toggle for all effects
      */
@@ -130,7 +156,8 @@ export class VisualEffectsManager {
             visualEffectsEnabled: this.effectsMasterEnabled,
             bloomEnabled: this.bloomEnabled,
             vignetteEnabled: this.vignetteEnabled,
-            tiltShiftEnabled: this.tiltShiftEnabled
+            tiltShiftEnabled: this.tiltShiftEnabled,
+            crtEnabled: this.crtEnabled
         };
     }
 
@@ -138,6 +165,7 @@ export class VisualEffectsManager {
         this.syncBloomEffect();
         this.syncVignetteEffect();
         this.syncTiltShiftEffect();
+        this.syncCrtEffect();
         this.syncColorGradeEffect();
     }
 
@@ -227,6 +255,43 @@ export class VisualEffectsManager {
             console.warn('[VisualEffectsManager] Failed to create tilt-shift effect:', error);
             this.tiltShiftEnabled = false;
         }
+    }
+
+    private syncCrtEffect() {
+        const shouldEnable = this.effectsMasterEnabled && this.crtEnabled;
+
+        if (!shouldEnable) {
+            if (this.crt) {
+                this.getCrtPlugin()?.remove(this.camera);
+                this.crt = undefined;
+            }
+            return;
+        }
+
+        if (this.crt) return;
+
+        const plugin = this.getCrtPlugin();
+        if (!plugin) {
+            this.crtEnabled = false;
+            return;
+        }
+
+        try {
+            const c = this.config.crt;
+            this.crt = plugin.add(this.camera, {
+                warpX: c.warpX,
+                warpY: c.warpY,
+                scanLineStrength: c.scanLineStrength
+            });
+            this.crt.setScanLineWidth(c.scanLineWidth);
+        } catch (error) {
+            console.warn('[VisualEffectsManager] Failed to create CRT effect:', error);
+            this.crtEnabled = false;
+        }
+    }
+
+    private getCrtPlugin(): CrtPipelinePlugin | undefined {
+        return this.scene.plugins.get('rexCrtPipeline') as unknown as CrtPipelinePlugin | undefined;
     }
 
     private syncColorGradeEffect() {

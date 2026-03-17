@@ -7,13 +7,24 @@ import { HeadbarUI } from '../ui/HeadbarUI';
 import { NetworkManager } from '../network/NetworkManager';
 import { InventoryChangeMonitor } from '../ui/InventoryChangeMonitor';
 import { SubtitleStack } from '../ui/SubtitleStack';
-import { ControlActionKey, DEFAULT_GUIDE_TUTORIAL_STATE, IAdvancementAlertMessage, ITEM_DEFINITIONS, getItemImagePath } from '@cfwk/shared';
+import { ControlActionKey, DEFAULT_GUIDE_TUTORIAL_STATE, DEFAULT_USER_SETTINGS, IAdvancementAlertMessage, ITEM_DEFINITIONS, IVideoSettings, getItemImagePath } from '@cfwk/shared';
 import { DialogueUI } from '../ui/DialogueUI';
 import type { DialogueRenderLine } from '../dialogue/DialogueTypes';
 import { KeybindManager } from '../input/KeybindManager';
 import { GuideOverlay, GuideOverlayState } from '../ui/guide/GuideOverlay';
 import { GuideCoordinator } from '../ui/guide/GuideCoordinator';
 import { GuideInputGate } from '../ui/guide/GuideInputGate';
+import type CrtPostFxPipeline from 'phaser3-rex-plugins/plugins/crtpipeline.js';
+
+type CrtPipelinePlugin = {
+    add: (camera: Phaser.Cameras.Scene2D.Camera, config?: {
+        name?: string;
+        warpX?: number;
+        warpY?: number;
+        scanLineStrength?: number;
+    }) => CrtPostFxPipeline;
+    remove: (camera: Phaser.Cameras.Scene2D.Camera, name?: string) => unknown;
+};
 
 export class UIScene extends Phaser.Scene {
     private playerHud?: PlayerHud;
@@ -55,6 +66,20 @@ export class UIScene extends Phaser.Scene {
     private hasReceivedHeartsSnapshot = false;
     private dangerCountdownText?: Phaser.GameObjects.Text;
     private dangerCountdownRegistryHandler?: (_parent: any, value: string | null) => void;
+    private uiCrtPipeline?: CrtPostFxPipeline;
+    private pendingVideoSettings?: IVideoSettings;
+    private guiBackdrop?: Phaser.GameObjects.Rectangle;
+    private guiIsOpen = false;
+    private fishViewIsOpen = false;
+    private guiOpenChangedHandler?: (event: Event) => void;
+    private fishViewChangedHandler?: (event: Event) => void;
+    private guiBlurFx?: unknown;
+    private uiCrtConfig = {
+        warpX: 0.1,
+        warpY: 0.1,
+        scanLineStrength: 0.2,
+        scanLineWidth: 1650
+    };
 
     constructor() {
         super({ key: 'UIScene' });
@@ -62,6 +87,26 @@ export class UIScene extends Phaser.Scene {
 
     preload() {
         this.load.pack('ui-core-pack', '/packs/ui-core.pack.json');
+        // Explicitly load main-quest icon with a versioned URL so it is not hidden by stale pack caches.
+        this.load.image('ui-quest-main-star', '/ui/icons/QuestMainStar.png?v=20260312a');
+        this.load.image('ui-banner-a', '/ui/Banner01a.png');
+        this.load.image('ui-banner-b', '/ui/Banner01b.png');
+        this.load.image('ui-slot-placeholder-knife', '/ui/SlotPlaceholderKnife.png');
+        this.load.image('ui-rarity-common', '/ui/rarities/icons/common.png');
+        this.load.image('ui-rarity-uncommon', '/ui/rarities/icons/uncommon.png');
+        this.load.image('ui-rarity-rare', '/ui/rarities/icons/rare.png');
+        this.load.image('ui-rarity-epic', '/ui/rarities/icons/epic.png');
+        this.load.image('ui-rarity-legendary', '/ui/rarities/icons/legendary.png');
+        this.load.image('ui-rarity-mythic', '/ui/rarities/icons/mythic.png');
+        this.load.image('ui-rarity-divine', '/ui/rarities/icons/divine.png');
+        this.load.image('ui-rarity-supreme', '/ui/rarities/icons/supreme.png');
+        this.load.image('ui-rarity-frame-common', '/ui/rarities/frames/common.png');
+        this.load.image('ui-rarity-frame-uncommon', '/ui/rarities/frames/uncommon.png');
+        this.load.image('ui-rarity-frame-rare', '/ui/rarities/frames/rare.png');
+        this.load.image('ui-rarity-frame-epic', '/ui/rarities/frames/epic.png');
+        this.load.image('ui-rarity-frame-legendary', '/ui/rarities/frames/legendary.png');
+        this.load.image('ui-rarity-frame-mythic', '/ui/rarities/frames/mythic.png');
+        this.load.image('ui-rarity-frame-supreme', '/ui/rarities/frames/supreme.png');
 
         ITEM_DEFINITIONS.forEach((item) => {
             const imagePath = getItemImagePath(item.id);
@@ -111,6 +156,12 @@ export class UIScene extends Phaser.Scene {
         this.guideOverlay = new GuideOverlay(this);
         this.guideInputGate = new GuideInputGate(this, this.keybindManager);
         this.guideInputGate.install();
+        this.guiBackdrop = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 1)
+            .setOrigin(0, 0)
+            .setScrollFactor(0)
+            .setDepth(11990)
+            .setAlpha(0)
+            .setVisible(false);
         this.damageBorderGlow = this.add.graphics();
         this.damageBorderGlow.setDepth(12000);
         this.damageBorderGlow.setVisible(false);
@@ -118,12 +169,15 @@ export class UIScene extends Phaser.Scene {
         this.redrawDamageBorderGlow();
         const cachedAdvancements = this.networkManager.getCachedAdvancementsState();
         this.guideCoordinator = new GuideCoordinator(this, cachedAdvancements?.tutorial ?? { ...DEFAULT_GUIDE_TUTORIAL_STATE });
+        const cachedSettings = this.networkManager.getCachedSettings();
+        this.applyUserVideoSettings(this.pendingVideoSettings ?? cachedSettings?.video ?? DEFAULT_USER_SETTINGS.video);
         this.networkManager.getSettings().then((settings) => {
             if (!settings) return;
             const gameScene = this.scene.get('GameScene') as { getAudioManager?: () => { applyUserAudioSettings?: (audio: any) => void } | undefined };
             const audioManager = gameScene?.getAudioManager?.();
             audioManager?.applyUserAudioSettings?.(settings.audio);
             this.subtitleStack?.setEnabled(Boolean(settings.audio.subtitlesEnabled));
+            this.applyUserVideoSettings(settings.video);
         });
         this.subtitleEventHandler = (event: Event) => {
             const customEvent = event as CustomEvent<{ soundKey?: string; label?: string }>;
@@ -152,6 +206,18 @@ export class UIScene extends Phaser.Scene {
             this.getAudioManager()?.playConsumableEat?.(itemId);
         };
         window.addEventListener('inventory:consumed', this.inventoryConsumedHandler as EventListener);
+        this.guiOpenChangedHandler = (event: Event) => {
+            const customEvent = event as CustomEvent<{ isOpen?: boolean }>;
+            this.guiIsOpen = Boolean(customEvent.detail?.isOpen);
+            this.syncGuiBackdropEffects();
+        };
+        window.addEventListener('gui-open-changed', this.guiOpenChangedHandler as EventListener);
+        this.fishViewChangedHandler = (event: Event) => {
+            const customEvent = event as CustomEvent<{ isOpen?: boolean }>;
+            this.fishViewIsOpen = Boolean(customEvent.detail?.isOpen);
+            this.syncGuiBackdropEffects();
+        };
+        window.addEventListener('book:fish-view-changed', this.fishViewChangedHandler as EventListener);
 
         this.uiClickPointerHandler = (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
             if ((gameObject as any)?.getData?.('suppressUiClickSound') === true) {
@@ -446,6 +512,15 @@ export class UIScene extends Phaser.Scene {
             if (this.inventoryConsumedHandler) {
                 window.removeEventListener('inventory:consumed', this.inventoryConsumedHandler as EventListener);
             }
+            if (this.guiOpenChangedHandler) {
+                window.removeEventListener('gui-open-changed', this.guiOpenChangedHandler as EventListener);
+                this.guiOpenChangedHandler = undefined;
+            }
+            if (this.fishViewChangedHandler) {
+                window.removeEventListener('book:fish-view-changed', this.fishViewChangedHandler as EventListener);
+                this.fishViewChangedHandler = undefined;
+            }
+            this.clearGuiBlurEffect();
             if (this.uiClickPointerHandler) {
                 this.input.off(Phaser.Input.Events.GAMEOBJECT_DOWN, this.uiClickPointerHandler);
             }
@@ -456,6 +531,7 @@ export class UIScene extends Phaser.Scene {
             this.guideCoordinator?.destroy();
             this.guideInputGate?.uninstall();
             this.guideOverlay?.destroy();
+            this.guiBackdrop?.destroy();
             this.damageBorderTween?.stop();
             this.damageBorderGlow?.destroy();
             this.dangerCountdownText?.destroy();
@@ -468,6 +544,40 @@ export class UIScene extends Phaser.Scene {
             this.subtitleStack?.destroy();
             this.dialogueUI?.destroy();
         });
+    }
+
+    applyUserVideoSettings(video: IVideoSettings) {
+        if (!this.sys.isActive() || !this.cameras?.main) {
+            this.pendingVideoSettings = { ...video };
+            return;
+        }
+        this.pendingVideoSettings = { ...video };
+
+        const shouldEnable = Boolean(video.visualEffectsEnabled && video.crtEnabled);
+        if (!shouldEnable) {
+            if (this.uiCrtPipeline) {
+                this.getCrtPlugin()?.remove(this.cameras.main);
+                this.uiCrtPipeline = undefined;
+            }
+            return;
+        }
+
+        if (this.uiCrtPipeline) return;
+
+        const plugin = this.getCrtPlugin();
+        if (!plugin) return;
+
+        const c = this.uiCrtConfig;
+        try {
+            this.uiCrtPipeline = plugin.add(this.cameras.main, {
+                warpX: c.warpX,
+                warpY: c.warpY,
+                scanLineStrength: c.scanLineStrength
+            });
+            this.uiCrtPipeline.setScanLineWidth(c.scanLineWidth);
+        } catch (error) {
+            console.warn('[UIScene] Failed to apply CRT effect:', error);
+        }
     }
 
     setHudVisible(visible: boolean) {
@@ -721,6 +831,9 @@ export class UIScene extends Phaser.Scene {
     }
 
     private onResize() {
+        if (this.guiBackdrop) {
+            this.guiBackdrop.setSize(this.scale.width, this.scale.height);
+        }
         this.bookUI?.layout();
         this.chat?.refreshLayout();
         this.headbarUI?.layout();
@@ -827,5 +940,63 @@ export class UIScene extends Phaser.Scene {
     private getAudioManager() {
         const gameScene = this.scene.get('GameScene') as { getAudioManager?: () => any };
         return gameScene?.getAudioManager?.();
+    }
+
+    private syncGuiBackdropEffects() {
+        const shouldShow = this.guiIsOpen || this.fishViewIsOpen;
+        const alpha = this.fishViewIsOpen ? 0.62 : (this.guiIsOpen ? 0.42 : 0);
+        if (this.guiBackdrop) {
+            this.guiBackdrop.setVisible(shouldShow);
+            this.guiBackdrop.setAlpha(alpha);
+        }
+
+        const gameCamera = this.getGameCamera();
+        if (!gameCamera?.postFX) return;
+        const blurConfig = this.fishViewIsOpen
+            ? { radius: 0.2, amount: 0.3, contrast: 0.2, blurX: 1.1, blurY: 1.1, strength: 0.9 }
+            : this.guiIsOpen
+                ? { radius: 0.2, amount: 0.18, contrast: 0.15, blurX: 0.6, blurY: 0.6, strength: 0.75 }
+                : null;
+        if (!blurConfig) {
+            this.clearGuiBlurEffect();
+            return;
+        }
+        this.clearGuiBlurEffect();
+        try {
+            this.guiBlurFx = gameCamera.postFX.addTiltShift(
+                blurConfig.radius,
+                blurConfig.amount,
+                blurConfig.contrast,
+                blurConfig.blurX,
+                blurConfig.blurY,
+                blurConfig.strength
+            );
+        } catch {
+            this.guiBlurFx = undefined;
+        }
+    }
+
+    private clearGuiBlurEffect() {
+        const gameCamera = this.getGameCamera();
+        if (!gameCamera?.postFX || !this.guiBlurFx) {
+            this.guiBlurFx = undefined;
+            return;
+        }
+        try {
+            gameCamera.postFX.remove(this.guiBlurFx as any);
+        } catch {
+            // Ignore remove failures from stale effects.
+        }
+        this.guiBlurFx = undefined;
+    }
+
+    private getGameCamera(): Phaser.Cameras.Scene2D.Camera | null {
+        if (!this.scene.isActive('GameScene')) return null;
+        const gameScene = this.scene.get('GameScene') as Phaser.Scene;
+        return gameScene?.cameras?.main ?? null;
+    }
+
+    private getCrtPlugin(): CrtPipelinePlugin | undefined {
+        return this.plugins.get('rexCrtPipeline') as unknown as CrtPipelinePlugin | undefined;
     }
 }

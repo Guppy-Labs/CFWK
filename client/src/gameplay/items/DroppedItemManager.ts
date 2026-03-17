@@ -2,8 +2,10 @@ import Phaser from 'phaser';
 import { getItemDefinition } from '@cfwk/shared';
 import { NetworkManager } from '../network/NetworkManager';
 import { getLocalizedItemName } from '../i18n/itemLocale';
+import { LocaleManager } from '../i18n/LocaleManager';
+import type { IInventoryResponse } from '@cfwk/shared';
 import type { OcclusionManager } from '../map/OcclusionManager';
-import { DepthManager, DROPPED_ITEM_BASE, ENTITY_BASE, NAMEPLATE_OFFSET } from '../rendering/DepthManager';
+import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET } from '../rendering/DepthManager';
 
 export type DroppedItemData = {
     id: string;
@@ -12,6 +14,9 @@ export type DroppedItemData = {
     x: number;
     y: number;
     createdAt: number;
+    liquidContainerItemId?: string;
+    liquidOutputItemId?: string;
+    liquidConfirmText?: string;
 };
 
 export type DroppedItemEntity = DroppedItemData & {
@@ -22,6 +27,9 @@ type DropClusterRow = {
     itemId: string;
     amount: number;
     droppedItemIds: string[];
+    liquidContainerItemId?: string;
+    liquidOutputItemId?: string;
+    liquidConfirmText?: string;
 };
 
 type DropCluster = {
@@ -49,6 +57,7 @@ export class DroppedItemManager {
     private scene: Phaser.Scene;
     private config: DroppedItemManagerConfig;
     private networkManager = NetworkManager.getInstance();
+    private localeManager = LocaleManager.getInstance();
     private items: Map<string, DroppedItemEntity> = new Map();
     private readonly fadeStartMs = 4 * 60 * 1000;
     private readonly fadeEndMs = 5 * 60 * 1000;
@@ -63,6 +72,11 @@ export class DroppedItemManager {
     private readonly cardTextFontSize = '5px';
     private readonly cardTextFontFamily = 'Minecraft, monospace';
     private dropCards: Map<string, DropClusterCard> = new Map();
+    private inventorySnapshot: IInventoryResponse | null = null;
+    private inventoryUpdateHandler?: (event: Event) => void;
+    private lastLocalPosition: { x: number; y: number } | null = null;
+    private pendingLiquidConfirmRowKey: string | null = null;
+    private pendingLiquidConfirmTimeoutHandle?: number;
 
     constructor(scene: Phaser.Scene, config: DroppedItemManagerConfig) {
         this.scene = scene;
@@ -72,6 +86,12 @@ export class DroppedItemManager {
     initialize() {
         const room = this.networkManager.getRoom();
         if (!room || !room.state?.droppedItems) return;
+
+        this.inventoryUpdateHandler = (event: Event) => {
+            this.inventorySnapshot = (event as CustomEvent<IInventoryResponse>).detail ?? null;
+            this.refreshNearbyCards();
+        };
+        window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
 
         room.state.droppedItems.forEach((item: any, itemId: string) => {
             this.addItemFromState(item, itemId);
@@ -100,11 +120,13 @@ export class DroppedItemManager {
         });
 
         if (!Number.isFinite(localX) || !Number.isFinite(localY)) {
+            this.lastLocalPosition = null;
             this.clearDropCards();
             return;
         }
+        this.lastLocalPosition = { x: localX as number, y: localY as number };
 
-        const nearbyClusters = this.buildNearbyClusters(localX, localY);
+        const nearbyClusters = this.buildNearbyClusters(localX as number, localY as number);
         this.syncDropCards(nearbyClusters);
     }
 
@@ -112,6 +134,15 @@ export class DroppedItemManager {
         this.items.forEach((entity) => entity.sprite.destroy());
         this.items.clear();
         this.clearDropCards();
+        if (this.inventoryUpdateHandler) {
+            window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+            this.inventoryUpdateHandler = undefined;
+        }
+        if (this.pendingLiquidConfirmTimeoutHandle) {
+            window.clearTimeout(this.pendingLiquidConfirmTimeoutHandle);
+            this.pendingLiquidConfirmTimeoutHandle = undefined;
+        }
+        this.pendingLiquidConfirmRowKey = null;
     }
 
     private addItemFromState(item: any, itemId: string) {
@@ -124,6 +155,9 @@ export class DroppedItemManager {
             x: item.x,
             y: item.y,
             createdAt: item.createdAt ?? Date.now(),
+            liquidContainerItemId: typeof item.liquidContainerItemId === 'string' ? item.liquidContainerItemId : undefined,
+            liquidOutputItemId: typeof item.liquidOutputItemId === 'string' ? item.liquidOutputItemId : undefined,
+            liquidConfirmText: typeof item.liquidConfirmText === 'string' ? item.liquidConfirmText : undefined,
             sprite
         };
 
@@ -138,6 +172,9 @@ export class DroppedItemManager {
             existing.x = item.x;
             existing.y = item.y;
             existing.createdAt = item.createdAt ?? existing.createdAt;
+            existing.liquidContainerItemId = typeof item.liquidContainerItemId === 'string' ? item.liquidContainerItemId : undefined;
+            existing.liquidOutputItemId = typeof item.liquidOutputItemId === 'string' ? item.liquidOutputItemId : undefined;
+            existing.liquidConfirmText = typeof item.liquidConfirmText === 'string' ? item.liquidConfirmText : undefined;
             existing.sprite.setPosition(item.x, item.y);
             if (itemIdChanged) {
                 const textureKey = `item-${item.itemId}`;
@@ -167,6 +204,10 @@ export class DroppedItemManager {
             amount: item.amount,
             x: item.x,
             y: item.y,
+            createdAt: item.createdAt ?? Date.now(),
+            liquidContainerItemId: typeof item.liquidContainerItemId === 'string' ? item.liquidContainerItemId : undefined,
+            liquidOutputItemId: typeof item.liquidOutputItemId === 'string' ? item.liquidOutputItemId : undefined,
+            liquidConfirmText: typeof item.liquidConfirmText === 'string' ? item.liquidConfirmText : undefined,
             sprite
         });
 
@@ -263,7 +304,10 @@ export class DroppedItemManager {
                     byItemId.set(member.itemId, {
                         itemId: member.itemId,
                         amount: member.amount,
-                        droppedItemIds: [member.id]
+                        droppedItemIds: [member.id],
+                        liquidContainerItemId: member.liquidContainerItemId,
+                        liquidOutputItemId: member.liquidOutputItemId,
+                        liquidConfirmText: member.liquidConfirmText
                     });
                 }
                 alpha = Math.min(alpha, member.sprite.alpha);
@@ -322,9 +366,7 @@ export class DroppedItemManager {
         const rowGap = 0;
         const rowTexts: Phaser.GameObjects.Text[] = [];
         const rowRows = cluster.rows.map((row) => {
-            const itemName = getLocalizedItemName(row.itemId, getItemDefinition(row.itemId)?.name ?? row.itemId);
-            const amountSuffix = row.amount > 1 ? ` x${row.amount}` : '';
-            const content = `${itemName}${amountSuffix}`;
+            const content = this.getRowDisplayLabel(row);
             const text = this.scene.add.text(0, 0, content, {
                 fontSize: this.cardTextFontSize,
                 fontFamily: this.cardTextFontFamily,
@@ -393,12 +435,90 @@ export class DroppedItemManager {
         const transitionBlocked = this.scene.registry.get('inputBlocked') === true;
         if (chatFocused || guiOpen || transitionBlocked) return;
 
+        const rowKey = this.getRowKey(row);
+        const isLiquidRow = Boolean(row.liquidContainerItemId && row.liquidOutputItemId);
+        if (isLiquidRow) {
+            const requiredContainer = row.liquidContainerItemId as string;
+            if (!this.hasInventoryItem(requiredContainer)) {
+                this.resetPendingLiquidConfirmation();
+                this.refreshNearbyCards();
+                return;
+            }
+
+            if (this.pendingLiquidConfirmRowKey !== rowKey) {
+                this.pendingLiquidConfirmRowKey = rowKey;
+                if (this.pendingLiquidConfirmTimeoutHandle) {
+                    window.clearTimeout(this.pendingLiquidConfirmTimeoutHandle);
+                }
+                this.pendingLiquidConfirmTimeoutHandle = window.setTimeout(() => {
+                    this.pendingLiquidConfirmTimeoutHandle = undefined;
+                    this.pendingLiquidConfirmRowKey = null;
+                    this.refreshNearbyCards();
+                }, 4000);
+                this.refreshNearbyCards();
+                return;
+            }
+
+            this.resetPendingLiquidConfirmation();
+        }
+
         const uniqueIds = Array.from(new Set(row.droppedItemIds));
         uniqueIds.forEach((droppedItemId) => {
             if (this.items.has(droppedItemId)) {
                 this.networkManager.sendPickupItem(droppedItemId);
             }
         });
+    }
+
+    private hasInventoryItem(itemId: string): boolean {
+        const inventory = this.inventorySnapshot;
+        if (!inventory?.slots || !itemId) return false;
+        return inventory.slots.some((slot) => slot.itemId === itemId && slot.count > 0);
+    }
+
+    private getRowKey(row: DropClusterRow): string {
+        return `${row.itemId}:${row.droppedItemIds.slice().sort((a, b) => a.localeCompare(b)).join(',')}`;
+    }
+
+    private getRowDisplayLabel(row: DropClusterRow): string {
+        const itemName = getLocalizedItemName(row.itemId, getItemDefinition(row.itemId)?.name ?? row.itemId);
+        const amountSuffix = row.amount > 1 ? ` x${row.amount}` : '';
+        const isLiquidRow = Boolean(row.liquidContainerItemId && row.liquidOutputItemId);
+        if (!isLiquidRow) {
+            return `${itemName}${amountSuffix}`;
+        }
+
+        const requiredContainer = row.liquidContainerItemId as string;
+        const rowKey = this.getRowKey(row);
+        if (!this.hasInventoryItem(requiredContainer)) {
+            const localizedContainer = getLocalizedItemName(requiredContainer, requiredContainer);
+            return this.localeManager.t(
+                'drops.needContainerToCollect',
+                { container: localizedContainer },
+                `Need ${localizedContainer} to collect`
+            );
+        }
+
+        if (this.pendingLiquidConfirmRowKey === rowKey) {
+            return row.liquidConfirmText?.trim()
+                || this.localeManager.t('drops.confirmConsumeJar', undefined, 'Confirm Consuming 1 Jar');
+        }
+
+        return `${itemName}${amountSuffix}`;
+    }
+
+    private resetPendingLiquidConfirmation() {
+        if (this.pendingLiquidConfirmTimeoutHandle) {
+            window.clearTimeout(this.pendingLiquidConfirmTimeoutHandle);
+            this.pendingLiquidConfirmTimeoutHandle = undefined;
+        }
+        this.pendingLiquidConfirmRowKey = null;
+    }
+
+    private refreshNearbyCards() {
+        if (!this.lastLocalPosition) return;
+        const clusters = this.buildNearbyClusters(this.lastLocalPosition.x, this.lastLocalPosition.y);
+        this.syncDropCards(clusters);
     }
 
     private clearDropCards() {
@@ -408,7 +528,13 @@ export class DroppedItemManager {
 
     private getClusterSignature(cluster: DropCluster): string {
         return cluster.rows
-            .map((row) => `${row.itemId}:${row.amount}:${row.droppedItemIds.slice().sort((a, b) => a.localeCompare(b)).join(',')}`)
+            .map((row) => {
+                const rowIds = row.droppedItemIds.slice().sort((a, b) => a.localeCompare(b)).join(',');
+                const container = row.liquidContainerItemId ?? '';
+                const output = row.liquidOutputItemId ?? '';
+                const label = this.getRowDisplayLabel(row);
+                return `${row.itemId}:${row.amount}:${rowIds}:${container}:${output}:${label}`;
+            })
             .sort((a, b) => a.localeCompare(b))
             .join('|');
     }
@@ -423,7 +549,6 @@ export class DroppedItemManager {
             case 'mythic': return '#ff7fd1';
             case 'divine': return '#8fd7ff';
             case 'supreme': return '#ff5f5f';
-            case 'ultimate': return '#8fd7ff';
             case 'common':
             default:
                 return '#ffffff';

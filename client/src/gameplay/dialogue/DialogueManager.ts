@@ -296,11 +296,9 @@ export class DialogueManager {
     }
 
     private async getAdvancementsSnapshot(): Promise<IAdvancementsState | null> {
-        const cached = this.networkManager.getCachedAdvancementsState();
-        if (cached) return cached;
-
-        this.networkManager.requestAdvancementsState();
-        return null;
+        // Force a fresh state pull so dialogue forks reflect very recent quest transitions
+        // (e.g. talk to Wise Man, then immediately talk to Sea Master).
+        return this.networkManager.awaitAdvancementsState(1200, true);
     }
 
     private async checkOptionBranch(branch: DialogueOptionBranch): Promise<boolean> {

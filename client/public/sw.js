@@ -56,13 +56,8 @@ async function cacheFirst(request) {
         return cached;
     }
 
-    const cachedFromAnyVersion = await findAcrossVersionCaches(request);
-    if (cachedFromAnyVersion) {
-        return cachedFromAnyVersion;
-    }
-
     try {
-        const response = await fetch(request);
+        const response = await fetch(request, { cache: 'reload' });
         if (response && response.ok) {
             cache.put(request, response.clone());
         }
@@ -71,21 +66,6 @@ async function cacheFirst(request) {
         if (cached) return cached;
         throw error;
     }
-}
-
-async function findAcrossVersionCaches(request) {
-    const names = await caches.keys();
-    const versionedCaches = names.filter((name) => name.startsWith(cachePrefix));
-
-    for (const name of versionedCaches) {
-        const cache = await caches.open(name);
-        const match = await cache.match(request, { ignoreSearch: false });
-        if (match) {
-            return match;
-        }
-    }
-
-    return null;
 }
 
 async function hydrateActiveVersionFromCaches() {

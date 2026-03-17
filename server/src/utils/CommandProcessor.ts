@@ -98,6 +98,9 @@ export class CommandProcessor {
             case 'give':
                 message = await this.handleGive(args, issuerName);
                 break;
+            case 'pay':
+                message = await this.handlePay(args, issuerName);
+                break;
             case 'drop':
                 message = await this.handleDrop(args, issuerName);
                 break;
@@ -313,6 +316,10 @@ export class CommandProcessor {
                 userId,
                 items: slots
             });
+            if (itemDef.scar && !(user as any).hasOwnedScar) {
+                user.set('hasOwnedScar', true);
+                await user.save();
+            }
         }
 
         // because of the new inventory monitor ui, this isn't needed
@@ -322,6 +329,30 @@ export class CommandProcessor {
         // });
 
         return `Gave ${amount} ${itemDef.name} to ${user.username}.`;
+    }
+
+    private static async handlePay(args: string[], issuer: string): Promise<string> {
+        if (args.length < 2) return "Usage: /pay [username] [amount]";
+        const targetName = args[0];
+        const amount = parseInt(args[1], 10);
+        if (!Number.isFinite(amount)) return "Invalid amount.";
+
+        const user = await this.getUserByUsername(targetName);
+        if (!user) return `User '${targetName}' not found.`;
+
+        const currentMoney = Math.max(0, Math.floor(Number((user as any).money) || 0));
+        const nextMoney = Math.max(0, currentMoney + amount);
+
+        user.set('money', nextMoney);
+        await user.save();
+
+        InstanceManager.getInstance().events.emit('money_update', {
+            userId: user._id.toString(),
+            money: nextMoney
+        });
+
+        const signedDelta = nextMoney - currentMoney;
+        return `Updated ${user.username} money by ${signedDelta}. New balance: ${nextMoney}.`;
     }
 
     private static async handleDrop(args: string[], issuer: string): Promise<string> {
@@ -417,6 +448,7 @@ export class CommandProcessor {
                     glimmerbowl: [],
                     equippedRodId: null,
                     playerStats: { ...DEFAULT_PLAYER_STATS },
+                    money: 0,
                     advancements: {
                         enrolled: DEFAULT_USER_ADVANCEMENTS.enrolled,
                         questProgress: {},
@@ -425,6 +457,7 @@ export class CommandProcessor {
                         tutorial: { ...DEFAULT_GUIDE_TUTORIAL_STATE }
                     },
                     glimmerbowlUnlocked: false,
+                    hasOwnedScar: false,
                     hearts: { ...DEFAULT_PLAYER_HEARTS_STATE },
                     lastLocationId: DEFAULT_FIRST_CONNECT_LOCATION_ID,
                     lastPositionX: null,
@@ -446,6 +479,7 @@ export class CommandProcessor {
         instanceManager.events.emit('clear_progress', { userId });
         instanceManager.events.emit('inventory_update', { userId, items });
         instanceManager.events.emit('glimmerbowl_update', { userId, entries, unlocked: false });
+        instanceManager.events.emit('money_update', { userId, money: 0 });
         instanceManager.events.emit('wipe_user', { userId });
 
         return `Wiped gameplay data for ${user.username}.`;

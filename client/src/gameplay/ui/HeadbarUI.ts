@@ -562,6 +562,18 @@ export class HeadbarUI {
             );
         }
 
+        if (objective.kind === 'inventory-count' && objective.itemId) {
+            const itemName = this.localeManager.t(`items.${objective.itemId}.name`, undefined, objective.itemId);
+            const count = Number.isFinite(objective.requiredCount)
+                ? Math.max(1, Math.floor(objective.requiredCount as number))
+                : 1;
+            return this.localeManager.t(
+                'finbook.quest.objective.inventoryCount',
+                { item: itemName, count },
+                `Collect ${count} ${itemName}`
+            );
+        }
+
         return this.localeManager.t('finbook.quest.objective.generic', undefined, 'Complete the next task');
     }
 

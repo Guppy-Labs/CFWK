@@ -111,8 +111,7 @@ export class GuideOverlay {
         this.cardText.setFontSize(fontSize);
         this.cardText.setWordWrapWidth(wrapWidth, true);
 
-        const textBounds = this.cardText.getTextBounds(false);
-        const textHeight = Math.ceil(textBounds.local.height);
+        const textHeight = Math.ceil(this.cardText.getBounds().height);
         const verticalPadding = mobileLike ? 24 : 30;
         const cardHeight = Math.max(mobileLike ? 76 : 92, textHeight + verticalPadding);
 

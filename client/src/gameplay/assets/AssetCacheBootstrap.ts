@@ -13,6 +13,7 @@ type BootstrapMode = 'first-download' | 'updating' | 'up-to-date';
 interface PrepareGameAssetsOptions {
     onModeChanged?: (mode: BootstrapMode) => void;
     onProgress?: (progress: number) => void;
+    onDebug?: (message: string) => void;
 }
 
 interface PrepareGameAssetsResult {
@@ -28,6 +29,8 @@ const CACHE_PREFIX = 'cfwk-game-assets-';
 const DEFAULT_VERSION = 'v1';
 const CRITICAL_ASSET_LIMIT = 24;
 const BACKGROUND_WARM_CONCURRENCY = 8;
+const SW_REGISTER_TIMEOUT_MS = 3500;
+const SW_READY_TIMEOUT_MS = 4500;
 
 function isCacheApiAvailable() {
     return typeof window !== 'undefined' && 'caches' in window;
@@ -35,6 +38,14 @@ function isCacheApiAvailable() {
 
 function isServiceWorkerAvailable() {
     return typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
+}
+
+function isIpadChrome(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    const isIPadUA = /iPad/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+    const isChromeOniOS = /CriOS/i.test(ua);
+    return isIPadUA && isChromeOniOS;
 }
 
 function normalizeVersion(raw: unknown): string {
@@ -114,21 +125,58 @@ async function fetchManifestAssets(): Promise<string[]> {
     }
 }
 
-async function registerServiceWorker(assetVersion: string) {
+async function registerServiceWorker(assetVersion: string, onDebug?: (message: string) => void) {
     if (!isServiceWorkerAvailable()) return;
+    if (isIpadChrome()) {
+        onDebug?.('sw:register:skipped-ipad-chrome');
+        return;
+    }
+
+    const postVersionMessage = (
+        target: ServiceWorker | null | undefined,
+        label: string,
+        onDebug?: (message: string) => void
+    ) => {
+        if (!target) return;
+        target.postMessage({
+            type: 'SET_ASSET_VERSION',
+            version: assetVersion,
+            cachePrefix: CACHE_PREFIX
+        });
+        onDebug?.(`sw:${label}:post-version`);
+    };
 
     try {
-        await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-        const registration = await navigator.serviceWorker.ready;
-        const target = registration.active || registration.waiting || registration.installing;
-        if (target) {
-            target.postMessage({
-                type: 'SET_ASSET_VERSION',
-                version: assetVersion,
-                cachePrefix: CACHE_PREFIX
-            });
+        onDebug?.('sw:register:start');
+        const registration = await Promise.race([
+            navigator.serviceWorker.register('/sw.js', { scope: '/' }),
+            new Promise<null>((resolve) => {
+                setTimeout(() => resolve(null), SW_REGISTER_TIMEOUT_MS);
+            })
+        ]);
+        if (!registration) {
+            onDebug?.('sw:register:timeout');
+            return;
+        }
+        onDebug?.('sw:register:ok');
+        postVersionMessage(registration.active, 'register-active', onDebug);
+        postVersionMessage(registration.waiting, 'register-waiting', onDebug);
+        postVersionMessage(registration.installing, 'register-installing', onDebug);
+
+        const readyRegistration = await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise<null>((resolve) => {
+                setTimeout(() => resolve(null), SW_READY_TIMEOUT_MS);
+            })
+        ]);
+
+        if (readyRegistration) {
+            postVersionMessage(readyRegistration.active, 'ready-active', onDebug);
+        } else {
+            onDebug?.('sw:ready:timeout');
         }
     } catch {
+        onDebug?.('sw:register:error');
         // Service worker is optional; cache bootstrap still works without it.
     }
 }
@@ -263,14 +311,22 @@ export async function prepareGameAssets(options: PrepareGameAssetsOptions = {}):
     }
 
     options.onModeChanged?.(mode);
+    options.onDebug?.(`assets:mode=${mode}`);
 
     const cacheName = `${CACHE_PREFIX}${serverVersion}`;
     let cachedAssetCount = 0;
 
+    if (mode === 'updating') {
+        await clearOldCaches(cacheName);
+        options.onDebug?.('assets:cleared-old-caches');
+    }
+
     if (mode !== 'up-to-date') {
         const manifestAssets = await fetchManifestAssets();
         const criticalAssets = selectCriticalAssets(manifestAssets);
+        options.onDebug?.(`assets:manifest=${manifestAssets.length} critical=${criticalAssets.length}`);
         cachedAssetCount = await warmCache(cacheName, criticalAssets, options.onProgress);
+        options.onDebug?.(`assets:critical-cached=${cachedAssetCount}`);
         localStorage.setItem(ASSET_VERSION_STORAGE_KEY, serverVersion);
 
         const remainingAssets = manifestAssets.filter((url) => !criticalAssets.includes(url));
@@ -280,7 +336,8 @@ export async function prepareGameAssets(options: PrepareGameAssetsOptions = {}):
         });
     }
 
-    await registerServiceWorker(serverVersion);
+    await registerServiceWorker(serverVersion, options.onDebug);
+    options.onDebug?.('assets:bootstrap-complete');
 
     return {
         mode,

@@ -1,4 +1,12 @@
-import { startGame, setLoaderProgress, setLoaderProgressVisible, setLoaderText } from './gameplay';
+import {
+    appendLoaderDebug,
+    clearLoaderDebug,
+    setLoaderDebugVisible,
+    setLoaderProgress,
+    setLoaderProgressVisible,
+    setLoaderText,
+    startGame
+} from './gameplay';
 import { ErrorModal } from './ui/ErrorModal';
 import { Toast } from './ui/Toast';
 import { LocaleManager } from './gameplay/i18n/LocaleManager';
@@ -9,6 +17,12 @@ const SLOW_LOAD_RETRY_DELAY_MS = 20_000;
 let slowLoadRetryTimer: number | null = null;
 let dismissSlowLoadToast: (() => void) | null = null;
 let retryPending = false;
+let lastLoggedProgressBucket = -1;
+
+function shouldEnableLoaderDebug(): boolean {
+    const searchParams = new URLSearchParams(window.location.search);
+    return searchParams.get('debugLoader') === '1';
+}
 
 function clearSlowLoadRetryPrompt() {
     if (slowLoadRetryTimer !== null) {
@@ -90,12 +104,26 @@ function formatRemaining(ms: number): string {
 // Auth check
 async function checkAuth() {
     try {
+        const loaderDebugEnabled = shouldEnableLoaderDebug();
+        setLoaderDebugVisible(loaderDebugEnabled);
+        clearLoaderDebug();
+        lastLoggedProgressBucket = -1;
+        const logLoader = (message: string) => {
+            if (!loaderDebugEnabled) return;
+            appendLoaderDebug(message);
+        };
+        logLoader(`env:ua=${navigator.userAgent}`);
+
         startSlowLoadRetryPrompt();
+        logLoader('start:bootstrap-locale');
         await bootstrapLocale({ fetchFromServer: true });
+        logLoader('done:bootstrap-locale');
         const localeManager = LocaleManager.getInstance();
 
+        logLoader('start:prepare-assets');
         const cacheStatus = await prepareGameAssets({
             onModeChanged: (mode) => {
+                logLoader(`assets:mode:${mode}`);
                 if (mode === 'up-to-date') {
                     setLoaderProgressVisible(false);
                     return;
@@ -111,23 +139,36 @@ async function checkAuth() {
             },
             onProgress: (progress) => {
                 setLoaderProgress(progress);
+                const bucket = Math.floor(progress * 10);
+                if (bucket !== lastLoggedProgressBucket) {
+                    lastLoggedProgressBucket = bucket;
+                    logLoader(`assets:progress:${Math.round(progress * 100)}%`);
+                }
+            },
+            onDebug: (message) => {
+                logLoader(message);
             }
         });
+        logLoader('done:prepare-assets');
 
         if (cacheStatus.mode !== 'up-to-date') {
             setLoaderProgress(1);
         }
 
         setLoaderText(localeManager.t('loader.authenticating', undefined, 'Authenticating...'));
+        logLoader('start:auth-me');
         
         const res = await fetch('/api/auth/me');
         if (!res.ok) {
+            logLoader(`auth-me:failed:${res.status}`);
             clearSlowLoadRetryPrompt();
             window.location.href = '/login';
             return;
         }
+        logLoader('auth-me:ok');
         const data = await res.json();
         if (!data.user) {
+            logLoader('auth-me:no-user');
             clearSlowLoadRetryPrompt();
             window.location.href = '/login';
             return;
@@ -161,6 +202,7 @@ async function checkAuth() {
 
         setLoaderText(localeManager.t('loader.initializingGame', undefined, 'Initializing game...'));
         setLoaderProgressVisible(false);
+        logLoader('start:phaser');
         
         // Update the upgrade button based on premium status
         updateUpgradeButton(data.user);
@@ -171,8 +213,12 @@ async function checkAuth() {
             permissions: perms,
             isPremium: perms.includes('premium.shark')
         });
+        logLoader('done:start-game');
         clearSlowLoadRetryPrompt();
     } catch (e) {
+        if (shouldEnableLoaderDebug()) {
+            appendLoaderDebug(`fatal:${e instanceof Error ? e.message : String(e)}`);
+        }
         clearSlowLoadRetryPrompt();
         window.location.href = '/login';
     }
