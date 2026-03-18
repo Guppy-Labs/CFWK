@@ -6,6 +6,7 @@ import { LocaleManager } from '../i18n/LocaleManager';
 import type { IInventoryResponse } from '@cfwk/shared';
 import type { OcclusionManager } from '../map/OcclusionManager';
 import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET } from '../rendering/DepthManager';
+import { ItemTextureLoader } from '../assets/ItemTextureLoader';
 
 export type DroppedItemData = {
     id: string;
@@ -58,6 +59,7 @@ export class DroppedItemManager {
     private config: DroppedItemManagerConfig;
     private networkManager = NetworkManager.getInstance();
     private localeManager = LocaleManager.getInstance();
+    private itemTextureLoader = ItemTextureLoader.getInstance();
     private items: Map<string, DroppedItemEntity> = new Map();
     private readonly fadeStartMs = 4 * 60 * 1000;
     private readonly fadeEndMs = 5 * 60 * 1000;
@@ -181,6 +183,15 @@ export class DroppedItemManager {
                 const resolvedKey = this.scene.textures.exists(textureKey) ? textureKey : 'ui-slot-base';
                 existing.sprite.setTexture(resolvedKey, 0);
                 this.applyItemScale(existing.sprite, resolvedKey);
+                if (resolvedKey === 'ui-slot-base') {
+                    void this.itemTextureLoader.ensureItemTexture(this.scene, item.itemId).then((loadedKey) => {
+                        if (!loadedKey) return;
+                        const latest = this.items.get(itemId);
+                        if (!latest || latest.itemId !== item.itemId) return;
+                        latest.sprite.setTexture(loadedKey, 0);
+                        this.applyItemScale(latest.sprite, loadedKey);
+                    });
+                }
             }
             this.applyItemAlpha(existing);
             this.updateDepth(existing);
@@ -193,6 +204,14 @@ export class DroppedItemManager {
         const textureKey = `item-${item.itemId}`;
         const resolvedKey = this.scene.textures.exists(textureKey) ? textureKey : 'ui-slot-base';
         const sprite = this.scene.add.sprite(item.x, item.y, resolvedKey, 0);
+        if (resolvedKey === 'ui-slot-base') {
+            void this.itemTextureLoader.ensureItemTexture(this.scene, item.itemId).then((loadedKey) => {
+                if (!loadedKey) return;
+                if (!sprite.active) return;
+                sprite.setTexture(loadedKey, 0);
+                this.applyItemScale(sprite, loadedKey);
+            });
+        }
 
         // Isometric "flat" look
         this.applyItemScale(sprite, resolvedKey);

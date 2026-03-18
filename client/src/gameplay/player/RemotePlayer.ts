@@ -8,6 +8,7 @@ import { createChatBubble, createIconBubble, createNameplate } from './PlayerVis
 import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET, CHAT_BUBBLE_DEPTH } from '../rendering/DepthManager';
 import { MCAnimationType, MC_FRAME_DIMENSIONS_BY_ANIM, SOFT_COLLISION_FORCE, PLAYER_RENDER_SCALE } from '@cfwk/shared';
 import type { LightingManager } from '../fx/LightingManager';
+import { ItemTextureLoader } from '../assets/ItemTextureLoader';
 
 /**
  * MCDirection type for MC character system
@@ -123,6 +124,7 @@ export class RemotePlayer {
     private chatTimer?: Phaser.Time.TimerEvent;
     private fishingBubble?: Phaser.GameObjects.Container;
     private fishingTimer?: Phaser.Time.TimerEvent;
+    private readonly itemTextureLoader = ItemTextureLoader.getInstance();
     private waterSystem?: WaterSystem;
     
     /** Custom animation key getter for per-player appearance */
@@ -1017,7 +1019,13 @@ export class RemotePlayer {
 
     showFishingBubble(rodItemId: string) {
         const textureKey = `item-${rodItemId}-18`;
-        if (!this.scene.textures.exists(textureKey)) return;
+        if (!this.scene.textures.exists(textureKey)) {
+            void this.itemTextureLoader.ensureItemIconTexture(this.scene, rodItemId, 18).then((loadedKey) => {
+                if (!loadedKey) return;
+                this.showFishingBubble(rodItemId);
+            });
+            return;
+        }
 
         if (this.fishingBubble) {
             this.fishingBubble.destroy();

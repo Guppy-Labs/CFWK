@@ -11,7 +11,7 @@ import { ErrorModal } from './ui/ErrorModal';
 import { Toast } from './ui/Toast';
 import { LocaleManager } from './gameplay/i18n/LocaleManager';
 import { bootstrapLocale } from './gameplay/i18n/localeBootstrap';
-import { clearNonAuthCaches, prepareGameAssets } from './gameplay/assets/AssetCacheBootstrap';
+import { clearNonAuthCaches, isMobileSafeMode, prepareGameAssets } from './gameplay/assets/AssetCacheBootstrap';
 
 const SLOW_LOAD_RETRY_DELAY_MS = 20_000;
 let slowLoadRetryTimer: number | null = null;
@@ -113,6 +113,7 @@ async function checkAuth() {
             appendLoaderDebug(message);
         };
         logLoader(`env:ua=${navigator.userAgent}`);
+        logLoader(`env:mobile-safe=${isMobileSafeMode() ? '1' : '0'}`);
 
         startSlowLoadRetryPrompt();
         logLoader('start:bootstrap-locale');
@@ -150,6 +151,8 @@ async function checkAuth() {
             }
         });
         logLoader('done:prepare-assets');
+        logLoader(`assets:mobile-safe=${cacheStatus.mobileSafeMode ? '1' : '0'}`);
+        logLoader(`assets:manifest-skipped=${cacheStatus.manifestSkipped ? '1' : '0'}`);
 
         if (cacheStatus.mode !== 'up-to-date') {
             setLoaderProgress(1);

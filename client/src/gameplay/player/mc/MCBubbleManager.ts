@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { createChatBubble, createIconBubble } from '../PlayerVisualUtils';
+import { ItemTextureLoader } from '../../assets/ItemTextureLoader';
 
 type BubbleAnchor = {
     x: number;
@@ -17,6 +18,7 @@ export class MCBubbleManager {
     private chatTimer?: Phaser.Time.TimerEvent;
     private fishingBubble?: Phaser.GameObjects.Container;
     private fishingTimer?: Phaser.Time.TimerEvent;
+    private itemTextureLoader = ItemTextureLoader.getInstance();
 
     constructor(
         private readonly scene: Phaser.Scene,
@@ -62,7 +64,13 @@ export class MCBubbleManager {
         if (!anchor) return;
 
         const textureKey = `item-${rodItemId}-18`;
-        if (!this.scene.textures.exists(textureKey)) return;
+        if (!this.scene.textures.exists(textureKey)) {
+            void this.itemTextureLoader.ensureItemIconTexture(this.scene, rodItemId, 18).then((loadedKey) => {
+                if (!loadedKey) return;
+                this.showFishingBubble(rodItemId);
+            });
+            return;
+        }
 
         this.fishingBubble?.destroy();
         this.fishingBubble = undefined;

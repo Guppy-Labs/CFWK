@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { getItemDefinition } from '@cfwk/shared';
 import { MobileControls } from '../MobileControls';
 import { BitmapFontRenderer } from '../BitmapFontRenderer';
+import { ItemTextureLoader } from '../../assets/ItemTextureLoader';
 
 export type InventorySlotsConfig = {
     columns?: number;
@@ -34,6 +35,7 @@ export type InventoryDisplayItem = {
     glowColor?: number;
     backgroundIconKey?: string;
     backgroundAlpha?: number;
+    suppressRarityFrame?: boolean;
 };
 
 export type InventorySlotDisplay = {
@@ -106,6 +108,8 @@ export class InventorySlotsUI {
     private readonly indicatorOverflowX = 12;
     private readonly fontCharGap = 1;
     private readonly fontRenderer: BitmapFontRenderer;
+    private readonly itemTextureLoader = ItemTextureLoader.getInstance();
+    private textureRefreshQueued = false;
 
     private trackTextureCounter = 0;
     private currentTrackTextureKey?: string;
@@ -613,10 +617,11 @@ export class InventorySlotsUI {
             }
 
             if (item.backgroundIconKey) {
+                const backgroundKey = this.resolveBackgroundIconKey(item.backgroundIconKey);
                 const bgIcon = this.scene.add.image(
                     x + slotSize / 2,
                     y + slotSize / 2,
-                    item.backgroundIconKey
+                    backgroundKey
                 ).setOrigin(0.5, 0.5);
                 bgIcon.setScale(itemScale * 0.95);
                 bgIcon.setAlpha(item.backgroundAlpha ?? 0.34);
@@ -625,7 +630,7 @@ export class InventorySlotsUI {
 
             const definition = getItemDefinition(item.id);
             const frameTextureKey = this.getRarityFrameTextureKey(definition?.rarity);
-            if (frameTextureKey && this.scene.textures.exists(frameTextureKey)) {
+            if (!item.suppressRarityFrame && frameTextureKey && this.scene.textures.exists(frameTextureKey)) {
                 const frame = this.scene.add.image(
                     Math.round(x + slotSize / 2),
                     Math.round(y + slotSize / 2),
@@ -637,7 +642,8 @@ export class InventorySlotsUI {
                 this.itemsContent.add(frame);
             }
 
-            const icon = this.scene.add.image(x + slotSize / 2, y + slotSize / 2, item.iconKey).setOrigin(0.5, 0.5);
+            const iconKey = this.resolveItemIconKey(item);
+            const icon = this.scene.add.image(x + slotSize / 2, y + slotSize / 2, iconKey).setOrigin(0.5, 0.5);
             const isScarItem = Boolean(definition?.scar);
             const slotCenterX = x + slotSize / 2;
             const slotCenterY = y + slotSize / 2;
@@ -804,6 +810,44 @@ export class InventorySlotsUI {
         this.selectedIndicator.setData('ignoreCursor', true);
 
         this.indicatorsContent.add([this.hoverIndicator, this.selectedIndicator]);
+    }
+
+    private resolveBackgroundIconKey(backgroundIconKey: string): string {
+        if (this.scene.textures.exists(backgroundIconKey)) return backgroundIconKey;
+        const parsedItemId = this.parseItemIdFromIconKey(backgroundIconKey);
+        if (parsedItemId) {
+            void this.itemTextureLoader.ensureItemIconTexture(this.scene, parsedItemId, 18).then(() => {
+                this.queueTextureRefresh();
+            });
+        }
+        return '__MISSING';
+    }
+
+    private resolveItemIconKey(item: InventoryDisplayItem): string {
+        if (this.scene.textures.exists(item.iconKey)) return item.iconKey;
+
+        void this.itemTextureLoader.ensureItemIconTexture(this.scene, item.id, 18).then(() => {
+            this.queueTextureRefresh();
+        });
+
+        const fallback = this.itemTextureLoader.getBestTextureKey(this.scene, item.id, 18);
+        return this.scene.textures.exists(fallback) ? fallback : '__MISSING';
+    }
+
+    private parseItemIdFromIconKey(iconKey: string): string | null {
+        const match = /^item-(.+)-18$/.exec(iconKey);
+        if (match?.[1]) return match[1];
+        return null;
+    }
+
+    private queueTextureRefresh() {
+        if (this.textureRefreshQueued) return;
+        this.textureRefreshQueued = true;
+        this.scene.time.delayedCall(0, () => {
+            this.textureRefreshQueued = false;
+            if (!this.container.active) return;
+            this.refreshSlotsAndItems();
+        });
     }
 
     private registerPointerHandlers() {
@@ -997,7 +1041,8 @@ export class InventorySlotsUI {
             countImage.setVisible(false);
         }
 
-        this.dragGhost = this.scene.add.image(pointer.x, pointer.y, item.iconKey).setOrigin(0.5, 0.5);
+        const dragIconKey = this.resolveItemIconKey(item);
+        this.dragGhost = this.scene.add.image(pointer.x, pointer.y, dragIconKey).setOrigin(0.5, 0.5);
         this.dragGhost.setScale(icon.scaleX * scale, icon.scaleY * scale);
         this.dragGhost.setAlpha(0.85);
         this.dragGhost.setScrollFactor(0);

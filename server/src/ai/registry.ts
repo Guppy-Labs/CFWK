@@ -42,7 +42,7 @@ export const AI_NPC_DEFINITIONS: Record<AINpcKind, AiNpcDefinition> = {
         name: 'Gremlin',
         controllerId: 'general-enemy',
         tint: 0xffffff,
-        maxHealth: 5,
+        maxHealth: 40,
         hitbox: {
             width: 55,
             height: 72,
@@ -51,8 +51,8 @@ export const AI_NPC_DEFINITIONS: Record<AINpcKind, AiNpcDefinition> = {
         controllerConfig: {
             ...DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG,
             speedPxPerSecond: 50,
-            attackCooldownMs: 6000,
-            meleeRangePx: 16,
+            attackCooldownMs: 2800,
+            meleeRangePx: 30,
             meleeDamageHearts: 1
         }
     }

@@ -28,6 +28,9 @@ export type AiNpcRuntimeState = {
     lastPathRecomputeTick: number;
     lastAttackMs: number;
     attackAnimUntilMs: number;
+    pendingMeleeTargetSessionId?: string;
+    pendingMeleeTriggerAtMs?: number;
+    pendingMeleeDamageHearts?: number;
     deathAnimUntilMs: number;
     isDead: boolean;
     controllerConfig: IGeneralEnemyControllerConfig;

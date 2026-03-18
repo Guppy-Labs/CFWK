@@ -131,8 +131,8 @@ export const DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG: IGeneralEnemyControllerCon
   idleMoveRangeMaxMeters: 4,
   chaseRangeMeters: 20,
   pathRecomputeFrequencyTicks: 5,
-  attackCooldownMs: 6000,
-  meleeRangePx: 16,
+  attackCooldownMs: 3400,
+  meleeRangePx: 24,
   meleeDamageHearts: 1
 };
 
@@ -346,6 +346,62 @@ export interface IGlimmerbowlResponse {
   entries: GlimmerbowlEntry[];
   unlocked: boolean;
   hasOwnedScar?: boolean;
+}
+
+export interface GlimmerbowlCombatStatePayload {
+  active: boolean;
+}
+
+export interface GlimmerbowlLaunchRequestPayload {
+  targetX: number;
+  targetY: number;
+}
+
+export interface GlimmerbowlCombatHitResult {
+  aiId: string;
+  damage: number;
+  isCrit: boolean;
+}
+
+export interface GlimmerbowlFishLaunchEvent {
+  eventId: string;
+  ownerSessionId: string;
+  fishEntryId: string;
+  fishItemId: string;
+  launchedAt: number;
+  fromX: number;
+  fromY: number;
+  targetX: number;
+  targetY: number;
+  outboundMs: number;
+  returnMs: number;
+  arcHeightPx: number;
+}
+
+export interface GlimmerbowlFishLandEvent {
+  eventId: string;
+  ownerSessionId: string;
+  fishEntryId: string;
+  fishItemId: string;
+  landedAt: number;
+  targetX: number;
+  targetY: number;
+  radiusPx: number;
+  hits: GlimmerbowlCombatHitResult[];
+}
+
+export interface GlimmerbowlFishReturnEvent {
+  eventId: string;
+  ownerSessionId: string;
+  fishEntryId: string;
+  fishItemId: string;
+  returnStartedAt: number;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  returnMs: number;
+  arcHeightPx: number;
 }
 
 // --- User Settings Types ---

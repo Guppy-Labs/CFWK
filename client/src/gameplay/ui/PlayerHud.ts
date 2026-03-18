@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { ItemTextureLoader } from '../assets/ItemTextureLoader';
 
 export class PlayerHud {
     private scene: Phaser.Scene;
@@ -15,7 +16,9 @@ export class PlayerHud {
     private rodNearWater = false;
     private onRodUse?: () => void;
     private onUsableSlotUse?: (slotIndex: number) => void;
+    private equippedRodItemId: string | null = null;
     private equippedUsableItemIds: Array<string | null> = Array.from({ length: 4 }, () => null);
+    private readonly itemTextureLoader = ItemTextureLoader.getInstance();
     private hearts: Phaser.GameObjects.Image[] = [];
     private currentHearts = 9;
     private maxHearts = 9;
@@ -135,6 +138,7 @@ export class PlayerHud {
     }
 
     setEquippedRod(itemId: string | null) {
+        this.equippedRodItemId = itemId;
         if (itemId === null) {
             this.rodIcon?.destroy();
             this.rodIcon = undefined;
@@ -145,6 +149,10 @@ export class PlayerHud {
 
         const textureKey = `item-${itemId}-18`;
         if (!this.scene.textures.exists(textureKey)) {
+            void this.itemTextureLoader.ensureItemIconTexture(this.scene, itemId, 18).then(() => {
+                if (this.equippedRodItemId !== itemId) return;
+                this.setEquippedRod(itemId);
+            });
             return;
         }
 
@@ -175,6 +183,10 @@ export class PlayerHud {
 
             const textureKey = `item-${itemId}-18`;
             if (!this.scene.textures.exists(textureKey)) {
+                void this.itemTextureLoader.ensureItemIconTexture(this.scene, itemId, 18).then(() => {
+                    if (this.equippedUsableItemIds[index] !== itemId) return;
+                    this.setEquippedUsables([...this.equippedUsableItemIds]);
+                });
                 continue;
             }
 

@@ -1,6 +1,26 @@
 import * as Colyseus from "colyseus.js";
 import { Config } from "../../config";
-import { DEFAULT_USER_SETTINGS, IAdvancementsState, IGuideTutorialState, IGlimmerbowlResponse, IInstanceInfo, IJoinInstanceResponse, IInventoryResponse, IPlayerMoneyState, IPlayerStatsDelta, IPlayerStatsResponse, ISettingsResponse, PLAYER_STAT_KEYS, IUserSettings, ClientMovementFrame } from "@cfwk/shared";
+import {
+    ClientMovementFrame,
+    DEFAULT_USER_SETTINGS,
+    GlimmerbowlCombatStatePayload,
+    GlimmerbowlFishLandEvent,
+    GlimmerbowlFishLaunchEvent,
+    GlimmerbowlFishReturnEvent,
+    GlimmerbowlLaunchRequestPayload,
+    IAdvancementsState,
+    IGuideTutorialState,
+    IGlimmerbowlResponse,
+    IInstanceInfo,
+    IInventoryResponse,
+    IJoinInstanceResponse,
+    IPlayerMoneyState,
+    IPlayerStatsDelta,
+    IPlayerStatsResponse,
+    ISettingsResponse,
+    PLAYER_STAT_KEYS,
+    IUserSettings
+} from "@cfwk/shared";
 
 /**
  * NetworkManager - Handles all server communication for multiplayer.
@@ -344,6 +364,18 @@ export class NetworkManager {
             this.glimmerbowlCache = data;
             window.dispatchEvent(new CustomEvent('glimmerbowl:update', { detail: data }));
         });
+        this.currentRoom.onMessage('glimmerbowl:fish-launch', (data: GlimmerbowlFishLaunchEvent) => {
+            if (!data?.eventId) return;
+            window.dispatchEvent(new CustomEvent('glimmerbowl:fish-launch', { detail: data }));
+        });
+        this.currentRoom.onMessage('glimmerbowl:fish-land', (data: GlimmerbowlFishLandEvent) => {
+            if (!data?.eventId) return;
+            window.dispatchEvent(new CustomEvent('glimmerbowl:fish-land', { detail: data }));
+        });
+        this.currentRoom.onMessage('glimmerbowl:fish-return', (data: GlimmerbowlFishReturnEvent) => {
+            if (!data?.eventId) return;
+            window.dispatchEvent(new CustomEvent('glimmerbowl:fish-return', { detail: data }));
+        });
 
         this.currentRoom.onMessage('stats:delta', (delta: IPlayerStatsDelta) => {
             if (!delta || typeof delta !== 'object') return;
@@ -542,6 +574,16 @@ export class NetworkManager {
     sendGlimmerbowlAwaken(fishEntryId: string, scarItemId: string) {
         if (!this.currentRoom) return;
         this.currentRoom.send('glimmerbowl:awaken', { fishEntryId, scarItemId });
+    }
+
+    sendGlimmerbowlCombatState(payload: GlimmerbowlCombatStatePayload) {
+        if (!this.currentRoom) return;
+        this.currentRoom.send('glimmerbowl:combat-state', payload);
+    }
+
+    sendGlimmerbowlLaunch(payload: GlimmerbowlLaunchRequestPayload) {
+        if (!this.currentRoom) return;
+        this.currentRoom.send('glimmerbowl:launch', payload);
     }
 
     /**

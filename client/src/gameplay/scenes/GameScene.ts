@@ -41,6 +41,9 @@ import {
     DEFAULT_GUIDE_TUTORIAL_STATE,
     DEFAULT_USER_ADVANCEMENTS,
     DEFAULT_USER_SETTINGS,
+    GlimmerbowlFishLandEvent,
+    GlimmerbowlFishLaunchEvent,
+    GlimmerbowlFishReturnEvent,
     IAdvancementsState,
     ICharacterAppearance,
     IInstanceInfo,
@@ -52,6 +55,7 @@ import { hideLoader, setLoaderText, showLoader, currentUser } from '../index';
 import { SharedMCTextures } from '../player/SharedMCTextures';
 import { FullscreenManager } from '../ui/FullscreenManager';
 import { KeybindManager } from '../input/KeybindManager';
+import { ItemTextureLoader } from '../assets/ItemTextureLoader';
 
 interface GameSceneData {
     instance: IInstanceInfo;
@@ -67,10 +71,18 @@ type HarvestCooldownUiEntry = {
     fill: Phaser.GameObjects.Rectangle;
 };
 
+type WorldGlimmerbowlState = 'hidden' | 'spawning' | 'active' | 'despawning';
+
+type FishCombatArcVisual = {
+    sprite: Phaser.GameObjects.Image;
+    shadow: Phaser.GameObjects.Ellipse;
+};
+
 export class GameScene extends Phaser.Scene {
     private static readonly WORLD_METERS_TO_PIXELS = 16;
     private instanceInfo?: IInstanceInfo;
     private networkManager = NetworkManager.getInstance();
+    private itemTextureLoader = ItemTextureLoader.getInstance();
     private keybindManager = KeybindManager.getInstance();
     private localeManager = LocaleManager.getInstance();
     private worldTimeManager = WorldTimeManager.getInstance();
@@ -78,7 +90,14 @@ export class GameScene extends Phaser.Scene {
     private unsubscribeDisconnect?: () => void;
     private unsubscribeServerTransfer?: () => void;
     private inventoryUpdateHandler?: (event: Event) => void;
+    private glimmerbowlUpdateHandler?: (event: Event) => void;
     private rodUseHandler?: () => void;
+    private glimmerbowlPointerDownHandler?: (pointer: Phaser.Input.Pointer) => void;
+    private glimmerbowlFishLaunchHandler?: (event: Event) => void;
+    private glimmerbowlFishLandHandler?: (event: Event) => void;
+    private glimmerbowlFishReturnHandler?: (event: Event) => void;
+    private uiClickedHandler?: (event: Event) => void;
+    private lastUiClickAtMs = 0;
     private isFishingTransition = false;
     private isTransferringServer = false;
     private fishingFadeTimer?: Phaser.Time.TimerEvent;
@@ -133,6 +152,29 @@ export class GameScene extends Phaser.Scene {
     private chestCinematicTimers: Phaser.Time.TimerEvent[] = [];
     private chestCinematicObjects: Phaser.GameObjects.GameObject[] = [];
     private chestCinematicInputBlockedBefore = false;
+    private worldGlimmerbowlUnlocked = false;
+    private worldGlimmerbowlState: WorldGlimmerbowlState = 'hidden';
+    private worldGlimmerbowlSprite?: Phaser.GameObjects.Sprite;
+    private worldGlimmerbowlStateStartedAtMs = 0;
+    private worldGlimmerbowlLastTriggerAtMs = 0;
+    private worldGlimmerbowlCombatActive = false;
+    private worldGlimmerbowlOrbitAngle = 0;
+    private worldGlimmerbowlOrbitSpeed = 0;
+    private worldGlimmerbowlScale = 0;
+    private worldGlimmerbowlTiltAmplitude = 0;
+    private worldGlimmerbowlTiltFrequency = 0;
+    private readonly worldGlimmerbowlTriggerRadiusPx = 10 * GameScene.WORLD_METERS_TO_PIXELS;
+    private readonly worldGlimmerbowlIdleTimeoutMs = 10_000;
+    private readonly worldGlimmerbowlSpawnDurationMs = 500;
+    private readonly worldGlimmerbowlDespawnDurationMs = 420;
+    private readonly worldGlimmerbowlOrbitRadiusX = 24;
+    private readonly worldGlimmerbowlOrbitRadiusY = 12;
+    private readonly worldGlimmerbowlBobAmplitude = 2.2;
+    private readonly worldGlimmerbowlDepthFeetOffset = 5;
+    private readonly worldGlimmerbowlBaseScale = 0.4;
+    private readonly worldGlimmerbowlMaxLaunchRadiusPx = 10 * GameScene.WORLD_METERS_TO_PIXELS;
+    private worldGlimmerbowlRangeRing?: Phaser.GameObjects.Graphics;
+    private fishCombatArcsByEventId = new Map<string, FishCombatArcVisual>();
     
     // Character appearance (fetched async)
     private characterAppearance: ICharacterAppearance = DEFAULT_CHARACTER_APPEARANCE;
@@ -164,10 +206,6 @@ export class GameScene extends Phaser.Scene {
 
         this.load.image('ui-joystick-base', '/ui/Joystick01a.png');
         this.load.image('ui-joystick-handle', '/ui/Handle01a.png');
-        this.load.spritesheet('quest-chest-open', '/assets/animations/chest-open.png', {
-            frameWidth: 128,
-            frameHeight: 128
-        });
         
         // Initialize map loader and preload map
         this.mapLoader = new MapLoader(this, {
@@ -1153,6 +1191,11 @@ export class GameScene extends Phaser.Scene {
             this.mcPlayerController?.setEquippedRodId(equippedRodId);
         };
         window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+        this.glimmerbowlUpdateHandler = (event: Event) => {
+            const detail = (event as CustomEvent<{ unlocked?: boolean }>).detail;
+            this.setWorldGlimmerbowlUnlocked(Boolean(detail?.unlocked));
+        };
+        window.addEventListener('glimmerbowl:update', this.glimmerbowlUpdateHandler as EventListener);
 
         this.rodUseHandler = () => {
             this.mcPlayerController?.requestFishing();
@@ -1163,6 +1206,48 @@ export class GameScene extends Phaser.Scene {
                 this.mcPlayerController?.setEquippedRodId(data.equippedRodId ?? null);
             }
         });
+        this.networkManager.getGlimmerbowl().then((data) => {
+            this.setWorldGlimmerbowlUnlocked(Boolean(data?.unlocked));
+        });
+
+        this.glimmerbowlPointerDownHandler = (pointer: Phaser.Input.Pointer) => {
+            if (pointer.button !== 0) return;
+            if (this.wasRecentUiClick()) return;
+            if (!this.canUseManualGlimmerbowlTrigger()) return;
+            this.triggerWorldGlimmerbowl();
+            if (this.worldGlimmerbowlState === 'active') {
+                const player = this.getActivePlayer();
+                if (!player) return;
+                const dx = pointer.worldX - player.x;
+                const dy = pointer.worldY - player.y;
+                if ((dx * dx) + (dy * dy) > this.worldGlimmerbowlMaxLaunchRadiusPx * this.worldGlimmerbowlMaxLaunchRadiusPx) {
+                    return;
+                }
+                this.networkManager.sendGlimmerbowlLaunch({
+                    targetX: pointer.worldX,
+                    targetY: pointer.worldY
+                });
+            }
+        };
+        this.input.on('pointerdown', this.glimmerbowlPointerDownHandler);
+        this.uiClickedHandler = (event: Event) => {
+            const clickedAt = (event as CustomEvent<{ at?: number }>).detail?.at;
+            this.lastUiClickAtMs = Number.isFinite(clickedAt) ? Number(clickedAt) : Date.now();
+        };
+        window.addEventListener('ui:clicked', this.uiClickedHandler as EventListener);
+
+        this.glimmerbowlFishLaunchHandler = (event: Event) => {
+            this.handleFishLaunchVisual((event as CustomEvent<GlimmerbowlFishLaunchEvent>).detail);
+        };
+        this.glimmerbowlFishLandHandler = (event: Event) => {
+            this.handleFishLandVisual((event as CustomEvent<GlimmerbowlFishLandEvent>).detail);
+        };
+        this.glimmerbowlFishReturnHandler = (event: Event) => {
+            this.handleFishReturnVisual((event as CustomEvent<GlimmerbowlFishReturnEvent>).detail);
+        };
+        window.addEventListener('glimmerbowl:fish-launch', this.glimmerbowlFishLaunchHandler as EventListener);
+        window.addEventListener('glimmerbowl:fish-land', this.glimmerbowlFishLandHandler as EventListener);
+        window.addEventListener('glimmerbowl:fish-return', this.glimmerbowlFishReturnHandler as EventListener);
         
         // Listen for shove events from server
         this.setupShoveListener();
@@ -1240,8 +1325,32 @@ export class GameScene extends Phaser.Scene {
              if (this.inventoryUpdateHandler) {
                  window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
              }
+             if (this.glimmerbowlUpdateHandler) {
+                 window.removeEventListener('glimmerbowl:update', this.glimmerbowlUpdateHandler as EventListener);
+                 this.glimmerbowlUpdateHandler = undefined;
+             }
              if (this.rodUseHandler) {
                  window.removeEventListener('hud:rod-use', this.rodUseHandler);
+             }
+             if (this.glimmerbowlPointerDownHandler) {
+                 this.input.off('pointerdown', this.glimmerbowlPointerDownHandler);
+                 this.glimmerbowlPointerDownHandler = undefined;
+             }
+             if (this.glimmerbowlFishLaunchHandler) {
+                 window.removeEventListener('glimmerbowl:fish-launch', this.glimmerbowlFishLaunchHandler as EventListener);
+                 this.glimmerbowlFishLaunchHandler = undefined;
+             }
+             if (this.glimmerbowlFishLandHandler) {
+                 window.removeEventListener('glimmerbowl:fish-land', this.glimmerbowlFishLandHandler as EventListener);
+                 this.glimmerbowlFishLandHandler = undefined;
+             }
+             if (this.glimmerbowlFishReturnHandler) {
+                 window.removeEventListener('glimmerbowl:fish-return', this.glimmerbowlFishReturnHandler as EventListener);
+                 this.glimmerbowlFishReturnHandler = undefined;
+             }
+             if (this.uiClickedHandler) {
+                 window.removeEventListener('ui:clicked', this.uiClickedHandler as EventListener);
+                 this.uiClickedHandler = undefined;
              }
                          if (this.advancementsUpdateHandler) {
                                  window.removeEventListener('advancements:update', this.advancementsUpdateHandler as EventListener);
@@ -1265,7 +1374,11 @@ export class GameScene extends Phaser.Scene {
                         this.cleanupChestCinematic(true);
                              this.harvestCooldownUiByObjectId.forEach((entry) => entry.container.destroy(true));
                              this.harvestCooldownUiByObjectId.clear();
-               this.npcManager?.destroy();
+              this.npcManager?.destroy();
+                        this.destroyWorldGlimmerbowlSprite();
+                        this.destroyWorldGlimmerbowlRangeRing();
+                        this.setWorldGlimmerbowlCombatActive(false);
+                        this.clearFishCombatArcVisuals();
                          this.dialogueManager?.destroy();
         });
 
@@ -1291,6 +1404,425 @@ export class GameScene extends Phaser.Scene {
 
     private stopAllAudio() {
         this.audioManager?.destroy();
+    }
+
+    private setWorldGlimmerbowlUnlocked(unlocked: boolean) {
+        if (this.worldGlimmerbowlUnlocked === unlocked) return;
+        this.worldGlimmerbowlUnlocked = unlocked;
+        if (!unlocked) {
+            this.setWorldGlimmerbowlCombatActive(false);
+            this.worldGlimmerbowlState = 'hidden';
+            this.worldGlimmerbowlStateStartedAtMs = 0;
+            this.worldGlimmerbowlLastTriggerAtMs = 0;
+            this.destroyWorldGlimmerbowlSprite();
+            this.destroyWorldGlimmerbowlRangeRing();
+        }
+    }
+
+    private canUseManualGlimmerbowlTrigger(): boolean {
+        if (!this.worldGlimmerbowlUnlocked) return false;
+        if (this.registry.get('guiOpen') === true) return false;
+        if (this.registry.get('chatFocused') === true) return false;
+        if (this.registry.get('inputBlocked') === true) return false;
+        if (this.registry.get('guideBlockAll') === true) return false;
+        if (this.scene.isActive('FishingScene')) return false;
+        return true;
+    }
+
+    private triggerWorldGlimmerbowl() {
+        const now = this.time.now;
+        this.worldGlimmerbowlLastTriggerAtMs = now;
+        if (this.worldGlimmerbowlState === 'hidden' || this.worldGlimmerbowlState === 'despawning') {
+            this.startWorldGlimmerbowlSpawning(now);
+        }
+    }
+
+    private updateWorldGlimmerbowl(now: number, delta: number) {
+        if (!this.worldGlimmerbowlUnlocked) return;
+        const player = this.getActivePlayer();
+        if (!player) return;
+        this.updateWorldGlimmerbowlRangeRing(player.x, player.y);
+
+        const enemyTriggerActive = this.hasNearbyGeneralEnemy(player.x, player.y, this.worldGlimmerbowlTriggerRadiusPx);
+        if (enemyTriggerActive) {
+            this.worldGlimmerbowlLastTriggerAtMs = now;
+            if (this.worldGlimmerbowlState === 'hidden' || this.worldGlimmerbowlState === 'despawning') {
+                this.startWorldGlimmerbowlSpawning(now);
+            }
+        }
+
+        if (this.worldGlimmerbowlState === 'hidden') return;
+        this.ensureWorldGlimmerbowlSprite();
+        this.ensureWorldGlimmerbowlRangeRing();
+        if (!this.worldGlimmerbowlSprite) return;
+
+        if (!enemyTriggerActive && (now - this.worldGlimmerbowlLastTriggerAtMs >= this.worldGlimmerbowlIdleTimeoutMs)) {
+            this.startWorldGlimmerbowlDespawning(now);
+        }
+
+        const stateElapsed = Math.max(0, now - this.worldGlimmerbowlStateStartedAtMs);
+        if (this.worldGlimmerbowlState === 'spawning') {
+            const t = Phaser.Math.Clamp(stateElapsed / this.worldGlimmerbowlSpawnDurationMs, 0, 1);
+            this.worldGlimmerbowlScale = Phaser.Math.Easing.Cubic.Out(t);
+            this.worldGlimmerbowlOrbitSpeed = Phaser.Math.Linear(0.012, 0.0045, t);
+            this.worldGlimmerbowlTiltAmplitude = Phaser.Math.Linear(13, 6, t);
+            this.worldGlimmerbowlTiltFrequency = Phaser.Math.Linear(0.018, 0.01, t);
+            if (t >= 1) {
+                this.worldGlimmerbowlState = 'active';
+                this.worldGlimmerbowlStateStartedAtMs = now;
+                this.setWorldGlimmerbowlCombatActive(true);
+            }
+        } else if (this.worldGlimmerbowlState === 'active') {
+            this.worldGlimmerbowlScale = 1;
+            this.worldGlimmerbowlOrbitSpeed = 0.0045;
+            this.worldGlimmerbowlTiltAmplitude = 6;
+            this.worldGlimmerbowlTiltFrequency = 0.01;
+        } else if (this.worldGlimmerbowlState === 'despawning') {
+            const t = Phaser.Math.Clamp(stateElapsed / this.worldGlimmerbowlDespawnDurationMs, 0, 1);
+            this.worldGlimmerbowlScale = Phaser.Math.Linear(1, 0, t);
+            this.worldGlimmerbowlOrbitSpeed = Phaser.Math.Linear(0.0045, 0.0135, t);
+            this.worldGlimmerbowlTiltAmplitude = Phaser.Math.Linear(6, 14, t);
+            this.worldGlimmerbowlTiltFrequency = Phaser.Math.Linear(0.01, 0.02, t);
+            if (t >= 1) {
+                this.setWorldGlimmerbowlCombatActive(false);
+                this.worldGlimmerbowlState = 'hidden';
+                this.destroyWorldGlimmerbowlSprite();
+                this.destroyWorldGlimmerbowlRangeRing();
+                return;
+            }
+        }
+
+        const dt = Math.max(0, delta);
+        this.worldGlimmerbowlOrbitAngle += this.worldGlimmerbowlOrbitSpeed * dt;
+        const orbitX = player.x + Math.cos(this.worldGlimmerbowlOrbitAngle) * this.worldGlimmerbowlOrbitRadiusX;
+        const orbitY = player.y + Math.sin(this.worldGlimmerbowlOrbitAngle) * this.worldGlimmerbowlOrbitRadiusY;
+        const bobY = Math.sin(now * 0.004 + this.worldGlimmerbowlOrbitAngle * 0.8) * this.worldGlimmerbowlBobAmplitude;
+        const finalX = orbitX;
+        const finalY = orbitY + bobY;
+        this.worldGlimmerbowlSprite.setPosition(finalX, finalY);
+        this.worldGlimmerbowlSprite.setScale(this.worldGlimmerbowlScale * this.worldGlimmerbowlBaseScale);
+        const tilt = Math.sin(now * this.worldGlimmerbowlTiltFrequency + this.worldGlimmerbowlOrbitAngle * 1.4) * this.worldGlimmerbowlTiltAmplitude;
+        this.worldGlimmerbowlSprite.setAngle(tilt);
+
+        if (this.depthManager) {
+            const depth = this.depthManager.entityDepth(finalX, finalY + this.worldGlimmerbowlDepthFeetOffset, { baseDepth: ENTITY_BASE });
+            this.worldGlimmerbowlSprite.setDepth(depth);
+        }
+    }
+
+    private startWorldGlimmerbowlSpawning(now: number) {
+        this.worldGlimmerbowlState = 'spawning';
+        this.worldGlimmerbowlStateStartedAtMs = now;
+        this.ensureWorldGlimmerbowlSprite();
+        if (this.worldGlimmerbowlSprite) {
+            this.worldGlimmerbowlSprite.setVisible(true);
+            this.worldGlimmerbowlSprite.setScale(0);
+        }
+    }
+
+    private startWorldGlimmerbowlDespawning(now: number) {
+        if (this.worldGlimmerbowlState === 'hidden' || this.worldGlimmerbowlState === 'despawning') return;
+        this.setWorldGlimmerbowlCombatActive(false);
+        this.worldGlimmerbowlState = 'despawning';
+        this.worldGlimmerbowlStateStartedAtMs = now;
+    }
+
+    private ensureWorldGlimmerbowlSprite() {
+        if (this.worldGlimmerbowlSprite?.active) return;
+        if (!this.textures.exists('ui-glimmerbowl')) return;
+        this.ensureWorldGlimmerbowlAnimation();
+        this.worldGlimmerbowlSprite = this.add.sprite(0, 0, 'ui-glimmerbowl', 0).setOrigin(0.5, 0.5);
+        this.worldGlimmerbowlSprite.setVisible(false);
+        this.worldGlimmerbowlSprite.setScale(this.worldGlimmerbowlBaseScale);
+        this.worldGlimmerbowlSprite.play('world-glimmerbowl-idle');
+        this.lightingManager?.enableLightingOn(this.worldGlimmerbowlSprite);
+    }
+
+    private ensureWorldGlimmerbowlAnimation() {
+        if (this.anims.exists('world-glimmerbowl-idle')) return;
+        this.anims.create({
+            key: 'world-glimmerbowl-idle',
+            frames: this.anims.generateFrameNumbers('ui-glimmerbowl', { start: 0, end: 8 }),
+            frameRate: 8,
+            repeat: -1
+        });
+    }
+
+    private destroyWorldGlimmerbowlSprite() {
+        if (!this.worldGlimmerbowlSprite) return;
+        this.worldGlimmerbowlSprite.destroy();
+        this.worldGlimmerbowlSprite = undefined;
+    }
+
+    private ensureWorldGlimmerbowlRangeRing() {
+        if (this.worldGlimmerbowlRangeRing?.active) return;
+        this.worldGlimmerbowlRangeRing = this.add.graphics();
+        this.worldGlimmerbowlRangeRing.setVisible(false);
+    }
+
+    private destroyWorldGlimmerbowlRangeRing() {
+        if (!this.worldGlimmerbowlRangeRing) return;
+        this.worldGlimmerbowlRangeRing.destroy();
+        this.worldGlimmerbowlRangeRing = undefined;
+    }
+
+    private updateWorldGlimmerbowlRangeRing(playerX: number, playerY: number) {
+        if (this.worldGlimmerbowlState !== 'active') {
+            if (this.worldGlimmerbowlRangeRing) {
+                this.worldGlimmerbowlRangeRing.clear();
+                this.worldGlimmerbowlRangeRing.setVisible(false);
+            }
+            return;
+        }
+
+        this.ensureWorldGlimmerbowlRangeRing();
+        if (!this.worldGlimmerbowlRangeRing) return;
+        const ring = this.worldGlimmerbowlRangeRing;
+        const radius = this.worldGlimmerbowlMaxLaunchRadiusPx;
+        const dashCount = 56;
+        const dashArc = (Math.PI * 2) / dashCount;
+        ring.clear();
+        ring.setVisible(true);
+        ring.lineStyle(2, 0x8f9399, 0.55);
+        for (let i = 0; i < dashCount; i += 1) {
+            if (i % 2 !== 0) continue;
+            const a0 = i * dashArc;
+            const a1 = a0 + dashArc * 0.72;
+            ring.beginPath();
+            ring.arc(playerX, playerY, radius, a0, a1, false);
+            ring.strokePath();
+        }
+        if (this.depthManager) {
+            ring.setDepth(this.depthManager.entityDepth(playerX, playerY + 1, { baseDepth: ENTITY_BASE }) - 0.2);
+        }
+    }
+
+    private hasNearbyGeneralEnemy(playerX: number, playerY: number, radiusPx: number): boolean {
+        const room = this.networkManager.getRoom();
+        const aiNpcs = room?.state?.aiNpcs as { forEach?: (cb: (npc: any) => void) => void } | undefined;
+        if (!aiNpcs?.forEach) return false;
+        const radiusSq = radiusPx * radiusPx;
+        let found = false;
+        aiNpcs.forEach((npc: any) => {
+            if (found) return;
+            if (!npc || npc.controllerId !== 'general-enemy') return;
+            const health = Number(npc.currentHealth ?? 0);
+            if (!Number.isFinite(health) || health <= 0) return;
+            const dx = Number(npc.x) - playerX;
+            const dy = Number(npc.y) - playerY;
+            if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+            if (dx * dx + dy * dy <= radiusSq) found = true;
+        });
+        return found;
+    }
+
+    private wasRecentUiClick(): boolean {
+        return Date.now() - this.lastUiClickAtMs <= 180;
+    }
+
+    private setWorldGlimmerbowlCombatActive(active: boolean) {
+        if (this.worldGlimmerbowlCombatActive === active) return;
+        this.worldGlimmerbowlCombatActive = active;
+        this.networkManager.sendGlimmerbowlCombatState({ active });
+        if (!active) {
+            this.clearFishCombatArcVisuals();
+        }
+    }
+
+    private resolveFishTextureKey(itemId: string): string {
+        const fullKey = `item-${itemId}`;
+        if (this.textures.exists(fullKey)) return fullKey;
+        const iconKey = `item-${itemId}-18`;
+        if (this.textures.exists(iconKey)) return iconKey;
+        void this.itemTextureLoader.ensureItemIconTexture(this, itemId, 18);
+        return 'ui-glimmerbowl';
+    }
+
+    private clearFishCombatArcVisuals() {
+        this.fishCombatArcsByEventId.forEach((visual) => {
+            visual.shadow.destroy();
+            visual.sprite.destroy();
+        });
+        this.fishCombatArcsByEventId.clear();
+    }
+
+    private destroyFishArcVisual(eventId: string) {
+        const visual = this.fishCombatArcsByEventId.get(eventId);
+        if (!visual) return;
+        visual.shadow.destroy();
+        visual.sprite.destroy();
+        this.fishCombatArcsByEventId.delete(eventId);
+    }
+
+    private createFishArcVisual(
+        eventId: string,
+        fishItemId: string,
+        fromX: number,
+        fromY: number,
+        toX: number,
+        toY: number,
+        durationMs: number,
+        arcHeightPx: number,
+        isReturning: boolean
+    ) {
+        this.destroyFishArcVisual(eventId);
+        const fishTexture = this.resolveFishTextureKey(fishItemId);
+        const shadow = this.add.ellipse(fromX, fromY + 2, 8, 3, 0x000000, 0.2).setOrigin(0.5, 0.5);
+        const sprite = this.add.image(fromX, fromY, fishTexture).setOrigin(0.5, 0.5);
+        sprite.setScale(0.55);
+        sprite.setAngle(0);
+        this.lightingManager?.enableLightingOn(sprite);
+
+        this.fishCombatArcsByEventId.set(eventId, { sprite, shadow });
+
+        const progressState = { t: 0 };
+        this.tweens.add({
+            targets: progressState,
+            t: 1,
+            duration: Math.max(60, Math.floor(durationMs)),
+            ease: 'Sine.InOut',
+            onUpdate: () => {
+                const t = Phaser.Math.Clamp(progressState.t, 0, 1);
+                const x = Phaser.Math.Linear(fromX, toX, t);
+                const yBase = Phaser.Math.Linear(fromY, toY, t);
+                const yArc = -5 * arcHeightPx * t * (1 - t);
+                const y = yBase + yArc;
+                sprite.setPosition(x, y);
+                shadow.setPosition(x, yBase + 2);
+                const dx = toX - fromX;
+                const dy = toY - fromY;
+                const tangentDy = dy + (-5 * arcHeightPx * (1 - 2 * t));
+                const motionAngleDeg = Phaser.Math.RadToDeg(Math.atan2(tangentDy, Math.max(0.001, dx)));
+                // Fish art has an inherent 45deg CCW orientation offset.
+                sprite.setAngle(motionAngleDeg - 45);
+
+                const expand = Phaser.Math.Clamp(t / 0.22, 0, 1);
+                const shrink = Phaser.Math.Clamp((t - 0.82) / 0.18, 0, 1);
+                const startScale = isReturning ? 0.65 : 0.48;
+                const peakScale = isReturning ? 0.82 : 0.74;
+                const endScale = isReturning ? 0.5 : 0.62;
+                const middleScale = Phaser.Math.Linear(startScale, peakScale, Phaser.Math.Easing.Cubic.Out(expand));
+                const finalScale = Phaser.Math.Linear(middleScale, endScale, Phaser.Math.Easing.Cubic.In(shrink));
+                sprite.setScale(finalScale);
+                shadow.setScale(Math.max(0.5, finalScale * 0.9), Math.max(0.5, finalScale * 0.8));
+
+                const bowl = this.worldGlimmerbowlSprite;
+                if (bowl?.active) {
+                    const bowlDepth = bowl.depth;
+                    const nearStart = !isReturning && t <= 0.16;
+                    const nearEnd = isReturning && t >= 0.84;
+                    if (nearStart || nearEnd) {
+                        sprite.setDepth(bowlDepth - 0.5);
+                        shadow.setDepth(bowlDepth - 0.8);
+                        return;
+                    }
+                }
+                if (this.depthManager) {
+                    const depth = this.depthManager.entityDepth(x, y + 5, { baseDepth: ENTITY_BASE });
+                    sprite.setDepth(depth + 1);
+                    shadow.setDepth(depth - 1);
+                }
+            },
+            onComplete: () => {
+                this.destroyFishArcVisual(eventId);
+            }
+        });
+    }
+
+    private handleFishLaunchVisual(event: GlimmerbowlFishLaunchEvent) {
+        if (!event?.eventId) return;
+        this.createFishArcVisual(
+            event.eventId,
+            event.fishItemId,
+            event.fromX,
+            event.fromY,
+            event.targetX,
+            event.targetY,
+            event.outboundMs,
+            event.arcHeightPx,
+            false
+        );
+    }
+
+    private handleFishLandVisual(event: GlimmerbowlFishLandEvent) {
+        if (!event?.eventId) return;
+
+        const ring = this.add.circle(event.targetX, event.targetY, Math.max(4, event.radiusPx * 0.2), 0xffcc66, 0.28);
+        if (this.depthManager) {
+            ring.setDepth(this.depthManager.entityDepth(event.targetX, event.targetY + 6, { baseDepth: ENTITY_BASE }) + 2);
+        }
+        this.tweens.add({
+            targets: ring,
+            scaleX: Math.max(1.8, event.radiusPx / 10),
+            scaleY: Math.max(1.8, event.radiusPx / 10),
+            alpha: 0,
+            duration: 180,
+            ease: 'Quad.Out',
+            onComplete: () => ring.destroy()
+        });
+
+        const room = this.networkManager.getRoom();
+        event.hits.forEach((hit, index) => {
+            const npc = room?.state?.aiNpcs?.get?.(hit.aiId) as { x?: number; y?: number } | undefined;
+            const x = Number.isFinite(npc?.x) ? Number(npc?.x) : event.targetX + (index * 4);
+            const y = Number.isFinite(npc?.y) ? Number(npc?.y) : event.targetY - 8;
+            const dmg = Math.max(1, Math.floor(hit.damage));
+            const normalized = Phaser.Math.Clamp(dmg / 80, 0, 1);
+            const fontSize = Math.round(12 + normalized * 20);
+            const hitColor = this.getDamageIndicatorColor(normalized, hit.isCrit);
+            const color = `#${hitColor.toString(16).padStart(6, '0')}`;
+            const entity = this.aiNpcManager?.getEntities().get(hit.aiId);
+            entity?.flashDamageHighlight(hitColor, 210);
+            const shadow = this.add.text(x + 2, y - 8, `-${dmg}`, {
+                fontFamily: 'Minecraft, monospace',
+                fontSize: `${fontSize}px`,
+                color: '#000000'
+            }).setOrigin(0.5, 1);
+            const txt = this.add.text(x, y - 10, `-${Math.max(1, Math.floor(hit.damage))}`, {
+                fontFamily: 'Minecraft, monospace',
+                fontSize: `${fontSize}px`,
+                color,
+                stroke: '#3a150f',
+                strokeThickness: 4
+            }).setOrigin(0.5, 1);
+            const txtDepth = (this.depthManager?.entityDepth(x, y, { baseDepth: ENTITY_BASE }) ?? ENTITY_BASE) + 6;
+            shadow.setDepth(txtDepth - 0.1);
+            txt.setDepth(txtDepth);
+            this.tweens.add({
+                targets: [shadow, txt],
+                y: `-=${18 + normalized * 12}`,
+                alpha: 0,
+                duration: 420,
+                ease: 'Cubic.Out',
+                onComplete: () => {
+                    shadow.destroy();
+                    txt.destroy();
+                }
+            });
+        });
+    }
+
+    private getDamageIndicatorColor(normalized: number, isCrit: boolean): number {
+        const t = Phaser.Math.Clamp(normalized, 0, 1);
+        const low = Phaser.Display.Color.IntegerToColor(0xffd74a);
+        const high = Phaser.Display.Color.IntegerToColor(isCrit ? 0xff3030 : 0xff5a46);
+        const tint = Phaser.Display.Color.Interpolate.ColorWithColor(low, high, 1, t);
+        return Phaser.Display.Color.GetColor(tint.r, tint.g, tint.b);
+    }
+
+    private handleFishReturnVisual(event: GlimmerbowlFishReturnEvent) {
+        if (!event?.eventId) return;
+        this.createFishArcVisual(
+            `${event.eventId}:return`,
+            event.fishItemId,
+            event.fromX,
+            event.fromY,
+            event.toX,
+            event.toY,
+            event.returnMs,
+            event.arcHeightPx,
+            true
+        );
     }
 
     private handleChatMessage(data: { sessionId: string; message: string }) {
@@ -1478,6 +2010,18 @@ export class GameScene extends Phaser.Scene {
 
     private playChestOpenCinematic(centerX: number, centerY: number) {
         if (this.chestCinematicActive) return;
+        if (!this.textures.exists('quest-chest-open')) {
+            this.ensureQuestChestAssetsLoaded()
+                .then(() => {
+                    if (this.chestCinematicActive) return;
+                    this.playChestOpenCinematic(centerX, centerY);
+                })
+                .catch(() => {
+                    // No-op: missing optional cinematic asset should not block gameplay.
+                });
+            return;
+        }
+
         this.chestCinematicActive = true;
         this.chestCinematicInputBlockedBefore = this.registry.get('inputBlocked') === true;
         this.registry.set('inputBlocked', true);
@@ -1521,6 +2065,37 @@ export class GameScene extends Phaser.Scene {
         });
 
         chest.play(chestAnimKey);
+    }
+
+    private ensureQuestChestAssetsLoaded(): Promise<void> {
+        if (this.textures.exists('quest-chest-open')) {
+            return Promise.resolve();
+        }
+        return new Promise<void>((resolve, reject) => {
+            const onComplete = () => {
+                cleanup();
+                resolve();
+            };
+            const onError = (file: Phaser.Loader.File) => {
+                if (file?.key !== 'quest-chest-open') return;
+                cleanup();
+                reject(new Error('Failed to load quest chest assets'));
+            };
+            const cleanup = () => {
+                this.load.off(Phaser.Loader.Events.COMPLETE, onComplete);
+                this.load.off(Phaser.Loader.Events.FILE_LOAD_ERROR, onError);
+            };
+
+            this.load.on(Phaser.Loader.Events.COMPLETE, onComplete);
+            this.load.on(Phaser.Loader.Events.FILE_LOAD_ERROR, onError);
+            this.load.spritesheet('quest-chest-open', '/assets/animations/chest-open.png', {
+                frameWidth: 128,
+                frameHeight: 128
+            });
+            if (!this.load.isLoading()) {
+                this.load.start();
+            }
+        });
     }
 
     private startChestRevealOverlay() {
@@ -1739,6 +2314,7 @@ export class GameScene extends Phaser.Scene {
         this.remotePlayerManager?.update(delta);
         this.aiNpcManager?.update(delta);
         this.softCollisionSystem?.update();
+        this.updateWorldGlimmerbowl(_time, delta);
 
         // Update NPC depth sorting with current occlusion state
         this.npcManager?.update();

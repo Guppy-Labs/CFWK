@@ -1,6 +1,7 @@
 const DEFAULT_CACHE_PREFIX = 'cfwk-game-assets-';
 let cachePrefix = DEFAULT_CACHE_PREFIX;
 let currentAssetVersion = null;
+const MAX_CACHEABLE_BYTES = 4 * 1024 * 1024;
 
 const ASSET_PATH_PREFIXES = ['/assets/', '/audio/', '/dialogue/', '/items/', '/maps/', '/ui/', '/packs/'];
 
@@ -57,9 +58,12 @@ async function cacheFirst(request) {
     }
 
     try {
-        const response = await fetch(request, { cache: 'reload' });
+        const response = await fetch(request, { cache: 'no-cache' });
         if (response && response.ok) {
-            cache.put(request, response.clone());
+            const contentLength = Number(response.headers.get('content-length') || 0);
+            if (!Number.isFinite(contentLength) || contentLength <= 0 || contentLength <= MAX_CACHEABLE_BYTES) {
+                cache.put(request, response.clone());
+            }
         }
         return response;
     } catch (error) {

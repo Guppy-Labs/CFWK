@@ -1,8 +1,9 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
+import { randomUUID } from "crypto";
 import fs from "fs";
 import path from "path";
-import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, AINpcKind, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX, IAdvancementAlertMessage, IAdvancementsState, IGuideTutorialState, DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_HEARTS_STATE, IPlayerHeartsState, isEquippableUsableItem, DEFAULT_PLAYER_MONEY_STATE, GlimmerbowlEntry } from "@cfwk/shared";
+import { IPlayer, PlayerAnim, calculateWorldTime, Season, DEFAULT_CHARACTER_APPEARANCE, getLootTable, selectFromLootTable, getItemDefinition, getRodStats, IPlayerStatsDelta, PlayerStatKey, PLAYER_STAT_KEYS, ClientMovementFrame, MovementInputState, ServerMovementReconcile, AINpcAnim, AINpcKind, SOFT_COLLISION_FORCE, SOFT_COLLISION_PLAYER_FOOT_HITBOX, IAdvancementAlertMessage, IAdvancementsState, IGuideTutorialState, DEFAULT_INVENTORY_SLOTS, DEFAULT_PLAYER_HEARTS_STATE, IPlayerHeartsState, isEquippableUsableItem, DEFAULT_PLAYER_MONEY_STATE, GlimmerbowlEntry, GlimmerbowlCombatStatePayload, GlimmerbowlFishLandEvent, GlimmerbowlFishLaunchEvent, GlimmerbowlFishReturnEvent, GlimmerbowlLaunchRequestPayload } from "@cfwk/shared";
 import { InstanceManager } from "../managers/InstanceManager";
 import { InventoryCache } from "../managers/InventoryCache";
 import { GlimmerbowlCache } from "../managers/GlimmerbowlCache";
@@ -252,7 +253,22 @@ type RegionRuntime = {
     polygon: Array<{ x: number; y: number }>;
 };
 
+type FishCombatRuntimeState = {
+    active: boolean;
+    queue: string[];
+    headIndex: number;
+    cooldownByFishEntryId: Map<string, number>;
+};
+
 const GREMLIN_DEATH_ANIM_MS = 1400;
+const FISH_COMBAT_MIN_COOLDOWN_MS = 250;
+const FISH_COMBAT_MAX_COOLDOWN_MS = 12_000;
+const FISH_COMBAT_MAX_LAUNCH_RANGE_PX = 10 * AI_METERS_TO_PIXELS;
+const ENEMY_MELEE_KNOCKBACK_SPEED = 120;
+const ENEMY_MELEE_KNOCKBACK_DURATION_MS = 170;
+const ENEMY_MELEE_KNOCKBACK_RECOVERY_TAIL_MS = 100;
+const AI_TO_AI_COLLISION_MIN_PUSH_PER_STEP = 0.06;
+const AI_TO_AI_COLLISION_MAX_PUSH_PER_STEP = 0.45;
 
 type SoftCollisionBody = {
     id: string;
@@ -290,6 +306,8 @@ export class InstanceRoom extends Room<InstanceState> {
     private tutorialStateBySession = new Map<string, IGuideTutorialState>();
     private glimmerbowlUnlockedByUserId = new Map<string, boolean>();
     private hasOwnedScarByUserId = new Map<string, boolean>();
+    private fishCombatByUserId = new Map<string, FishCombatRuntimeState>();
+    private fishCombatTimers = new Set<ReturnType<typeof setTimeout>>();
     private heartsByUserId = new Map<string, IPlayerHeartsState>();
     private moneyByUserId = new Map<string, number>();
     private wipedUserIds = new Set<string>();
@@ -453,6 +471,7 @@ export class InstanceRoom extends Room<InstanceState> {
             PlayerStatsCache.getInstance().resetUser(data.userId);
             this.glimmerbowlUnlockedByUserId.set(data.userId, false);
             this.hasOwnedScarByUserId.set(data.userId, false);
+            this.fishCombatByUserId.delete(data.userId);
             this.heartsByUserId.set(data.userId, { ...DEFAULT_PLAYER_HEARTS_STATE });
             this.moneyByUserId.set(data.userId, DEFAULT_PLAYER_MONEY_STATE.money);
             this.enemyBridgeWarnCooldownByUserId.delete(data.userId);
@@ -483,6 +502,7 @@ export class InstanceRoom extends Room<InstanceState> {
         this.harvestTargetsByObjectId = this.loadHarvestTargets(options.mapFile);
         this.chestInteractionTarget = this.loadChestInteractionTarget(options.mapFile);
         this.harvestCooldownByUserId.clear();
+        this.fishCombatByUserId.clear();
         this.spawnRegions = this.loadSpawnRegions(options.mapFile);
         this.aiSpawnRegionByNpcId.clear();
         this.customTriggersById = this.loadCustomTriggers(options.mapFile);
@@ -1257,6 +1277,16 @@ export class InstanceRoom extends Room<InstanceState> {
             }
         });
 
+        this.onMessage('glimmerbowl:combat-state', async (client, data: GlimmerbowlCombatStatePayload) => {
+            this.markActivity(client);
+            await this.handleGlimmerbowlCombatState(client, data);
+        });
+
+        this.onMessage('glimmerbowl:launch', async (client, data: GlimmerbowlLaunchRequestPayload) => {
+            this.markActivity(client);
+            await this.handleGlimmerbowlLaunch(client, data);
+        });
+
         // Handle inventory slot updates from client
         this.onMessage("inventory:set", async (client, data: { slots: { index: number; itemId: string | null; count: number }[] }) => {
             this.markActivity(client);
@@ -1828,6 +1858,7 @@ export class InstanceRoom extends Room<InstanceState> {
         const odcid = (client as any).odcid;
         if (odcid) {
             this.harvestCooldownByUserId.delete(odcid);
+            this.fishCombatByUserId.delete(odcid);
             this.enemyBridgeWarnCooldownByUserId.delete(odcid);
             this.enemyBridgeUnlockedByUserId.delete(odcid);
             this.heedTheWarningStayObjectiveByUserId.delete(odcid);
@@ -1895,6 +1926,7 @@ export class InstanceRoom extends Room<InstanceState> {
         this.dangerRegion = null;
         this.glimmerbowlUnlockedByUserId.clear();
         this.hasOwnedScarByUserId.clear();
+        this.fishCombatByUserId.clear();
         this.heartsByUserId.clear();
         this.moneyByUserId.clear();
         this.harvestCooldownByUserId.clear();
@@ -1915,6 +1947,8 @@ export class InstanceRoom extends Room<InstanceState> {
         if (this.statsBroadcastInterval) {
             clearInterval(this.statsBroadcastInterval);
         }
+        this.fishCombatTimers.forEach((timer) => clearTimeout(timer));
+        this.fishCombatTimers.clear();
     }
 
     private async isGlimmerbowlUnlocked(userId: string): Promise<boolean> {
@@ -1958,6 +1992,280 @@ export class InstanceRoom extends Room<InstanceState> {
             unlocked: glimmerState.unlocked,
             hasOwnedScar: true
         });
+    }
+
+    private getOrCreateFishCombatState(userId: string): FishCombatRuntimeState {
+        let runtime = this.fishCombatByUserId.get(userId);
+        if (runtime) return runtime;
+        runtime = {
+            active: false,
+            queue: [],
+            headIndex: 0,
+            cooldownByFishEntryId: new Map<string, number>()
+        };
+        this.fishCombatByUserId.set(userId, runtime);
+        return runtime;
+    }
+
+    private scheduleFishCombatTimer(callback: () => void, delayMs: number) {
+        const timer = setTimeout(() => {
+            this.fishCombatTimers.delete(timer);
+            callback();
+        }, Math.max(0, Math.floor(delayMs)));
+        this.fishCombatTimers.add(timer);
+    }
+
+    private buildAwakenedFishQueue(entries: GlimmerbowlEntry[]): string[] {
+        const awakenedIds = entries
+            .filter((entry) => entry.tier === 'awakened')
+            .map((entry) => entry.id);
+        for (let i = awakenedIds.length - 1; i > 0; i -= 1) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const tmp = awakenedIds[i];
+            awakenedIds[i] = awakenedIds[j];
+            awakenedIds[j] = tmp;
+        }
+        return awakenedIds;
+    }
+
+    private isFishCombatLaunchAllowed(player: InstancePlayerSchema): boolean {
+        if (player.isFishing) return false;
+        if (player.isGuiOpen) return false;
+        if (player.isChatOpen) return false;
+        if (player.isAfk) return false;
+        return true;
+    }
+
+    private selectFishForLaunch(
+        entries: GlimmerbowlEntry[],
+        runtime: FishCombatRuntimeState,
+        nowMs: number
+    ): GlimmerbowlEntry | null {
+        const awakenedEntries = entries.filter((entry) => entry.tier === 'awakened');
+        if (awakenedEntries.length === 0) {
+            runtime.queue = [];
+            runtime.headIndex = 0;
+            return null;
+        }
+
+        const awakenedById = new Map<string, GlimmerbowlEntry>();
+        awakenedEntries.forEach((entry) => awakenedById.set(entry.id, entry));
+        const validIds = new Set(awakenedById.keys());
+
+        runtime.queue = runtime.queue.filter((fishEntryId) => validIds.has(fishEntryId));
+        Array.from(runtime.cooldownByFishEntryId.keys()).forEach((fishEntryId) => {
+            if (!validIds.has(fishEntryId)) runtime.cooldownByFishEntryId.delete(fishEntryId);
+        });
+
+        if (runtime.queue.length === 0) {
+            runtime.queue = this.buildAwakenedFishQueue(awakenedEntries);
+            runtime.headIndex = 0;
+        }
+        if (runtime.queue.length === 0) return null;
+
+        runtime.headIndex = this.clampNumber(runtime.headIndex, 0, runtime.queue.length - 1);
+
+        const isReady = (fishEntryId: string) => {
+            const readyAt = runtime.cooldownByFishEntryId.get(fishEntryId) ?? 0;
+            return readyAt <= nowMs;
+        };
+
+        const headFishEntryId = runtime.queue[runtime.headIndex];
+        let selectedFishEntryId: string | null = null;
+        if (headFishEntryId && isReady(headFishEntryId)) {
+            selectedFishEntryId = headFishEntryId;
+            runtime.headIndex = (runtime.headIndex + 1) % runtime.queue.length;
+        } else {
+            for (let offset = 1; offset < runtime.queue.length; offset += 1) {
+                const idx = (runtime.headIndex + offset) % runtime.queue.length;
+                const candidateEntryId = runtime.queue[idx];
+                if (!candidateEntryId) continue;
+                if (isReady(candidateEntryId)) {
+                    selectedFishEntryId = candidateEntryId;
+                    break;
+                }
+            }
+        }
+
+        if (!selectedFishEntryId) return null;
+        return awakenedById.get(selectedFishEntryId) ?? null;
+    }
+
+    private getFishCombatCooldownMs(speed: number): number {
+        const safeSpeed = Math.max(0.05, Number.isFinite(speed) ? speed : 0.05);
+        const cooldownMs = (1 / safeSpeed) * 3000;
+        return Math.max(FISH_COMBAT_MIN_COOLDOWN_MS, Math.min(FISH_COMBAT_MAX_COOLDOWN_MS, Math.round(cooldownMs)));
+    }
+
+    private async handleGlimmerbowlCombatState(client: Client, data: GlimmerbowlCombatStatePayload): Promise<void> {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+        const userId = player.odcid;
+        const runtime = this.getOrCreateFishCombatState(userId);
+        const wantsActive = Boolean(data?.active);
+
+        if (!wantsActive) {
+            runtime.active = false;
+            runtime.queue = [];
+            runtime.headIndex = 0;
+            return;
+        }
+
+        if (runtime.active) return;
+        if (!await this.isGlimmerbowlUnlocked(userId)) return;
+        if (!this.isFishCombatLaunchAllowed(player)) return;
+
+        const entries = await GlimmerbowlCache.getInstance().getEntries(userId);
+        runtime.queue = this.buildAwakenedFishQueue(entries);
+        runtime.headIndex = 0;
+        runtime.active = runtime.queue.length > 0;
+    }
+
+    private async handleGlimmerbowlLaunch(client: Client, data: GlimmerbowlLaunchRequestPayload): Promise<void> {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+        if (!Number.isFinite(data?.targetX) || !Number.isFinite(data?.targetY)) return;
+        if (!this.isFishCombatLaunchAllowed(player)) return;
+
+        const userId = player.odcid;
+        const runtime = this.getOrCreateFishCombatState(userId);
+        if (!runtime.active) return;
+        if (!await this.isGlimmerbowlUnlocked(userId)) return;
+
+        const now = Date.now();
+        const entries = await GlimmerbowlCache.getInstance().getEntries(userId);
+        const fishEntry = this.selectFishForLaunch(entries, runtime, now);
+        if (!fishEntry) return;
+
+        const cooldownMs = this.getFishCombatCooldownMs(fishEntry.stats.speed);
+
+        const fromX = player.x;
+        const fromY = player.y;
+        const targetX = Number(data.targetX);
+        const targetY = Number(data.targetY);
+        const distancePx = Math.hypot(targetX - fromX, targetY - fromY);
+        if (distancePx > FISH_COMBAT_MAX_LAUNCH_RANGE_PX) {
+            return;
+        }
+        const outboundSpeedPxPerSec = 170 + Math.max(0.1, fishEntry.stats.speed) * 40;
+        const outboundMs = Math.max(180, Math.min(950, Math.round((distancePx / outboundSpeedPxPerSec) * 1000)));
+        const returnMs = Math.max(120, Math.round(outboundMs * 0.72));
+        runtime.cooldownByFishEntryId.set(fishEntry.id, now + outboundMs + returnMs + cooldownMs);
+        const arcHeightPx = Math.max(14, Math.min(72, 16 + distancePx * 0.12));
+        const eventId = randomUUID();
+
+        const launchPayload: GlimmerbowlFishLaunchEvent = {
+            eventId,
+            ownerSessionId: client.sessionId,
+            fishEntryId: fishEntry.id,
+            fishItemId: fishEntry.itemId,
+            launchedAt: now,
+            fromX,
+            fromY,
+            targetX,
+            targetY,
+            outboundMs,
+            returnMs,
+            arcHeightPx
+        };
+
+        this.broadcast('glimmerbowl:fish-launch', launchPayload);
+
+        this.scheduleFishCombatTimer(() => {
+            this.processFishLanding(launchPayload, fishEntry);
+        }, outboundMs);
+    }
+
+    private processFishLanding(launchPayload: GlimmerbowlFishLaunchEvent, fishEntry: GlimmerbowlEntry) {
+        const landAt = Date.now();
+        const stats = fishEntry.stats;
+        const radiusPx = Math.max(8, (Math.max(1, Number.isFinite(stats.energy) ? stats.energy : 1) / 3) * AI_METERS_TO_PIXELS);
+        const radiusSq = radiusPx * radiusPx;
+        const critRate = this.clampNumber(stats.critRate, 0, 1);
+        const critDamage = Math.max(1, Number.isFinite(stats.critDamage) ? stats.critDamage : 1);
+        const baseDamage = Math.max(1, Number.isFinite(stats.damage) ? stats.damage : 1) * 4;
+        const hits: GlimmerbowlFishLandEvent['hits'] = [];
+
+        this.state.aiNpcs.forEach((npc, aiId) => {
+            if (!npc || npc.controllerId !== 'general-enemy') return;
+            const runtime = this.aiRuntimeById.get(aiId);
+            if (runtime?.isDead) return;
+            const health = Number(runtime?.currentHealth ?? npc.currentHealth ?? 0);
+            if (!Number.isFinite(health) || health <= 0) return;
+
+            const dx = Number(npc.x) - launchPayload.targetX;
+            const dy = Number(npc.y) - launchPayload.targetY;
+            if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+            if ((dx * dx) + (dy * dy) > radiusSq) return;
+
+            const variance = 0.9 + Math.random() * 0.2;
+            const isCrit = Math.random() < critRate;
+            let rolledDamage = baseDamage * variance;
+            if (isCrit) {
+                rolledDamage *= critDamage;
+            }
+            const damage = Math.max(1, Math.floor(rolledDamage));
+            this.applyEnemyKnockbackFromFishLaunch(aiId, launchPayload.fromX, launchPayload.fromY, damage);
+            if (!this.applyEnemyDamage(aiId, damage)) return;
+            hits.push({ aiId, damage, isCrit });
+        });
+
+        const landPayload: GlimmerbowlFishLandEvent = {
+            eventId: launchPayload.eventId,
+            ownerSessionId: launchPayload.ownerSessionId,
+            fishEntryId: launchPayload.fishEntryId,
+            fishItemId: launchPayload.fishItemId,
+            landedAt: landAt,
+            targetX: launchPayload.targetX,
+            targetY: launchPayload.targetY,
+            radiusPx,
+            hits
+        };
+        this.broadcast('glimmerbowl:fish-land', landPayload);
+
+        const owner = this.state.players.get(launchPayload.ownerSessionId);
+        const returnPayload: GlimmerbowlFishReturnEvent = {
+            eventId: launchPayload.eventId,
+            ownerSessionId: launchPayload.ownerSessionId,
+            fishEntryId: launchPayload.fishEntryId,
+            fishItemId: launchPayload.fishItemId,
+            returnStartedAt: landAt,
+            fromX: launchPayload.targetX,
+            fromY: launchPayload.targetY,
+            toX: owner?.x ?? launchPayload.fromX,
+            toY: owner?.y ?? launchPayload.fromY,
+            returnMs: launchPayload.returnMs,
+            arcHeightPx: Math.max(10, launchPayload.arcHeightPx * 0.68)
+        };
+        this.broadcast('glimmerbowl:fish-return', returnPayload);
+    }
+
+    private applyEnemyKnockbackFromFishLaunch(aiId: string, launchFromX: number, launchFromY: number, damageAmount: number): void {
+        const runtime = this.aiRuntimeById.get(aiId);
+        const schema = this.state.aiNpcs.get(aiId);
+        if (!runtime || !schema || runtime.isDead) return;
+
+        const dx = runtime.x - launchFromX;
+        const dy = runtime.y - launchFromY;
+        const distance = Math.hypot(dx, dy);
+        const dirX = distance > 0.001 ? dx / distance : 1;
+        const dirY = distance > 0.001 ? dy / distance : 0;
+        const knockbackPx = Math.max(6, Math.min(20, 6 + damageAmount * 0.16));
+        const nextX = runtime.x + dirX * knockbackPx;
+        const nextY = runtime.y + dirY * knockbackPx;
+        const now = Date.now();
+
+        runtime.x = nextX;
+        runtime.y = nextY;
+        runtime.vx = dirX * Math.min(80, knockbackPx * 5);
+        runtime.vy = dirY * Math.min(80, knockbackPx * 5);
+        runtime.moveTs = now;
+
+        schema.x = nextX;
+        schema.y = nextY;
+        schema.vx = runtime.vx;
+        schema.vy = runtime.vy;
+        schema.moveTs = now;
     }
 
     private normalizeHeartsState(input: IPlayerHeartsState): IPlayerHeartsState {
@@ -2411,6 +2719,19 @@ export class InstanceRoom extends Room<InstanceState> {
         const now = Date.now();
         if (this.didPlayerDodgeMeleeAttack(targetSessionId, now)) return;
 
+        const targetDx = player.x - attacker.x;
+        const targetDy = player.y - attacker.y;
+        const distance = Math.hypot(targetDx, targetDy);
+        const pushDirX = distance > 0.001 ? targetDx / distance : 1;
+        const pushDirY = distance > 0.001 ? targetDy / distance : 0;
+        this.applyServerImpulse(
+            targetSessionId,
+            pushDirX * ENEMY_MELEE_KNOCKBACK_SPEED,
+            pushDirY * ENEMY_MELEE_KNOCKBACK_SPEED,
+            ENEMY_MELEE_KNOCKBACK_DURATION_MS,
+            attacker.id,
+            { accumulate: false, recoveryTailMs: ENEMY_MELEE_KNOCKBACK_RECOVERY_TAIL_MS }
+        );
         this.applyDamageToPlayerHearts(targetSessionId, Math.floor(damageHearts));
     }
 
@@ -2505,6 +2826,9 @@ export class InstanceRoom extends Room<InstanceState> {
         runtime.vx = 0;
         runtime.vy = 0;
         runtime.attackAnimUntilMs = 0;
+        runtime.pendingMeleeTargetSessionId = undefined;
+        runtime.pendingMeleeTriggerAtMs = undefined;
+        runtime.pendingMeleeDamageHearts = undefined;
         runtime.deathAnimUntilMs = Date.now() + GREMLIN_DEATH_ANIM_MS;
         runtime.anim = 'death';
         schema.vx = 0;
@@ -2988,7 +3312,14 @@ export class InstanceRoom extends Room<InstanceState> {
         return last;
     }
 
-    private applyServerImpulse(sessionId: string, vx: number, vy: number, durationMs: number, sourceSessionId: string) {
+    private applyServerImpulse(
+        sessionId: string,
+        vx: number,
+        vy: number,
+        durationMs: number,
+        sourceSessionId: string,
+        options?: { accumulate?: boolean; recoveryTailMs?: number }
+    ) {
         const player = this.state.players.get(sessionId);
         if (!player) return;
 
@@ -3008,9 +3339,15 @@ export class InstanceRoom extends Room<InstanceState> {
         };
         this.movementRuntimeBySession.set(sessionId, runtime);
 
-        runtime.impulseVx += vx;
-        runtime.impulseVy += vy;
-        runtime.impulseActiveUntil = Math.max(runtime.impulseActiveUntil, now + durationMs + 500);
+        if (options?.accumulate === false) {
+            runtime.impulseVx = vx;
+            runtime.impulseVy = vy;
+        } else {
+            runtime.impulseVx += vx;
+            runtime.impulseVy += vy;
+        }
+        const recoveryTailMs = this.clampNumber(options?.recoveryTailMs ?? 500, 0, 2000);
+        runtime.impulseActiveUntil = Math.max(runtime.impulseActiveUntil, now + durationMs + recoveryTailMs);
         runtime.lastServerTime = now;
 
         player.moveTs = now;
@@ -3156,9 +3493,17 @@ export class InstanceRoom extends Room<InstanceState> {
                     0,
                     SOFT_COLLISION_FORCE.maxPushPerStep
                 );
+                const bothAi = a.kind === 'ai' && b.kind === 'ai';
+                const adjustedPushMagnitude = bothAi
+                    ? this.clampNumber(
+                        Math.max(AI_TO_AI_COLLISION_MIN_PUSH_PER_STEP, pushMagnitude * 1.2),
+                        0,
+                        AI_TO_AI_COLLISION_MAX_PUSH_PER_STEP
+                    )
+                    : pushMagnitude;
 
-                const pushX = dirX * pushMagnitude;
-                const pushY = dirY * pushMagnitude;
+                const pushX = dirX * adjustedPushMagnitude;
+                const pushY = dirY * adjustedPushMagnitude;
 
                 a.pushX -= pushX * 0.5;
                 a.pushY -= pushY * 0.5;
@@ -3275,6 +3620,9 @@ export class InstanceRoom extends Room<InstanceState> {
             lastPathRecomputeTick: this.gameTick - pathTickOffset,
             lastAttackMs: 0,
             attackAnimUntilMs: 0,
+            pendingMeleeTargetSessionId: undefined,
+            pendingMeleeTriggerAtMs: undefined,
+            pendingMeleeDamageHearts: undefined,
             deathAnimUntilMs: 0,
             isDead: false,
             controllerConfig: { ...definition.controllerConfig }

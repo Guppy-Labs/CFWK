@@ -31,6 +31,8 @@ export class AINpcEntity {
     private depthManager?: DepthManager;
     private debugPath: Array<{ x: number; y: number }> = [];
     private hitbox: IAiNpcHitbox;
+    private baseTint = 0xffffff;
+    private hitFlashTween?: Phaser.Tweens.Tween;
     private waterSystem?: WaterSystem;
     private shadow?: PlayerShadow;
 
@@ -54,7 +56,8 @@ export class AINpcEntity {
         this.sprite = this.scene.add.sprite(config.state.x, config.state.y, textureKey, 0);
         this.sprite.setScale(this.definition.renderScale ?? 1);
         this.applySpriteOrigin();
-        this.sprite.setTint(config.state.tint || 0xffffff);
+        this.baseTint = config.state.tint || 0xffffff;
+        this.sprite.setTint(this.baseTint);
         config.lightingManager?.enableLightingOn(this.sprite);
 
         this.applyAnimationByMotion(0, 0, 16);
@@ -82,7 +85,10 @@ export class AINpcEntity {
         this.targetY = nextState.y;
         this.targetAnim = nextState.anim;
         this.targetDirection = Number.isFinite(nextState.direction) ? nextState.direction : this.targetDirection;
-        this.sprite.setTint(nextState.tint || 0xffffff);
+        this.baseTint = nextState.tint || 0xffffff;
+        if (!this.hitFlashTween) {
+            this.sprite.setTint(this.baseTint);
+        }
         this.hitbox = {
             width: nextState.hitbox?.width ?? this.hitbox.width,
             height: nextState.hitbox?.height ?? this.hitbox.height,
@@ -112,10 +118,39 @@ export class AINpcEntity {
     }
 
     destroy() {
+        this.hitFlashTween?.stop();
+        this.hitFlashTween = undefined;
         this.waterSystem?.destroy();
         this.shadow?.destroy();
         this.sprite.destroy();
         this.nameplate.destroy();
+    }
+
+    flashDamageHighlight(color: number, durationMs: number = 180) {
+        if (!this.sprite.active) return;
+        this.hitFlashTween?.stop();
+        this.hitFlashTween = this.scene.tweens.addCounter({
+            from: 0,
+            to: 1,
+            duration: Math.max(60, durationMs),
+            yoyo: true,
+            onUpdate: (tween) => {
+                const progress = tween.getValue();
+                const tint = Phaser.Display.Color.Interpolate.ColorWithColor(
+                    Phaser.Display.Color.IntegerToColor(this.baseTint),
+                    Phaser.Display.Color.IntegerToColor(color),
+                    1,
+                    progress
+                );
+                this.sprite.setTint(Phaser.Display.Color.GetColor(tint.r, tint.g, tint.b));
+            },
+            onComplete: () => {
+                this.hitFlashTween = undefined;
+                if (this.sprite.active) {
+                    this.sprite.setTint(this.baseTint);
+                }
+            }
+        });
     }
 
     getDebugPath(): Array<{ x: number; y: number }> {
@@ -229,10 +264,20 @@ export class AINpcEntity {
     }
 
     private applySpriteOrigin() {
+        const state: 'idle' | 'walk' | 'attack' | 'death' =
+            this.targetAnim === 'death'
+                ? 'death'
+                : (this.targetAnim === 'attack' ? 'attack' : (this.targetAnim === 'walk' ? 'walk' : 'idle'));
+        const centerOffsetPx = this.definition.centerOffsetXByState?.[state] ?? 0;
+        // The configured offset assumes the mirrored-left visual case.
+        // Invert it for non-mirrored (right-facing) so the center correction matches direction.
+        const directionAdjustedOffsetPx = this.sprite.flipX ? centerOffsetPx : -centerOffsetPx;
+        const frameWidth = Math.max(1, this.sprite.frame?.realWidth ?? this.definition.frameWidth);
         const collidableHeight = Math.max(1, this.hitbox.collidableHeight || this.hitbox.height);
         const frameHeight = Math.max(1, this.sprite.frame?.realHeight ?? this.definition.frameHeight);
+        const originX = Phaser.Math.Clamp(0.5 - (directionAdjustedOffsetPx / frameWidth), 0, 1);
         const originY = 1 - (collidableHeight / (2 * frameHeight));
-        this.sprite.setOrigin(0.5, originY);
+        this.sprite.setOrigin(originX, originY);
     }
 
     private isMobile(): boolean {

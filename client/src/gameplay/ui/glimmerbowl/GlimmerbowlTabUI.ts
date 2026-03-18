@@ -5,6 +5,7 @@ import { InventoryDisplayItem, InventorySlotDisplay, InventorySlotsUI } from '..
 import { LocaleManager } from '../../i18n/LocaleManager';
 import { getLocalizedItemDescription, getLocalizedItemName } from '../../i18n/itemLocale';
 import { BitmapFontRenderer } from '../BitmapFontRenderer';
+import { ItemTextureLoader } from '../../assets/ItemTextureLoader';
 
 type TierButton = {
     tier: 'all' | 'awakened';
@@ -71,6 +72,8 @@ export class GlimmerbowlTabUI {
     private readonly fontCharGap = 1;
     private readonly tierLabelScale = 0.92;
     private readonly fontRenderer: BitmapFontRenderer;
+    private readonly itemTextureLoader = ItemTextureLoader.getInstance();
+    private textureRefreshQueued = false;
     private labelTextureCounter = 0;
     private buttonTextureCounter = 0;
     private generatedTextureKeys = new Set<string>();
@@ -360,12 +363,38 @@ export class GlimmerbowlTabUI {
                     category: def.category,
                     glowColor: entry.tier === 'awakened' ? this.getRarityGlowColor(def.rarity) : undefined,
                     backgroundIconKey: entry.tier === 'awakened' && entry.awakenedByScarId ? `item-${entry.awakenedByScarId}-18` : undefined,
-                    backgroundAlpha: entry.tier === 'awakened' ? 0.33 : undefined
+                    backgroundAlpha: entry.tier === 'awakened' ? 0.9 : undefined,
+                    suppressRarityFrame: entry.tier === 'awakened'
                 };
+
+                const fishIconKey = `item-${def.id}-18`;
+                if (!this.scene.textures.exists(fishIconKey)) {
+                    void this.itemTextureLoader.ensureItemIconTexture(this.scene, def.id, 18).then(() => {
+                        this.queueTextureRefresh();
+                    });
+                }
+                if (entry.awakenedByScarId) {
+                    const scarIconKey = `item-${entry.awakenedByScarId}-18`;
+                    if (!this.scene.textures.exists(scarIconKey)) {
+                        void this.itemTextureLoader.ensureItemIconTexture(this.scene, entry.awakenedByScarId, 18).then(() => {
+                            this.queueTextureRefresh();
+                        });
+                    }
+                }
 
                 return { entry, display };
             })
             .filter((entry): entry is GlimmerDisplayEntry => Boolean(entry));
+    }
+
+    private queueTextureRefresh() {
+        if (this.textureRefreshQueued) return;
+        this.textureRefreshQueued = true;
+        this.scene.time.delayedCall(0, () => {
+            this.textureRefreshQueued = false;
+            if (!this.container.active) return;
+            this.render();
+        });
     }
 
     private updateButtons() {

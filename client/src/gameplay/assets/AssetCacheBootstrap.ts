@@ -20,6 +20,8 @@ interface PrepareGameAssetsResult {
     mode: BootstrapMode;
     assetVersion: string;
     cachedAssetCount: number;
+    mobileSafeMode: boolean;
+    manifestSkipped: boolean;
 }
 
 const VERSION_ENDPOINT = '/api/assets/version';
@@ -28,9 +30,24 @@ const ASSET_VERSION_STORAGE_KEY = 'cfwk_asset_version';
 const CACHE_PREFIX = 'cfwk-game-assets-';
 const DEFAULT_VERSION = 'v1';
 const CRITICAL_ASSET_LIMIT = 24;
+const MOBILE_CRITICAL_ASSET_LIMIT = 10;
 const BACKGROUND_WARM_CONCURRENCY = 8;
+const MOBILE_BACKGROUND_WARM_CONCURRENCY = 2;
 const SW_REGISTER_TIMEOUT_MS = 3500;
 const SW_READY_TIMEOUT_MS = 4500;
+const VERSION_FETCH_TIMEOUT_MS = 2500;
+const MANIFEST_FETCH_TIMEOUT_MS = 5000;
+const MOBILE_SAFE_CRITICAL_ASSETS = [
+    '/packs/ui-core.pack.json',
+    '/packs/audio-core.pack.json',
+    '/assets/fish_tilesheet.png',
+    '/ui/BookBaseOpen01a.png',
+    '/ui/BookBaseOpen01b.png',
+    '/ui/Handle01a.png',
+    '/ui/Joystick01a.png',
+    '/ui/glimmerbowl/idle.png',
+    '/maps/anchor-hollow.tmj'
+];
 
 function isCacheApiAvailable() {
     return typeof window !== 'undefined' && 'caches' in window;
@@ -46,6 +63,29 @@ function isIpadChrome(): boolean {
     const isIPadUA = /iPad/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
     const isChromeOniOS = /CriOS/i.test(ua);
     return isIPadUA && isChromeOniOS;
+}
+
+function isMobileDevice(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+}
+
+function isConstrainedDevice(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+    const cores = navigator.hardwareConcurrency;
+    const lowMemory = typeof memory === 'number' && Number.isFinite(memory) && memory <= 4;
+    const lowCpu = typeof cores === 'number' && Number.isFinite(cores) && cores <= 4;
+    return lowMemory || lowCpu;
+}
+
+function shouldUseMobileSafeCaching(): boolean {
+    return isMobileDevice() || isConstrainedDevice();
+}
+
+export function isMobileSafeMode(): boolean {
+    return shouldUseMobileSafeCaching();
 }
 
 function normalizeVersion(raw: unknown): string {
@@ -91,10 +131,15 @@ export async function clearNonAuthCaches(): Promise<void> {
 }
 
 async function fetchAssetVersion(): Promise<string> {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeout = controller
+        ? setTimeout(() => controller.abort(), VERSION_FETCH_TIMEOUT_MS)
+        : null;
     try {
         const response = await fetch(VERSION_ENDPOINT, {
             credentials: 'include',
-            cache: 'no-store'
+            cache: 'no-store',
+            signal: controller?.signal
         });
 
         if (!response.ok) {
@@ -105,13 +150,20 @@ async function fetchAssetVersion(): Promise<string> {
         return normalizeVersion(payload.version);
     } catch {
         return DEFAULT_VERSION;
+    } finally {
+        if (timeout) clearTimeout(timeout);
     }
 }
 
 async function fetchManifestAssets(): Promise<string[]> {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeout = controller
+        ? setTimeout(() => controller.abort(), MANIFEST_FETCH_TIMEOUT_MS)
+        : null;
     try {
         const response = await fetch(MANIFEST_URL, {
-            cache: 'no-store'
+            cache: 'no-store',
+            signal: controller?.signal
         });
 
         if (!response.ok) {
@@ -122,13 +174,15 @@ async function fetchManifestAssets(): Promise<string[]> {
         return normalizeManifestAssets(payload).filter(shouldCacheAsset);
     } catch {
         return [];
+    } finally {
+        if (timeout) clearTimeout(timeout);
     }
 }
 
 async function registerServiceWorker(assetVersion: string, onDebug?: (message: string) => void) {
     if (!isServiceWorkerAvailable()) return;
-    if (isIpadChrome()) {
-        onDebug?.('sw:register:skipped-ipad-chrome');
+    if (isIpadChrome() || shouldUseMobileSafeCaching()) {
+        onDebug?.('sw:register:skipped-mobile-safe');
         return;
     }
 
@@ -192,7 +246,7 @@ async function clearOldCaches(currentCacheName: string) {
     );
 }
 
-function selectCriticalAssets(assetUrls: string[]): string[] {
+function selectCriticalAssets(assetUrls: string[], limit: number): string[] {
     const priority = assetUrls.filter((url) => url.startsWith('/packs/'));
     const essentials = [
         '/assets/fish_tilesheet.png',
@@ -201,7 +255,7 @@ function selectCriticalAssets(assetUrls: string[]): string[] {
     ];
 
     const merged = [...priority, ...essentials].filter((url, index, array) => array.indexOf(url) === index);
-    return merged.slice(0, CRITICAL_ASSET_LIMIT);
+    return merged.slice(0, Math.max(1, Math.floor(limit)));
 }
 
 function scheduleBackground(task: () => Promise<void>) {
@@ -243,7 +297,7 @@ async function warmCacheConcurrent(cacheName: string, assetUrls: string[], concu
                 });
 
                 if (!response.ok) continue;
-                await cache.put(url, response.clone());
+                await cache.put(url, response);
                 cached += 1;
             } catch {
                 // Keep background workers running.
@@ -279,11 +333,11 @@ async function warmCache(
             } else {
                 const response = await fetch(url, {
                     credentials: 'same-origin',
-                    cache: 'reload'
+                    cache: 'no-cache'
                 });
 
                 if (response.ok) {
-                    await cache.put(url, response.clone());
+                    await cache.put(url, response);
                     cached += 1;
                 }
             }
@@ -315,6 +369,10 @@ export async function prepareGameAssets(options: PrepareGameAssetsOptions = {}):
 
     const cacheName = `${CACHE_PREFIX}${serverVersion}`;
     let cachedAssetCount = 0;
+    const mobileSafeCaching = shouldUseMobileSafeCaching();
+    const criticalAssetLimit = mobileSafeCaching ? MOBILE_CRITICAL_ASSET_LIMIT : CRITICAL_ASSET_LIMIT;
+    const backgroundConcurrency = mobileSafeCaching ? MOBILE_BACKGROUND_WARM_CONCURRENCY : BACKGROUND_WARM_CONCURRENCY;
+    let manifestSkipped = false;
 
     if (mode === 'updating') {
         await clearOldCaches(cacheName);
@@ -322,18 +380,29 @@ export async function prepareGameAssets(options: PrepareGameAssetsOptions = {}):
     }
 
     if (mode !== 'up-to-date') {
-        const manifestAssets = await fetchManifestAssets();
-        const criticalAssets = selectCriticalAssets(manifestAssets);
+        let manifestAssets: string[];
+        if (mobileSafeCaching) {
+            manifestAssets = [...MOBILE_SAFE_CRITICAL_ASSETS];
+            manifestSkipped = true;
+            options.onDebug?.('assets:manifest:skipped-mobile-safe');
+        } else {
+            manifestAssets = await fetchManifestAssets();
+        }
+        const criticalAssets = selectCriticalAssets(manifestAssets, criticalAssetLimit);
         options.onDebug?.(`assets:manifest=${manifestAssets.length} critical=${criticalAssets.length}`);
         cachedAssetCount = await warmCache(cacheName, criticalAssets, options.onProgress);
         options.onDebug?.(`assets:critical-cached=${cachedAssetCount}`);
         localStorage.setItem(ASSET_VERSION_STORAGE_KEY, serverVersion);
 
         const remainingAssets = manifestAssets.filter((url) => !criticalAssets.includes(url));
-        scheduleBackground(async () => {
-            await clearOldCaches(cacheName);
-            await warmCacheConcurrent(cacheName, remainingAssets, BACKGROUND_WARM_CONCURRENCY);
-        });
+        if (!mobileSafeCaching) {
+            scheduleBackground(async () => {
+                await clearOldCaches(cacheName);
+                await warmCacheConcurrent(cacheName, remainingAssets, backgroundConcurrency);
+            });
+        } else {
+            options.onDebug?.('assets:background-warm:skipped-mobile-safe');
+        }
     }
 
     await registerServiceWorker(serverVersion, options.onDebug);
@@ -342,6 +411,8 @@ export async function prepareGameAssets(options: PrepareGameAssetsOptions = {}):
     return {
         mode,
         assetVersion: serverVersion,
-        cachedAssetCount
+        cachedAssetCount,
+        mobileSafeMode: mobileSafeCaching,
+        manifestSkipped
     };
 }

@@ -7,7 +7,7 @@ import { HeadbarUI } from '../ui/HeadbarUI';
 import { NetworkManager } from '../network/NetworkManager';
 import { InventoryChangeMonitor } from '../ui/InventoryChangeMonitor';
 import { SubtitleStack } from '../ui/SubtitleStack';
-import { ControlActionKey, DEFAULT_GUIDE_TUTORIAL_STATE, DEFAULT_USER_SETTINGS, IAdvancementAlertMessage, ITEM_DEFINITIONS, IVideoSettings, getItemImagePath } from '@cfwk/shared';
+import { ControlActionKey, DEFAULT_GUIDE_TUTORIAL_STATE, DEFAULT_USER_SETTINGS, IAdvancementAlertMessage, IVideoSettings } from '@cfwk/shared';
 import { DialogueUI } from '../ui/DialogueUI';
 import type { DialogueRenderLine } from '../dialogue/DialogueTypes';
 import { KeybindManager } from '../input/KeybindManager';
@@ -108,16 +108,9 @@ export class UIScene extends Phaser.Scene {
         this.load.image('ui-rarity-frame-mythic', '/ui/rarities/frames/mythic.png');
         this.load.image('ui-rarity-frame-supreme', '/ui/rarities/frames/supreme.png');
 
-        ITEM_DEFINITIONS.forEach((item) => {
-            const imagePath = getItemImagePath(item.id);
-            if (imagePath) {
-                this.load.image(`item-${item.id}`, `/${imagePath}`);
-            }
-        });
     }
 
     create() {
-        this.preloadItemIconTextures();
         this.setupCustomCursor();
         this.registry.set('dialogueActive', false);
         this.playerHud = new PlayerHud(this);
@@ -220,6 +213,7 @@ export class UIScene extends Phaser.Scene {
         window.addEventListener('book:fish-view-changed', this.fishViewChangedHandler as EventListener);
 
         this.uiClickPointerHandler = (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
+            window.dispatchEvent(new CustomEvent('ui:clicked', { detail: { at: Date.now() } }));
             if ((gameObject as any)?.getData?.('suppressUiClickSound') === true) {
                 return;
             }
@@ -797,37 +791,6 @@ export class UIScene extends Phaser.Scene {
         ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
 
         return canvas.toDataURL('image/png');
-    }
-
-    private preloadItemIconTextures() {
-        const targetSize = 18;
-        ITEM_DEFINITIONS.forEach((item) => {
-            const baseKey = `item-${item.id}`;
-            const scaledKey = `${baseKey}-18`;
-
-            if (this.textures.exists(scaledKey)) {
-                return;
-            }
-
-            if (!this.textures.exists(baseKey)) {
-                console.warn(`[UIScene] Missing base texture for item ${item.id}`);
-                return;
-            }
-
-            const texture = this.textures.get(baseKey);
-            const source = texture.getSourceImage() as HTMLImageElement;
-            if (!source) return;
-
-            const canvas = document.createElement('canvas');
-            canvas.width = targetSize;
-            canvas.height = targetSize;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return;
-            ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(source, 0, 0, targetSize, targetSize);
-
-            this.textures.addCanvas(scaledKey, canvas);
-        });
     }
 
     private onResize() {

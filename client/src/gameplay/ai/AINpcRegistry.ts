@@ -25,6 +25,7 @@ export type AINpcVisualDefinition = {
     walkAnimSpeedMax: number;
     walkAnimSpeedMaxVelocity: number;
     directionalMode?: 'octant-rows' | 'horizontal-only';
+    centerOffsetXByState?: Partial<Record<'idle' | 'walk' | 'attack' | 'death', number>>;
 };
 
 const AI_NPC_VISUALS: Record<AINpcKind, AINpcVisualDefinition> = {
@@ -66,7 +67,12 @@ const AI_NPC_VISUALS: Record<AINpcKind, AINpcVisualDefinition> = {
         walkAnimSpeedMin: 3,
         walkAnimSpeedMax: 12,
         walkAnimSpeedMaxVelocity: 120,
-        directionalMode: 'horizontal-only'
+        directionalMode: 'horizontal-only',
+        // Death frames include +18px on the right (fallen spear),
+        // so the visual center is 9px left compared to other states.
+        centerOffsetXByState: {
+            death: 14
+        }
     }
 };
 

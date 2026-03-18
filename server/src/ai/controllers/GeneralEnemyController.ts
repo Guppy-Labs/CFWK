@@ -2,6 +2,10 @@ import { DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG } from '@cfwk/shared';
 import { AIController } from './AIController';
 import { AiControllerContext, AiNpcRuntimeState, Vec2 } from '../types';
 
+const ATTACK_ANIM_TOTAL_MS = 900;
+const ATTACK_IMPACT_DELAY_MS = 320;
+const ATTACK_IMPACT_RANGE_SCALE = 1.15;
+
 function toFacingDirectionIndex(vx: number, vy: number, fallback: number): number {
     if (Math.abs(vx) < 0.001 && Math.abs(vy) < 0.001) return fallback;
     const angle = Math.atan2(vy, vx);
@@ -178,26 +182,36 @@ export class GeneralEnemyController implements AIController {
 
         const chaseRangePx = context.metersToPixels(entity.controllerConfig.chaseRangeMeters);
         const distanceToTarget = Math.hypot(target.x - entity.x, target.y - entity.y);
+        const pendingAttackReady = Number.isFinite(entity.pendingMeleeTriggerAtMs) && context.now >= Number(entity.pendingMeleeTriggerAtMs);
+        if (pendingAttackReady) {
+            const pendingTarget = entity.pendingMeleeTargetSessionId
+                ? context.players.find((player) => player.sessionId === entity.pendingMeleeTargetSessionId)
+                : undefined;
+            const pendingDamage = Number(entity.pendingMeleeDamageHearts || 0);
+            if (pendingTarget && pendingDamage > 0) {
+                const pendingDistance = Math.hypot(pendingTarget.x - entity.x, pendingTarget.y - entity.y);
+                if (pendingDistance <= entity.controllerConfig.meleeRangePx * ATTACK_IMPACT_RANGE_SCALE) {
+                    context.onMeleeAttackAttempt(entity, pendingTarget.sessionId, pendingDamage);
+                }
+            }
+            entity.pendingMeleeTargetSessionId = undefined;
+            entity.pendingMeleeTriggerAtMs = undefined;
+            entity.pendingMeleeDamageHearts = undefined;
+        }
 
         const horizontalDelta = target.x - entity.x;
         const canAttemptMelee = distanceToTarget <= entity.controllerConfig.meleeRangePx
             && Math.abs(horizontalDelta) > 0.5
             && (context.now - entity.lastAttackMs) >= entity.controllerConfig.attackCooldownMs
+            && !entity.pendingMeleeTargetSessionId
             && entity.controllerConfig.meleeDamageHearts > 0;
 
         if (canAttemptMelee) {
-            entity.vx = 0;
-            entity.vy = 0;
-            entity.attackAnimUntilMs = context.now + 900;
+            entity.attackAnimUntilMs = context.now + ATTACK_ANIM_TOTAL_MS;
             entity.lastAttackMs = context.now;
-            context.onMeleeAttackAttempt(entity, target.sessionId, entity.controllerConfig.meleeDamageHearts);
-            return;
-        }
-
-        if (context.now < entity.attackAnimUntilMs) {
-            entity.vx = 0;
-            entity.vy = 0;
-            return;
+            entity.pendingMeleeTargetSessionId = target.sessionId;
+            entity.pendingMeleeTriggerAtMs = context.now + ATTACK_IMPACT_DELAY_MS;
+            entity.pendingMeleeDamageHearts = entity.controllerConfig.meleeDamageHearts;
         }
 
         if (distanceToTarget > chaseRangePx) {

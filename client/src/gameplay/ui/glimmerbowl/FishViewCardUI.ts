@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { FishCombatStats, GlimmerbowlEntry, ItemDefinition } from '@cfwk/shared';
 import { LocaleManager } from '../../i18n/LocaleManager';
+import { ItemTextureLoader } from '../../assets/ItemTextureLoader';
 
 type FishViewCardData = {
     entry: GlimmerbowlEntry;
@@ -18,6 +19,7 @@ export class FishViewCardUI {
 
     private readonly scene: Phaser.Scene;
     private readonly localeManager = LocaleManager.getInstance();
+    private readonly itemTextureLoader = ItemTextureLoader.getInstance();
     private readonly container: Phaser.GameObjects.Container;
     private readonly blocker: Phaser.GameObjects.Rectangle;
     private readonly cardContainer: Phaser.GameObjects.Container;
@@ -33,6 +35,7 @@ export class FishViewCardUI {
     private cardWidth = 120;
     private cardHeight = 168;
     private readonly cardScale = 3;
+    private lastRenderEntryId?: string;
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
@@ -123,6 +126,7 @@ export class FishViewCardUI {
 
     private renderCard(data: FishViewCardData) {
         this.clearCardContent();
+        this.lastRenderEntryId = data.entry.id;
         const awakened = data.entry.tier === 'awakened';
         const baseWidth = Math.max(108, Math.min(136, Math.floor(this.scene.scale.width / (this.cardScale * 1.65))));
         const baseHeight = Math.max(150, Math.min(186, Math.floor(this.scene.scale.height / (this.cardScale * 1.5))));
@@ -142,7 +146,7 @@ export class FishViewCardUI {
         bg.setScale(this.cardScale);
         this.contentContainer.add(bg);
 
-        if (awakened && data.scarDef) {
+        if (awakened && data.scarDef && this.scene.textures.exists(`item-${data.scarDef.id}`)) {
             const overlayInset = 4 * this.cardScale;
             const scarOverlay = this.scene.add.image(0, 0, `item-${data.scarDef.id}`).setOrigin(0.5, 0.5);
             scarOverlay.setDisplaySize(
@@ -228,15 +232,15 @@ export class FishViewCardUI {
         }
 
         if (awakened) {
-            const knifeCard = this.scene.add.rectangle(0, cursorY + 24, this.cardWidth * this.cardScale * 0.8, 54, 0x2f2018, 0.60).setOrigin(0.5, 0.5);
+            const knifeCard = this.scene.add.rectangle(0, cursorY + 22, this.cardWidth * this.cardScale * 0.62, 42, 0x2f2018, 0.60).setOrigin(0.5, 0.5);
             knifeCard.setStrokeStyle(2, 0x9c724f, 1);
             this.contentContainer.add(knifeCard);
-            const knifeIcon = this.scene.add.image(-knifeCard.width * 0.425, cursorY + 24, 'ui-slot-placeholder-knife').setOrigin(0.5, 0.5);
-            knifeIcon.setScale(2);
+            const knifeIcon = this.scene.add.image(-knifeCard.width * 0.36, cursorY + 22, 'ui-slot-placeholder-knife').setOrigin(0.5, 0.5);
+            knifeIcon.setScale(1.45);
             this.contentContainer.add(knifeIcon);
-            const knifeLabel = this.scene.add.text(-knifeCard.width * 0.18, cursorY + 24, this.localeManager.t('glimmerbowl.view.knifePlaceholder', undefined, 'Equip a Knife'), {
+            const knifeLabel = this.scene.add.text(-knifeCard.width * 0.15, cursorY + 22, this.localeManager.t('glimmerbowl.view.knifePlaceholder', undefined, 'Equip a Knife'), {
                 fontFamily: 'Minecraft, monospace',
-                fontSize: '22px',
+                fontSize: '16px',
                 color: '#f2e9dd'
             }).setOrigin(0, 0.5);
             this.contentContainer.add(knifeLabel);
@@ -249,6 +253,27 @@ export class FishViewCardUI {
             rarityIcon.y += 4;
         }
         this.contentContainer.add(rarityIcon);
+        this.ensureMissingItemTextures(data);
+    }
+
+    private ensureMissingItemTextures(data: FishViewCardData) {
+        const pending: Promise<unknown>[] = [];
+        if (!this.scene.textures.exists(`item-${data.fishDef.id}`)) {
+            pending.push(this.itemTextureLoader.ensureItemTexture(this.scene, data.fishDef.id));
+        }
+        if (!this.scene.textures.exists(`item-${data.fishDef.id}-18`)) {
+            pending.push(this.itemTextureLoader.ensureItemIconTexture(this.scene, data.fishDef.id, 18));
+        }
+        if (data.scarDef && !this.scene.textures.exists(`item-${data.scarDef.id}`)) {
+            pending.push(this.itemTextureLoader.ensureItemTexture(this.scene, data.scarDef.id));
+        }
+        if (pending.length === 0) return;
+        Promise.allSettled(pending).then(() => {
+            if (!this.openState) return;
+            if (this.lastRenderEntryId !== data.entry.id) return;
+            this.renderCard(data);
+            this.layout();
+        });
     }
 
     private addStatsGrid(stats: FishCombatStats, topY: number): number {
