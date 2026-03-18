@@ -81,9 +81,19 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: nowrap;
             padding: 1rem 2rem;
             background-color: var(--mm-bg-panel);
             border-bottom: 2px solid var(--mm-border);
+            gap: 0.75rem;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .navbar::-webkit-scrollbar {
+            display: none;
         }
 
         .navbar-brand {
@@ -145,6 +155,7 @@
             align-items: center;
             gap: 1rem;
             margin-left: auto;
+            flex-shrink: 0;
         }
 
         .nav-beta-btn {
@@ -297,12 +308,15 @@
             align-items: center;
             justify-content: center;
             gap: 15px;
+            width: 100%;
+            box-sizing: border-box;
             background: rgba(0, 0, 0, 0.3);
             padding: 10px 20px;
             border: 1px solid rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(2px);
             margin-bottom: 2rem;
             transition: all 0.2s;
+            overflow: hidden;
         }
 
         .release-countdown:hover {
@@ -314,6 +328,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            min-width: 0;
         }
 
         .countdown-prefix {
@@ -387,8 +402,102 @@
 
         @media (max-width: 1150px) {
             .navbar {
-                flex-wrap: wrap;
-                gap: 1rem;
+                padding: 0.75rem 1rem;
+            }
+
+            .navbar > div:first-child {
+                gap: 0.6rem !important;
+            }
+
+            .navbar-right {
+                gap: 0.6rem;
+            }
+
+            .nav-upgrade-btn {
+                height: 46px;
+                min-width: 46px;
+                font-size: 1.05rem;
+                padding: 0 0.55rem;
+            }
+
+            .user-card {
+                padding: 5px 9px;
+                gap: 8px;
+            }
+
+            .navbar .nav-username {
+                max-width: 120px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .release-countdown {
+                gap: 10px;
+                padding: 9px 12px;
+            }
+
+            .countdown-prefix {
+                font-size: 0.85rem;
+                letter-spacing: 1px;
+                padding-right: 8px;
+            }
+
+            .countdown-digits {
+                gap: 7px;
+            }
+
+            .countdown-item {
+                min-width: 38px;
+                padding: 0 2px;
+            }
+
+            .countdown-val {
+                font-size: 1.32rem;
+            }
+        }
+
+        @media (max-width: 780px) {
+            .navbar .nav-username {
+                display: none;
+            }
+
+            .release-countdown {
+                gap: 8px;
+                padding: 8px 10px;
+            }
+
+            .countdown-prefix {
+                font-size: 0.78rem;
+                letter-spacing: 0.5px;
+                padding-right: 6px;
+            }
+
+            .countdown-digits {
+                gap: 5px;
+            }
+
+            .countdown-item {
+                min-width: 32px;
+            }
+
+            .countdown-val {
+                font-size: 1.08rem;
+                line-height: 24px;
+            }
+
+            .countdown-val-wrapper {
+                height: 24px;
+            }
+
+            .countdown-label {
+                font-size: 0.58rem;
+                letter-spacing: 0.6px;
+            }
+
+            .countdown-sep {
+                font-size: 0.95rem;
+                margin-bottom: 9px;
             }
         }
 
@@ -775,7 +884,7 @@
             <a href="#" class="navbar-brand">
                 <i class="fa-solid fa-fish"></i> CFWK
             </a>
-            <a href="/game" id="nav-play-btn" class="mm-btn" style="display: none; background-color: var(--mm-primary); color: white; padding: 0.5rem 1rem; text-decoration: none; border: none; align-items: center; gap: 8px;">
+            <a href="/launch" id="nav-play-btn" class="mm-btn" style="display: none; background-color: var(--mm-primary); color: white; padding: 0.5rem 1rem; text-decoration: none; border: none; align-items: center; gap: 8px;">
                 <i class="fa-solid fa-gamepad"></i> PLAY
             </a>
             <button id="nav-beta-btn" class="nav-beta-btn" type="button">
@@ -864,23 +973,9 @@
                 <h3><i class="fa-solid fa-ticket"></i> Beta Access Active</h3>
                 <p id="beta-access-time">Ends in --</p>
             </div>
-            <a href="/game" class="btn-blue">Play Beta</a>
+            <a href="/launch" class="btn-blue">Play Beta</a>
         </div>
 
-        <!-- Character Customizer Card -->
-        <div class="info-card skin-card">
-            <div class="skin-card-content">
-                <div class="skin-preview-frame">
-                    <canvas id="skin-preview-canvas" width="72" height="72"></canvas>
-                </div>
-                <div>
-                    <h3><i class="fa-solid fa-paintbrush"></i> Character Customizer</h3>
-                    <p>Update your cat’s look and accessories.</p>
-                </div>
-            </div>
-            <a href="/skin" class="btn-blue">Open Customizer</a>
-        </div>
-        
         <!-- Profile Section -->
         <div class="settings-panel">
             <div class="panel-header">

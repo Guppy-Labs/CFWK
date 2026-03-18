@@ -11,7 +11,8 @@
     "@cfwk/shared": "*",
     "colyseus.js": "^0.15.0",
     "phaser": "^3.60.0",
-    "phaser3-rex-plugins": "^1.80.19"
+    "phaser3-rex-plugins": "^1.80.19",
+    "pixi.js": "^8.17.1"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

@@ -16,7 +16,7 @@
     <!-- Primary Meta Tags -->
     <title>Play Cute Fish With Knives</title>
     <meta name="title" content="Play Now - Cute Fish With Knives | Online Multiplayer Game">
-    <meta name="description" content="Jump into the action! Play Cute Fish With Knives online - explore custom maps, join multiplayer sessions, and create unforgettable gaming moments.">
+    <meta name="description" content="Jump into the action! Play Cute Fish With Knives online with friends.">
     <meta name="robots" content="noindex, nofollow">
     <meta name="theme-color" content="#ff66aa">
     
@@ -98,6 +98,20 @@
             flex-shrink: 0;
             position: relative;
             z-index: 1000;
+            opacity: 0;
+            transform: translateY(-6px);
+            animation: navbar-fade-in 260ms ease-out 120ms forwards;
+        }
+
+        @keyframes navbar-fade-in {
+            from {
+                opacity: 0;
+                transform: translateY(-6px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .nav-brand {
@@ -665,7 +679,7 @@
   <body>
     
     <nav class="game-navbar">
-        <a href="/account" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back</a>
+        <a href="/launch" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back</a>
         <div class="nav-brand"><i class="fa-solid fa-gamepad"></i> CUTE FISH</div>
         <div class="nav-right">
             <div id="beta-access-chip" class="beta-access-chip"><i class="fa-solid fa-ticket"></i> Beta ends in --</div>

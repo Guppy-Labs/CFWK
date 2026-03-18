@@ -10,7 +10,7 @@ export interface IBetaClaim extends Document {
     redeemedByUserId?: mongoose.Types.ObjectId;
 }
 
-const BetaClaimSchema: Schema = new Schema({
+export const BetaClaimSchema: Schema = new Schema({
     code: { type: String, required: true, unique: true },
     campaignId: { type: Schema.Types.ObjectId, ref: 'BetaCampaign', required: true },
     discordUserId: { type: String, required: true },

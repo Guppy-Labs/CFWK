@@ -1,10 +1,11 @@
-import BetaCampaign from '../models/BetaCampaign';
 import User from '../models/User';
 import { InstanceManager } from '../managers/InstanceManager';
+import { getBetaModels } from '../db/betaStorage';
 
 const MONITOR_INTERVAL_MS = 30000;
 
 async function markCampaignEnded(campaignId: string, reason: string) {
+    const { BetaCampaign } = await getBetaModels();
     await BetaCampaign.updateOne(
         { _id: campaignId, active: true },
         { $set: { active: false, endedAt: new Date(), endReason: reason, endProcessed: false } }
@@ -12,6 +13,7 @@ async function markCampaignEnded(campaignId: string, reason: string) {
 }
 
 async function processEndedCampaign(campaignId: string, instanceManager: InstanceManager) {
+    const { BetaCampaign } = await getBetaModels();
     const now = new Date();
     const users = await User.find({ betaAccessUntil: { $ne: null, $lte: now } }).select('_id').lean();
     const userIds = users.map((user) => String(user._id));
@@ -32,6 +34,7 @@ async function processEndedCampaign(campaignId: string, instanceManager: Instanc
 export function startBetaCampaignMonitor(instanceManager: InstanceManager) {
     const tick = async () => {
         try {
+            const { BetaCampaign } = await getBetaModels();
             const now = new Date();
 
             const active = await BetaCampaign.findOne({ active: true });

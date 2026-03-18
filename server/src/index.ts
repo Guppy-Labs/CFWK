@@ -23,6 +23,7 @@ import statsRoutes from "./routes/stats";
 import moneyRoutes from "./routes/money";
 import assetsRoutes from "./routes/assets";
 import logsRoutes from "./routes/logs";
+import newsRoutes from "./routes/news";
 import apiRoutes from "./routes";
 import stripeRoutes, { stripeWebhookHandler } from "./routes/stripe";
 import initPassport from "./config/passport";
@@ -110,6 +111,7 @@ app.use("/api/assets", assetsRoutes);
 app.use("/api/stripe", stripeRoutes);
 app.use("/api/logs", logsRoutes);
 app.use("/logs", logsRoutes);
+app.use("/api/news", newsRoutes);
 
 // MongoDB connection
 mongoose.connect(mongoURI)

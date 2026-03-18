@@ -16,7 +16,7 @@ export interface IBetaCampaign extends Document {
     endNotified?: boolean;
 }
 
-const BetaCampaignSchema: Schema = new Schema({
+export const BetaCampaignSchema: Schema = new Schema({
     active: { type: Boolean, default: true },
     startedAt: { type: Date, required: true },
     endsAt: { type: Date, required: true },

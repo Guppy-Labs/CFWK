@@ -31,6 +31,10 @@ const mapsRewritePlugin = () => ({
         req.url = '/forgot/index.html';
       } else if (shouldRewriteToLogs(req?.url)) {
         req.url = '/logs/index.html';
+      } else if (shouldRewriteToLaunch(req?.url)) {
+        req.url = '/launch/index.html';
+      } else if (shouldRewriteToAdmin(req?.url)) {
+        req.url = '/admin/index.html';
       } else if (shouldRewriteToGame(req?.url)) {
         req.url = '/game/index.html';
       }
@@ -65,6 +69,10 @@ const mapsRewritePlugin = () => ({
         req.url = '/forgot/index.html';
       } else if (shouldRewriteToLogs(req?.url)) {
         req.url = '/logs/index.html';
+      } else if (shouldRewriteToLaunch(req?.url)) {
+        req.url = '/launch/index.html';
+      } else if (shouldRewriteToAdmin(req?.url)) {
+        req.url = '/admin/index.html';
       } else if (shouldRewriteToGame(req?.url)) {
         req.url = '/game/index.html';
       }
@@ -165,6 +173,20 @@ function shouldRewriteToLogs(url?: string) {
   return false;
 }
 
+function shouldRewriteToLaunch(url?: string) {
+  if (!url) return false;
+  const pathname = url.split('?')[0];
+  if (pathname === '/launch' || pathname === '/launch/') return true;
+  return false;
+}
+
+function shouldRewriteToAdmin(url?: string) {
+  if (!url) return false;
+  const pathname = url.split('?')[0];
+  if (pathname === '/admin' || pathname === '/admin/') return true;
+  return false;
+}
+
 function shouldRewriteToMaps(url?: string) {
   if (!url) return false;
   const pathname = url.split('?')[0];
@@ -225,6 +247,8 @@ export default defineConfig(({ mode }) => {
           sent: resolve(__dirname, 'sent/index.html'),
           forgot: resolve(__dirname, 'forgot/index.html'),
           logs: resolve(__dirname, 'logs/index.html'),
+          launch: resolve(__dirname, 'launch/index.html'),
+          admin: resolve(__dirname, 'admin/index.html'),
           soon: resolve(__dirname, 'soon.html')
         }
       }

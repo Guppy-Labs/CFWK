@@ -1,7 +1,6 @@
 import express from 'express';
-import BetaCampaign from '../models/BetaCampaign';
-import BetaClaim from '../models/BetaClaim';
 import User from '../models/User';
+import { getBetaModels } from '../db/betaStorage';
 
 const router = express.Router();
 
@@ -16,6 +15,7 @@ router.post('/redeem', async (req, res) => {
     try {
         const userId = (req.user as any).id;
         const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
+        const { BetaCampaign, BetaClaim } = await getBetaModels();
 
         if (!/^[0-9]{8}$/.test(code)) {
             return res.status(400).json({ message: 'Invalid code format' });

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - CFWK</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="stylesheet" href="/src/mapmaker/MapMaker.css">
+    <link rel="stylesheet" href="/src/ui/shared.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--mm-bg-dark);
+            color: var(--mm-text-main);
+            font-family: 'Minecraft', sans-serif;
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            border-bottom: 2px solid var(--mm-border);
+            background: var(--mm-bg-panel);
+            padding: 0.75rem 1rem;
+        }
+
+        .topbar-brand {
+            color: var(--mm-primary);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 1.15rem;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 230px 1fr;
+            min-height: calc(100vh - 68px);
+        }
+
+        .sidebar {
+            border-right: 2px solid var(--mm-border);
+            background: var(--mm-bg-panel);
+            padding: 0.8rem;
+        }
+
+        .sidebar-title {
+            margin: 0 0 0.8rem;
+            color: var(--mm-text-muted);
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .sidebar-nav {
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .nav-item {
+            border: 1px solid var(--mm-border);
+            background: var(--mm-bg-input);
+            color: var(--mm-text-main);
+            padding: 0.6rem 0.7rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+        }
+
+        .nav-item.active {
+            border-color: var(--mm-primary);
+            color: #ffd7ea;
+            background: rgba(255, 102, 170, 0.14);
+        }
+
+        .content {
+            padding: 1rem;
+        }
+
+        .section-card {
+            border: 2px solid var(--mm-border);
+            background: var(--mm-bg-panel);
+            padding: 0.9rem;
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.8rem;
+            align-items: center;
+            margin-bottom: 0.8rem;
+            flex-wrap: wrap;
+        }
+
+        .toolbar h1 {
+            margin: 0;
+            font-size: 1.35rem;
+            color: var(--mm-primary);
+        }
+
+        .posts-list {
+            display: grid;
+            gap: 0.7rem;
+        }
+
+        .post-row {
+            border: 1px solid var(--mm-border);
+            background: rgba(255, 255, 255, 0.02);
+            padding: 0.75rem;
+        }
+
+        .post-row.release {
+            border-color: rgba(255, 102, 170, 0.7);
+            box-shadow: 0 0 10px rgba(255, 102, 170, 0.2);
+        }
+
+        .post-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.6rem;
+            align-items: baseline;
+            flex-wrap: wrap;
+        }
+
+        .post-title {
+            margin: 0;
+            font-size: 1rem;
+            color: #fff0f8;
+        }
+
+        .post-meta {
+            font-size: 0.8rem;
+            color: var(--mm-text-muted);
+        }
+
+        .post-content {
+            margin: 0.5rem 0;
+            color: #dfebff;
+            white-space: pre-wrap;
+            line-height: 1.4;
+        }
+
+        .post-actions {
+            display: flex;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+        }
+
+        .post-image {
+            max-width: min(100%, 420px);
+            border: 1px solid var(--mm-border);
+            margin: 0.4rem 0 0.6rem;
+        }
+
+        .editor {
+            margin-top: 1rem;
+            border: 1px solid var(--mm-border);
+            background: rgba(0, 0, 0, 0.14);
+            padding: 0.8rem;
+            display: none;
+        }
+
+        .editor.show {
+            display: block;
+        }
+
+        .editor-title {
+            margin: 0 0 0.8rem;
+            color: #ffe1f2;
+            font-size: 1rem;
+        }
+
+        .form-grid {
+            display: grid;
+            gap: 0.7rem;
+        }
+
+        .form-row {
+            display: grid;
+            gap: 0.35rem;
+        }
+
+        .form-row label {
+            color: var(--mm-text-muted);
+            font-size: 0.84rem;
+        }
+
+        .form-row textarea {
+            min-height: 160px;
+            resize: vertical;
+        }
+
+        .editor-actions {
+            margin-top: 0.7rem;
+            display: flex;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+        }
+
+        .muted {
+            color: var(--mm-text-muted);
+        }
+
+        .forbidden {
+            display: none;
+            border: 2px solid var(--mm-danger);
+            background: rgba(213, 58, 58, 0.12);
+            color: #ffbcbc;
+            padding: 1rem;
+        }
+
+        .forbidden.show {
+            display: block;
+            margin: 1rem;
+        }
+
+        @media (max-width: 880px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                border-right: none;
+                border-bottom: 2px solid var(--mm-border);
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <a href="/launch" class="topbar-brand"><i class="fa-solid fa-shield-halved"></i> CFWK Admin</a>
+        <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;">
+            <a class="mm-btn mm-btn-secondary" href="/launch"><i class="fa-solid fa-rocket"></i> Launch</a>
+            <button id="logout-btn" class="mm-btn mm-btn-danger" type="button"><i class="fa-solid fa-right-from-bracket"></i> Log Out</button>
+        </div>
+    </header>
+
+    <div id="forbidden" class="forbidden">
+        <strong>Forbidden:</strong> this dashboard requires the `game.admin` permission.
+    </div>
+
+    <main id="app-layout" class="layout">
+        <aside class="sidebar">
+            <p class="sidebar-title">Admin Panel</p>
+            <nav class="sidebar-nav">
+                <div class="nav-item active"><i class="fa-solid fa-newspaper"></i> Posts</div>
+            </nav>
+        </aside>
+
+        <section class="content">
+            <div class="section-card">
+                <div class="toolbar">
+                    <h1>Posts</h1>
+                    <button id="new-post-btn" class="mm-btn" type="button"><i class="fa-solid fa-plus"></i> New Post</button>
+                </div>
+
+                <p id="posts-meta" class="muted">Loading posts...</p>
+                <div id="posts-list" class="posts-list"></div>
+
+                <div id="editor" class="editor">
+                    <h2 id="editor-title" class="editor-title">Create Post</h2>
+                    <form id="post-form">
+                        <div class="form-grid">
+                            <div class="form-row">
+                                <label for="title-input">Post Title</label>
+                                <input id="title-input" class="mm-input" type="text" maxlength="140" required>
+                            </div>
+                            <div class="form-row">
+                                <label for="content-input">Post Content</label>
+                                <textarea id="content-input" class="mm-input" maxlength="10000" required></textarea>
+                            </div>
+                            <div class="form-row">
+                                <label for="classification-input">Classification</label>
+                                <select id="classification-input" class="mm-input">
+                                    <option value="RELEASE">RELEASE</option>
+                                    <option value="OTHER">OTHER</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label for="author-input">Author (optional: username, email, or user ID)</label>
+                                <input id="author-input" class="mm-input" type="text">
+                            </div>
+                            <div class="form-row">
+                                <label for="publish-input">Date (optional)</label>
+                                <input id="publish-input" class="mm-input" type="datetime-local">
+                            </div>
+                            <div class="form-row">
+                                <label for="image-input">Image (optional)</label>
+                                <input id="image-input" class="mm-input" type="file" accept="image/*">
+                            </div>
+                            <div class="form-row">
+                                <label><input id="remove-image-input" type="checkbox"> Remove existing image</label>
+                                <span id="existing-image-label" class="muted"></span>
+                            </div>
+                        </div>
+                        <p id="form-feedback" class="muted"></p>
+                        <div class="editor-actions">
+                            <button id="save-btn" class="mm-btn" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                            <button id="cancel-btn" class="mm-btn mm-btn-secondary" type="button">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script type="module" src="/src/admin.ts"></script>
+</body>
+</html>
