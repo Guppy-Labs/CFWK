@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { IAiNpcHitbox, IAiNpcState, SOFT_COLLISION_FORCE } from '@cfwk/shared';
 import { createNameplate } from '../player/PlayerVisualUtils';
 import type { OcclusionManager } from '../map/OcclusionManager';
-import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET } from '../rendering/DepthManager';
+import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET, Y_SORT_FACTOR } from '../rendering/DepthManager';
 import { LightingManager } from '../fx/LightingManager';
 import { WaterSystem } from '../fx/water/WaterSystem';
 import { PlayerShadow } from '../player/PlayerShadow';
@@ -111,7 +111,10 @@ export class AINpcEntity {
 
         this.applyDepth();
         this.nameplate.setPosition(this.sprite.x, this.sprite.y + (this.isMobile() ? -42 : -36));
-        this.nameplate.setDepth(ENTITY_BASE + NAMEPLATE_OFFSET);
+        const nameplateDepth = this.depthManager
+            ? this.depthManager.nameplateDepth(this.sprite.depth)
+            : this.sprite.depth + NAMEPLATE_OFFSET;
+        this.nameplate.setDepth(nameplateDepth);
 
         this.waterSystem?.update(delta);
         this.shadow?.update();
@@ -135,7 +138,7 @@ export class AINpcEntity {
             duration: Math.max(60, durationMs),
             yoyo: true,
             onUpdate: (tween) => {
-                const progress = tween.getValue();
+                const progress = tween.getValue() ?? 0;
                 const tint = Phaser.Display.Color.Interpolate.ColorWithColor(
                     Phaser.Display.Color.IntegerToColor(this.baseTint),
                     Phaser.Display.Color.IntegerToColor(color),
@@ -206,11 +209,10 @@ export class AINpcEntity {
     }
 
     private applyDepth() {
-        const feetY = this.sprite.getBottomLeft().y;
         if (this.depthManager) {
-            this.sprite.setDepth(this.depthManager.entityDepth(this.sprite.x, feetY, { baseDepth: this.baseDepth }));
+            this.sprite.setDepth(this.depthManager.entityDepthFromSprite(this.sprite, { baseDepth: this.baseDepth }));
         } else {
-            this.sprite.setDepth(this.baseDepth + feetY * 0.01);
+            this.sprite.setDepth(this.baseDepth + this.sprite.getBottomLeft().y * Y_SORT_FACTOR);
         }
     }
 

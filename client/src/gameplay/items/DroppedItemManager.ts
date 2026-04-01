@@ -5,7 +5,7 @@ import { getLocalizedItemName } from '../i18n/itemLocale';
 import { LocaleManager } from '../i18n/LocaleManager';
 import type { IInventoryResponse } from '@cfwk/shared';
 import type { OcclusionManager } from '../map/OcclusionManager';
-import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET } from '../rendering/DepthManager';
+import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET, Y_SORT_FACTOR } from '../rendering/DepthManager';
 import { ItemTextureLoader } from '../assets/ItemTextureLoader';
 
 export type DroppedItemData = {
@@ -118,6 +118,7 @@ export class DroppedItemManager {
 
     update(localX?: number, localY?: number) {
         this.items.forEach((entity) => {
+            this.updateDepth(entity);
             this.applyItemAlpha(entity);
         });
 
@@ -246,10 +247,11 @@ export class DroppedItemManager {
     }
 
     private updateDepth(item: DroppedItemEntity) {
+        const feetY = item.sprite.getBottomLeft().y;
         if (this.config.depthManager) {
-            item.sprite.setDepth(this.config.depthManager.entityDepth(item.x, item.y, { baseDepth: this.config.baseDepth }));
+            item.sprite.setDepth(this.config.depthManager.entityDepthFromSprite(item.sprite, { baseDepth: this.config.baseDepth }));
         } else {
-            item.sprite.setDepth(this.config.baseDepth + item.y * 0.01);
+            item.sprite.setDepth(this.config.baseDepth + feetY * Y_SORT_FACTOR);
         }
     }
 
@@ -445,7 +447,7 @@ export class DroppedItemManager {
             return;
         }
 
-        container.setDepth(ENTITY_BASE + NAMEPLATE_OFFSET - 10 + (cluster.anchorY * 0.01));
+        container.setDepth(ENTITY_BASE + NAMEPLATE_OFFSET - 10 + (cluster.anchorY * Y_SORT_FACTOR));
     }
 
     private pickupDropRow(row: DropClusterRow) {

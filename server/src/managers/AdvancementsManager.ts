@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import {
     ADVANCEMENT_QUEST_CATALOG,
     calculateWorldTime,
@@ -14,6 +12,12 @@ import {
 } from '@cfwk/shared';
 import User from '../models/User';
 import { AI_METERS_TO_PIXELS } from '../ai/registry';
+import { isPointInPolygon } from '../maps/geometry/pointInPolygon';
+import { loadTiledMap } from '../maps/tiled/readMap';
+import { extractAdvancementRegions } from '../maps/tiled/extract/advancementRegions';
+import { extractFirePoints } from '../maps/tiled/extract/firePoints';
+import { extractMapDisplayName } from '../maps/tiled/extract/mapDisplayName';
+import { extractPoiPointsByName } from '../maps/tiled/extract/poi';
 
 type QuestEvent =
     | { kind: 'npc'; npcId: string }
@@ -44,28 +48,6 @@ type RegionDefinition = {
 type AdvancementsUpdate = {
     alerts: IAdvancementAlertMessage[];
     delayedNewQuestCounts: number[];
-};
-
-type TiledProperty = { name: string; value: unknown };
-
-type TiledMapObject = {
-    name?: string;
-    x?: number;
-    y?: number;
-    width?: number;
-    height?: number;
-    polygon?: Array<{ x: number; y: number }>;
-};
-
-type TiledLayer = {
-    name?: string;
-    type?: string;
-    objects?: TiledMapObject[];
-};
-
-type TiledMap = {
-    properties?: TiledProperty[];
-    layers?: TiledLayer[];
 };
 
 function toQuestEvent(objective: IQuestObjectiveEntry | undefined | null): QuestEvent | null {
@@ -207,16 +189,6 @@ function createDefaultAdvancementsState(): IAdvancementsState {
         discoveredRegions: {},
         tutorial: { ...DEFAULT_GUIDE_TUTORIAL_STATE }
     };
-}
-
-function humanizeMapName(mapFileName: string): string {
-    const base = mapFileName.replace(/\.tmj$/i, '').replace(/[-_]+/g, ' ').trim();
-    if (!base) return 'Unknown Region';
-    return base
-        .split(' ')
-        .filter(Boolean)
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(' ');
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -921,7 +893,7 @@ export class AdvancementsManager {
     private findRegionAtPosition(x: number, y: number): string | null {
         let bestRegion: RegionDefinition | null = null;
         for (const region of this.regions) {
-            if (!this.isPointInPolygon(x, y, region.polygon)) {
+            if (!isPointInPolygon(x, y, region.polygon)) {
                 continue;
             }
 
@@ -935,36 +907,6 @@ export class AdvancementsManager {
         }
 
         return null;
-    }
-
-    private computePolygonArea(polygon: Array<{ x: number; y: number }>): number {
-        if (!Array.isArray(polygon) || polygon.length < 3) {
-            return Number.POSITIVE_INFINITY;
-        }
-
-        let sum = 0;
-        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-            sum += (polygon[j].x * polygon[i].y) - (polygon[i].x * polygon[j].y);
-        }
-
-        const area = Math.abs(sum * 0.5);
-        return Number.isFinite(area) && area > 0 ? area : Number.POSITIVE_INFINITY;
-    }
-
-    private isPointInPolygon(x: number, y: number, polygon: Array<{ x: number; y: number }>): boolean {
-        let inside = false;
-        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-            const xi = polygon[i].x;
-            const yi = polygon[i].y;
-            const xj = polygon[j].x;
-            const yj = polygon[j].y;
-
-            const intersects = ((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / ((yj - yi) || 0.0000001) + xi);
-            if (intersects) {
-                inside = !inside;
-            }
-        }
-        return inside;
     }
 
     private async getOrLoadState(userId: string): Promise<IAdvancementsState | null> {
@@ -1123,10 +1065,10 @@ export class AdvancementsManager {
         poiPointsByName: Map<string, Array<{ x: number; y: number }>>;
         regions: RegionDefinition[];
     } {
-        const fullPath = this.resolveMapPath(mapFileName);
-        if (!fullPath) {
+        const map = loadTiledMap(mapFileName);
+        if (!map) {
             return {
-                mapName: humanizeMapName(mapFileName),
+                mapName: extractMapDisplayName(null, mapFileName),
                 firePoints: [],
                 poiPointsByName: new Map<string, Array<{ x: number; y: number }>>(),
                 regions: []
@@ -1134,99 +1076,19 @@ export class AdvancementsManager {
         }
 
         try {
-            const raw = fs.readFileSync(fullPath, 'utf8');
-            const map = JSON.parse(raw) as TiledMap;
-            const mapName = this.extractMapName(map, mapFileName);
-            const poiPointsByName = this.extractPoiPointsByName(map);
-            const firePoints = this.extractFirePoints(map);
-            const regions = this.extractRegions(map);
+            const mapName = extractMapDisplayName(map, mapFileName);
+            const poiPointsByName = extractPoiPointsByName(map);
+            const firePoints = extractFirePoints(map);
+            const regions = extractAdvancementRegions(map);
             return { mapName, firePoints, poiPointsByName, regions };
         } catch (error) {
             console.error('[AdvancementsManager] Failed to parse map data:', error);
             return {
-                mapName: humanizeMapName(mapFileName),
+                mapName: extractMapDisplayName(null, mapFileName),
                 firePoints: [],
                 poiPointsByName: new Map<string, Array<{ x: number; y: number }>>(),
                 regions: []
             };
         }
-    }
-
-    private extractPoiPointsByName(map: TiledMap): Map<string, Array<{ x: number; y: number }>> {
-        const results = new Map<string, Array<{ x: number; y: number }>>();
-        const poiLayer = (map.layers || []).find((layer) => layer.name === 'POI' && layer.type === 'objectgroup');
-        if (!poiLayer || !Array.isArray(poiLayer.objects)) {
-            return results;
-        }
-
-        poiLayer.objects.forEach((object) => {
-            const name = typeof object.name === 'string' ? object.name.trim() : '';
-            if (!name) return;
-            const x = (object.x ?? 0) + ((object.width ?? 0) / 2);
-            const y = (object.y ?? 0) + ((object.height ?? 0) / 2);
-            const current = results.get(name) ?? [];
-            current.push({ x, y });
-            results.set(name, current);
-        });
-        return results;
-    }
-
-    private extractMapName(map: TiledMap, mapFileName: string): string {
-        const properties = Array.isArray(map.properties) ? map.properties : [];
-        const nameProp = properties.find((property) => property.name === 'Name');
-        if (nameProp && typeof nameProp.value === 'string' && nameProp.value.trim().length > 0) {
-            return nameProp.value.trim();
-        }
-        return humanizeMapName(mapFileName);
-    }
-
-    private extractFirePoints(map: TiledMap): Array<{ x: number; y: number }> {
-        const poiLayer = (map.layers || []).find((layer) => layer.name === 'POI' && layer.type === 'objectgroup');
-        if (!poiLayer || !Array.isArray(poiLayer.objects)) return [];
-
-        return poiLayer.objects
-            .filter((object) => object.name === 'Fire')
-            .map((object) => {
-                const x = (object.x ?? 0) + ((object.width ?? 0) / 2);
-                const y = (object.y ?? 0) + ((object.height ?? 0) / 2);
-                return { x, y };
-            });
-    }
-
-    private extractRegions(map: TiledMap): RegionDefinition[] {
-        const regionLayer = (map.layers || []).find((layer) => layer.name === 'Regions' && layer.type === 'objectgroup');
-        if (!regionLayer || !Array.isArray(regionLayer.objects)) return [];
-
-        const results: RegionDefinition[] = [];
-        for (const object of regionLayer.objects) {
-            if (!object.name || !Array.isArray(object.polygon) || object.polygon.length < 3) continue;
-
-            const baseX = object.x ?? 0;
-            const baseY = object.y ?? 0;
-            const polygon = object.polygon.map((point) => ({ x: baseX + point.x, y: baseY + point.y }));
-
-            results.push({
-                name: object.name,
-                polygon,
-                area: this.computePolygonArea(polygon)
-            });
-        }
-
-        return results;
-    }
-
-    private resolveMapPath(mapFileName: string): string | null {
-        const candidates = [
-            path.resolve(__dirname, '../../../client/public/maps', mapFileName),
-            path.resolve(__dirname, '../../client/public/maps', mapFileName),
-            path.resolve(process.cwd(), '../client/public/maps', mapFileName),
-            path.resolve(process.cwd(), 'client/public/maps', mapFileName)
-        ];
-
-        for (const candidate of candidates) {
-            if (fs.existsSync(candidate)) return candidate;
-        }
-
-        return null;
     }
 }

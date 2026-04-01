@@ -1,0 +1,12 @@
+export const WALK_SPEED = 96;
+export const SPRINT_SPEED = 192;
+export const ACCEL = 0.35;
+export const DRAG = 0.5;
+export const MAX_STEP_DT_MS = 120;
+export const HISTORY_SIZE = 120;
+export const SOFT_DISCREPANCY = 18;
+export const HARD_DISCREPANCY = 90;
+export const MAX_LATENCY_ESTIMATE_MS = 350;
+export const MAX_LATENCY_THRESHOLD_SCALE = 2.25;
+export const RECONCILE_INTERVAL_MS = 80;
+export const GAME_TPS = 20;

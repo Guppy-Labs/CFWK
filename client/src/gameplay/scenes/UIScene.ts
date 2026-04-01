@@ -14,6 +14,7 @@ import { KeybindManager } from '../input/KeybindManager';
 import { GuideOverlay, GuideOverlayState } from '../ui/guide/GuideOverlay';
 import { GuideCoordinator } from '../ui/guide/GuideCoordinator';
 import { GuideInputGate } from '../ui/guide/GuideInputGate';
+import { DebugNpcPanel } from '../ui/DebugNpcPanel';
 import type CrtPostFxPipeline from 'phaser3-rex-plugins/plugins/crtpipeline.js';
 
 type CrtPipelinePlugin = {
@@ -51,6 +52,8 @@ export class UIScene extends Phaser.Scene {
     private finbookQuestTargetedHandler?: (event: Event) => void;
     private inventoryConsumedHandler?: (event: Event) => void;
     private uiClickPointerHandler?: (pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => void;
+    private uiPointerReleaseHandler?: (pointer: Phaser.Input.Pointer) => void;
+    private uiActivePointerIds = new Set<number>();
     private isPlayerListKeyHeld = false;
     private networkManager = NetworkManager.getInstance();
     private keybindManager = KeybindManager.getInstance();
@@ -73,6 +76,7 @@ export class UIScene extends Phaser.Scene {
     private fishViewIsOpen = false;
     private guiOpenChangedHandler?: (event: Event) => void;
     private fishViewChangedHandler?: (event: Event) => void;
+    private debugNpcOpenHandler?: (event: Event) => void;
     private guiBlurFx?: unknown;
     private uiCrtConfig = {
         warpX: 0.1,
@@ -211,8 +215,13 @@ export class UIScene extends Phaser.Scene {
             this.syncGuiBackdropEffects();
         };
         window.addEventListener('book:fish-view-changed', this.fishViewChangedHandler as EventListener);
+        this.debugNpcOpenHandler = () => {
+            this.openDebugNpcPanel();
+        };
+        window.addEventListener('debug:npc:open', this.debugNpcOpenHandler as EventListener);
 
-        this.uiClickPointerHandler = (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
+        this.uiClickPointerHandler = (pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
+            this.uiActivePointerIds.add(pointer.id);
             window.dispatchEvent(new CustomEvent('ui:clicked', { detail: { at: Date.now() } }));
             if ((gameObject as any)?.getData?.('suppressUiClickSound') === true) {
                 return;
@@ -220,6 +229,13 @@ export class UIScene extends Phaser.Scene {
             this.getAudioManager()?.playUiClick?.();
         };
         this.input.on(Phaser.Input.Events.GAMEOBJECT_DOWN, this.uiClickPointerHandler);
+        this.uiPointerReleaseHandler = (pointer: Phaser.Input.Pointer) => {
+            if (!this.uiActivePointerIds.has(pointer.id)) return;
+            this.uiActivePointerIds.delete(pointer.id);
+            window.dispatchEvent(new CustomEvent('ui:pointer-release', { detail: { at: Date.now() } }));
+        };
+        this.input.on('pointerup', this.uiPointerReleaseHandler);
+        this.input.on('pointerupoutside', this.uiPointerReleaseHandler);
         if (this.pendingDialogueAdvanceHandler) {
             this.dialogueUI.setOnAdvance(this.pendingDialogueAdvanceHandler);
             this.pendingDialogueAdvanceHandler = undefined;
@@ -514,10 +530,22 @@ export class UIScene extends Phaser.Scene {
                 window.removeEventListener('book:fish-view-changed', this.fishViewChangedHandler as EventListener);
                 this.fishViewChangedHandler = undefined;
             }
+            if (this.debugNpcOpenHandler) {
+                window.removeEventListener('debug:npc:open', this.debugNpcOpenHandler as EventListener);
+                this.debugNpcOpenHandler = undefined;
+            }
+            this.closeDebugNpcPanel();
             this.clearGuiBlurEffect();
             if (this.uiClickPointerHandler) {
                 this.input.off(Phaser.Input.Events.GAMEOBJECT_DOWN, this.uiClickPointerHandler);
+                this.uiClickPointerHandler = undefined;
             }
+            if (this.uiPointerReleaseHandler) {
+                this.input.off('pointerup', this.uiPointerReleaseHandler);
+                this.input.off('pointerupoutside', this.uiPointerReleaseHandler);
+                this.uiPointerReleaseHandler = undefined;
+            }
+            this.uiActivePointerIds.clear();
             window.removeEventListener('pointerdown', markActivity, { capture: true } as any);
             window.removeEventListener('mousedown', markActivity, { capture: true } as any);
             window.removeEventListener('touchstart', markActivity, { capture: true } as any);
@@ -605,6 +633,7 @@ export class UIScene extends Phaser.Scene {
 
         if (active) {
             this.headbarUI?.hideTabList();
+            this.closeDebugNpcPanel();
             if (this.chat?.isChatFocused()) {
                 this.chat.blur();
             }
@@ -621,6 +650,53 @@ export class UIScene extends Phaser.Scene {
         this.headbarUI?.setVisible(!active);
         this.chat?.setVisible(!active);
         this.inventoryChangeMonitor?.setVisible(!active);
+    }
+
+    private openDebugNpcPanel() {
+        if (this.registry.get('inputBlocked') === true) return;
+        if (this.dialogueActive) return;
+        if (DebugNpcPanel.getIsOpen()) return;
+
+        if (this.chat?.isChatFocused()) {
+            this.chat.blur();
+        }
+        if (this.bookUI?.isOpen()) {
+            this.bookUI.close();
+        }
+
+        this.registry.set('guiOpen', true);
+        this.chat?.setMobileHintSuppressed(true);
+        window.dispatchEvent(new CustomEvent('gui-open-changed', {
+            detail: { isOpen: true, source: 'debug-npc' }
+        }));
+        this.networkManager.sendGuiOpen(true);
+
+        DebugNpcPanel.show({
+            onResetMyGame: () => {
+                this.networkManager.sendDebugNpcAction('reset_game');
+                this.closeDebugNpcPanel();
+            },
+            onGetScar: () => {
+                this.networkManager.sendDebugNpcAction('get_scar');
+            },
+            onGetDevRod: () => {
+                this.networkManager.sendDebugNpcAction('get_dev_rod');
+            },
+            onClose: () => {
+                this.closeDebugNpcPanel();
+            }
+        });
+    }
+
+    private closeDebugNpcPanel() {
+        if (!DebugNpcPanel.getIsOpen()) return;
+        DebugNpcPanel.hide();
+        this.registry.set('guiOpen', false);
+        this.chat?.setMobileHintSuppressed(false);
+        window.dispatchEvent(new CustomEvent('gui-open-changed', {
+            detail: { isOpen: false, source: 'debug-npc' }
+        }));
+        this.networkManager.sendGuiOpen(false);
     }
 
     showGuideOverlay(state: GuideOverlayState) {

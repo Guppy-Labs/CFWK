@@ -24,6 +24,9 @@ export class SharedMCTextures {
     private compositor?: CharacterCompositor;
     private initialized = false;
     private compositorResult?: CompositorResult;
+    private readonly animationKeyPrefix = 'mc-remote-default';
+    private createdAnimationKeys = new Set<string>();
+    private animationScene?: Phaser.Scene;
 
     private constructor() {}
 
@@ -41,48 +44,23 @@ export class SharedMCTextures {
      */
     async initialize(scene: Phaser.Scene): Promise<void> {
         if (this.initialized) return;
-
-        // Check if MC animations already exist (created by local player)
-        if (scene.anims.exists('mc-walk-S') && scene.anims.exists('mc-idle-S')) {
-            console.log('[SharedMCTextures] MC animations already exist, reusing them');
-            this.initialized = true;
-
-            // Store for getTextureKey lookups
-            this.compositorResult = {
-                textureKeys: new Map(),
-                frameDimensions: new Map()
-            };
-
-            // Extract texture keys from existing animations
-            const directions: MCDirection[] = ['N', 'S', 'E', 'W', 'NE', 'SE', 'NW', 'SW'];
-            const animTypes: MCAnimationType[] = ['walk', 'idle'];
-            for (const animType of animTypes) {
-                for (const dir of directions) {
-                    const anim = scene.anims.get(`mc-${animType}-${dir}`);
-                    if (anim && anim.frames.length > 0) {
-                        this.compositorResult.textureKeys.set(`${animType}-${dir}`, anim.frames[0].textureKey);
-                        this.compositorResult.frameDimensions.set(dir, MC_FRAME_DIMENSIONS_BY_ANIM[animType][dir]);
-                    }
-                }
-            }
-            return;
-        }
-
-        // If no animations exist yet, create them with default appearance
-        this.compositor = new CharacterCompositor(scene);
+        this.animationScene = scene;
+        // Always create dedicated default textures for remote players.
+        // Reusing local "mc-*" animations can accidentally mirror local appearance.
+        this.compositor = new CharacterCompositor(scene, 'remote-default-shared');
         
         try {
             this.compositorResult = await this.compositor.compositeCharacter(
                 DEFAULT_CHARACTER_APPEARANCE,
-                ['walk', 'idle']
+                ['walk', 'run', 'idle']
             );
 
             // Create animations (matching format in MCAnimationController)
             const directions: MCDirection[] = ['N', 'S', 'E', 'W', 'NE', 'SE', 'NW', 'SW'];
-            const animTypes: MCAnimationType[] = ['walk', 'idle'];
+            const animTypes: MCAnimationType[] = ['walk', 'run', 'idle'];
 
             for (const animType of animTypes) {
-                const frameRate = animType === 'idle' ? 6 : 10;
+                const frameRate = animType === 'idle' ? 6 : (animType === 'run' ? 14 : 10);
                 const frameCount = MC_FRAMES_PER_ANIMATION_BY_ANIM[animType];
 
                 for (const direction of directions) {
@@ -90,7 +68,7 @@ export class SharedMCTextures {
                     if (!textureKey) continue;
 
                     const dimensions = MC_FRAME_DIMENSIONS_BY_ANIM[animType][direction];
-                    const animKey = `mc-${animType}-${direction}`;
+                    const animKey = `${this.animationKeyPrefix}-${animType}-${direction}`;
 
                     // Add frame definitions to texture
                     const texture = scene.textures.get(textureKey);
@@ -123,11 +101,12 @@ export class SharedMCTextures {
                             repeat: -1
                         });
                     }
+                    this.createdAnimationKeys.add(animKey);
                 }
             }
             
             this.initialized = true;
-            console.log('[SharedMCTextures] Initialized with default MC character');
+            console.log('[SharedMCTextures] Initialized dedicated remote default textures');
         } catch (e) {
             console.error('[SharedMCTextures] Failed to initialize:', e);
         }
@@ -148,10 +127,27 @@ export class SharedMCTextures {
     }
 
     /**
+     * Get animation key for remote default fallback animations.
+     */
+    getAnimationKey(direction: MCDirection, animType: MCAnimationType = 'walk'): string {
+        return `${this.animationKeyPrefix}-${animType}-${direction}`;
+    }
+
+    /**
      * Clean up
      */
     destroy() {
+        if (this.animationScene) {
+            for (const key of this.createdAnimationKeys) {
+                if (this.animationScene.anims.exists(key)) {
+                    this.animationScene.anims.remove(key);
+                }
+            }
+        }
         this.compositor?.destroy();
         this.initialized = false;
+        this.compositorResult = undefined;
+        this.createdAnimationKeys.clear();
+        this.animationScene = undefined;
     }
 }

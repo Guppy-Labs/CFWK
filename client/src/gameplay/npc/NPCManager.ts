@@ -4,7 +4,7 @@ import { getTiledProperty, TiledObjectLayer } from '../map/TiledTypes';
 import { LightingManager } from '../fx/LightingManager';
 import type { OcclusionManager } from '../map/OcclusionManager';
 import { createNameplate } from '../player/PlayerVisualUtils';
-import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET } from '../rendering/DepthManager';
+import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET, Y_SORT_FACTOR } from '../rendering/DepthManager';
 import { getNpcDefinition } from './NPCRegistry';
 import { LocaleManager } from '../i18n/LocaleManager';
 
@@ -19,6 +19,7 @@ type NPCManagerConfig = {
     occlusionManager?: OcclusionManager;
     depthManager?: DepthManager;
     lightingManager?: LightingManager;
+    allowDebugNpc?: boolean;
 };
 
 export type NPCInteractable = {
@@ -68,15 +69,18 @@ export class NPCManager {
     private lightingManager?: LightingManager;
     private tileSize = 32;
     private npcs: NPCInstance[] = [];
+    private allNpcPoints: NPCPoint[] = [];
     private visualMetricsCache = new Map<string, NPCVisualMetrics>();
     private localeManager = LocaleManager.getInstance();
     private localeChangedHandler?: (event: Event) => void;
+    private allowDebugNpc: boolean;
 
     constructor(scene: Phaser.Scene, config: NPCManagerConfig) {
         this.scene = scene;
         this.baseDepth = config.baseDepth;
         this.depthManager = config.depthManager;
         this.lightingManager = config.lightingManager;
+        this.allowDebugNpc = config.allowDebugNpc === true;
         this.localeChangedHandler = () => this.refreshNpcNames();
         window.addEventListener('locale:changed', this.localeChangedHandler as EventListener);
     }
@@ -84,6 +88,10 @@ export class NPCManager {
     loadAndSpawnFromMap(map: Phaser.Tilemaps.Tilemap) {
         this.tileSize = map.tileWidth || 32;
         const npcPoints = this.getNpcPoints(map);
+        this.allNpcPoints = npcPoints;
+        const ids = npcPoints.map((point) => point.id.trim().toLowerCase());
+        const debugCount = ids.filter((id) => id === 'debug').length;
+        console.log(`[NPCManager] POI NPC points discovered: total=${npcPoints.length} debug=${debugCount} ids=${ids.join(',')}`);
         if (npcPoints.length === 0) return;
 
         const texturesToLoad = new Set<string>();
@@ -138,6 +146,37 @@ export class NPCManager {
             npc.nameplate.destroy();
         });
         this.npcs = [];
+        this.allNpcPoints = [];
+    }
+
+    setAllowDebugNpc(allow: boolean) {
+        const nextAllow = allow === true;
+        if (this.allowDebugNpc === nextAllow) return;
+        this.allowDebugNpc = nextAllow;
+        console.log(`[NPCManager] setAllowDebugNpc -> ${this.allowDebugNpc}`);
+
+        if (this.allowDebugNpc) {
+            const debugPoints = this.allNpcPoints.filter((point) => point.id.trim().toLowerCase() === 'debug');
+            console.log(`[NPCManager] Debug NPC points available: ${debugPoints.length}`);
+            if (debugPoints.length > 0) {
+                this.spawnFromPoints(debugPoints);
+            } else {
+                console.warn('[NPCManager] Debug NPC enabled but no debug POI point was found in map.');
+            }
+            return;
+        }
+
+        const remaining: NPCInstance[] = [];
+        this.npcs.forEach((npc) => {
+            if (npc.id.trim().toLowerCase() === 'debug') {
+                npc.sprite.destroy();
+                npc.nameplate.destroy();
+                console.log('[NPCManager] Removed debug NPC from scene');
+                return;
+            }
+            remaining.push(npc);
+        });
+        this.npcs = remaining;
     }
 
     getInteractables(): NPCInteractable[] {
@@ -238,9 +277,15 @@ export class NPCManager {
 
     private spawnFromPoints(points: NPCPoint[]) {
         points.forEach((point) => {
+            const pointId = point.id.trim().toLowerCase();
+            if (pointId === 'debug' && !this.allowDebugNpc) return;
+
             const def = getNpcDefinition(point.id);
             if (!def) {
                 console.warn(`[NPCManager] Unknown NPC id: ${point.id}`);
+                return;
+            }
+            if (pointId === 'debug' && this.npcs.some((npc) => npc.id.trim().toLowerCase() === 'debug')) {
                 return;
             }
 
@@ -258,7 +303,7 @@ export class NPCManager {
                     resolvedFrameCount = 1;
                     console.warn(`[NPCManager] Falling back to single-frame texture for NPC: ${def.id}`);
                 } else {
-                    console.warn(`[NPCManager] Missing NPC texture: ${textureKey}`);
+                    console.warn(`[NPCManager] Missing NPC texture: ${textureKey} (id=${def.id}, idle=${def.idleTexturePath ?? 'n/a'}, single=${def.singleTexturePath ?? 'n/a'})`);
                     return;
                 }
             }
@@ -467,7 +512,10 @@ export class NPCManager {
             this.applyDepth(npc.sprite, npc.depthOffset, feetY);
             const visualTopY = this.getVisualTopY(npc.sprite, npc.frameHeight, npc.trimTop, npc.scale);
             npc.nameplate.setPosition(npc.sprite.x, visualTopY - npc.nameplateMargin);
-            npc.nameplate.setDepth(ENTITY_BASE + NAMEPLATE_OFFSET);
+            const nameplateDepth = this.depthManager
+                ? this.depthManager.nameplateDepth(npc.sprite.depth)
+                : npc.sprite.depth + NAMEPLATE_OFFSET;
+            npc.nameplate.setDepth(nameplateDepth);
         });
     }
 
@@ -475,7 +523,7 @@ export class NPCManager {
         if (this.depthManager) {
             sprite.setDepth(this.depthManager.entityDepth(sprite.x, feetY, { baseDepth: this.baseDepth + depthOffset }));
         } else {
-            sprite.setDepth(this.baseDepth + depthOffset + feetY * 0.01);
+            sprite.setDepth(this.baseDepth + depthOffset + feetY * Y_SORT_FACTOR);
         }
     }
 

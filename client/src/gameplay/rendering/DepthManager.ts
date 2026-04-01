@@ -89,6 +89,7 @@ export interface EntityDepthOptions {
 
 export class DepthManager {
     private occlusionManager?: OcclusionManager;
+    private readonly occludedYSortFactor = 0.0005;
 
     constructor(occlusionManager?: OcclusionManager) {
         this.occlusionManager = occlusionManager;
@@ -128,7 +129,9 @@ export class DepthManager {
         if (tags.size > 0) {
             const minBase = om.getMinBaseDepthForTags(tags);
             // Place entity behind all matched layers
-            depth = (minBase - 10) + feetY * Y_SORT_FACTOR;
+            // Use a smaller Y-sort factor here so adjacent occlusion groups
+            // never overlap even on tall maps.
+            depth = (minBase - 10) + feetY * this.occludedYSortFactor;
             return depth;
         }
 
@@ -140,6 +143,24 @@ export class DepthManager {
         }
 
         return depth;
+    }
+
+    /**
+     * Shared convention for feet Y from sprite geometry.
+     */
+    feetYFromSprite(sprite: Phaser.GameObjects.Sprite, feetOffsetPx: number = 0): number {
+        return sprite.getBottomLeft().y + feetOffsetPx;
+    }
+
+    /**
+     * Convenience helper: compute entity depth directly from sprite.
+     */
+    entityDepthFromSprite(
+        sprite: Phaser.GameObjects.Sprite,
+        opts: EntityDepthOptions = {},
+        feetOffsetPx: number = 0,
+    ): number {
+        return this.entityDepth(sprite.x, this.feetYFromSprite(sprite, feetOffsetPx), opts);
     }
 
     // ── accessory depths relative to owner sprite.depth ────────────

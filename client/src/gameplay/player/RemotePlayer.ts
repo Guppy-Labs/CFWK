@@ -5,7 +5,7 @@ import { SharedMCTextures } from './SharedMCTextures';
 import { WaterSystem } from '../fx/water/WaterSystem';
 import { PlayerShadow } from './PlayerShadow';
 import { createChatBubble, createIconBubble, createNameplate } from './PlayerVisualUtils';
-import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET, CHAT_BUBBLE_DEPTH } from '../rendering/DepthManager';
+import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET, CHAT_BUBBLE_DEPTH, Y_SORT_FACTOR } from '../rendering/DepthManager';
 import { MCAnimationType, MC_FRAME_DIMENSIONS_BY_ANIM, SOFT_COLLISION_FORCE, PLAYER_RENDER_SCALE } from '@cfwk/shared';
 import type { LightingManager } from '../fx/LightingManager';
 import { ItemTextureLoader } from '../assets/ItemTextureLoader';
@@ -73,6 +73,14 @@ interface PixelParticle {
     delay: number;
 }
 
+interface InterpolationSample {
+    time: number;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+}
+
 export type RemotePlayerConfig = {
     sessionId: string;
     username: string;
@@ -131,10 +139,15 @@ export class RemotePlayer {
     private customAnimationKeyGetter?: (anim: string, direction: MCDirection) => string | undefined;
 
     // Interpolation
-    private readonly interpSpeed = 0.25;
-    private readonly interpolationDelayMs = 100;
     private readonly interpolationBufferMax = 40;
-    private interpolationBuffer: Array<{ time: number; x: number; y: number }> = [];
+    private interpolationBuffer: InterpolationSample[] = [];
+    private readonly interpolationDelayMinMs = 90;
+    private readonly interpolationDelayMaxMs = 260;
+    private readonly extrapolationLimitMs = 120;
+    private readonly smoothingTimeConstantMs = 45;
+    private readonly snapDistancePx = 110;
+    private packetIntervalAvgMs = 110;
+    private packetJitterAvgMs = 0;
     private readonly chatBubbleGap = 10;
     private readonly scale = PLAYER_RENDER_SCALE;
     private readonly hitboxWidth = 16;
@@ -404,10 +417,27 @@ export class RemotePlayer {
         
         this.targetX = x;
         this.targetY = y;
+        const sampleTime = Number.isFinite(serverTime) ? Number(serverTime) : Date.now();
+        const prev = this.interpolationBuffer[this.interpolationBuffer.length - 1];
+        const safeSampleTime = prev ? Math.max(sampleTime, prev.time + 1) : sampleTime;
+        const dtMs = prev ? Math.max(1, safeSampleTime - prev.time) : 1;
+        const vx = prev ? ((x - prev.x) / dtMs) : 0;
+        const vy = prev ? ((y - prev.y) / dtMs) : 0;
+
+        if (prev) {
+            const interval = safeSampleTime - prev.time;
+            const alpha = 0.15;
+            const prevAvg = this.packetIntervalAvgMs;
+            this.packetIntervalAvgMs = Phaser.Math.Linear(prevAvg, interval, alpha);
+            this.packetJitterAvgMs = Phaser.Math.Linear(this.packetJitterAvgMs, Math.abs(interval - prevAvg), alpha);
+        }
+
         this.interpolationBuffer.push({
-            time: Number.isFinite(serverTime) ? Number(serverTime) : Date.now(),
+            time: safeSampleTime,
             x,
-            y
+            y,
+            vx,
+            vy
         });
         if (this.interpolationBuffer.length > this.interpolationBufferMax) {
             this.interpolationBuffer.splice(0, this.interpolationBuffer.length - this.interpolationBufferMax);
@@ -502,9 +532,11 @@ export class RemotePlayer {
             }
         }
         
-        // Fallback to shared MC animation
+        // Fallback to remote-default animation, then legacy key.
         if (!animKey) {
-            animKey = `mc-${anim}-${mcDir}`;
+            const sharedMC = SharedMCTextures.getInstance();
+            const sharedKey = sharedMC.getAnimationKey(mcDir, anim as MCAnimationType);
+            animKey = this.scene.anims.exists(sharedKey) ? sharedKey : `mc-${anim}-${mcDir}`;
         }
         
         if (this.scene.anims.exists(animKey) && this.sprite.anims.currentAnim?.key !== animKey) {
@@ -565,33 +597,54 @@ export class RemotePlayer {
         // Guard: skip update if sprite frame is not ready (texture still loading)
         if (!this.sprite.frame || !this.sprite.anims) return;
 
-        // Buffered interpolation at renderTime = now - interpolationDelayMs.
+        // Buffered interpolation using adaptive delay + short extrapolation.
         const prevX = this.sprite.x;
         const prevY = this.sprite.y;
-        const renderTime = Date.now() - this.interpolationDelayMs;
+        const adaptiveDelayMs = Phaser.Math.Clamp(
+            this.packetIntervalAvgMs + this.packetJitterAvgMs * 2.2,
+            this.interpolationDelayMinMs,
+            this.interpolationDelayMaxMs
+        );
+        const renderTime = Date.now() - adaptiveDelayMs;
 
-        if (this.interpolationBuffer.length >= 2) {
+        let targetRenderX = this.targetX;
+        let targetRenderY = this.targetY;
+
+        if (this.interpolationBuffer.length > 0) {
             while (this.interpolationBuffer.length >= 2 && this.interpolationBuffer[1].time <= renderTime) {
                 this.interpolationBuffer.shift();
             }
 
             const first = this.interpolationBuffer[0];
-            const second = this.interpolationBuffer[1] || first;
-            const span = Math.max(1, second.time - first.time);
-            const t = Phaser.Math.Clamp((renderTime - first.time) / span, 0, 1);
-            this.sprite.x = Phaser.Math.Linear(first.x, second.x, t);
-            this.sprite.y = Phaser.Math.Linear(first.y, second.y, t);
-        } else {
-            const dx = this.targetX - this.sprite.x;
-            const dy = this.targetY - this.sprite.y;
-
-            if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-                this.sprite.x += dx * this.interpSpeed;
-                this.sprite.y += dy * this.interpSpeed;
-            } else {
-                this.sprite.x = this.targetX;
-                this.sprite.y = this.targetY;
+            const second = this.interpolationBuffer[1];
+            if (first && second && renderTime >= first.time && renderTime <= second.time) {
+                const span = Math.max(1, second.time - first.time);
+                const t = Phaser.Math.Clamp((renderTime - first.time) / span, 0, 1);
+                const tt = t * t;
+                const ttt = tt * t;
+                const h00 = 2 * ttt - 3 * tt + 1;
+                const h10 = ttt - 2 * tt + t;
+                const h01 = -2 * ttt + 3 * tt;
+                const h11 = ttt - tt;
+                targetRenderX = h00 * first.x + h10 * span * first.vx + h01 * second.x + h11 * span * second.vx;
+                targetRenderY = h00 * first.y + h10 * span * first.vy + h01 * second.y + h11 * span * second.vy;
+            } else if (first) {
+                const aheadMs = Math.max(0, renderTime - first.time);
+                const extrapolationMs = Math.min(this.extrapolationLimitMs, aheadMs);
+                targetRenderX = first.x + first.vx * extrapolationMs;
+                targetRenderY = first.y + first.vy * extrapolationMs;
             }
+        }
+
+        const smoothingAlpha = 1 - Math.exp(-Math.max(1, delta) / this.smoothingTimeConstantMs);
+        const diffX = targetRenderX - this.sprite.x;
+        const diffY = targetRenderY - this.sprite.y;
+        if ((diffX * diffX) + (diffY * diffY) > this.snapDistancePx * this.snapDistancePx) {
+            this.sprite.x = targetRenderX;
+            this.sprite.y = targetRenderY;
+        } else {
+            this.sprite.x += diffX * smoothingAlpha;
+            this.sprite.y += diffY * smoothingAlpha;
         }
 
         const dtSec = Math.max(0.001, delta / 1000);
@@ -609,7 +662,10 @@ export class RemotePlayer {
             if (this.customAnimationKeyGetter) {
                 animKey = this.customAnimationKeyGetter('walk', walkDir);
             }
-            if (!animKey) animKey = `mc-walk-${walkDir}`;
+            if (!animKey) {
+                const sharedKey = SharedMCTextures.getInstance().getAnimationKey(walkDir, 'walk');
+                animKey = this.scene.anims.exists(sharedKey) ? sharedKey : `mc-walk-${walkDir}`;
+            }
 
             if (this.scene.anims.exists(animKey) && this.sprite.anims.currentAnim?.key !== animKey) {
                 this.sprite.setFlipX(false);
@@ -641,9 +697,13 @@ export class RemotePlayer {
         // Calculate depth with Y-sorting and occlusion awareness
         const feetY = this.sprite.getBottomLeft().y;
         const depth = this.depthManager
-            ? this.depthManager.entityDepth(this.sprite.x, feetY, { baseDepth: this.baseDepth })
-            : this.baseDepth + feetY * 0.01;
+            ? this.depthManager.entityDepthFromSprite(this.sprite, { baseDepth: this.baseDepth })
+            : this.baseDepth + feetY * Y_SORT_FACTOR;
         this.sprite.setDepth(depth);
+        const nameplateDepth = this.depthManager
+            ? this.depthManager.nameplateDepth(depth)
+            : depth + NAMEPLATE_OFFSET;
+        this.nameplate.setDepth(nameplateDepth);
         
         // Update nameplate position (above the sprite, accounting for origin)
         this.nameplate.setPosition(this.sprite.x, this.sprite.y + this.nameplateYOffset);

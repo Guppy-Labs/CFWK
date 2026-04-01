@@ -6754,6 +6754,12 @@
                          "x":-24.6667,
                          "y":-2.33333
                         }],
+                 "properties":[
+                        {
+                         "name":"Targets",
+                         "type":"string",
+                         "value":"General,GenF,GenB"
+                        }],
                  "rotation":0,
                  "type":"",
                  "visible":true,
@@ -6802,6 +6808,18 @@
                  "width":0,
                  "x":3599.66666666667,
                  "y":5172.66666666667
+                }, 
+                {
+                 "height":0,
+                 "id":133,
+                 "name":"",
+                 "point":true,
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":2797.33333333333,
+                 "y":5262.66666666667
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -7174,6 +7192,24 @@
                  "width":0,
                  "x":3486.66666666667,
                  "y":6222.66666666667
+                }, 
+                {
+                 "height":0,
+                 "id":134,
+                 "name":"Debug",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"npc",
+                         "type":"string",
+                         "value":"debug"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":3118.66666666667,
+                 "y":5917.33333333333
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -7450,7 +7486,7 @@
          "y":0
         }],
  "nextlayerid":28,
- "nextobjectid":133,
+ "nextobjectid":135,
  "orientation":"orthogonal",
  "properties":[
         {

@@ -248,6 +248,64 @@
     transform: translateY(0);
 }
 
+/* --- Debug NPC Panel --- */
+.debug-npc-panel-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9998;
+    backdrop-filter: blur(2px);
+}
+
+.debug-npc-panel {
+    width: min(420px, 90vw);
+    background: #1e1e1e;
+    border: 2px solid #3a3a3a;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.debug-npc-panel-title {
+    font-family: 'Minecraft', monospace;
+    color: #f2e9dd;
+    font-size: 18px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-align: center;
+}
+
+.debug-npc-panel-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.debug-npc-panel-btn,
+.debug-npc-panel-close-btn {
+    font-family: 'Minecraft', monospace;
+    background: #2c2c2c;
+    color: #f2e9dd;
+    border: 1px solid #4a4a4a;
+    padding: 10px 12px;
+    cursor: pointer;
+}
+
+.debug-npc-panel-btn:hover,
+.debug-npc-panel-close-btn:hover {
+    background: #373737;
+}
+
+.debug-npc-panel-close-btn {
+    margin-top: 2px;
+    background: #222;
+}
+
 /* --- Error Modal --- */
 .error-modal-overlay {
     position: fixed;

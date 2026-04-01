@@ -1,74 +1,18 @@
-import fs from 'fs';
-import path from 'path';
 import { IAiNpcHitbox } from '@cfwk/shared';
 import { compressPath, findPathAStar } from './AStar';
 import { NavCollisionAdapter, Vec2 } from './types';
-
-type TiledProperty = { name: string; type: string; value: unknown };
-
-type TiledMapObject = {
-    x?: number;
-    y?: number;
-    width?: number;
-    height?: number;
-    polygon?: Array<{ x: number; y: number }>;
-    properties?: TiledProperty[] | Record<string, unknown>;
-};
-
-type TiledObjectLayer = {
-    name: string;
-    type: string;
-    properties?: TiledProperty[] | Record<string, unknown>;
-    objects?: TiledMapObject[];
-};
-
-type TiledMap = {
-    width: number;
-    height: number;
-    tilewidth: number;
-    tileheight: number;
-    layers: TiledObjectLayer[];
-};
+import { isPointInPolygon } from '../maps/geometry/pointInPolygon';
+import { extractNavColliderShapes, NavColliderShape } from '../maps/tiled/extract/navColliders';
+import { loadTiledMap } from '../maps/tiled/readMap';
 
 type Rect = { x: number; y: number; width: number; height: number };
-
-type ColliderShape =
-    | { kind: 'rect'; rect: Rect }
-    | { kind: 'poly'; polygon: Array<{ x: number; y: number }>; bounds: Rect };
-
-function getProp(obj: { properties?: TiledProperty[] | Record<string, unknown> }, name: string): unknown {
-    const props = obj.properties;
-    if (!props) return undefined;
-    if (Array.isArray(props)) {
-        return props.find((entry) => entry.name === name)?.value;
-    }
-    return props[name];
-}
-
-function pointInPolygon(pointX: number, pointY: number, polygon: Array<{ x: number; y: number }>): boolean {
-    let inside = false;
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-        const xi = polygon[i].x;
-        const yi = polygon[i].y;
-        const xj = polygon[j].x;
-        const yj = polygon[j].y;
-
-        const intersects = ((yi > pointY) !== (yj > pointY))
-            && (pointX < ((xj - xi) * (pointY - yi)) / (yj - yi + 0.0000001) + xi);
-
-        if (intersects) {
-            inside = !inside;
-        }
-    }
-    return inside;
-}
 
 export class ServerMapNavService implements NavCollisionAdapter {
     private mapWidthPx = 0;
     private mapHeightPx = 0;
     private cellSizePx = 32;
     private blockedCells = new Set<string>();
-    private colliders: ColliderShape[] = [];
+    private colliders: NavColliderShape[] = [];
     private readonly pathSafetyPaddingPx = 1;
     private readonly movementSafetyPaddingPx = 0.5;
     private readonly gridSubdivision = 4;
@@ -76,85 +20,35 @@ export class ServerMapNavService implements NavCollisionAdapter {
     private readonly maxAStarExpandedNodes = 12000;
 
     initializeFromMap(mapFileName: string) {
-        const fullPath = this.resolveMapPath(mapFileName);
-        if (!fullPath) {
+        const map = loadTiledMap(mapFileName);
+        if (!map) {
             console.warn(`[ServerMapNavService] Map not found for nav: ${mapFileName}`);
             return;
         }
 
-        const raw = fs.readFileSync(fullPath, 'utf8');
-        const map = JSON.parse(raw) as TiledMap;
-
-        this.mapWidthPx = map.width * map.tilewidth;
-        this.mapHeightPx = map.height * map.tileheight;
+        this.mapWidthPx = Number(map.width ?? 0) * Number(map.tilewidth ?? 32);
+        this.mapHeightPx = Number(map.height ?? 0) * Number(map.tileheight ?? 32);
         this.cellSizePx = Math.max(
             this.minCellSizePx,
-            Math.floor((map.tilewidth || 32) / this.gridSubdivision)
+            Math.floor((Number(map.tilewidth ?? 32)) / this.gridSubdivision)
         );
         this.blockedCells.clear();
-        this.colliders = [];
+        this.colliders = extractNavColliderShapes(map);
+        this.colliders.forEach((collider) => {
+            if (collider.kind === 'poly') {
+                const { x, y, width, height } = collider.bounds;
+                this.markCellsBySampler(x, y, x + width, y + height, (cellCenterX, cellCenterY) =>
+                    isPointInPolygon(cellCenterX, cellCenterY, collider.polygon)
+                );
+                return;
+            }
 
-        const objectLayers = (map.layers || []).filter((layer) => layer.type === 'objectgroup');
-        const collisionLayers = objectLayers.filter((layer) => {
-            const collidableProp = getProp(layer, 'Collidable');
-            const normalizedName = String(layer.name || '').toLowerCase();
-            return collidableProp === true
-                || normalizedName.includes('collision')
-                || normalizedName.includes('avoidance');
-        });
-
-        collisionLayers.forEach((layer) => {
-            (layer.objects || []).forEach((object) => {
-                const inverted = getProp(object, 'Inverted') === true;
-                if (inverted) return;
-
-                const baseX = Number(object.x) || 0;
-                const baseY = Number(object.y) || 0;
-
-                if (Array.isArray(object.polygon) && object.polygon.length >= 3) {
-                    const worldPolygon = object.polygon.map((point) => ({ x: baseX + point.x, y: baseY + point.y }));
-
-                    let minX = Number.POSITIVE_INFINITY;
-                    let minY = Number.POSITIVE_INFINITY;
-                    let maxX = Number.NEGATIVE_INFINITY;
-                    let maxY = Number.NEGATIVE_INFINITY;
-                    worldPolygon.forEach((point) => {
-                        minX = Math.min(minX, point.x);
-                        minY = Math.min(minY, point.y);
-                        maxX = Math.max(maxX, point.x);
-                        maxY = Math.max(maxY, point.y);
-                    });
-
-                    const colliderRect = {
-                        x: minX,
-                        y: minY,
-                        width: Math.max(1, maxX - minX),
-                        height: Math.max(1, maxY - minY)
-                    };
-
-                    this.colliders.push({
-                        kind: 'poly',
-                        polygon: worldPolygon,
-                        bounds: colliderRect
-                    });
-
-                    this.markCellsBySampler(minX, minY, maxX, maxY, (cellCenterX, cellCenterY) =>
-                        pointInPolygon(cellCenterX, cellCenterY, worldPolygon)
-                    );
-                    return;
-                }
-
-                const width = Number(object.width) || 0;
-                const height = Number(object.height) || 0;
-                if (width <= 0 || height <= 0) return;
-
-                this.colliders.push({ kind: 'rect', rect: { x: baseX, y: baseY, width, height } });
-                this.markCellsBySampler(baseX, baseY, baseX + width, baseY + height, (cellCenterX, cellCenterY) => {
-                    return cellCenterX >= baseX
-                        && cellCenterX <= (baseX + width)
-                        && cellCenterY >= baseY
-                        && cellCenterY <= (baseY + height);
-                });
+            const { x, y, width, height } = collider.rect;
+            this.markCellsBySampler(x, y, x + width, y + height, (cellCenterX, cellCenterY) => {
+                return cellCenterX >= x
+                    && cellCenterX <= (x + width)
+                    && cellCenterY >= y
+                    && cellCenterY <= (y + height);
             });
         });
 
@@ -197,25 +91,6 @@ export class ServerMapNavService implements NavCollisionAdapter {
         const nextY = (!this.intersectsAny(yAttemptRect) && this.isWithinBounds(yAttemptRect)) ? desired.y : current.y;
 
         return { x: nextX, y: nextY };
-    }
-
-    private resolveMapPathCandidates(mapFileName: string): string[] {
-        return [
-            path.resolve(__dirname, '../../../client/public/maps', mapFileName),
-            path.resolve(__dirname, '../../client/public/maps', mapFileName),
-            path.resolve(process.cwd(), '../client/public/maps', mapFileName),
-            path.resolve(process.cwd(), 'client/public/maps', mapFileName)
-        ];
-    }
-
-    private resolveMapPath(mapFileName: string): string | null {
-        const candidates = this.resolveMapPathCandidates(mapFileName);
-        for (const candidate of candidates) {
-            if (fs.existsSync(candidate)) {
-                return candidate;
-            }
-        }
-        return null;
     }
 
     private worldToCell(point: Vec2): { x: number; y: number } {
@@ -326,7 +201,7 @@ export class ServerMapNavService implements NavCollisionAdapter {
         };
     }
 
-    private intersectsCollider(rect: Rect, collider: ColliderShape): boolean {
+    private intersectsCollider(rect: Rect, collider: NavColliderShape): boolean {
         if (collider.kind === 'rect') {
             return this.rectsOverlap(rect, collider.rect);
         }
@@ -350,7 +225,7 @@ export class ServerMapNavService implements NavCollisionAdapter {
             { x: rect.x, y: rect.y + rect.height }
         ];
 
-        if (rectPoints.some((point) => pointInPolygon(point.x, point.y, polygon))) {
+        if (rectPoints.some((point) => isPointInPolygon(point.x, point.y, polygon))) {
             return true;
         }
 

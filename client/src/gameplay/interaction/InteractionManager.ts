@@ -244,6 +244,10 @@ export class InteractionManager {
     }
 
     private executeNpcTalk(npcId: string): boolean {
+        if (npcId.trim().toLowerCase() === 'debug') {
+            window.dispatchEvent(new CustomEvent('debug:npc:open'));
+            return true;
+        }
         window.dispatchEvent(new CustomEvent('npc:interact', {
             detail: { npcId, npcName: this.currentInteraction?.npcName }
         }));

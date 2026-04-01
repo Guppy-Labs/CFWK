@@ -52,6 +52,7 @@ export class NetworkManager {
     private statsCache: IPlayerStatsResponse | null = null;
     private moneyCache: IPlayerMoneyState | null = null;
     private advancementsCache: IAdvancementsState | null = null;
+    private debugNpcAvailable = false;
     private pendingAdvancementsStatePromise: Promise<IAdvancementsState | null> | null = null;
     private statsDeltaCallbacks: Array<(delta: IPlayerStatsDelta) => void> = [];
 
@@ -430,6 +431,16 @@ export class NetworkManager {
                 }
             }));
         });
+
+        this.currentRoom.onMessage('debug:npc:availability', (data: { enabled?: boolean }) => {
+            this.debugNpcAvailable = data?.enabled === true;
+            console.log(`[NetworkManager] debug:npc:availability received: enabled=${this.debugNpcAvailable}`);
+            window.dispatchEvent(new CustomEvent('debug:npc:availability', {
+                detail: { enabled: this.debugNpcAvailable }
+            }));
+        });
+
+        this.requestDebugNpcAvailability();
         
         // Mark that we have an active connection
         this.wasConnected = true;
@@ -664,6 +675,23 @@ export class NetworkManager {
         }
     }
 
+    sendDebugNpcAction(action: 'reset_game' | 'get_scar' | 'get_dev_rod') {
+        if (this.currentRoom) {
+            this.currentRoom.send('debug:npc:action', { action });
+        }
+    }
+
+    requestDebugNpcAvailability() {
+        if (this.currentRoom) {
+            console.log('[NetworkManager] Requesting debug NPC availability');
+            this.currentRoom.send('debug:npc:get-availability', {});
+        }
+    }
+
+    isDebugNpcAvailable(): boolean {
+        return this.debugNpcAvailable;
+    }
+
     requestAdvancementsState() {
         if (this.currentRoom) {
             this.currentRoom.send('advancements:get', {});
@@ -757,6 +785,7 @@ export class NetworkManager {
         this.currentInstance = null;
         this.glimmerbowlCache = null;
         this.moneyCache = null;
+        this.debugNpcAvailable = false;
     }
 
     /**

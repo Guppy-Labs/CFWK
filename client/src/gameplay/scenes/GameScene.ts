@@ -96,9 +96,13 @@ export class GameScene extends Phaser.Scene {
     private glimmerbowlFishLaunchHandler?: (event: Event) => void;
     private glimmerbowlFishLandHandler?: (event: Event) => void;
     private glimmerbowlFishReturnHandler?: (event: Event) => void;
+    private debugNpcAvailabilityHandler?: (event: Event) => void;
     private uiClickedHandler?: (event: Event) => void;
     private lastUiClickAtMs = 0;
+    private uiPointerReleaseHandler?: (event: Event) => void;
+    private uiInteractionActiveUntilMs = 0;
     private isFishingTransition = false;
+    private fishingExitBlockedUntilMs = 0;
     private isTransferringServer = false;
     private fishingFadeTimer?: Phaser.Time.TimerEvent;
     private fishingAutoFaceTimer?: Phaser.Time.TimerEvent;
@@ -953,7 +957,8 @@ export class GameScene extends Phaser.Scene {
             baseDepth: ENTITY_BASE,
             occlusionManager: this.occlusionManager,
             depthManager: this.depthManager,
-            lightingManager: this.lightingManager
+            lightingManager: this.lightingManager,
+            allowDebugNpc: this.networkManager.isDebugNpcAvailable()
         });
         this.npcManager.loadAndSpawnFromMap(map);
         this.mcPlayerController?.setNpcManager(this.npcManager);
@@ -1212,29 +1217,43 @@ export class GameScene extends Phaser.Scene {
 
         this.glimmerbowlPointerDownHandler = (pointer: Phaser.Input.Pointer) => {
             if (pointer.button !== 0) return;
-            if (this.wasRecentUiClick()) return;
-            if (!this.canUseManualGlimmerbowlTrigger()) return;
-            this.triggerWorldGlimmerbowl();
-            if (this.worldGlimmerbowlState === 'active') {
-                const player = this.getActivePlayer();
-                if (!player) return;
-                const dx = pointer.worldX - player.x;
-                const dy = pointer.worldY - player.y;
-                if ((dx * dx) + (dy * dy) > this.worldGlimmerbowlMaxLaunchRadiusPx * this.worldGlimmerbowlMaxLaunchRadiusPx) {
-                    return;
+            const targetWorldX = pointer.worldX;
+            const targetWorldY = pointer.worldY;
+            // Defer one tick so UIScene can mark same-event UI clicks before we evaluate.
+            this.time.delayedCall(0, () => {
+                if (!this.scene.isActive()) return;
+                if (this.wasRecentUiClick()) return;
+                if (!this.canUseManualGlimmerbowlTrigger()) return;
+                this.triggerWorldGlimmerbowl();
+                if (this.worldGlimmerbowlState === 'active') {
+                    const player = this.getActivePlayer();
+                    if (!player) return;
+                    const dx = targetWorldX - player.x;
+                    const dy = targetWorldY - player.y;
+                    if ((dx * dx) + (dy * dy) > this.worldGlimmerbowlMaxLaunchRadiusPx * this.worldGlimmerbowlMaxLaunchRadiusPx) {
+                        return;
+                    }
+                    this.networkManager.sendGlimmerbowlLaunch({
+                        targetX: targetWorldX,
+                        targetY: targetWorldY
+                    });
                 }
-                this.networkManager.sendGlimmerbowlLaunch({
-                    targetX: pointer.worldX,
-                    targetY: pointer.worldY
-                });
-            }
+            });
         };
         this.input.on('pointerdown', this.glimmerbowlPointerDownHandler);
         this.uiClickedHandler = (event: Event) => {
             const clickedAt = (event as CustomEvent<{ at?: number }>).detail?.at;
             this.lastUiClickAtMs = Number.isFinite(clickedAt) ? Number(clickedAt) : Date.now();
+            this.uiInteractionActiveUntilMs = Math.max(this.uiInteractionActiveUntilMs, this.lastUiClickAtMs + 360);
         };
         window.addEventListener('ui:clicked', this.uiClickedHandler as EventListener);
+        this.uiPointerReleaseHandler = (event: Event) => {
+            const releasedAt = (event as CustomEvent<{ at?: number }>).detail?.at;
+            const at = Number.isFinite(releasedAt) ? Number(releasedAt) : Date.now();
+            this.lastUiClickAtMs = at;
+            this.uiInteractionActiveUntilMs = Math.max(this.uiInteractionActiveUntilMs, at + 260);
+        };
+        window.addEventListener('ui:pointer-release', this.uiPointerReleaseHandler as EventListener);
 
         this.glimmerbowlFishLaunchHandler = (event: Event) => {
             this.handleFishLaunchVisual((event as CustomEvent<GlimmerbowlFishLaunchEvent>).detail);
@@ -1248,6 +1267,16 @@ export class GameScene extends Phaser.Scene {
         window.addEventListener('glimmerbowl:fish-launch', this.glimmerbowlFishLaunchHandler as EventListener);
         window.addEventListener('glimmerbowl:fish-land', this.glimmerbowlFishLandHandler as EventListener);
         window.addEventListener('glimmerbowl:fish-return', this.glimmerbowlFishReturnHandler as EventListener);
+        this.debugNpcAvailabilityHandler = (event: Event) => {
+            const enabled = Boolean((event as CustomEvent<{ enabled?: boolean }>).detail?.enabled);
+            console.log(`[GameScene] debug:npc:availability event: enabled=${enabled}`);
+            this.npcManager?.setAllowDebugNpc(enabled);
+        };
+        window.addEventListener('debug:npc:availability', this.debugNpcAvailabilityHandler as EventListener);
+        const initialDebugAvailability = this.networkManager.isDebugNpcAvailable();
+        console.log(`[GameScene] initial debug NPC availability from cache: ${initialDebugAvailability}`);
+        this.npcManager?.setAllowDebugNpc(initialDebugAvailability);
+        this.networkManager.requestDebugNpcAvailability();
         
         // Listen for shove events from server
         this.setupShoveListener();
@@ -1348,9 +1377,17 @@ export class GameScene extends Phaser.Scene {
                  window.removeEventListener('glimmerbowl:fish-return', this.glimmerbowlFishReturnHandler as EventListener);
                  this.glimmerbowlFishReturnHandler = undefined;
              }
+             if (this.debugNpcAvailabilityHandler) {
+                 window.removeEventListener('debug:npc:availability', this.debugNpcAvailabilityHandler as EventListener);
+                 this.debugNpcAvailabilityHandler = undefined;
+             }
              if (this.uiClickedHandler) {
                  window.removeEventListener('ui:clicked', this.uiClickedHandler as EventListener);
                  this.uiClickedHandler = undefined;
+             }
+             if (this.uiPointerReleaseHandler) {
+                 window.removeEventListener('ui:pointer-release', this.uiPointerReleaseHandler as EventListener);
+                 this.uiPointerReleaseHandler = undefined;
              }
                          if (this.advancementsUpdateHandler) {
                                  window.removeEventListener('advancements:update', this.advancementsUpdateHandler as EventListener);
@@ -1617,7 +1654,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     private wasRecentUiClick(): boolean {
-        return Date.now() - this.lastUiClickAtMs <= 180;
+        const now = Date.now();
+        return (now - this.lastUiClickAtMs <= 320) || (now <= this.uiInteractionActiveUntilMs);
     }
 
     private setWorldGlimmerbowlCombatActive(active: boolean) {
@@ -1836,6 +1874,7 @@ export class GameScene extends Phaser.Scene {
 
     private startFishingWithAutoFacing(rodItemId: string) {
         if (this.isFishingTransition) return;
+        if (this.time.now < this.fishingExitBlockedUntilMs) return;
 
         const player = this.getActivePlayer();
         const target = player
@@ -1884,6 +1923,8 @@ export class GameScene extends Phaser.Scene {
 
     private stopFishing() {
         this.isFishingTransition = false;
+        this.fishingExitBlockedUntilMs = this.time.now + 900;
+        this.keybindManager.clearPressedActions(['fish']);
         this.fishingAutoFaceTimer?.remove(false);
         this.fishingAutoFaceTimer = undefined;
         this.fishingFadeTimer?.remove(false);
@@ -2237,11 +2278,17 @@ export class GameScene extends Phaser.Scene {
         // Update map (tile animations)
         this.mapLoader?.update(delta);
 
+        // Update occlusion first so all entity depth computations in this frame
+        // observe the same occlusion state.
+        const player = this.getActivePlayer();
+        if (player) {
+            this.occlusionManager?.update(player);
+        }
+
         // Update player movement using active controller
         this.mcPlayerController?.update(delta);
 
         // Enforce containment zones
-        const player = this.getActivePlayer();
         if (player && this.collisionManager) {
             this.collisionManager.enforceContainment(player);
         }
@@ -2296,11 +2343,6 @@ export class GameScene extends Phaser.Scene {
         // Update seasonal effects (particles + color tints)
         const playerVel = (player?.body as any)?.velocity || { x: 0, y: 0 };
         this.seasonalEffectsManager?.update(worldTime, delta, playerVel);
-
-        // Update occlusion
-        if (player) {
-            this.occlusionManager?.update(player);
-        }
 
         // Update fire effects
         if (this.depthManager) {

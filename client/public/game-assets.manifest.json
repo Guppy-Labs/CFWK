@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-03-18T04:08:42.921Z",
-  "totalAssets": 14316,
+  "generatedAt": "2026-03-18T21:45:49.351Z",
+  "totalAssets": 14317,
   "assets": [
     "/assets/animations/chest-open.png",
     "/assets/char/mc/idle/accessories/base/cape/idle_E_cape.png",
@@ -447,6 +447,7 @@
     "/assets/npc/traveller/single.png",
     "/assets/npc/wiseman/single.png",
     "/assets/special/ocean0a.png",
+    "/assets/ui/play-icon.png",
     "/assets/ui/toast-chain.png",
     "/audio/ambient/action/rod-cast.mp3",
     "/audio/ambient/action/rod-reel.mp3",

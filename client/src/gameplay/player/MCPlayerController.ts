@@ -14,7 +14,7 @@ import { InteractionManager, InteractionType, StaticInteractiveTarget } from '..
 import { RemotePlayerManager } from './RemotePlayerManager';
 import type { NPCManager } from '../npc/NPCManager';
 import type { LightingManager } from '../fx/LightingManager';
-import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET } from '../rendering/DepthManager';
+import { DepthManager, ENTITY_BASE, NAMEPLATE_OFFSET, Y_SORT_FACTOR } from '../rendering/DepthManager';
 import { ICharacterAppearance, DEFAULT_CHARACTER_APPEARANCE, ClientMovementFrame, ServerMovementReconcile, ServerMovementImpulse, SOFT_COLLISION_FORCE, PLAYER_RENDER_SCALE } from '@cfwk/shared';
 import { MCInputManager } from './mc/MCInputManager';
 import { MCBubbleManager } from './mc/MCBubbleManager';
@@ -46,7 +46,7 @@ export class MCPlayerController {
     private equippedRodId: string | null = null;
     private isFishing = false;
     private fishingRestartBlockedUntil = 0;
-    private readonly fishingRestartBlockMs = 450;
+    private readonly fishingRestartBlockMs = 900;
     private onFishingStart?: (rodItemId: string) => void;
 
     private config: Required<Omit<MCPlayerControllerConfig, 'depthManager'>> & { depthManager?: DepthManager };
@@ -408,15 +408,19 @@ export class MCPlayerController {
         }
 
         this.updateSpriteOriginForDirection();
-
-        this.shadow?.update();
         this.bubbleManager.update();
 
-        const feetY = this.player.getBottomLeft().y;
         const depth = this._depthManager
-            ? this._depthManager.entityDepth(this.player.x, feetY, { baseDepth: this.config.depth ?? ENTITY_BASE })
-            : (this.config.depth ?? ENTITY_BASE) + feetY * 0.01;
+            ? this._depthManager.entityDepthFromSprite(this.player, { baseDepth: this.config.depth ?? ENTITY_BASE })
+            : (this.config.depth ?? ENTITY_BASE) + this.player.getBottomLeft().y * Y_SORT_FACTOR;
         this.player.setDepth(depth);
+        if (this.localNameplate) {
+            const nameplateDepth = this._depthManager
+                ? this._depthManager.nameplateDepth(depth)
+                : depth + NAMEPLATE_OFFSET;
+            this.localNameplate.setDepth(nameplateDepth);
+        }
+        this.shadow?.update();
 
         this.guiEffect?.update(this.player.x, this.player.y);
 
@@ -859,7 +863,9 @@ export class MCPlayerController {
             isPremium: currentUser?.isPremium,
             fontSize,
             yOffset: this.nameplateYOffset,
-            depth: (this.config.depth ?? ENTITY_BASE) + NAMEPLATE_OFFSET
+            depth: this._depthManager
+                ? this._depthManager.nameplateDepth(this.player.depth ?? (this.config.depth ?? ENTITY_BASE))
+                : (this.config.depth ?? ENTITY_BASE) + NAMEPLATE_OFFSET
         });
 
         this.localNameplate = nameplate.container;
