@@ -7,9 +7,11 @@ import {
     ServerMovementReconcile
 } from "@cfwk/shared";
 import { AI_NPC_DEFINITIONS } from "../../../ai/registry";
+import User from "../../../models/User";
 import { InstanceRoomHost } from "../context/InstanceRoomHost";
 import { InstancePlayerSchema } from "../schema/InstancePlayerSchema";
 import { PositionSnapshot, RuntimeMovementState } from "../types/movement";
+import { hasGameAdminCapability } from "../authority/AdminCapability";
 import {
     ACCEL,
     DRAG,
@@ -20,14 +22,27 @@ import {
     MAX_STEP_DT_MS,
     RECONCILE_INTERVAL_MS,
     SOFT_DISCREPANCY,
+    PLAYER_RECOVERY_INVULNERABILITY_MS,
     SPRINT_SPEED,
     WALK_SPEED
 } from "../InstanceRoomConstants";
 
 export function registerMovementAndPresenceHandlers(room: InstanceRoomHost) {
-    room.onMessage("ai:spawn", (client, data: { kind?: AINpcKind; x?: number; y?: number }) => {
+    room.onMessage("ai:spawn", async (client, data: { kind?: AINpcKind; x?: number; y?: number }) => {
         room.markActivity(client);
         const player = room.state.players.get(client.sessionId);
+        if (!player) return;
+        const isAdmin = await hasGameAdminCapability(player.odcid);
+        if (!isAdmin) {
+            client.send("chat", {
+                username: "SYSTEM",
+                odcid: "SYSTEM",
+                message: "You do not have permission to spawn AI NPCs.",
+                timestamp: Date.now(),
+                isSystem: true
+            });
+            return;
+        }
         const kind = data?.kind || "evil_tim";
         const spawnX = Number.isFinite(data?.x) ? Number(data.x) : ((player?.x || 0) + 48);
         const spawnY = Number.isFinite(data?.y) ? Number(data.y) : (player?.y || 0);
@@ -71,6 +86,8 @@ export function registerMovementAndPresenceHandlers(room: InstanceRoomHost) {
         room.markActivity(client);
         const player = room.state.players.get(client.sessionId);
         if (!player) return;
+        const userId = player.odcid || client.sessionId;
+        if (room.defeatedByUserId.get(userId)) return;
 
         const runtime = ensureRuntimeState(room, client, player);
         runtime.lastSeq += 1;
@@ -92,6 +109,8 @@ export function registerMovementAndPresenceHandlers(room: InstanceRoomHost) {
     room.onMessage("animation", (client, data: { anim: PlayerAnim; direction: number; isSprinting?: boolean }) => {
         const player = room.state.players.get(client.sessionId);
         if (!player) return;
+        const userId = player.odcid || client.sessionId;
+        if (room.defeatedByUserId.get(userId)) return;
 
         player.anim = data.anim;
         if (typeof data.direction === "number") {
@@ -137,6 +156,65 @@ export function registerMovementAndPresenceHandlers(room: InstanceRoomHost) {
         room.sendPlayerHeartsSnapshot(client);
     });
 
+    room.onMessage("player:recover", async (client) => {
+        room.markActivity(client);
+        const player = room.state.players.get(client.sessionId);
+        if (!player) return;
+        const userId = player.odcid || client.sessionId;
+        if (!room.defeatedByUserId.get(userId)) return;
+
+        const now = Date.now();
+        const respawn = room.playerRespawnPoint ?? { x: 64, y: 64 };
+        player.x = Number(respawn.x) || 64;
+        player.y = Number(respawn.y) || 64;
+        player.vx = 0;
+        player.vy = 0;
+        player.anim = "idle";
+        player.isFishing = false;
+        player.moveTs = now;
+
+        const runtime = ensureRuntimeState(room, client, player);
+        runtime.vx = 0;
+        runtime.vy = 0;
+        runtime.input = { up: false, down: false, left: false, right: false, sprint: false };
+        runtime.impulseVx = 0;
+        runtime.impulseVy = 0;
+        runtime.impulseActiveUntil = 0;
+        runtime.lastServerTime = now;
+        (runtime as any).invulnerableUntil = now + PLAYER_RECOVERY_INVULNERABILITY_MS;
+
+        const current = room.heartsByUserId.get(userId);
+        const next = room.normalizeHeartsState({
+            currentHearts: current?.maxHearts ?? 9,
+            maxHearts: current?.maxHearts ?? 9
+        });
+        room.heartsByUserId.set(userId, next);
+        room.defeatedByUserId.delete(userId);
+
+        if (userId !== client.sessionId) {
+            await User.updateOne(
+                { _id: userId },
+                {
+                    $set: {
+                        hearts: next,
+                        lastPositionX: player.x,
+                        lastPositionY: player.y
+                    }
+                }
+            ).catch((error) => {
+                console.error("[InstanceRoom] Failed to persist recovery state:", error);
+            });
+        }
+
+        client.send("player:hearts", next);
+        client.send("player:recovered", {
+            x: player.x,
+            y: player.y,
+            invulnerableUntil: (runtime as any).invulnerableUntil
+        });
+        sendMovementReconcile(room, client, player, runtime.lastSeq, "hard-server", true, 0, "recovered");
+    });
+
     room.onMessage("shove", (client, data: { targetSessionId: string; clientTime?: number }) => {
         room.markActivity(client);
         const attacker = room.state.players.get(client.sessionId);
@@ -146,6 +224,8 @@ export function registerMovementAndPresenceHandlers(room: InstanceRoomHost) {
             console.log("[InstanceRoom] Shove failed: invalid players");
             return;
         }
+        if (room.defeatedByUserId.get(attacker.odcid || client.sessionId)) return;
+        if (room.defeatedByUserId.get(target.odcid || data.targetSessionId)) return;
 
         if (target.isAfk) {
             console.log("[InstanceRoom] Shove rejected: target is AFK-ghosted");
@@ -188,6 +268,8 @@ export function registerMovementAndPresenceHandlers(room: InstanceRoomHost) {
 
     room.onMessage("shoveAttempt", (client, data: { targetSessionId: string }) => {
         room.markActivity(client);
+        const player = room.state.players.get(client.sessionId);
+        if (player && room.defeatedByUserId.get(player.odcid || client.sessionId)) return;
         room.broadcast("shoveAttempt", {
             attackerSessionId: client.sessionId,
             targetSessionId: data.targetSessionId
@@ -202,9 +284,16 @@ export function stepHardAuthorityMotion(room: InstanceRoomHost, deltaTimeMs: num
     room.clients.forEach((client: Client) => {
         const player = room.state.players.get(client.sessionId);
         if (!player) return;
-
         const runtime = room.movementRuntimeBySession.get(client.sessionId);
         if (!runtime) return;
+        const userId = player.odcid || client.sessionId;
+        if (room.defeatedByUserId.get(userId)) {
+            player.vx = 0;
+            player.vy = 0;
+            runtime.vx = 0;
+            runtime.vy = 0;
+            return;
+        }
         if (now >= runtime.hardAuthorityUntil) return;
 
         const prevX = player.x;
@@ -313,6 +402,22 @@ export function handleMovementFrame(room: InstanceRoomHost, client: Client, fram
     if (!player) return;
 
     const runtime = ensureRuntimeState(room, client, player);
+    const userId = player.odcid || client.sessionId;
+    if (room.defeatedByUserId.get(userId)) {
+        player.vx = 0;
+        player.vy = 0;
+        player.anim = "idle";
+        player.moveTs = Date.now();
+        runtime.vx = 0;
+        runtime.vy = 0;
+        runtime.input = { up: false, down: false, left: false, right: false, sprint: false };
+        runtime.impulseVx = 0;
+        runtime.impulseVy = 0;
+        runtime.impulseActiveUntil = 0;
+        runtime.lastServerTime = Date.now();
+        sendMovementReconcile(room, client, player, runtime.lastSeq, "hard-server", true, 0, "defeated-locked");
+        return;
+    }
     if (player.isFishing) {
         player.vx = 0;
         player.vy = 0;
@@ -550,6 +655,8 @@ export function applyServerImpulse(
 ) {
     const player = room.state.players.get(sessionId);
     if (!player) return;
+    const userId = player.odcid || sessionId;
+    if (room.defeatedByUserId.get(userId)) return;
 
     const now = Date.now();
 

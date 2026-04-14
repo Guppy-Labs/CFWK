@@ -28,6 +28,7 @@ export function handleLeave(room: InstanceRoomHost, client: Client, _consented: 
         room.hasOwnedScarByUserId.delete(odcid);
         room.heartsByUserId.delete(odcid);
         room.moneyByUserId.delete(odcid);
+        room.defeatedByUserId.delete(odcid);
 
         const isWipedSession = room.wipedUserIds.has(odcid);
         if (departingPlayer && !isWipedSession) {
@@ -80,9 +81,11 @@ export function handleDispose(room: InstanceRoomHost) {
     room.fishCombatByUserId.clear();
     room.heartsByUserId.clear();
     room.moneyByUserId.clear();
+    room.defeatedByUserId.clear();
     room.harvestCooldownByUserId.clear();
     room.harvestTargetsByObjectId.clear();
     room.chestInteractionTarget = null;
+    room.playerRespawnPoint = { x: 64, y: 64 };
     if (room.timeUpdateInterval) clearInterval(room.timeUpdateInterval);
     if (room.afkCheckInterval) clearInterval(room.afkCheckInterval);
     if (room.droppedItemCleanupInterval) clearInterval(room.droppedItemCleanupInterval);

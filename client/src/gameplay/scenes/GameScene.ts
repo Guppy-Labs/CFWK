@@ -89,6 +89,8 @@ export class GameScene extends Phaser.Scene {
     private characterService = CharacterService.getInstance();
     private unsubscribeDisconnect?: () => void;
     private unsubscribeServerTransfer?: () => void;
+    private unsubscribePlayerDefeat?: () => void;
+    private unsubscribePlayerRecovered?: () => void;
     private inventoryUpdateHandler?: (event: Event) => void;
     private glimmerbowlUpdateHandler?: (event: Event) => void;
     private rodUseHandler?: () => void;
@@ -179,6 +181,8 @@ export class GameScene extends Phaser.Scene {
     private readonly worldGlimmerbowlMaxLaunchRadiusPx = 10 * GameScene.WORLD_METERS_TO_PIXELS;
     private worldGlimmerbowlRangeRing?: Phaser.GameObjects.Graphics;
     private fishCombatArcsByEventId = new Map<string, FishCombatArcVisual>();
+    private defeatFloatTween?: Phaser.Tweens.Tween;
+    private readonly defeatFloatDurationMs = 1150;
     
     // Character appearance (fetched async)
     private characterAppearance: ICharacterAppearance = DEFAULT_CHARACTER_APPEARANCE;
@@ -236,6 +240,7 @@ export class GameScene extends Phaser.Scene {
         this.cameras.main.setBackgroundColor('#121212');
 
         this.registry.set('inputBlocked', false);
+        this.registry.set('playerDefeated', false);
 
         // Allow other systems to stop audio (e.g., disconnect/AFK)
         this.events.on('stop-audio', this.stopAllAudio, this);
@@ -1346,11 +1351,33 @@ export class GameScene extends Phaser.Scene {
         this.unsubscribeServerTransfer = this.networkManager.onServerTransfer((locationId) => {
             this.beginServerTransfer(locationId);
         });
+
+        this.unsubscribePlayerDefeat = this.networkManager.onPlayerDefeat(() => {
+            if (this.isTransferringServer) return;
+            this.registry.set('playerDefeated', true);
+            this.registry.set('inputBlocked', true);
+            this.mcPlayerController?.getMobileControls()?.setInputBlocked(true);
+            this.playLocalDefeatFloatAnimation();
+        });
+
+        this.unsubscribePlayerRecovered = this.networkManager.onPlayerRecovered((data) => {
+            this.registry.set('playerDefeated', false);
+            this.clearLocalDefeatVisuals(data);
+            if (this.isTransferringServer) return;
+            if (this.chestCinematicActive || this.isFishingTransition) return;
+            if (this.registry.get('dialogueActive') === true) return;
+            this.registry.set('inputBlocked', false);
+            this.mcPlayerController?.getMobileControls()?.setInputBlocked(false);
+        });
         
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
              this.game.events.off('chat-message', this.handleChatMessage, this);
              this.unsubscribeDisconnect?.();
              this.unsubscribeServerTransfer?.();
+             this.unsubscribePlayerDefeat?.();
+             this.unsubscribePlayerRecovered?.();
+             this.defeatFloatTween?.stop();
+             this.defeatFloatTween = undefined;
              if (this.inventoryUpdateHandler) {
                  window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
              }
@@ -1441,6 +1468,49 @@ export class GameScene extends Phaser.Scene {
 
     private stopAllAudio() {
         this.audioManager?.destroy();
+    }
+
+    private playLocalDefeatFloatAnimation() {
+        const player = this.mcPlayerController?.getPlayer();
+        if (!player) {
+            window.dispatchEvent(new CustomEvent('player:defeat:animation-complete'));
+            return;
+        }
+
+        this.defeatFloatTween?.stop();
+        this.defeatFloatTween = undefined;
+
+        this.mcPlayerController?.setShadowVisible(false);
+        player.setVelocity(0, 0);
+        player.setAlpha(1);
+
+        const targetY = player.y - 46;
+        this.defeatFloatTween = this.tweens.add({
+            targets: player,
+            y: targetY,
+            alpha: 0,
+            duration: this.defeatFloatDurationMs,
+            ease: 'Sine.easeOut',
+            onComplete: () => {
+                this.defeatFloatTween = undefined;
+                window.dispatchEvent(new CustomEvent('player:defeat:animation-complete'));
+            }
+        });
+    }
+
+    private clearLocalDefeatVisuals(data?: { x?: number; y?: number }) {
+        const player = this.mcPlayerController?.getPlayer();
+        this.defeatFloatTween?.stop();
+        this.defeatFloatTween = undefined;
+
+        if (player) {
+            if (Number.isFinite(data?.x) && Number.isFinite(data?.y)) {
+                player.setPosition(Number(data?.x), Number(data?.y));
+                player.setVelocity(0, 0);
+            }
+            player.setAlpha(1);
+        }
+        this.mcPlayerController?.setShadowVisible(true);
     }
 
     private setWorldGlimmerbowlUnlocked(unlocked: boolean) {

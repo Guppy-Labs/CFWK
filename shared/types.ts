@@ -275,6 +275,8 @@ export interface IInstanceInfo {
     roomName: string;        // Colyseus room name to join
     currentPlayers: number;  // How many players currently
     maxPlayers: number;      // Max capacity
+  joinToken?: string;       // Short-lived token authorizing Colyseus join
+  joinTokenExpiresAt?: number; // Unix ms timestamp when joinToken expires
   spawnX?: number;         // Optional persisted rejoin X coordinate
   spawnY?: number;         // Optional persisted rejoin Y coordinate
 }

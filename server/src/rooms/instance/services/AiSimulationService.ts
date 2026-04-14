@@ -2,6 +2,7 @@ import { Client } from "colyseus";
 import {
     AINpcKind,
     DEFAULT_PLAYER_HEARTS_STATE,
+    getItemDefinition,
     IPlayerHeartsState,
     SOFT_COLLISION_FORCE,
     SOFT_COLLISION_PLAYER_FOOT_HITBOX
@@ -89,6 +90,8 @@ export function tryEnemyMeleeAttack(room: InstanceRoomHost, attacker: AiNpcRunti
 
     const player = room.state.players.get(targetSessionId);
     if (!player) return;
+    const userId = player.odcid || targetSessionId;
+    if (room.defeatedByUserId.get(userId)) return;
 
     const now = Date.now();
     if (didPlayerDodgeMeleeAttack(room, targetSessionId, now)) return;
@@ -132,7 +135,9 @@ export function applyDamageToPlayerHearts(room: InstanceRoomHost, targetSessionI
     if (!player) return;
 
     const userId = player.odcid || targetSessionId;
+    if (room.defeatedByUserId.get(userId)) return;
     const current = room.heartsByUserId.get(userId) ?? { ...DEFAULT_PLAYER_HEARTS_STATE };
+    if (current.currentHearts <= 0) return;
     const next = room.normalizeHeartsState({
         currentHearts: current.currentHearts - Math.floor(damageHearts),
         maxHearts: current.maxHearts
@@ -140,8 +145,62 @@ export function applyDamageToPlayerHearts(room: InstanceRoomHost, targetSessionI
 
     room.heartsByUserId.set(userId, next);
     const client = room.clients.find((entry: Client) => entry.sessionId === targetSessionId);
+    const now = Date.now();
+    if (current.currentHearts > 0 && next.currentHearts <= 0) {
+        room.defeatedByUserId.set(userId, {
+            defeatedAt: now,
+            reason: "hearts_depleted"
+        });
+        room.aiRuntimeById.forEach((runtime: AiNpcRuntimeState) => {
+            if (runtime.targetSessionId === targetSessionId) {
+                runtime.targetSessionId = undefined;
+                runtime.mode = "idle";
+                runtime.chasePath = [];
+                runtime.chasePathIndex = 0;
+            }
+            if (runtime.pendingMeleeTargetSessionId === targetSessionId) {
+                runtime.pendingMeleeTargetSessionId = undefined;
+                runtime.pendingMeleeTriggerAtMs = undefined;
+                runtime.pendingMeleeDamageHearts = undefined;
+            }
+        });
+
+        player.isFishing = false;
+        player.vx = 0;
+        player.vy = 0;
+        player.anim = "idle";
+        player.moveTs = now;
+
+        const runtime = room.movementRuntimeBySession.get(targetSessionId);
+        if (runtime) {
+            runtime.vx = 0;
+            runtime.vy = 0;
+            runtime.input = { up: false, down: false, left: false, right: false, sprint: false };
+            runtime.impulseVx = 0;
+            runtime.impulseVy = 0;
+            runtime.impulseActiveUntil = 0;
+            runtime.lastServerTime = now;
+        }
+    }
+
     if (client) {
         client.send("player:hearts", next);
+        if (next.currentHearts <= 0) {
+            client.send("player:defeat", {
+                reason: "hearts_depleted",
+                defeatedAt: now
+            });
+            const runtime = room.movementRuntimeBySession.get(targetSessionId);
+            room.sendMovementReconcile(
+                client,
+                player,
+                runtime?.lastSeq ?? 0,
+                "hard-server",
+                true,
+                0,
+                "defeated"
+            );
+        }
     }
 
     if (userId !== targetSessionId) {
@@ -176,6 +235,7 @@ export function applyEnemyDamage(room: InstanceRoomHost, aiId: string, damageAmo
     schema.vy = 0;
     schema.anim = "death";
     schema.moveTs = Date.now();
+    spawnNpcLootDrops(room, runtime.kind, runtime.x, runtime.y);
     return true;
 }
 
@@ -233,6 +293,8 @@ export function stepAiNpcSimulation(room: InstanceRoomHost, deltaTimeMs: number)
     const despawnIds: string[] = [];
     const players: Array<{ sessionId: string; x: number; y: number }> = [];
     room.state.players.forEach((player: any, sessionId: string) => {
+        const userId = player?.odcid || sessionId;
+        if (room.defeatedByUserId.get(userId)) return;
         players.push({ sessionId, x: player.x, y: player.y });
     });
 
@@ -288,6 +350,8 @@ export function stepSoftEntityCollisions(room: InstanceRoomHost, deltaTimeMs: nu
         if (player.isAfk) return;
         if (player.isFishing) return;
         if (player.x === 0 && player.y === 0) return;
+        const userId = player?.odcid || sessionId;
+        if (room.defeatedByUserId.get(userId)) return;
 
         bodies.push({
             id: sessionId,
@@ -489,4 +553,105 @@ export function spawnAiNpc(room: InstanceRoomHost, kind: AINpcKind, x: number, y
     }
 
     return id;
+}
+
+type RolledNpcDrop = {
+    kind: "item";
+    itemId: string;
+    amount: number;
+} | {
+    kind: "coins";
+    denomination: "bronze";
+    amount: number;
+};
+
+function spawnNpcLootDrops(room: InstanceRoomHost, kind: AINpcKind, x: number, y: number) {
+    const rolledDrops = rollNpcLootDrops(kind);
+    if (rolledDrops.length === 0) return;
+
+    rolledDrops.forEach((drop, index) => {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 4 + (Math.random() * 8) + (index * 1.5);
+        const dropX = x + Math.cos(angle) * radius;
+        const dropY = y + Math.sin(angle) * radius;
+
+        if (drop.kind === "coins") {
+            room.createDroppedCoins(drop.amount, dropX, dropY, drop.denomination);
+            return;
+        }
+
+        if (!getItemDefinition(drop.itemId)) return;
+        room.createDroppedItem(drop.itemId, drop.amount, dropX, dropY);
+    });
+}
+
+function rollNpcLootDrops(kind: AINpcKind): RolledNpcDrop[] {
+    const definition = AI_NPC_DEFINITIONS[kind];
+    const table = definition?.lootTable;
+    if (!table) return [];
+
+    const drops: RolledNpcDrop[] = [];
+
+    if (table.coins && Math.random() < clampChance(table.coins.chance)) {
+        const minAmount = Math.max(1, Math.floor(table.coins.minAmount));
+        const maxAmount = Math.max(minAmount, Math.floor(table.coins.maxAmount));
+        const amount = randomIntInclusive(minAmount, maxAmount);
+        drops.push({
+            kind: "coins",
+            denomination: table.coins.denomination,
+            amount
+        });
+    }
+
+    if (table.itemSubpool && Math.random() < clampChance(table.itemSubpool.chance)) {
+        const itemId = selectItemFromSubpool(
+            table.itemSubpool.itemIds,
+            table.itemSubpool.jackpotItemId,
+            table.itemSubpool.jackpotChanceWithinSubpool
+        );
+        if (itemId) {
+            drops.push({
+                kind: "item",
+                itemId,
+                amount: 1
+            });
+        }
+    }
+
+    return drops;
+}
+
+function selectItemFromSubpool(
+    itemIds: string[],
+    jackpotItemId?: string,
+    jackpotChanceWithinSubpool?: number
+): string | null {
+    const pool = Array.isArray(itemIds)
+        ? itemIds.filter((itemId) => typeof itemId === "string" && itemId.trim().length > 0)
+        : [];
+    if (pool.length === 0 && !jackpotItemId) return null;
+
+    const jackpotChance = clampChance(
+        Number.isFinite(jackpotChanceWithinSubpool)
+            ? Number(jackpotChanceWithinSubpool)
+            : 0
+    );
+    const hasJackpot = typeof jackpotItemId === "string" && jackpotItemId.trim().length > 0;
+    if (hasJackpot && Math.random() < jackpotChance) {
+        return jackpotItemId;
+    }
+
+    if (pool.length === 0) return null;
+    return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function randomIntInclusive(min: number, max: number): number {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function clampChance(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    if (value <= 0) return 0;
+    if (value >= 1) return 1;
+    return value;
 }

@@ -10,7 +10,7 @@ import { JoinResolvedState } from "./JoinStateResolver";
 export function initializeJoinedPlayerState(
     room: InstanceRoomHost,
     client: Client,
-    options: { username?: string; odcid?: string },
+    options: { username?: string; joinToken?: string },
     joinState: JoinResolvedState
 ) {
     const player = new InstancePlayerSchema();

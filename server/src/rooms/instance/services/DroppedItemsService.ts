@@ -12,8 +12,11 @@ import {
 export function createDroppedItem(room: InstanceRoomHost, itemId: string, amount: number, x: number, y: number) {
     const drop = new DroppedItemSchema();
     drop.id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    drop.dropKind = "item";
     drop.itemId = itemId;
     drop.amount = amount;
+    drop.coinDenomination = "";
+    drop.coinAmount = 0;
     drop.x = x;
     drop.y = y;
     drop.createdAt = Date.now();
@@ -29,6 +32,28 @@ export function createDroppedItem(room: InstanceRoomHost, itemId: string, amount
         drop.liquidOutputItemId = liquidRecipe.outputItemId;
         drop.liquidConfirmText = liquidRecipe.confirmText;
     }
+    room.state.droppedItems.set(drop.id, drop);
+}
+
+export function createDroppedCoins(
+    room: InstanceRoomHost,
+    amount: number,
+    x: number,
+    y: number,
+    denomination: "bronze" = "bronze"
+) {
+    const normalizedAmount = Math.max(1, Math.floor(Number.isFinite(amount) ? amount : 0));
+    const drop = new DroppedItemSchema();
+    drop.id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    drop.dropKind = "coins";
+    // Keep a stable itemId for grouping/compatibility in clients.
+    drop.itemId = `coins:${denomination}`;
+    drop.amount = normalizedAmount;
+    drop.coinDenomination = denomination;
+    drop.coinAmount = normalizedAmount;
+    drop.x = x;
+    drop.y = y;
+    drop.createdAt = Date.now();
     room.state.droppedItems.set(drop.id, drop);
 }
 

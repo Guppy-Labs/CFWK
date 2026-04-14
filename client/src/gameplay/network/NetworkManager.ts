@@ -44,6 +44,8 @@ export class NetworkManager {
     // Disconnect detection
     private disconnectCallbacks: Array<(code: number) => void> = [];
     private transferCallbacks: Array<(locationId: string) => void> = [];
+    private defeatCallbacks: Array<(data: { reason?: string; defeatedAt?: number }) => void> = [];
+    private recoveredCallbacks: Array<(data: { x?: number; y?: number; invulnerableUntil?: number }) => void> = [];
     private wasConnected: boolean = false;
 
     private inventoryCache: IInventoryResponse | null = null;
@@ -76,17 +78,53 @@ export class NetworkManager {
         console.log(`[NetworkManager] Requesting instance for location: ${locationId || 'auto'}`);
         
         try {
-            const response = await fetch(Config.getApiUrl('/instance/join'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify(locationId ? { locationId } : {})
-            });
+            const joinPayload = JSON.stringify(locationId ? { locationId } : {});
+            const joinUrls: string[] = ['/api/instance/join'];
+            const configuredUrl = Config.getApiUrl('/instance/join');
+            if (configuredUrl && configuredUrl !== joinUrls[0]) {
+                joinUrls.push(configuredUrl);
+            }
+
+            let response: Response | null = null;
+            for (const url of joinUrls) {
+                try {
+                    const candidate = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'include',
+                        body: joinPayload
+                    });
+                    if (candidate.ok || candidate.status === 401 || candidate.status === 403) {
+                        response = candidate;
+                        break;
+                    }
+                    if (!response) {
+                        response = candidate;
+                    }
+                } catch (error) {
+                    if (!response) {
+                        this.connectionError = error instanceof Error ? error.message : "Unknown error";
+                    }
+                }
+            }
+
+            if (!response) {
+                throw new Error(this.connectionError || "Failed to get instance");
+            }
 
             if (!response.ok) {
-                throw new Error(`Failed to get instance: ${response.statusText}`);
+                let errorMessage = `Failed to get instance: ${response.status}`;
+                try {
+                    const payload = await response.json();
+                    if (typeof payload?.error === 'string' && payload.error.trim().length > 0) {
+                        errorMessage = payload.error;
+                    }
+                } catch {
+                    // keep fallback message
+                }
+                throw new Error(errorMessage);
             }
 
             const data: IJoinInstanceResponse = await response.json();
@@ -266,7 +304,7 @@ export class NetworkManager {
      * Connect to the assigned instance room.
      * Call this after requestInstance() succeeds.
      */
-    async connectToInstance(username: string = "Guest", odcid?: string): Promise<Colyseus.Room | null> {
+    async connectToInstance(username: string = "Guest"): Promise<Colyseus.Room | null> {
         if (!this.currentInstance) {
             console.error("[NetworkManager] No instance assigned. Call requestInstance() first.");
             return null;
@@ -281,6 +319,12 @@ export class NetworkManager {
         this.connectionError = null;
 
         try {
+            const joinToken = this.currentInstance.joinToken;
+            if (!joinToken) {
+                this.connectionError = "UNAUTHORIZED_JOIN_TOKEN_MISSING";
+                console.error("[NetworkManager] Missing join token for instance connect.");
+                return null;
+            }
             console.log(`[NetworkManager] Connecting to instance: ${this.currentInstance.instanceId}`);
             
             // Join the room with instance info
@@ -290,7 +334,7 @@ export class NetworkManager {
                 mapFile: this.currentInstance.mapFile,
                 maxPlayers: this.currentInstance.maxPlayers,
                 username,
-                odcid: odcid || 'guest'
+                joinToken
             });
 
             console.log(`[NetworkManager] Connected to room: ${this.currentRoom.id}`);
@@ -414,6 +458,16 @@ export class NetworkManager {
             this.transferCallbacks.forEach((callback) => callback(data.locationId!));
         });
 
+        this.currentRoom.onMessage('player:defeat', (data: { reason?: string; defeatedAt?: number }) => {
+            this.defeatCallbacks.forEach((callback) => callback(data ?? {}));
+            window.dispatchEvent(new CustomEvent('player:defeat', { detail: data ?? {} }));
+        });
+
+        this.currentRoom.onMessage('player:recovered', (data: { x?: number; y?: number; invulnerableUntil?: number }) => {
+            this.recoveredCallbacks.forEach((callback) => callback(data ?? {}));
+            window.dispatchEvent(new CustomEvent('player:recovered', { detail: data ?? {} }));
+        });
+
         this.currentRoom.onMessage('quest:bridge-blocked', (data: { npcId?: string }) => {
             const npcId = typeof data?.npcId === 'string' && data.npcId.trim().length > 0
                 ? data.npcId.trim()
@@ -466,6 +520,26 @@ export class NetworkManager {
             const index = this.transferCallbacks.indexOf(callback);
             if (index > -1) {
                 this.transferCallbacks.splice(index, 1);
+            }
+        };
+    }
+
+    onPlayerDefeat(callback: (data: { reason?: string; defeatedAt?: number }) => void): () => void {
+        this.defeatCallbacks.push(callback);
+        return () => {
+            const index = this.defeatCallbacks.indexOf(callback);
+            if (index > -1) {
+                this.defeatCallbacks.splice(index, 1);
+            }
+        };
+    }
+
+    onPlayerRecovered(callback: (data: { x?: number; y?: number; invulnerableUntil?: number }) => void): () => void {
+        this.recoveredCallbacks.push(callback);
+        return () => {
+            const index = this.recoveredCallbacks.indexOf(callback);
+            if (index > -1) {
+                this.recoveredCallbacks.splice(index, 1);
             }
         };
     }
@@ -667,6 +741,11 @@ export class NetworkManager {
         if (this.currentRoom) {
             this.currentRoom.send("fishing:hook", {});
         }
+    }
+
+    sendPlayerRecover() {
+        if (!this.currentRoom) return;
+        this.currentRoom.send("player:recover", {});
     }
 
     sendNpcInteract(npcId: string) {

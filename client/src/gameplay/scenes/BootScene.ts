@@ -64,8 +64,7 @@ export class BootScene extends Phaser.Scene {
             
             // Pass user data when connecting
             const room = await this.networkManager.connectToInstance(
-                currentUser?.username || 'Guest',
-                currentUser?._id
+                currentUser?.username || 'Guest'
             );
             
             // Check for duplicate connection - return special marker

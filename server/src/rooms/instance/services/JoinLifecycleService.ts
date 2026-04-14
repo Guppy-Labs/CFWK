@@ -1,6 +1,7 @@
 import { Client } from "colyseus";
 import {
     DEFAULT_INVENTORY_SLOTS,
+    DEFAULT_GUIDE_TUTORIAL_STATE,
     DEFAULT_PLAYER_HEARTS_STATE,
     IGuideTutorialState,
     isEquippableUsableItem,
@@ -15,13 +16,45 @@ import {
     resolveJoinState
 } from "./JoinStateResolver";
 import { initializeJoinedPlayerState, sendInitialJoinPayloads } from "./JoinPayloadService";
+import { verifyJoinToken } from "../authority/JoinTokenAuthority";
+import { sanitizeEquippedRod, sanitizeEquippedUsables } from "../authority/EquipmentAuthority";
+import { sanitizeTutorialPatch } from "../authority/TutorialAuthority";
 
 export async function handleJoinLifecycle(
     room: InstanceRoomHost,
     client: Client,
-    options: { username?: string; odcid?: string }
+    options: { username?: string; joinToken?: string }
 ) {
-    const odcid = options.odcid || client.sessionId;
+    const verification = verifyJoinToken(options?.joinToken || "");
+    if (!verification.valid || !verification.payload) {
+        console.warn("[InstanceRoom] Rejected join: invalid token", {
+            reason: verification.reason || "unknown",
+            instanceId: room.instanceId || room.state?.instanceId,
+            locationId: room.state?.locationId
+        });
+        throw new Error("UNAUTHORIZED_JOIN");
+    }
+
+    const expectedInstanceId = String(room.instanceId || room.state?.instanceId || "");
+    const expectedLocationId = String(room.state?.locationId || "");
+    const expectedRoomName = typeof room.roomName === "string" ? room.roomName : "instance";
+    if (
+        verification.payload.iid !== expectedInstanceId ||
+        verification.payload.lid !== expectedLocationId ||
+        verification.payload.room !== expectedRoomName
+    ) {
+        console.warn("[InstanceRoom] Rejected join: token scope mismatch", {
+            expectedInstanceId,
+            expectedLocationId,
+            expectedRoomName,
+            tokenInstanceId: verification.payload.iid,
+            tokenLocationId: verification.payload.lid,
+            tokenRoomName: verification.payload.room
+        });
+        throw new Error("UNAUTHORIZED_JOIN");
+    }
+
+    const odcid = verification.payload.uid;
     const clientIP = getClientIP(client);
 
     await enforceIpBan(clientIP);
@@ -60,7 +93,11 @@ export function registerJoinInventoryAndProgressionHandlers(room: InstanceRoomHo
         if (!tutorialPatch || typeof tutorialPatch !== "object") return;
 
         try {
-            const advancementsState = await room.advancementsManager.updateTutorialState(player.odcid, tutorialPatch);
+            const currentTutorial = room.tutorialStateBySession.get(client.sessionId)
+                ?? { ...DEFAULT_GUIDE_TUTORIAL_STATE };
+            const sanitizedPatch = sanitizeTutorialPatch(currentTutorial, tutorialPatch);
+            if (!sanitizedPatch) return;
+            const advancementsState = await room.advancementsManager.updateTutorialState(player.odcid, sanitizedPatch);
             if (!advancementsState) return;
             room.updateHeedTheWarningUnlockState(player.odcid, advancementsState);
             room.tutorialStateBySession.set(client.sessionId, advancementsState.tutorial);
@@ -75,13 +112,13 @@ export function registerJoinInventoryAndProgressionHandlers(room: InstanceRoomHo
         const player = room.state.players.get(client.sessionId);
         if (!player) return;
 
-        const equippedRodId = data?.equippedRodId ?? null;
-        room.deps.inventoryCache.setEquippedRod(player.odcid, equippedRodId);
-        if (Array.isArray(data?.equippedUsableIds)) {
-            room.deps.inventoryCache.setEquippedUsables(player.odcid, data.equippedUsableIds);
-        }
+        const { items: slots, equippedRodId: previousRodId, equippedUsableIds: previousUsables } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+        const equippedRodId = sanitizeEquippedRod(slots, data?.equippedRodId, previousRodId);
+        const equippedUsableIds = sanitizeEquippedUsables(slots, data?.equippedUsableIds, previousUsables);
 
-        const { items: slots, equippedUsableIds } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+        room.deps.inventoryCache.setEquippedRod(player.odcid, equippedRodId);
+        room.deps.inventoryCache.setEquippedUsables(player.odcid, equippedUsableIds);
+
         client.send("inventory", { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId, equippedUsableIds });
     });
 
@@ -89,6 +126,7 @@ export function registerJoinInventoryAndProgressionHandlers(room: InstanceRoomHo
         room.markActivity(client);
         const player = room.state.players.get(client.sessionId);
         if (!player) return;
+        if (room.defeatedByUserId.get(player.odcid || client.sessionId)) return;
 
         const slotIndex = typeof data?.slotIndex === "number" ? Math.floor(data.slotIndex) : -1;
         if (slotIndex < 0) return;

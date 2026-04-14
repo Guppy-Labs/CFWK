@@ -8,6 +8,7 @@ import { extractCustomTriggers } from "../../maps/tiled/extract/customTriggers";
 import { extractHarvestTargets } from "../../maps/tiled/extract/harvestTargets";
 import { extractRegionByName } from "../../maps/tiled/extract/namedRegions";
 import { extractSpawnRegions } from "../../maps/tiled/extract/spawnRegions";
+import { getTiledProperty } from "../../maps/tiled/properties";
 
 export function loadHarvestTargets(mapFileName: string): Map<number, InteractiveHarvestTarget> {
     const map = loadTiledMap(mapFileName);
@@ -68,6 +69,27 @@ export function loadRegionByName(mapFileName: string, regionName: string): Regio
         console.error('[InstanceRoom] Failed to load region polygon from map:', error);
         return null;
     }
+}
+
+export function loadPlayerSpawnPoint(mapFileName: string): { x: number; y: number } | null {
+    const map = loadTiledMap(mapFileName);
+    if (!map || !Array.isArray(map.layers)) return null;
+
+    for (const layer of map.layers) {
+        if (!Array.isArray(layer?.objects)) continue;
+        for (const object of layer.objects) {
+            const isSpawnByName = typeof object?.name === "string" && object.name.trim().toLowerCase() === "spawn";
+            const isSpawnByProperty = getTiledProperty(object?.properties, "Is Spawnpoint") === true;
+            if (!isSpawnByName && !isSpawnByProperty) continue;
+
+            const x = Number(object?.x);
+            const y = Number(object?.y);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+            return { x, y };
+        }
+    }
+
+    return null;
 }
 
 export function isPointInPolygon(x: number, y: number, polygon: Array<{ x: number; y: number }>): boolean {

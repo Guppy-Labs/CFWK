@@ -17,7 +17,7 @@ import { getBetaModels } from "../db/betaStorage";
 import { DEFAULT_FIRST_CONNECT_LOCATION_ID } from "../config/instance";
 import { DroppedItemSchema, InstanceAiNpcSchema, InstancePlayerSchema, InstanceState, PositionSnapshot, RuntimeMovementState, ChestInteractionTarget, CustomTriggerRuntime, FishCombatRuntimeState, InteractiveHarvestTarget, RegionRuntime, SoftCollisionBody, SpawnRegionRuntime } from "./instance/InstanceRoomSchema";
 import { ACCEL, AI_TO_AI_COLLISION_MAX_PUSH_PER_STEP, AI_TO_AI_COLLISION_MIN_PUSH_PER_STEP, DANGER_REGION_NAME, DRAG, DROP_REFINEMENT_RECIPES_BY_SOURCE, DROP_REFINEMENT_TOUCH_COOLDOWN_MS, DROP_REFINEMENT_TOUCH_RADIUS_PX, ENEMY_BRIDGE_CUSTOM_ID, ENEMY_BRIDGE_IMPULSE_DURATION_MS, ENEMY_BRIDGE_IMPULSE_SPEED, ENEMY_BRIDGE_WARN_COOLDOWN_MS, ENEMY_MELEE_KNOCKBACK_DURATION_MS, ENEMY_MELEE_KNOCKBACK_RECOVERY_TAIL_MS, ENEMY_MELEE_KNOCKBACK_SPEED, FISH_COMBAT_MAX_COOLDOWN_MS, FISH_COMBAT_MAX_LAUNCH_RANGE_PX, FISH_COMBAT_MIN_COOLDOWN_MS, GAME_TPS, GLIMMERING_CHEST_COMPONENT_ID, GLIMMERING_KEY_ITEM_ID, GREMLIN_DEATH_ANIM_MS, HARD_DISCREPANCY, HEED_THE_WARNING_QUEST_ID, HISTORY_SIZE, LIQUID_COLLECTION_RECIPES_BY_LIQUID, MAX_LATENCY_ESTIMATE_MS, MAX_LATENCY_THRESHOLD_SCALE, MAX_STEP_DT_MS, RECONCILE_INTERVAL_MS, SOFT_DISCREPANCY, SPRINT_SPEED, WALK_SPEED, YEKBUSH_COOLDOWN_MS, YEKBUSH_COMPONENT_ID } from "./instance/InstanceRoomConstants";
-import { getRandomPointInSpawnRegion, isPointInPolygon, loadChestInteractionTarget, loadCustomTriggers, loadHarvestTargets, loadRegionByName, loadSpawnRegions } from "./instance/InstanceRoomMapRuntime";
+import { getRandomPointInSpawnRegion, isPointInPolygon, loadChestInteractionTarget, loadCustomTriggers, loadHarvestTargets, loadPlayerSpawnPoint, loadRegionByName, loadSpawnRegions } from "./instance/InstanceRoomMapRuntime";
 import { createDefaultInstanceRoomDeps } from "./instance/context/InstanceRoomDeps";
 import { InstanceRoomHost } from "./instance/context/InstanceRoomHost";
 import { handleJoinLifecycle, registerJoinInventoryAndProgressionHandlers as registerJoinInventoryHandlersService } from "./instance/services/JoinLifecycleService";
@@ -65,6 +65,7 @@ import {
 } from "./instance/services/GameplayItemHandlersService";
 import { registerNpcAndDebugHandlers as registerNpcAndDebugHandlersService } from "./instance/services/DebugNpcService";
 import {
+    createDroppedCoins as createDroppedCoinsService,
     createDroppedItem as createDroppedItemService,
     getOrCreateHarvestCooldownMap as getOrCreateHarvestCooldownMapService,
     tryRefineDropsFromMovement as tryRefineDropsFromMovementService
@@ -144,6 +145,8 @@ export class InstanceRoom extends Room<InstanceState> {
     private fishCombatTimers = new Set<ReturnType<typeof setTimeout>>();
     private heartsByUserId = new Map<string, IPlayerHeartsState>();
     private moneyByUserId = new Map<string, number>();
+    private defeatedByUserId = new Map<string, { defeatedAt: number; reason: string }>();
+    private playerRespawnPoint: { x: number; y: number } = { x: 64, y: 64 };
     private wipedUserIds = new Set<string>();
     private harvestTargetsByObjectId = new Map<number, InteractiveHarvestTarget>();
     private harvestCooldownByUserId = new Map<string, Map<number, number>>();
@@ -229,10 +232,12 @@ export class InstanceRoom extends Room<InstanceState> {
         this.aiSpawnRegionByNpcId.clear();
         this.customTriggersById = loadCustomTriggers(options.mapFile);
         this.dangerRegion = loadRegionByName(options.mapFile, DANGER_REGION_NAME);
+        this.playerRespawnPoint = loadPlayerSpawnPoint(options.mapFile) ?? { x: 64, y: 64 };
         this.enemyBridgeWarnCooldownByUserId.clear();
         this.enemyBridgeUnlockedByUserId.clear();
         this.heedTheWarningStayObjectiveByUserId.clear();
         this.wasInDangerByUserId.clear();
+        this.defeatedByUserId.clear();
 
         this.navService.initializeFromMap(options.mapFile);
         this.advancementsManager = new AdvancementsManager(options.mapFile);
@@ -247,6 +252,10 @@ export class InstanceRoom extends Room<InstanceState> {
         createDroppedItemService(this as unknown as InstanceRoomHost, itemId, amount, x, y);
     }
 
+    private createDroppedCoins(amount: number, x: number, y: number, denomination: "bronze" = "bronze") {
+        createDroppedCoinsService(this as unknown as InstanceRoomHost, amount, x, y, denomination);
+    }
+
     private tryRefineDropsFromMovement(client: Client, player: InstancePlayerSchema, nextX: number, nextY: number, now: number) {
         tryRefineDropsFromMovementService(this as unknown as InstanceRoomHost, client, player, nextX, nextY, now);
     }
@@ -255,7 +264,7 @@ export class InstanceRoom extends Room<InstanceState> {
         markActivityService(this as unknown as InstanceRoomHost, client);
     }
 
-    async onJoin(client: Client, options: { username?: string; odcid?: string }) {
+    async onJoin(client: Client, options: { username?: string; joinToken?: string }) {
         await handleJoinLifecycle(this as unknown as InstanceRoomHost, client, options);
     }
 
@@ -275,7 +284,7 @@ export class InstanceRoom extends Room<InstanceState> {
         registerJoinConnectionService(this as unknown as InstanceRoomHost, client, odcid);
     }
 
-    private initializeJoinedPlayerState(client: Client, options: { username?: string; odcid?: string }, joinState: JoinResolvedState) {
+    private initializeJoinedPlayerState(client: Client, options: { username?: string; joinToken?: string }, joinState: JoinResolvedState) {
         initializeJoinedPlayerStateService(this as unknown as InstanceRoomHost, client, options, joinState);
     }
 

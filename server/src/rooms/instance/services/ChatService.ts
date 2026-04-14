@@ -3,6 +3,7 @@ import User from "../../../models/User";
 import { CommandAuditLogger } from "../../../utils/CommandAuditLogger";
 import { AI_NPC_DEFINITIONS } from "../../../ai/registry";
 import { InstanceRoomHost } from "../context/InstanceRoomHost";
+import { hasGameAdminCapability } from "../authority/AdminCapability";
 
 export function registerChatHandlers(room: InstanceRoomHost) {
     room.onMessage("chat", async (client, data: { message: string }) => {
@@ -25,6 +26,23 @@ export function registerChatHandlers(room: InstanceRoomHost) {
                 };
 
                 if (command === "spawn_evil_tim") {
+                    const hasAdmin = await hasGameAdminCapability(player.odcid);
+                    if (!hasAdmin) {
+                        const message = "You do not have permission to use this command.";
+                        await CommandAuditLogger.log({
+                            ...auditBase,
+                            success: false,
+                            resultMessage: message
+                        });
+                        client.send("chat", {
+                            username: "SYSTEM",
+                            odcid: "SYSTEM",
+                            message,
+                            timestamp: Date.now(),
+                            isSystem: true
+                        });
+                        return;
+                    }
                     const aiId = room.spawnAiNpc("evil_tim", player.x + 48, player.y);
                     const message = aiId
                         ? `Spawned Evil Tim (${aiId}) chase=${AI_NPC_DEFINITIONS.evil_tim.controllerConfig.chaseRangeMeters}m.`

@@ -36,6 +36,7 @@ import { ensureGremlinTrimmedSpritesOnStart } from "./utils/ensureGremlinTrimmed
 import { refreshGremlinHitboxFromTrimMeta } from "./ai/registry";
 import User from "./models/User";
 import { DEFAULT_FIRST_CONNECT_LOCATION_ID, FALLBACK_LOCATION_ID } from "./config/instance";
+import { issueJoinToken } from "./rooms/instance/authority/JoinTokenAuthority";
 
 // Load environment variables from common locations
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
@@ -141,12 +142,33 @@ instanceManager.setGameServer(gameServer);
 
 startBetaCampaignMonitor(instanceManager);
 
-// Register InstanceRoom type for dynamic instance creation
-gameServer.define("instance", InstanceRoom);
+// Register InstanceRoom type for dynamic instance creation.
+// Filter by instance identity so joinOrCreate does not route to a different live instance.
+gameServer
+    .define("instance", InstanceRoom)
+    .filterBy(["instanceId", "locationId"]);
 
 // API endpoint to join an instance
 app.post("/api/instance/join", async (req, res) => {
     try {
+        if (!req.isAuthenticated || !req.isAuthenticated()) {
+            return res.status(401).json({
+                success: false,
+                error: "Not authenticated"
+            });
+        }
+
+        const authUserIdRaw = (req.user as any)?.id || (req.user as any)?._id;
+        const authUserId = typeof authUserIdRaw === "string"
+            ? authUserIdRaw
+            : (authUserIdRaw ? String(authUserIdRaw) : "");
+        if (!authUserId) {
+            return res.status(401).json({
+                success: false,
+                error: "Not authenticated"
+            });
+        }
+
         const requestedLocationId = typeof req.body?.locationId === 'string'
             ? req.body.locationId.trim().toLowerCase()
             : '';
@@ -155,8 +177,8 @@ app.post("/api/instance/join", async (req, res) => {
         let persistedSpawnX: number | undefined;
         let persistedSpawnY: number | undefined;
 
-        if (!locationId && req.user && (req.user as any)._id) {
-            const user = await User.findById((req.user as any)._id).select('lastLocationId lastPositionX lastPositionY');
+        if (!locationId && authUserId) {
+            const user = await User.findById(authUserId).select('lastLocationId lastPositionX lastPositionY');
             if (user?.lastLocationId) {
                 locationId = user.lastLocationId.trim().toLowerCase();
                 if (typeof (user as any).lastPositionX === 'number' && typeof (user as any).lastPositionY === 'number') {
@@ -191,6 +213,13 @@ app.post("/api/instance/join", async (req, res) => {
             });
         }
         
+        const joinToken = issueJoinToken({
+            userId: authUserId,
+            instanceId: instance.instanceId,
+            locationId: instance.locationId,
+            roomName: instance.roomName
+        });
+
         res.json({
             success: true,
             instance: {
@@ -200,6 +229,8 @@ app.post("/api/instance/join", async (req, res) => {
                 roomName: instance.roomName,
                 currentPlayers: instance.currentPlayers,
                 maxPlayers: instance.maxPlayers,
+                joinToken: joinToken.token,
+                joinTokenExpiresAt: joinToken.expiresAt,
                 ...(typeof persistedSpawnX === 'number' && typeof persistedSpawnY === 'number'
                     ? { spawnX: persistedSpawnX, spawnY: persistedSpawnY }
                     : {})

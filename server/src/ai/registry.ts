@@ -18,6 +18,20 @@ export type AiNpcDefinition = {
         collidableHeight: number;
     };
     controllerConfig: IGeneralEnemyControllerConfig;
+    lootTable?: {
+        coins?: {
+            chance: number;
+            minAmount: number;
+            maxAmount: number;
+            denomination: "bronze";
+        };
+        itemSubpool?: {
+            chance: number;
+            jackpotItemId?: string;
+            jackpotChanceWithinSubpool?: number;
+            itemIds: string[];
+        };
+    };
 };
 
 export const AI_NPC_DEFINITIONS: Record<AINpcKind, AiNpcDefinition> = {
@@ -35,6 +49,18 @@ export const AI_NPC_DEFINITIONS: Record<AINpcKind, AiNpcDefinition> = {
         controllerConfig: {
             ...DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG,
             meleeDamageHearts: 0
+        },
+        lootTable: {
+            coins: {
+                chance: 0,
+                minAmount: 0,
+                maxAmount: 0,
+                denomination: "bronze"
+            },
+            itemSubpool: {
+                chance: 0,
+                itemIds: []
+            }
         }
     },
     gremlin: {
@@ -54,6 +80,29 @@ export const AI_NPC_DEFINITIONS: Record<AINpcKind, AiNpcDefinition> = {
             attackCooldownMs: 2800,
             meleeRangePx: 30,
             meleeDamageHearts: 1
+        },
+        lootTable: {
+            coins: {
+                chance: 0.5,
+                minAmount: 2,
+                maxAmount: 4,
+                denomination: "bronze"
+            },
+            itemSubpool: {
+                chance: 0.1,
+                jackpotItemId: "ruined_chest",
+                jackpotChanceWithinSubpool: 0.05,
+                itemIds: [
+                    "tuna",
+                    "mackerel",
+                    "cod",
+                    "salmon",
+                    "catfish",
+                    "boot",
+                    "broken_specs",
+                    "yekberries"
+                ]
+            }
         }
     }
 };

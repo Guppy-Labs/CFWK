@@ -10,8 +10,11 @@ import { ItemTextureLoader } from '../assets/ItemTextureLoader';
 
 export type DroppedItemData = {
     id: string;
+    dropKind?: 'item' | 'coins';
     itemId: string;
     amount: number;
+    coinDenomination?: string;
+    coinAmount?: number;
     x: number;
     y: number;
     createdAt: number;
@@ -25,8 +28,10 @@ export type DroppedItemEntity = DroppedItemData & {
 };
 
 type DropClusterRow = {
+    dropKind: 'item' | 'coins';
     itemId: string;
     amount: number;
+    coinDenomination?: string;
     droppedItemIds: string[];
     liquidContainerItemId?: string;
     liquidOutputItemId?: string;
@@ -153,8 +158,11 @@ export class DroppedItemManager {
         const sprite = this.createItemSprite(item);
         const entity: DroppedItemEntity = {
             id: itemId,
+            dropKind: item.dropKind === 'coins' ? 'coins' : 'item',
             itemId: item.itemId,
             amount: item.amount,
+            coinDenomination: typeof item.coinDenomination === 'string' ? item.coinDenomination : undefined,
+            coinAmount: Number.isFinite(item.coinAmount) ? Number(item.coinAmount) : undefined,
             x: item.x,
             y: item.y,
             createdAt: item.createdAt ?? Date.now(),
@@ -169,9 +177,17 @@ export class DroppedItemManager {
         item.onChange(() => {
             const existing = this.items.get(itemId);
             if (!existing) return;
+            const nextDropKind: 'item' | 'coins' = item.dropKind === 'coins' ? 'coins' : 'item';
+            const nextCoinDenomination = typeof item.coinDenomination === 'string' ? item.coinDenomination : undefined;
             const itemIdChanged = existing.itemId !== item.itemId;
+            const visualChanged = itemIdChanged
+                || existing.dropKind !== nextDropKind
+                || existing.coinDenomination !== nextCoinDenomination;
+            existing.dropKind = nextDropKind;
             existing.itemId = item.itemId;
             existing.amount = item.amount;
+            existing.coinDenomination = nextCoinDenomination;
+            existing.coinAmount = Number.isFinite(item.coinAmount) ? Number(item.coinAmount) : undefined;
             existing.x = item.x;
             existing.y = item.y;
             existing.createdAt = item.createdAt ?? existing.createdAt;
@@ -179,16 +195,19 @@ export class DroppedItemManager {
             existing.liquidOutputItemId = typeof item.liquidOutputItemId === 'string' ? item.liquidOutputItemId : undefined;
             existing.liquidConfirmText = typeof item.liquidConfirmText === 'string' ? item.liquidConfirmText : undefined;
             existing.sprite.setPosition(item.x, item.y);
-            if (itemIdChanged) {
-                const textureKey = `item-${item.itemId}`;
-                const resolvedKey = this.scene.textures.exists(textureKey) ? textureKey : 'ui-slot-base';
+            if (visualChanged) {
+                const resolvedKey = this.getDropTextureKey({
+                    dropKind: nextDropKind,
+                    itemId: item.itemId,
+                    coinDenomination: nextCoinDenomination
+                });
                 existing.sprite.setTexture(resolvedKey, 0);
                 this.applyItemScale(existing.sprite, resolvedKey);
-                if (resolvedKey === 'ui-slot-base') {
+                if (nextDropKind === 'item' && resolvedKey === 'ui-slot-base') {
                     void this.itemTextureLoader.ensureItemTexture(this.scene, item.itemId).then((loadedKey) => {
                         if (!loadedKey) return;
                         const latest = this.items.get(itemId);
-                        if (!latest || latest.itemId !== item.itemId) return;
+                        if (!latest || latest.itemId !== item.itemId || latest.dropKind !== 'item') return;
                         latest.sprite.setTexture(loadedKey, 0);
                         this.applyItemScale(latest.sprite, loadedKey);
                     });
@@ -202,10 +221,15 @@ export class DroppedItemManager {
     }
 
     private createItemSprite(item: any): Phaser.GameObjects.Sprite {
-        const textureKey = `item-${item.itemId}`;
-        const resolvedKey = this.scene.textures.exists(textureKey) ? textureKey : 'ui-slot-base';
+        const dropKind: 'item' | 'coins' = item.dropKind === 'coins' ? 'coins' : 'item';
+        const coinDenomination = typeof item.coinDenomination === 'string' ? item.coinDenomination : undefined;
+        const resolvedKey = this.getDropTextureKey({
+            dropKind,
+            itemId: item.itemId,
+            coinDenomination
+        });
         const sprite = this.scene.add.sprite(item.x, item.y, resolvedKey, 0);
-        if (resolvedKey === 'ui-slot-base') {
+        if (dropKind === 'item' && resolvedKey === 'ui-slot-base') {
             void this.itemTextureLoader.ensureItemTexture(this.scene, item.itemId).then((loadedKey) => {
                 if (!loadedKey) return;
                 if (!sprite.active) return;
@@ -220,8 +244,11 @@ export class DroppedItemManager {
 
         this.updateDepth({
             id: item.id ?? '',
+            dropKind,
             itemId: item.itemId,
             amount: item.amount,
+            coinDenomination,
+            coinAmount: Number.isFinite(item.coinAmount) ? Number(item.coinAmount) : undefined,
             x: item.x,
             y: item.y,
             createdAt: item.createdAt ?? Date.now(),
@@ -232,6 +259,17 @@ export class DroppedItemManager {
         });
 
         return sprite;
+    }
+
+    private getDropTextureKey(data: { dropKind?: 'item' | 'coins'; itemId: string; coinDenomination?: string }): string {
+        if (data.dropKind === 'coins') {
+            if (data.coinDenomination === 'bronze' && this.scene.textures.exists('ui-money-bronze')) {
+                return 'ui-money-bronze';
+            }
+            return 'ui-slot-base';
+        }
+        const textureKey = `item-${data.itemId}`;
+        return this.scene.textures.exists(textureKey) ? textureKey : 'ui-slot-base';
     }
 
     private applyItemScale(sprite: Phaser.GameObjects.Sprite, textureKey: string) {
@@ -317,14 +355,20 @@ export class DroppedItemManager {
             let alpha = 1;
 
             cluster.members.forEach((member) => {
-                const existing = byItemId.get(member.itemId);
+                const rowIdentity = `${member.dropKind ?? 'item'}:${member.itemId}:${member.coinDenomination ?? ''}`;
+                const dropAmount = (member.dropKind === 'coins')
+                    ? Math.max(1, Math.floor(Number.isFinite(member.coinAmount) ? (member.coinAmount as number) : member.amount))
+                    : member.amount;
+                const existing = byItemId.get(rowIdentity);
                 if (existing) {
-                    existing.amount += member.amount;
+                    existing.amount += dropAmount;
                     existing.droppedItemIds.push(member.id);
                 } else {
-                    byItemId.set(member.itemId, {
+                    byItemId.set(rowIdentity, {
+                        dropKind: member.dropKind === 'coins' ? 'coins' : 'item',
                         itemId: member.itemId,
-                        amount: member.amount,
+                        amount: dropAmount,
+                        coinDenomination: member.coinDenomination,
                         droppedItemIds: [member.id],
                         liquidContainerItemId: member.liquidContainerItemId,
                         liquidOutputItemId: member.liquidOutputItemId,
@@ -391,7 +435,7 @@ export class DroppedItemManager {
             const text = this.scene.add.text(0, 0, content, {
                 fontSize: this.cardTextFontSize,
                 fontFamily: this.cardTextFontFamily,
-                color: this.getRarityColorHex(row.itemId),
+                color: this.getRarityColorHex(row),
                 resolution: 2
             }).setOrigin(0, 0.5);
             text.setAlpha(this.cardTextAlpha);
@@ -498,10 +542,17 @@ export class DroppedItemManager {
     }
 
     private getRowKey(row: DropClusterRow): string {
-        return `${row.itemId}:${row.droppedItemIds.slice().sort((a, b) => a.localeCompare(b)).join(',')}`;
+        return `${row.dropKind}:${row.coinDenomination ?? ''}:${row.itemId}:${row.droppedItemIds.slice().sort((a, b) => a.localeCompare(b)).join(',')}`;
     }
 
     private getRowDisplayLabel(row: DropClusterRow): string {
+        if (row.dropKind === 'coins') {
+            const isBronze = row.coinDenomination === 'bronze';
+            const base = isBronze
+                ? (row.amount === 1 ? 'Bronze Coin' : 'Bronze Coins')
+                : (row.amount === 1 ? 'Coin' : 'Coins');
+            return row.amount > 1 ? `${base} x${row.amount}` : base;
+        }
         const itemName = getLocalizedItemName(row.itemId, getItemDefinition(row.itemId)?.name ?? row.itemId);
         const amountSuffix = row.amount > 1 ? ` x${row.amount}` : '';
         const isLiquidRow = Boolean(row.liquidContainerItemId && row.liquidOutputItemId);
@@ -553,14 +604,20 @@ export class DroppedItemManager {
                 const rowIds = row.droppedItemIds.slice().sort((a, b) => a.localeCompare(b)).join(',');
                 const container = row.liquidContainerItemId ?? '';
                 const output = row.liquidOutputItemId ?? '';
+                const dropKind = row.dropKind ?? 'item';
+                const coinDenomination = row.coinDenomination ?? '';
                 const label = this.getRowDisplayLabel(row);
-                return `${row.itemId}:${row.amount}:${rowIds}:${container}:${output}:${label}`;
+                return `${dropKind}:${coinDenomination}:${row.itemId}:${row.amount}:${rowIds}:${container}:${output}:${label}`;
             })
             .sort((a, b) => a.localeCompare(b))
             .join('|');
     }
 
-    private getRarityColorHex(itemId: string): string {
+    private getRarityColorHex(row: DropClusterRow): string {
+        if (row.dropKind === 'coins') {
+            return '#c78a4a';
+        }
+        const itemId = row.itemId;
         const rarity = (getItemDefinition(itemId)?.rarity ?? 'common').toLowerCase();
         switch (rarity) {
             case 'uncommon': return '#b7ff63';

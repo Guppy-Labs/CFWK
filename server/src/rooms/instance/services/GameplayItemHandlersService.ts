@@ -1,11 +1,15 @@
 import {
     DEFAULT_INVENTORY_SLOTS,
+    DEFAULT_PLAYER_MONEY_STATE,
     getItemDefinition,
     getLootTable,
+    isRodItem,
     getRodStats,
     selectFromLootTable
 } from "@cfwk/shared";
+import User from "../../../models/User";
 import { InstanceRoomHost } from "../context/InstanceRoomHost";
+import { validateClientInventorySnapshot } from "../authority/InventoryAuthority";
 import {
     GLIMMERING_CHEST_COMPONENT_ID,
     GLIMMERING_KEY_ITEM_ID,
@@ -168,6 +172,32 @@ export function registerInventoryAndGlimmerbowlHandlers(room: InstanceRoomHost) 
 
         const liquidContainerItemId = typeof droppedItem.liquidContainerItemId === "string" ? droppedItem.liquidContainerItemId : "";
         const liquidOutputItemId = typeof droppedItem.liquidOutputItemId === "string" ? droppedItem.liquidOutputItemId : "";
+        const dropKind = typeof droppedItem.dropKind === "string" ? droppedItem.dropKind : "item";
+        if (dropKind === "coins") {
+            const coinAmount = Math.max(
+                0,
+                Math.floor(
+                    Number.isFinite(droppedItem.coinAmount)
+                        ? droppedItem.coinAmount
+                        : droppedItem.amount
+                )
+            );
+            room.state.droppedItems.delete(data.droppedItemId);
+            if (coinAmount <= 0) return;
+
+            const userId = player.odcid || client.sessionId;
+            const currentMoney = room.moneyByUserId.get(userId) ?? DEFAULT_PLAYER_MONEY_STATE.money;
+            const nextMoney = room.normalizeMoneyAmount(currentMoney + coinAmount);
+            room.moneyByUserId.set(userId, nextMoney);
+            client.send("player:money", { money: nextMoney });
+
+            if (userId !== client.sessionId) {
+                User.updateOne({ _id: userId }, { $set: { money: nextMoney } }).catch((error) => {
+                    console.error("[InstanceRoom] Failed to persist coin pickup money:", error);
+                });
+            }
+            return;
+        }
         if (liquidContainerItemId && liquidOutputItemId) {
             const { items: currentSlots } = await room.deps.inventoryCache.getInventoryState(player.odcid);
             const hasContainer = currentSlots.some((slot: { itemId: string | null; count: number }) => slot.itemId === liquidContainerItemId && slot.count > 0);
@@ -255,6 +285,7 @@ export function registerInventoryAndGlimmerbowlHandlers(room: InstanceRoomHost) 
 
         const amount = Math.max(1, Math.floor(data.amount || 1));
         if (!data.itemId) return;
+        if (data.itemId.startsWith("coins:")) return;
 
         const itemDef = getItemDefinition(data.itemId);
         if (!itemDef) return;
@@ -332,54 +363,66 @@ export function registerInventoryAndGlimmerbowlHandlers(room: InstanceRoomHost) 
         const player = room.state.players.get(client.sessionId);
         if (!player) return;
         if (!data || !Array.isArray(data.slots)) return;
+        const {
+            items: currentSlots,
+            equippedRodId,
+            equippedUsableIds
+        } = await room.deps.inventoryCache.getInventoryState(player.odcid);
 
-        const normalized = data.slots
-            .filter((slot) => typeof slot.index === "number" && slot.index >= 0)
-            .map((slot) => ({
-                index: Math.floor(slot.index),
-                itemId: slot.itemId ?? null,
-                count: Math.max(0, Math.floor(slot.count ?? 0))
-            }))
-            .slice(0, DEFAULT_INVENTORY_SLOTS)
-            .sort((a, b) => a.index - b.index);
+        const validation = validateClientInventorySnapshot(currentSlots, data.slots);
+        if (!validation.valid) {
+            console.warn(`[InstanceRoom] Rejected inventory:set for ${player.odcid}: ${validation.reason}`);
+            client.send("inventory", { slots: currentSlots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId, equippedUsableIds });
+            return;
+        }
 
-        const padded = Array.from({ length: DEFAULT_INVENTORY_SLOTS }, (_v, i) => {
-            const existing = normalized.find((s) => s.index === i);
-            return existing ?? { index: i, itemId: null, count: 0 };
-        });
-
-        room.deps.inventoryCache.setInventory(player.odcid, padded);
-        const equippedRodId = room.deps.inventoryCache.getEquippedRod(player.odcid);
-        const equippedUsableIds = room.deps.inventoryCache.getEquippedUsables(player.odcid);
-        client.send("inventory", { slots: padded, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId, equippedUsableIds });
+        room.deps.inventoryCache.setInventory(player.odcid, validation.slots);
+        client.send("inventory", { slots: validation.slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId, equippedUsableIds });
     });
 }
 
 export function registerFishingHandlers(room: InstanceRoomHost) {
-    room.onMessage("fishing:start", (client, data: { rodItemId: string }) => {
+    room.onMessage("fishing:start", async (client, data: { rodItemId: string }) => {
         room.markActivity(client);
         const player = room.state.players.get(client.sessionId);
-        if (player) {
-            player.isFishing = true;
-            player.vx = 0;
-            player.vy = 0;
-            player.anim = "idle";
-            player.moveTs = Date.now();
+        if (!player) return;
+        if (room.defeatedByUserId.get(player.odcid || client.sessionId)) return;
 
-            const runtime = room.movementRuntimeBySession.get(client.sessionId);
-            if (runtime) {
-                runtime.vx = 0;
-                runtime.vy = 0;
-                runtime.input = { up: false, down: false, left: false, right: false, sprint: false };
-                runtime.impulseVx = 0;
-                runtime.impulseVy = 0;
-                runtime.impulseActiveUntil = 0;
-                runtime.lastServerTime = Date.now();
-            }
+        const { items: slots, equippedRodId } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+        const ownedRodCount = slots
+            .filter((slot: { itemId: string | null; count: number }) => slot.itemId === equippedRodId)
+            .reduce((sum: number, slot: { itemId: string | null; count: number }) => sum + slot.count, 0);
+        const rodDef = equippedRodId ? getItemDefinition(equippedRodId) : undefined;
+        if (!equippedRodId || !isRodItem(rodDef) || ownedRodCount <= 0) {
+            client.send("chat", {
+                username: "SYSTEM",
+                odcid: "SYSTEM",
+                message: "Equip a valid fishing rod before fishing.",
+                timestamp: Date.now(),
+                isSystem: true
+            });
+            return;
+        }
+
+        player.isFishing = true;
+        player.vx = 0;
+        player.vy = 0;
+        player.anim = "idle";
+        player.moveTs = Date.now();
+
+        const runtime = room.movementRuntimeBySession.get(client.sessionId);
+        if (runtime) {
+            runtime.vx = 0;
+            runtime.vy = 0;
+            runtime.input = { up: false, down: false, left: false, right: false, sprint: false };
+            runtime.impulseVx = 0;
+            runtime.impulseVy = 0;
+            runtime.impulseActiveUntil = 0;
+            runtime.lastServerTime = Date.now();
         }
         room.broadcast("fishing:start", {
             sessionId: client.sessionId,
-            rodItemId: data?.rodItemId ?? null
+            rodItemId: equippedRodId ?? data?.rodItemId ?? null
         });
     });
 
@@ -395,9 +438,20 @@ export function registerFishingHandlers(room: InstanceRoomHost) {
 
     room.onMessage("fishing:cast", (client, data: { depth?: number; region?: string }) => {
         room.markActivity(client);
+        const player = room.state.players.get(client.sessionId);
+        if (!player || !player.isFishing) return;
+        if (room.defeatedByUserId.get(player.odcid || client.sessionId)) return;
+
         const depthRaw = typeof data?.depth === "number" ? data.depth : 1;
         const depth = Math.max(1, Math.min(12, depthRaw));
-        const region = typeof data?.region === "string" && data.region ? data.region : "temperate";
+        const rawRegion = typeof data?.region === "string" ? data.region.trim().toLowerCase() : "";
+        const region = (rawRegion === "temperate"
+            || rawRegion === "tropical"
+            || rawRegion === "arctic"
+            || rawRegion === "deep"
+            || rawRegion === "freshwater")
+            ? rawRegion
+            : "temperate";
         room.fishingCasts.set(client.sessionId, { depth, region, castAt: Date.now() });
     });
 
@@ -405,6 +459,7 @@ export function registerFishingHandlers(room: InstanceRoomHost) {
         room.markActivity(client);
         const player = room.state.players.get(client.sessionId);
         if (!player) return;
+        if (room.defeatedByUserId.get(player.odcid || client.sessionId)) return;
         const cast = room.fishingCasts.get(client.sessionId);
         if (!cast) return;
         if (cast.itemId && cast.clicksRequired) {
@@ -435,6 +490,7 @@ export function registerFishingHandlers(room: InstanceRoomHost) {
         room.markActivity(client);
         const player = room.state.players.get(client.sessionId);
         if (!player) return;
+        if (room.defeatedByUserId.get(player.odcid || client.sessionId)) return;
 
         const cast = room.fishingCasts.get(client.sessionId);
         if (!cast) return;

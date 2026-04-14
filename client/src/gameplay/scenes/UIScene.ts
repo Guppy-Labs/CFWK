@@ -11,10 +11,12 @@ import { ControlActionKey, DEFAULT_GUIDE_TUTORIAL_STATE, DEFAULT_USER_SETTINGS, 
 import { DialogueUI } from '../ui/DialogueUI';
 import type { DialogueRenderLine } from '../dialogue/DialogueTypes';
 import { KeybindManager } from '../input/KeybindManager';
+import { LocaleManager } from '../i18n/LocaleManager';
 import { GuideOverlay, GuideOverlayState } from '../ui/guide/GuideOverlay';
 import { GuideCoordinator } from '../ui/guide/GuideCoordinator';
 import { GuideInputGate } from '../ui/guide/GuideInputGate';
 import { DebugNpcPanel } from '../ui/DebugNpcPanel';
+import { DisconnectModal } from '../../ui/DisconnectModal';
 import type CrtPostFxPipeline from 'phaser3-rex-plugins/plugins/crtpipeline.js';
 
 type CrtPipelinePlugin = {
@@ -57,6 +59,7 @@ export class UIScene extends Phaser.Scene {
     private isPlayerListKeyHeld = false;
     private networkManager = NetworkManager.getInstance();
     private keybindManager = KeybindManager.getInstance();
+    private localeManager = LocaleManager.getInstance();
     private cursorDefaultUrl?: string;
     private cursorHoverUrl?: string;
     private hoverCount = 0;
@@ -77,6 +80,11 @@ export class UIScene extends Phaser.Scene {
     private guiOpenChangedHandler?: (event: Event) => void;
     private fishViewChangedHandler?: (event: Event) => void;
     private debugNpcOpenHandler?: (event: Event) => void;
+    private playerDefeatHandler?: (event: Event) => void;
+    private playerDefeatAnimationCompleteHandler?: (event: Event) => void;
+    private playerRecoveredHandler?: (event: Event) => void;
+    private pendingDefeatModal = false;
+    private hudSuppressedForDefeat = false;
     private guiBlurFx?: unknown;
     private uiCrtConfig = {
         warpX: 0.1,
@@ -219,6 +227,40 @@ export class UIScene extends Phaser.Scene {
             this.openDebugNpcPanel();
         };
         window.addEventListener('debug:npc:open', this.debugNpcOpenHandler as EventListener);
+        this.playerDefeatHandler = (_event: Event) => {
+            this.registry.set('inputBlocked', true);
+            this.registry.set('playerDefeated', true);
+            this.pendingDefeatModal = true;
+            const gameScene = this.scene.get('GameScene') as { getMobileControls?: () => { setInputBlocked?: (blocked: boolean) => void } | undefined };
+            gameScene?.getMobileControls?.()?.setInputBlocked?.(true);
+
+            if (this.chat?.isChatFocused()) {
+                this.chat.blur();
+            }
+            if (this.bookUI?.isOpen()) {
+                this.bookUI.close();
+                this.registry.set('guiOpen', false);
+                this.chat?.setMobileHintSuppressed(false);
+                window.dispatchEvent(new CustomEvent('gui-open-changed', { detail: { isOpen: false, source: 'defeat' } }));
+                this.networkManager.sendGuiOpen(false);
+            }
+            this.setHudSuppressedForDefeat(true);
+        };
+        window.addEventListener('player:defeat', this.playerDefeatHandler as EventListener);
+        this.playerDefeatAnimationCompleteHandler = (_event: Event) => {
+            if (!this.pendingDefeatModal) return;
+            if (this.registry.get('playerDefeated') !== true) return;
+            this.pendingDefeatModal = false;
+            this.showDefeatModal();
+        };
+        window.addEventListener('player:defeat:animation-complete', this.playerDefeatAnimationCompleteHandler as EventListener);
+        this.playerRecoveredHandler = (_event: Event) => {
+            this.registry.set('playerDefeated', false);
+            this.pendingDefeatModal = false;
+            this.setHudSuppressedForDefeat(false);
+            DisconnectModal.hide();
+        };
+        window.addEventListener('player:recovered', this.playerRecoveredHandler as EventListener);
 
         this.uiClickPointerHandler = (pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
             this.uiActivePointerIds.add(pointer.id);
@@ -533,6 +575,18 @@ export class UIScene extends Phaser.Scene {
             if (this.debugNpcOpenHandler) {
                 window.removeEventListener('debug:npc:open', this.debugNpcOpenHandler as EventListener);
                 this.debugNpcOpenHandler = undefined;
+            }
+            if (this.playerDefeatHandler) {
+                window.removeEventListener('player:defeat', this.playerDefeatHandler as EventListener);
+                this.playerDefeatHandler = undefined;
+            }
+            if (this.playerDefeatAnimationCompleteHandler) {
+                window.removeEventListener('player:defeat:animation-complete', this.playerDefeatAnimationCompleteHandler as EventListener);
+                this.playerDefeatAnimationCompleteHandler = undefined;
+            }
+            if (this.playerRecoveredHandler) {
+                window.removeEventListener('player:recovered', this.playerRecoveredHandler as EventListener);
+                this.playerRecoveredHandler = undefined;
             }
             this.closeDebugNpcPanel();
             this.clearGuiBlurEffect();
@@ -979,6 +1033,43 @@ export class UIScene extends Phaser.Scene {
     private getAudioManager() {
         const gameScene = this.scene.get('GameScene') as { getAudioManager?: () => any };
         return gameScene?.getAudioManager?.();
+    }
+
+    private showDefeatModal() {
+        DisconnectModal.show({
+            title: this.localeManager.t('scene.game.defeatedTitle', undefined, 'Defeated'),
+            message: this.localeManager.t(
+                'scene.game.defeatedMessage',
+                undefined,
+                'You have been defeated.<br>Recover to return at a safe location.'
+            ),
+            icon: 'warning',
+            showLeave: false,
+            reconnectLabel: this.localeManager.t('scene.game.recoverLabel', undefined, 'Recover'),
+            onReconnect: () => {
+                this.networkManager.sendPlayerRecover();
+            }
+        });
+    }
+
+    private setHudSuppressedForDefeat(suppressed: boolean) {
+        if (this.hudSuppressedForDefeat === suppressed) return;
+        this.hudSuppressedForDefeat = suppressed;
+
+        this.playerHud?.setVisible(!suppressed);
+        this.chat?.setVisible(!suppressed);
+        this.headbarUI?.setVisible(!suppressed);
+        this.subtitleStack?.setVisible(!suppressed);
+        if (suppressed) {
+            this.guideOverlay?.hide();
+            this.dangerCountdownText?.setVisible(false);
+            this.damageBorderGlow?.setVisible(false);
+        } else {
+            this.damageBorderGlow?.setVisible(true);
+            const countdown = this.registry.get('dangerZoneCountdown');
+            const hasCountdown = typeof countdown === 'string' && countdown.trim().length > 0;
+            this.dangerCountdownText?.setVisible(hasCountdown);
+        }
     }
 
     private syncGuiBackdropEffects() {
