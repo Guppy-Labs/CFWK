@@ -170,6 +170,7 @@ const SUBTITLE_KEYS: Record<string, string> = {
     'item-drop': 'subtitles.itemDropped',
     'item-skip': 'subtitles.itemSkipped',
     'item-eat-yekberries': 'subtitles.eatYekberries',
+    'item-drink-yekjuice': 'subtitles.drinkYekjuice',
     'advancement-quest-started': 'subtitles.questStarted',
     'advancement-quest-objective': 'subtitles.questObjective',
     'advancement-quest-completed': 'subtitles.questCompleted',
@@ -933,7 +934,8 @@ export class AudioManager {
         this.scene.sound.play(soundKey, {
             volume: this.getEffectivePlayersVolume(cfg.volume)
         });
-        this.emitSubtitle(soundKey);
+        const subtitleSoundKey = itemId === 'yekjuice' ? 'item-drink-yekjuice' : soundKey;
+        this.emitSubtitle(subtitleSoundKey);
     }
 
     playQuestStarted() {

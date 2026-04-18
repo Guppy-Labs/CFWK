@@ -306,6 +306,7 @@ export interface IInventoryResponse {
   totalSlots: number;
   equippedRodId?: string | null;
   equippedUsableIds?: Array<string | null>;
+  equippedUsableCounts?: number[];
 }
 
 export interface IPlayerHeartsState {
@@ -527,15 +528,31 @@ export type GuideInteractionStep = 'idle' | 'press_interact' | 'completed';
 
 export type GuideFoodStep = 'idle' | 'open_inventory' | 'select_berry' | 'explain_food_score' | 'equip_quickslot_1' | 'close_inventory' | 'consume_quickslot_1' | 'completed';
 
+export type GuideFinbookStep =
+  | 'idle'
+  | 'open_inventory'
+  | 'open_finbook_tab'
+  | 'show_completed_quest'
+  | 'show_main_quest'
+  | 'show_title'
+  | 'show_status'
+  | 'show_objective'
+  | 'show_track_button'
+  | 'close_inventory'
+  | 'completed';
+
 export interface IGuideTutorialState {
   interactionStep: GuideInteractionStep;
   rodStep: GuideRodStep;
   fishingStep: GuideFishingStep;
   foodStep: GuideFoodStep;
+  finbookStep: GuideFinbookStep;
   interactionCompleted: boolean;
   rodCompleted: boolean;
   fishingCompleted: boolean;
   foodCompleted: boolean;
+  finbookCompleted: boolean;
+  finbookAnchorEnteredAt: number | null;
   forceSalmonCatch: boolean;
   forceFoodGuideHeal: boolean;
   updatedAt: number | null;
@@ -546,10 +563,13 @@ export const DEFAULT_GUIDE_TUTORIAL_STATE: IGuideTutorialState = {
   rodStep: 'idle',
   fishingStep: 'idle',
   foodStep: 'idle',
+  finbookStep: 'idle',
   interactionCompleted: false,
   rodCompleted: false,
   fishingCompleted: false,
   foodCompleted: false,
+  finbookCompleted: false,
+  finbookAnchorEnteredAt: null,
   forceSalmonCatch: false,
   forceFoodGuideHeal: false,
   updatedAt: null
@@ -804,6 +824,7 @@ export const DEFAULT_USER_SETTINGS: IUserSettings = {
 // Re-export WorldTime module
 export * from './WorldTime';
 export * from './items';
+export * from './shop';
 export * from './fishing';
 
 // --- Character Appearance Types ---

@@ -34,16 +34,22 @@ export type DialogueCheck =
         negate?: boolean;
     };
 
-export type DialogueAction = {
-    type: 'giveItem';
-    itemId: string;
-    amount?: number;
-    ifMissing?: boolean;
-};
+export type DialogueAction =
+    | {
+        type: 'giveItem';
+        itemId: string;
+        amount?: number;
+        ifMissing?: boolean;
+    }
+    | {
+        type: 'openShop';
+        shopId: string;
+    };
 
 export type DialogueFork = {
     checks?: DialogueCheck[];
     lines: DialogueLine[];
+    randomLines?: DialogueLine[][];
     actions?: DialogueAction[];
 };
 

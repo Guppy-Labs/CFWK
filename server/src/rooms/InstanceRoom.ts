@@ -64,6 +64,7 @@ import {
     registerInventoryAndGlimmerbowlHandlers as registerInventoryAndGlimmerbowlHandlersService
 } from "./instance/services/GameplayItemHandlersService";
 import { registerNpcAndDebugHandlers as registerNpcAndDebugHandlersService } from "./instance/services/DebugNpcService";
+import { registerShopHandlers as registerShopHandlersService } from "./instance/services/ShopService";
 import {
     createDroppedCoins as createDroppedCoinsService,
     createDroppedItem as createDroppedItemService,
@@ -162,6 +163,7 @@ export class InstanceRoom extends Room<InstanceState> {
     private dangerRegion: RegionRuntime | null = null;
     private wasInDangerByUserId = new Map<string, boolean>();
     private dropRefineTouchByUserAndDrop = new Map<string, number>();
+    private dropRefineInsideByUserAndDrop = new Map<string, boolean>();
     private advancementsManager = this.deps.createAdvancementsManager('lobby.tmj');
     private debugNpcFeatureEnabled = false;
     private debugNpcFeatureInitialized = false;
@@ -184,6 +186,12 @@ export class InstanceRoom extends Room<InstanceState> {
         this.registerInventoryAndGlimmerbowlHandlers();
 
         this.registerChatHandlers();
+
+        this.registerShopHandlers();
+    }
+
+    private registerShopHandlers() {
+        registerShopHandlersService(this as unknown as InstanceRoomHost);
     }
 
     private registerInteractiveWorldHandlers() {
@@ -299,8 +307,8 @@ export class InstanceRoom extends Room<InstanceState> {
         return getClientIPService(client);
     }
 
-    onLeave(client: Client, consented: boolean) {
-        handleLeaveService(this as unknown as InstanceRoomHost, client, consented);
+    async onLeave(client: Client, consented: boolean) {
+        await handleLeaveService(this as unknown as InstanceRoomHost, client, consented);
     }
 
     onDispose() {

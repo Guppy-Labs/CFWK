@@ -20,6 +20,11 @@ export type StaticInteractiveTarget = {
     x: number;
     y: number;
     rangePx: number;
+    minX?: number;
+    maxX?: number;
+    minY?: number;
+    maxY?: number;
+    polygon?: Array<{ x: number; y: number }>;
 };
 
 export interface AvailableInteraction {
@@ -175,9 +180,7 @@ export class InteractionManager {
 
         const now = Date.now();
         this.staticInteractives.forEach((target) => {
-            const dx = target.x - this.localX;
-            const dy = target.y - this.localY;
-            const distance = Math.hypot(dx, dy);
+            const distance = this.getInteractionDistance(target);
             const showDistance = Math.max(0, target.rangePx || this.config.harvestDistance);
             if (distance > showDistance) return;
 
@@ -185,6 +188,10 @@ export class InteractionManager {
             const interactionType = target.componentId === 'glimmeringchest'
                 ? InteractionType.Chest
                 : InteractionType.Harvest;
+            if (interactionType === InteractionType.Harvest && readyAt > now) {
+                // Bush is still cooling down, so hide harvest interaction entirely.
+                return;
+            }
             const canExecute = interactionType === InteractionType.Chest
                 ? true
                 : readyAt <= now;
@@ -298,6 +305,82 @@ export class InteractionManager {
         while (angle > Math.PI) angle -= 2 * Math.PI;
         while (angle < -Math.PI) angle += 2 * Math.PI;
         return angle;
+    }
+
+    private getInteractionDistance(target: StaticInteractiveTarget): number {
+        if (Array.isArray(target.polygon) && target.polygon.length >= 3) {
+            return this.getPolygonRegionDistance(target.polygon);
+        }
+
+        if (
+            Number.isFinite(target.minX)
+            && Number.isFinite(target.maxX)
+            && Number.isFinite(target.minY)
+            && Number.isFinite(target.maxY)
+        ) {
+            const minX = Number(target.minX);
+            const maxX = Number(target.maxX);
+            const minY = Number(target.minY);
+            const maxY = Number(target.maxY);
+            const clampedX = Math.max(minX, Math.min(maxX, this.localX));
+            const clampedY = Math.max(minY, Math.min(maxY, this.localY));
+            return Math.hypot(this.localX - clampedX, this.localY - clampedY);
+        }
+
+        const dx = target.x - this.localX;
+        const dy = target.y - this.localY;
+        return Math.hypot(dx, dy);
+    }
+
+    private getPolygonRegionDistance(polygon: Array<{ x: number; y: number }>): number {
+        if (this.isPointInPolygon(this.localX, this.localY, polygon)) {
+            return 0;
+        }
+
+        let minDistance = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < polygon.length; i += 1) {
+            const a = polygon[i];
+            const b = polygon[(i + 1) % polygon.length];
+            const distance = this.distancePointToSegment(this.localX, this.localY, a.x, a.y, b.x, b.y);
+            if (distance < minDistance) {
+                minDistance = distance;
+            }
+        }
+        return minDistance;
+    }
+
+    private distancePointToSegment(
+        pointX: number,
+        pointY: number,
+        ax: number,
+        ay: number,
+        bx: number,
+        by: number
+    ): number {
+        const abx = bx - ax;
+        const aby = by - ay;
+        const apx = pointX - ax;
+        const apy = pointY - ay;
+        const lenSq = (abx * abx) + (aby * aby);
+        if (lenSq <= 0.000001) return Math.hypot(pointX - ax, pointY - ay);
+        const t = Math.max(0, Math.min(1, ((apx * abx) + (apy * aby)) / lenSq));
+        const closestX = ax + (abx * t);
+        const closestY = ay + (aby * t);
+        return Math.hypot(pointX - closestX, pointY - closestY);
+    }
+
+    private isPointInPolygon(x: number, y: number, polygon: Array<{ x: number; y: number }>): boolean {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x;
+            const yi = polygon[i].y;
+            const xj = polygon[j].x;
+            const yj = polygon[j].y;
+            const intersects = ((yi > y) !== (yj > y))
+                && (x < ((xj - xi) * (y - yi)) / ((yj - yi) + 0.0000001) + xi);
+            if (intersects) inside = !inside;
+        }
+        return inside;
     }
 
     destroy() {

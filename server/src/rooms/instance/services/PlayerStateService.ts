@@ -25,6 +25,7 @@ import {
 } from "../InstanceRoomConstants";
 import { InstanceRoomHost } from "../context/InstanceRoomHost";
 import { InstancePlayerSchema } from "../schema/InstancePlayerSchema";
+import { grantItemToPlayer } from "./InventoryGrantService";
 
 export function markActivity(room: InstanceRoomHost, client: Client) {
     const now = Date.now();
@@ -183,31 +184,14 @@ export async function giveDebugNpcItem(
     itemId: string,
     amount: number
 ): Promise<Array<{ itemId: string | null; count: number }> | null> {
-    const stackSize = getItemDefinition(itemId)?.stackSize ?? 99;
-    const { items: currentSlots, equippedRodId, equippedUsableIds } = await room.deps.inventoryCache.getInventoryState(player.odcid);
-    const hasStackSpace = currentSlots.some((slot: { itemId: string | null; count: number }) => slot.itemId === itemId && slot.count < stackSize);
-    const hasEmptySlot = currentSlots.some((slot: { itemId: string | null; count: number }) => !slot.itemId || slot.count === 0);
-
-    if (!hasStackSpace && !hasEmptySlot) {
-        room.createDroppedItem(itemId, amount, player.x, player.y);
-        client.send("inventory", {
-            slots: currentSlots,
-            totalSlots: DEFAULT_INVENTORY_SLOTS,
-            equippedRodId,
-            equippedUsableIds
-        });
-        client.send("inventory:skip", { itemId, quantity: amount });
-        return null;
-    }
-
-    const updatedSlots = await room.deps.inventoryCache.addItem(player.odcid, itemId, amount);
-    client.send("inventory", {
-        slots: updatedSlots,
-        totalSlots: DEFAULT_INVENTORY_SLOTS,
-        equippedRodId,
-        equippedUsableIds
+    return grantItemToPlayer(room, client, {
+        itemId,
+        amount,
+        userId: player.odcid,
+        dropIfNoSpace: true,
+        dropX: player.x,
+        dropY: player.y
     });
-    return updatedSlots;
 }
 
 export function normalizeHeartsState(input: IPlayerHeartsState): IPlayerHeartsState {

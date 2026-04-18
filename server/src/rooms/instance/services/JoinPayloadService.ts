@@ -6,6 +6,8 @@ import {
 import { InstancePlayerSchema } from "../schema/InstancePlayerSchema";
 import { InstanceRoomHost } from "../context/InstanceRoomHost";
 import { JoinResolvedState } from "./JoinStateResolver";
+import { loadPersistedShopWares } from "./ShopService";
+import User from "../../../models/User";
 
 export function initializeJoinedPlayerState(
     room: InstanceRoomHost,
@@ -57,8 +59,19 @@ export async function sendInitialJoinPayloads(
     joinState: JoinResolvedState
 ): Promise<void> {
     try {
-        const { items: slots, equippedRodId, equippedUsableIds } = await room.deps.inventoryCache.getInventoryState(joinState.odcid);
-        client.send("inventory", { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId, equippedUsableIds });
+        const {
+            items: slots,
+            equippedRodId,
+            equippedUsableIds,
+            equippedUsableCounts
+        } = await room.deps.inventoryCache.getInventoryState(joinState.odcid);
+        client.send("inventory", {
+            slots,
+            totalSlots: DEFAULT_INVENTORY_SLOTS,
+            equippedRodId,
+            equippedUsableIds,
+            equippedUsableCounts
+        });
     } catch (err) {
         console.error("[InstanceRoom] Error sending initial inventory:", err);
     }
@@ -91,5 +104,17 @@ export async function sendInitialJoinPayloads(
         client.send("advancements:state", advancementsState);
     } catch (err) {
         console.error("[InstanceRoom] Error sending initial advancements state:", err);
+    }
+
+    if (joinState.odcid !== client.sessionId) {
+        try {
+            const user = await User.findById(joinState.odcid).lean();
+            const shopWares = (user as any)?.shopWares;
+            if (shopWares && typeof shopWares === "object") {
+                loadPersistedShopWares(room, joinState.odcid, shopWares);
+            }
+        } catch (err) {
+            console.error("[InstanceRoom] Error loading persisted shop wares:", err);
+        }
     }
 }

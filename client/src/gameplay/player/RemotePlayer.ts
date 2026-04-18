@@ -407,6 +407,10 @@ export class RemotePlayer {
         this.nameplate.setAlpha(skipSpawnEffect ? 1 : 0);
     }
 
+    setNameplateVisible(visible: boolean) {
+        this.nameplate?.setVisible(visible);
+    }
+
     /**
      * Update position from server state
      */

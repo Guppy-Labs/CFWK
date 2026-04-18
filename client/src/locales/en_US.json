@@ -261,6 +261,7 @@
     "footstepWood": "Footsteps on wood",
     "meow": "Meow",
     "eatYekberries": "Eating yekberries",
+    "drinkYekjuice": "Drinking yekjuice",
     "rodCast": "Fishing rod cast",
     "rodReel": "Fishing reel",
     "waterSplash": "Water splash",
@@ -576,13 +577,16 @@
             "intro": {
               "0": "I heard through the grapevine that you have some money now... are the stories true?",
               "1": "Marvelous! A customer with coin is my favorite kind of miracle.",
-              "2": "Come see my wares any time. Soon I'll open the full stall for you.",
+              "2": "Take a look at what I've got. Welcome to the stall!",
               "player": {
                 "0": "I guess..."
               }
             },
             "post": {
-              "0": "You've got the look of a customer now. My wares are ready when you are."
+              "0": "You've got the look of a customer now. My wares are ready when you are.",
+              "1": "Back again? Smart fish. Let's see what catches your eye.",
+              "2": "Coins burning a hole in your pocket? I've got just the thing.",
+              "3": "Welcome, welcome! Fresh stock, fair prices. Mostly."
             }
           }
         }
@@ -789,6 +793,16 @@
   "drops": {
     "needContainerToCollect": "Need {container} to collect",
     "confirmConsumeJar": "Confirm Consuming 1 Jar"
+  },
+  "shop": {
+    "buy1x": "Buy 1x",
+    "buy10x": "10x",
+    "limitedSupply": "Limited Supply Charge",
+    "available": "{count} available",
+    "restocksIn": "Restocks in {time}",
+    "restockingSoon": "Restocking soon...",
+    "outOfStock": "Out of Stock",
+    "selectItem": "Select an item"
   },
   "system": {
     "on": "ON",

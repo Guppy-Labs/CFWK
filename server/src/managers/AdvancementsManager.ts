@@ -1021,6 +1021,7 @@ export class AdvancementsManager {
         const allowedRodSteps: IGuideTutorialState['rodStep'][] = ['idle', 'open_inventory', 'select_rod', 'equip_rod', 'close_inventory', 'completed'];
         const allowedFishingSteps: IGuideTutorialState['fishingStep'][] = ['idle', 'use_rod', 'hold_cast', 'wait_bite', 'reel', 'stop_fishing', 'completed'];
         const allowedFoodSteps: IGuideTutorialState['foodStep'][] = ['idle', 'open_inventory', 'select_berry', 'explain_food_score', 'equip_quickslot_1', 'close_inventory', 'consume_quickslot_1', 'completed'];
+        const allowedFinbookSteps: IGuideTutorialState['finbookStep'][] = ['idle', 'open_inventory', 'open_finbook_tab', 'show_completed_quest', 'show_main_quest', 'show_title', 'show_status', 'show_objective', 'show_track_button', 'close_inventory', 'completed'];
 
         const interactionStep = typeof raw.interactionStep === 'string' && allowedInteractionSteps.includes(raw.interactionStep as IGuideTutorialState['interactionStep'])
             ? (raw.interactionStep as IGuideTutorialState['interactionStep'])
@@ -1035,16 +1036,24 @@ export class AdvancementsManager {
         const foodStep = typeof raw.foodStep === 'string' && allowedFoodSteps.includes(raw.foodStep as IGuideTutorialState['foodStep'])
             ? (raw.foodStep as IGuideTutorialState['foodStep'])
             : DEFAULT_GUIDE_TUTORIAL_STATE.foodStep;
+        const finbookStep = typeof raw.finbookStep === 'string' && allowedFinbookSteps.includes(raw.finbookStep as IGuideTutorialState['finbookStep'])
+            ? (raw.finbookStep as IGuideTutorialState['finbookStep'])
+            : DEFAULT_GUIDE_TUTORIAL_STATE.finbookStep;
 
         return {
             interactionStep,
             rodStep,
             fishingStep,
             foodStep,
+            finbookStep,
             interactionCompleted: raw.interactionCompleted === true,
             rodCompleted: raw.rodCompleted === true,
             fishingCompleted: raw.fishingCompleted === true,
             foodCompleted: raw.foodCompleted === true,
+            finbookCompleted: raw.finbookCompleted === true,
+            finbookAnchorEnteredAt: typeof raw.finbookAnchorEnteredAt === 'number' && Number.isFinite(raw.finbookAnchorEnteredAt) && raw.finbookAnchorEnteredAt > 0
+                ? Math.floor(raw.finbookAnchorEnteredAt)
+                : null,
             forceSalmonCatch: raw.forceSalmonCatch === true,
             forceFoodGuideHeal: raw.forceFoodGuideHeal === true,
             updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : null

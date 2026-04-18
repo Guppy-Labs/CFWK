@@ -1,3 +1,5 @@
+import { clearAccountUserBootstrapCache } from './utils/accountBootstrapCache';
+
 type AdminUser = {
     permissions?: string[];
 };
@@ -257,13 +259,18 @@ form.addEventListener('submit', async (event) => {
 });
 
 logoutBtn.addEventListener('click', async () => {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-    window.location.href = '/login';
+    try {
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } finally {
+        clearAccountUserBootstrapCache();
+        window.location.href = '/login';
+    }
 });
 
 async function init() {
     const authRes = await fetch('/api/auth/me', { credentials: 'include' });
     if (!authRes.ok) {
+        clearAccountUserBootstrapCache();
         window.location.href = '/login';
         return;
     }

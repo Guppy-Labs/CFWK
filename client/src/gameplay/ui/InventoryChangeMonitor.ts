@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
-import { IInventoryResponse, InventorySlot, getItemDefinition } from '@cfwk/shared';
+import { IInventoryResponse, IPlayerMoneyState, InventorySlot, getItemDefinition } from '@cfwk/shared';
 import { AudioManager } from '../audio/AudioManager';
 import { getLocalizedItemName } from '../i18n/itemLocale';
 
-type IndicatorType = 'entry' | 'exit' | 'skip';
+type IndicatorType = 'entry' | 'exit' | 'skip' | 'coin_gain' | 'coin_loss';
 
 type InventoryIndicator = {
     type: IndicatorType;
@@ -12,6 +12,7 @@ type InventoryIndicator = {
     container: Phaser.GameObjects.Container;
     background: Phaser.GameObjects.Graphics;
     text: Phaser.GameObjects.Text;
+    coinIcons?: Phaser.GameObjects.GameObject[];
     timer?: Phaser.Time.TimerEvent;
 };
 
@@ -25,8 +26,13 @@ export class InventoryChangeMonitor {
     private container: Phaser.GameObjects.Container;
     private indicators: InventoryIndicator[] = [];
     private previousCounts?: Map<string, number>;
+    private previousMoney?: number;
     private inventoryUpdateHandler?: (event: Event) => void;
     private inventorySkipHandler?: (event: Event) => void;
+    private moneyUpdateHandler?: (event: Event) => void;
+    private shopBuyHighlightHandler?: (event: Event) => void;
+    private dimOverlay?: Phaser.GameObjects.Rectangle;
+    private pendingHighlightItemId?: string;
     private debugGraphics?: Phaser.GameObjects.Graphics;
     private debugVisible = false;
     private pendingExits = new Map<string, { quantity: number; timer: Phaser.Time.TimerEvent }>();
@@ -40,7 +46,7 @@ export class InventoryChangeMonitor {
     private readonly topOffset = 220;
     private readonly slideOffset = 26;
     private readonly visibleDurationMs = 5000;
-    private readonly depth = 9500;
+    private readonly depth = 15000;
     private readonly exitDebounceMs = 250;
 
     constructor(scene: Phaser.Scene) {
@@ -63,6 +69,22 @@ export class InventoryChangeMonitor {
             this.addOrUpdateIndicator('skip', itemId, quantity);
         };
         window.addEventListener('inventory:skip', this.inventorySkipHandler as EventListener);
+
+        this.moneyUpdateHandler = (event: Event) => {
+            const customEvent = event as CustomEvent<IPlayerMoneyState>;
+            const money = customEvent.detail?.money;
+            if (typeof money !== 'number') return;
+            this.handleMoneyUpdate(money);
+        };
+        window.addEventListener('money:update', this.moneyUpdateHandler as EventListener);
+
+        this.shopBuyHighlightHandler = (event: Event) => {
+            const customEvent = event as CustomEvent<{ itemId: string }>;
+            const itemId = customEvent.detail?.itemId;
+            if (!itemId) return;
+            this.pendingHighlightItemId = itemId;
+        };
+        window.addEventListener('shop:buy-highlight', this.shopBuyHighlightHandler as EventListener);
     }
 
     layout() {
@@ -84,6 +106,12 @@ export class InventoryChangeMonitor {
         if (this.inventorySkipHandler) {
             window.removeEventListener('inventory:skip', this.inventorySkipHandler as EventListener);
         }
+        if (this.moneyUpdateHandler) {
+            window.removeEventListener('money:update', this.moneyUpdateHandler as EventListener);
+        }
+        if (this.shopBuyHighlightHandler) {
+            window.removeEventListener('shop:buy-highlight', this.shopBuyHighlightHandler as EventListener);
+        }
         this.indicators.forEach((indicator) => {
             indicator.timer?.remove(false);
             indicator.container.destroy();
@@ -91,6 +119,7 @@ export class InventoryChangeMonitor {
         this.indicators = [];
         this.pendingExits.forEach((pending) => pending.timer.remove(false));
         this.pendingExits.clear();
+        this.dimOverlay?.destroy();
         this.debugGraphics?.destroy();
         this.container.destroy();
     }
@@ -177,6 +206,7 @@ export class InventoryChangeMonitor {
                 this.indicators.unshift(indicator);
             }
             this.layoutIndicators(true);
+            this.checkPendingHighlight(type, itemId);
             return;
         }
 
@@ -194,6 +224,14 @@ export class InventoryChangeMonitor {
             this.expireIndicator(indicator);
         });
         this.layoutIndicators(true);
+        this.checkPendingHighlight(type, itemId);
+    }
+
+    private checkPendingHighlight(type: IndicatorType, itemId: string) {
+        if (type === 'entry' && this.pendingHighlightItemId === itemId) {
+            this.pendingHighlightItemId = undefined;
+            this.showPurchaseHighlight();
+        }
     }
 
     private createIndicator(type: IndicatorType, itemId: string, quantity: number): InventoryIndicator {
@@ -226,10 +264,67 @@ export class InventoryChangeMonitor {
     }
 
     private updateIndicatorText(indicator: InventoryIndicator) {
+        if (indicator.coinIcons) {
+            indicator.coinIcons.forEach((icon) => icon.destroy());
+            indicator.coinIcons = undefined;
+        }
+
+        if (indicator.type === 'coin_gain' || indicator.type === 'coin_loss') {
+            const symbol = indicator.type === 'coin_gain' ? '+' : '-';
+            indicator.text.setText(symbol);
+            indicator.text.setFixedSize(0, 0);
+            indicator.text.setPosition(this.paddingX, this.indicatorHeight / 2);
+            this.renderCoinIconsInIndicator(indicator, indicator.quantity);
+            return;
+        }
+
         const itemName = getLocalizedItemName(indicator.itemId, getItemDefinition(indicator.itemId)?.name ?? indicator.itemId);
         const symbol = indicator.type === 'entry' ? '+' : indicator.type === 'exit' ? '-' : '!';
         indicator.text.setText(`${symbol} ${itemName} x${indicator.quantity}`);
+        indicator.text.setFixedSize(this.indicatorWidth - this.paddingX * 2, this.indicatorHeight);
         indicator.text.setPosition(this.paddingX, this.indicatorHeight / 2);
+    }
+
+    private renderCoinIconsInIndicator(indicator: InventoryIndicator, amount: number) {
+        const money = Math.max(0, Math.floor(amount));
+        const bronze = money % 100;
+        const silver = Math.floor(money / 100) % 100;
+        const gold = Math.floor(money / 10000) % 100;
+        const platinum = Math.floor(money / 1000000);
+
+        const parts: Array<{ value: number; iconKey: string }> = [];
+        if (platinum > 0) parts.push({ value: platinum, iconKey: 'ui-money-platinum' });
+        if (gold > 0) parts.push({ value: gold, iconKey: 'ui-money-gold' });
+        if (silver > 0) parts.push({ value: silver, iconKey: 'ui-money-silver' });
+        if (bronze > 0 || parts.length === 0) parts.push({ value: bronze, iconKey: 'ui-money-bronze' });
+
+        const symbolWidth = indicator.text.width;
+        const iconSize = 12;
+        const gap = 2;
+        const partGap = 4;
+        let cursorX = this.paddingX + symbolWidth + 4;
+        const centerY = this.indicatorHeight / 2;
+
+        const icons: Phaser.GameObjects.GameObject[] = [];
+        for (const part of parts) {
+            const valText = this.scene.add.text(cursorX, centerY, String(part.value), {
+                fontFamily: 'Minecraft, monospace',
+                fontSize: '12px',
+                color: '#f2e9dd'
+            }).setOrigin(0, 0.5);
+            indicator.container.add(valText);
+            icons.push(valText);
+            cursorX += valText.width + gap;
+
+            const icon = this.scene.add.image(cursorX + iconSize / 2, centerY, part.iconKey)
+                .setOrigin(0.5, 0.5)
+                .setDisplaySize(iconSize, iconSize);
+            indicator.container.add(icon);
+            icons.push(icon);
+            cursorX += iconSize + partGap;
+        }
+
+        indicator.coinIcons = icons;
     }
 
     private drawIndicatorBackground(indicator: InventoryIndicator) {
@@ -247,6 +342,10 @@ export class InventoryChangeMonitor {
                 return { color: 0xb33b3b, alpha: 0.45 };
             case 'skip':
                 return { color: 0xd11f1f, alpha: 0.85 };
+            case 'coin_gain':
+                return { color: 0x8f7a1f, alpha: 0.55 };
+            case 'coin_loss':
+                return { color: 0x8f4f1f, alpha: 0.55 };
             default:
                 return { color: 0x111111, alpha: 0.4 };
         }
@@ -364,12 +463,59 @@ export class InventoryChangeMonitor {
         return gameScene?.getAudioManager?.();
     }
 
+    private handleMoneyUpdate(money: number) {
+        const normalizedMoney = Math.max(0, Math.floor(money));
+        if (this.previousMoney === undefined) {
+            this.previousMoney = normalizedMoney;
+            return;
+        }
+
+        const delta = normalizedMoney - this.previousMoney;
+        this.previousMoney = normalizedMoney;
+        if (delta === 0) return;
+
+        const type: IndicatorType = delta > 0 ? 'coin_gain' : 'coin_loss';
+        const amount = Math.abs(delta);
+        this.addOrUpdateIndicator(type, '__coins__', amount);
+    }
+
+    private showPurchaseHighlight() {
+        if (this.dimOverlay) {
+            this.dimOverlay.destroy();
+            this.dimOverlay = undefined;
+        }
+
+        const dimAlpha = 0.75;
+        const overlay = this.scene.add.rectangle(
+            0, 0,
+            this.scene.scale.width, this.scene.scale.height,
+            0x000000, dimAlpha
+        ).setOrigin(0, 0).setScrollFactor(0).setDepth(this.depth - 1);
+        this.dimOverlay = overlay;
+
+        this.scene.time.delayedCall(500, () => {
+            if (this.dimOverlay !== overlay) return;
+            this.scene.tweens.add({
+                targets: overlay,
+                alpha: 0,
+                duration: 250,
+                ease: 'Sine.out',
+                onComplete: () => {
+                    overlay.destroy();
+                    if (this.dimOverlay === overlay) {
+                        this.dimOverlay = undefined;
+                    }
+                }
+            });
+        });
+    }
+
     private playIndicatorSound(type: IndicatorType) {
         const audio = this.getAudioManager();
         if (!audio) return;
-        if (type === 'entry') {
+        if (type === 'entry' || type === 'coin_gain') {
             audio.playItemCollected();
-        } else if (type === 'exit') {
+        } else if (type === 'exit' || type === 'coin_loss') {
             audio.playItemDrop();
         } else if (type === 'skip') {
             audio.playItemSkip();

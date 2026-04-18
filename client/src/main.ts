@@ -12,6 +12,7 @@ import { Toast } from './ui/Toast';
 import { LocaleManager } from './gameplay/i18n/LocaleManager';
 import { bootstrapLocale } from './gameplay/i18n/localeBootstrap';
 import { clearNonAuthCaches, isMobileSafeMode, prepareGameAssets } from './gameplay/assets/AssetCacheBootstrap';
+import { clearAccountUserBootstrapCache } from './utils/accountBootstrapCache';
 
 const SLOW_LOAD_RETRY_DELAY_MS = 20_000;
 let slowLoadRetryTimer: number | null = null;
@@ -165,6 +166,7 @@ async function checkAuth() {
         if (!res.ok) {
             logLoader(`auth-me:failed:${res.status}`);
             clearSlowLoadRetryPrompt();
+            clearAccountUserBootstrapCache();
             window.location.href = '/login';
             return;
         }
@@ -173,6 +175,7 @@ async function checkAuth() {
         if (!data.user) {
             logLoader('auth-me:no-user');
             clearSlowLoadRetryPrompt();
+            clearAccountUserBootstrapCache();
             window.location.href = '/login';
             return;
         }
@@ -223,6 +226,7 @@ async function checkAuth() {
             appendLoaderDebug(`fatal:${e instanceof Error ? e.message : String(e)}`);
         }
         clearSlowLoadRetryPrompt();
+        clearAccountUserBootstrapCache();
         window.location.href = '/login';
     }
 }
@@ -233,34 +237,17 @@ function updateUpgradeButton(user: any) {
     
     const perms = user.permissions || [];
     const isPremium = perms.includes('premium.shark');
-    const premiumStatus = user.premiumStatus as string | undefined;
-    const periodEnd = user.premiumCurrentPeriodEnd ? new Date(user.premiumCurrentPeriodEnd) : null;
-    
-    if (isPremium && premiumStatus === 'canceled' && periodEnd) {
-        // Canceled but still has benefits - show days remaining
-        const now = new Date();
-        const diff = periodEnd.getTime() - now.getTime();
-        const daysLeft = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-        navUpgradeBtn.innerHTML = `🦈 ${daysLeft}d`;
-        navUpgradeBtn.title = `Shark expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`;
-        navUpgradeBtn.style.color = '#ff9800';
-        navUpgradeBtn.style.borderColor = 'rgba(255, 152, 0, 0.5)';
-        navUpgradeBtn.style.background = 'rgba(255, 152, 0, 0.12)';
-    } else if (isPremium) {
-        // Active premium - show shark
-        navUpgradeBtn.innerHTML = '🦈';
-        navUpgradeBtn.title = 'Shark Active';
-        navUpgradeBtn.style.color = '#ffd54f';
-        navUpgradeBtn.style.borderColor = 'rgba(255, 215, 0, 0.5)';
-        navUpgradeBtn.style.background = 'rgba(255, 215, 0, 0.12)';
-    } else {
-        // Not premium - show star upgrade button
-        navUpgradeBtn.innerHTML = '★';
-        navUpgradeBtn.title = 'Upgrade to Shark';
-        navUpgradeBtn.style.color = '#ffd54f';
-        navUpgradeBtn.style.borderColor = 'rgba(255, 215, 0, 0.5)';
-        navUpgradeBtn.style.background = 'rgba(255, 215, 0, 0.12)';
+
+    // Match launch page behavior: only show CTA for non-premium users.
+    if (isPremium) {
+        navUpgradeBtn.style.display = 'none';
+        return;
     }
+
+    navUpgradeBtn.style.display = 'inline-flex';
+    navUpgradeBtn.innerHTML = '<i class="fa-solid fa-crown"></i> Buy Shark';
+    navUpgradeBtn.title = 'Buy Shark';
+    navUpgradeBtn.setAttribute('aria-label', 'Buy Shark');
 }
 
 checkAuth();

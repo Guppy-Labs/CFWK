@@ -195,6 +195,7 @@
 		"footstepWood": "Pasos sobre madera",
 		"meow": "Miau",
 		"eatYekberries": "Comiendo yekberries",
+		"drinkYekjuice": "Bebiendo yekjuice",
 		"rodCast": "Lanzamiento de caña",
 		"rodReel": "Recogida de caña",
 		"waterSplash": "Salpicadura de agua",
@@ -612,6 +613,16 @@
 	"drops": {
 		"needContainerToCollect": "Necesitas {container} para recoger",
 		"confirmConsumeJar": "Confirmar consumo de 1 frasco"
+	},
+	"shop": {
+		"buy1x": "Comprar 1x",
+		"buy10x": "10x",
+		"limitedSupply": "Cargo por suministro limitado",
+		"available": "{count} disponible(s)",
+		"restocksIn": "Se repone en {time}",
+		"restockingSoon": "Reponiendo pronto...",
+		"outOfStock": "Agotado",
+		"selectItem": "Selecciona un artículo"
 	},
 	"system": {
 		"on": "ACTIVADO",

@@ -29,6 +29,7 @@ export class EquipmentSlotsUI {
     private rodLabel: Phaser.GameObjects.Image;
     private usableSlots: Phaser.GameObjects.Image[] = [];
     private usableIcons: Array<Phaser.GameObjects.Image | undefined> = [];
+    private usableCountImages: Array<Phaser.GameObjects.Image | undefined> = [];
     private usableSlotPlaceholders: Phaser.GameObjects.Image[] = [];
     private equippedRod: InventoryDisplayItem | null = null;
     private equippedUsables: Array<InventoryDisplayItem | null> = [null, null, null, null];
@@ -64,6 +65,8 @@ export class EquipmentSlotsUI {
     private readonly fontCharSize = 8;
     private readonly fontCharGap = 1;
     private readonly fontRenderer: BitmapFontRenderer;
+    private countTextureCounter = 0;
+    private countTextureCache = new Map<string, string>();
     private labelTextureKey?: string;
     private localeManager = LocaleManager.getInstance();
     private localeChangedHandler?: (event: Event) => void;
@@ -94,6 +97,7 @@ export class EquipmentSlotsUI {
             const usableSlot = this.scene.add.image(0, 0, this.usableSlotTextureKey).setOrigin(0.5, 0.5);
             this.usableSlots.push(usableSlot);
             this.container.add(usableSlot);
+            this.usableCountImages.push(undefined);
 
             const placeholderKey = this.createLabelTexture(String(index + 1), '#7f7f7f');
             const placeholder = this.scene.add.image(0, 0, placeholderKey).setOrigin(0.5, 0.5);
@@ -415,11 +419,27 @@ export class EquipmentSlotsUI {
             if (icon) {
                 icon.setPosition(0, localY);
             }
+
+            const countImage = this.usableCountImages[index];
+            if (countImage) {
+                const source = this.scene.textures.get(countImage.texture.key).getSourceImage() as HTMLImageElement | undefined;
+                const width = source?.width ?? countImage.width ?? 0;
+                const height = source?.height ?? countImage.height ?? 0;
+                countImage.setPosition(
+                    Math.round(this.config.slotSize / 2 - width - 1),
+                    Math.round(localY + this.config.slotSize / 2 - height - 1)
+                );
+            }
         });
 
         this.usableSlotPlaceholders.forEach((placeholder) => {
             this.container.bringToTop(placeholder);
         });
+        this.usableCountImages.forEach((countImage) => {
+            if (countImage) this.container.bringToTop(countImage);
+        });
+        if (this.hoverIndicator) this.container.bringToTop(this.hoverIndicator);
+        if (this.selectedIndicator) this.container.bringToTop(this.selectedIndicator);
     }
 
     /**
@@ -533,6 +553,11 @@ export class EquipmentSlotsUI {
             existingIcon.destroy();
             this.usableIcons[slotIndex] = undefined;
         }
+        const existingCountImage = this.usableCountImages[slotIndex];
+        if (existingCountImage) {
+            existingCountImage.destroy();
+            this.usableCountImages[slotIndex] = undefined;
+        }
 
         this.equippedUsables[slotIndex] = item;
         this.usableSlots[slotIndex].setTexture(this.usableSlotTextureKey);
@@ -541,10 +566,15 @@ export class EquipmentSlotsUI {
         icon.setPosition(0, this.getUsableSlotLocalY(slotIndex));
         this.usableIcons[slotIndex] = icon;
         this.container.add(icon);
+        this.updateUsableCountImage(slotIndex);
 
         if (this.hoverIndicator) this.container.bringToTop(this.hoverIndicator);
         if (this.selectedIndicator) this.container.bringToTop(this.selectedIndicator);
         this.usableSlotPlaceholders.forEach((placeholder) => this.container.bringToTop(placeholder));
+        const countImage = this.usableCountImages[slotIndex];
+        if (countImage) this.container.bringToTop(countImage);
+        if (this.hoverIndicator) this.container.bringToTop(this.hoverIndicator);
+        if (this.selectedIndicator) this.container.bringToTop(this.selectedIndicator);
 
         if (fromPosition && this.lastLayout) {
             const { scale } = this.lastLayout;
@@ -574,6 +604,9 @@ export class EquipmentSlotsUI {
 
         this.equippedUsables[slotIndex] = null;
         this.usableSlots[slotIndex].setTexture(this.usableSlotTextureKey);
+        const countImage = this.usableCountImages[slotIndex];
+        this.usableCountImages[slotIndex] = undefined;
+        countImage?.destroy();
 
         const icon = this.usableIcons[slotIndex];
         this.usableIcons[slotIndex] = undefined;
@@ -721,6 +754,52 @@ export class EquipmentSlotsUI {
         }
     }
 
+    private updateUsableCountImage(slotIndex: number) {
+        const item = this.equippedUsables[slotIndex];
+        const existingCountImage = this.usableCountImages[slotIndex];
+        if (existingCountImage) {
+            existingCountImage.destroy();
+            this.usableCountImages[slotIndex] = undefined;
+        }
+        if (!item || item.count <= 1) return;
+
+        const countText = String(Math.max(0, Math.floor(item.count)));
+        const textureKey = this.getCountTexture(countText);
+        const image = this.scene.add.image(0, 0, textureKey).setOrigin(0, 0);
+        const localY = this.getUsableSlotLocalY(slotIndex);
+        const source = this.scene.textures.get(textureKey).getSourceImage() as HTMLImageElement | undefined;
+        const width = source?.width ?? image.width ?? 0;
+        const height = source?.height ?? image.height ?? 0;
+        image.setPosition(
+            Math.round(this.config.slotSize / 2 - width - 1),
+            Math.round(localY + this.config.slotSize / 2 - height - 1)
+        );
+        this.usableCountImages[slotIndex] = image;
+        this.container.add(image);
+    }
+
+    private getCountTexture(text: string): string {
+        const cached = this.countTextureCache.get(text);
+        if (cached) return cached;
+
+        const width = this.measureBitmapTextWidth(text);
+        const height = this.fontCharSize;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, width);
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        this.fontRenderer.drawText(ctx, text, 0, 0, { charGap: this.fontCharGap });
+        ctx.globalCompositeOperation = 'source-in';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const key = `__equip_count_${Date.now()}_${this.countTextureCounter++}`;
+        this.scene.textures.addCanvas(key, canvas);
+        this.countTextureCache.set(text, key);
+        return key;
+    }
+
     destroy() {
         this.endDragVisual(false);
         if (this.localeChangedHandler) {
@@ -745,6 +824,13 @@ export class EquipmentSlotsUI {
                 this.scene.textures.remove(key);
             }
         });
+        this.usableCountImages.forEach((countImage) => countImage?.destroy());
+        this.countTextureCache.forEach((key) => {
+            if (this.scene.textures.exists(key)) {
+                this.scene.textures.remove(key);
+            }
+        });
+        this.countTextureCache.clear();
         this.container.destroy();
     }
 }

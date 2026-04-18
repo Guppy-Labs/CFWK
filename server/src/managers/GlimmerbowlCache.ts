@@ -57,7 +57,15 @@ export class GlimmerbowlCache {
         return Boolean((user as any).glimmerbowlUnlocked);
     }
 
-    async unlockForUser(userId: string): Promise<{ entries: GlimmerbowlEntry[]; unlocked: boolean; slots?: { index: number; itemId: string | null; count: number }[]; equippedRodId?: string | null; movedFish: boolean }> {
+    async unlockForUser(userId: string): Promise<{
+        entries: GlimmerbowlEntry[];
+        unlocked: boolean;
+        slots?: { index: number; itemId: string | null; count: number }[];
+        equippedRodId?: string | null;
+        equippedUsableIds?: Array<string | null>;
+        equippedUsableCounts?: number[];
+        movedFish: boolean;
+    }> {
         await User.updateOne(
             { _id: userId },
             { $set: { glimmerbowlUnlocked: true } }
@@ -68,13 +76,26 @@ export class GlimmerbowlCache {
             ...state,
             slots: migrated.slots,
             equippedRodId: migrated.equippedRodId,
+            equippedUsableIds: migrated.equippedUsableIds,
+            equippedUsableCounts: migrated.equippedUsableCounts,
             movedFish: migrated.movedFish
         };
     }
 
-    async migrateInventoryFishToGlimmerbowl(userId: string): Promise<{ movedFish: boolean; slots?: { index: number; itemId: string | null; count: number }[]; equippedRodId?: string | null }> {
+    async migrateInventoryFishToGlimmerbowl(userId: string): Promise<{
+        movedFish: boolean;
+        slots?: { index: number; itemId: string | null; count: number }[];
+        equippedRodId?: string | null;
+        equippedUsableIds?: Array<string | null>;
+        equippedUsableCounts?: number[];
+    }> {
         const inventoryCache = InventoryCache.getInstance();
-        const { items: slots, equippedRodId } = await inventoryCache.getInventoryState(userId);
+        const {
+            items: slots,
+            equippedRodId,
+            equippedUsableIds,
+            equippedUsableCounts
+        } = await inventoryCache.getInventoryState(userId);
         const fishItemIds: string[] = [];
         let changed = false;
 
@@ -109,7 +130,9 @@ export class GlimmerbowlCache {
         return {
             movedFish: true,
             slots: nextSlots,
-            equippedRodId
+            equippedRodId,
+            equippedUsableIds,
+            equippedUsableCounts
         };
     }
 

@@ -6,6 +6,11 @@ export type InteractiveHarvestTarget = {
     centerX: number;
     centerY: number;
     radiusPx: number;
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+    polygon?: Array<{ x: number; y: number }>;
 };
 
 export type ChestInteractionTarget = {

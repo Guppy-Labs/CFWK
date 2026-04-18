@@ -119,6 +119,10 @@ export class RemotePlayerManager {
 
                 this.remotePlayers.set(sessionId, remotePlayer);
                 this.lastAppearanceBySession.set(sessionId, appearance);
+
+                if (this.scene.registry.get('nameplatesVisible') === false) {
+                    remotePlayer.setNameplateVisible(false);
+                }
             };
 
             if (!this.initialSyncComplete) {

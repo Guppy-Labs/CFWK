@@ -6,6 +6,7 @@ export class PlayerHud {
     private container: Phaser.GameObjects.Container;
     private slots: Phaser.GameObjects.Image[] = [];
     private usableIcons: Array<Phaser.GameObjects.Image | undefined> = [];
+    private usableCountTexts: Phaser.GameObjects.Text[] = [];
     private armorSlots: Phaser.GameObjects.Image[] = [];
     private rodSlot: Phaser.GameObjects.Image;
     private rightAccessorySlot: Phaser.GameObjects.Image;
@@ -18,6 +19,7 @@ export class PlayerHud {
     private onUsableSlotUse?: (slotIndex: number) => void;
     private equippedRodItemId: string | null = null;
     private equippedUsableItemIds: Array<string | null> = Array.from({ length: 4 }, () => null);
+    private equippedUsableCounts: number[] = Array.from({ length: 4 }, () => 0);
     private readonly itemTextureLoader = ItemTextureLoader.getInstance();
     private hearts: Phaser.GameObjects.Image[] = [];
     private currentHearts = 9;
@@ -72,6 +74,15 @@ export class PlayerHud {
             slot.setInteractive({ useHandCursor: true });
             slot.on('pointerdown', () => this.handleUsableSlotUse(i));
             this.slots.push(slot);
+            const countText = this.scene.add.text(0, 0, '', {
+                fontFamily: 'Minecraft, monospace',
+                fontSize: '10px',
+                color: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 2
+            }).setOrigin(1, 1);
+            countText.setVisible(false);
+            this.usableCountTexts.push(countText);
         }
 
         for (let i = 0; i < 4; i++) {
@@ -114,6 +125,7 @@ export class PlayerHud {
             this.rodSlot,
             this.rightAccessorySlot,
             ...this.slots,
+            ...this.usableCountTexts,
             ...this.hearts,
             this.staminaBarBg,
             this.staminaFill,
@@ -169,23 +181,32 @@ export class PlayerHud {
         this.updateRodShine();
     }
 
-    setEquippedUsables(itemIds: Array<string | null>) {
+    setEquippedUsables(itemIds: Array<string | null>, counts?: number[]) {
         for (let index = 0; index < this.slotCount; index++) {
             const itemId = itemIds[index] ?? null;
             this.equippedUsableItemIds[index] = itemId;
             const existingIcon = this.usableIcons[index];
             if (!itemId) {
+                this.equippedUsableCounts[index] = 0;
                 existingIcon?.destroy();
                 this.usableIcons[index] = undefined;
                 this.slots[index].setTexture(this.rodSlotTextureKey);
+                this.updateUsableCountText(index);
                 continue;
             }
+
+            const providedCount = Array.isArray(counts) && Number.isFinite(counts[index])
+                ? Math.max(1, Math.floor(Number(counts[index])))
+                : null;
+            this.equippedUsableCounts[index] = providedCount ?? Math.max(1, this.equippedUsableCounts[index] || 1);
+            this.slots[index].setTexture(this.filledSlotTextureKey);
+            this.updateUsableCountText(index);
 
             const textureKey = `item-${itemId}-18`;
             if (!this.scene.textures.exists(textureKey)) {
                 void this.itemTextureLoader.ensureItemIconTexture(this.scene, itemId, 18).then(() => {
                     if (this.equippedUsableItemIds[index] !== itemId) return;
-                    this.setEquippedUsables([...this.equippedUsableItemIds]);
+                    this.setEquippedUsables([...this.equippedUsableItemIds], [...this.equippedUsableCounts]);
                 });
                 continue;
             }
@@ -285,6 +306,13 @@ export class PlayerHud {
             icon.setPosition(slot.x, slot.y);
         });
 
+        this.usableCountTexts.forEach((countText, index) => {
+            const slot = this.slots[index];
+            const countX = slot.x + slotSize / 2 - 3;
+            const countY = slot.y + slotSize / 2 - 2;
+            countText.setPosition(Math.round(countX), Math.round(countY));
+        });
+
         const bottomEdgeY = slotsY + slotSize / 2;
         const armorBottomY = bottomEdgeY - armorSlotSize / 2;
         const armorTopY = armorBottomY - armorSlotSize - this.armorSlotGap;
@@ -318,6 +346,9 @@ export class PlayerHud {
             if (icon) {
                 this.container.bringToTop(icon);
             }
+        });
+        this.usableCountTexts.forEach((countText) => {
+            this.container.bringToTop(countText);
         });
 
         const heartsStartX = width / 2 - heartsRowWidth / 2 + heartWidth / 2;
@@ -361,8 +392,21 @@ export class PlayerHud {
         this.rodShineTween?.stop();
         this.rodIcon?.destroy();
         this.usableIcons.forEach((icon) => icon?.destroy());
+        this.usableCountTexts.forEach((countText) => countText.destroy());
         this.rodKeyIcon.destroy();
         this.container.destroy();
+    }
+
+    private updateUsableCountText(slotIndex: number) {
+        const countText = this.usableCountTexts[slotIndex];
+        const hasItem = Boolean(this.equippedUsableItemIds[slotIndex]);
+        const count = Math.max(0, Math.floor(this.equippedUsableCounts[slotIndex] ?? 0));
+        if (!hasItem || count <= 1) {
+            countText.setVisible(false);
+            return;
+        }
+        countText.setText(String(count));
+        countText.setVisible(true);
     }
 
     private updateRodShine() {

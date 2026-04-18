@@ -326,6 +326,7 @@ export class FishingScene extends Phaser.Scene {
         this.isHoldingCast = true;
         this.castHoldStart = this.time.now;
         this.castHoldDuration = 0;
+        window.dispatchEvent(new CustomEvent('guide:fishing:cast-hold-started'));
         this.ui.setCastBarVisible(true);
         this.ui.setCastBarValue(0);
     }
@@ -339,6 +340,7 @@ export class FishingScene extends Phaser.Scene {
         if (this.castHoldDuration < minHoldMs) {
             this.castHoldDuration = 0;
             this.ui?.setCastBarVisible(false);
+            window.dispatchEvent(new CustomEvent('guide:fishing:cast-hold-cancelled'));
             this.releaseRodWithoutCast();
             return;
         }

@@ -117,10 +117,6 @@
             align-items: center;
             min-height: 100vh;
             overflow-x: hidden;
-            background-image: 
-                linear-gradient(rgba(255, 102, 170, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255, 102, 170, 0.03) 1px, transparent 1px);
-            background-size: 32px 32px; /* Grid effect */
         }
 
         .hero-section {
@@ -243,28 +239,49 @@
         .feature-item {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--border);
-            padding: 1.5rem;
-            transition: transform 0.2s;
+            padding: 0;
+            transition: transform 0.2s, border-color 0.2s, background 0.2s;
+            overflow: hidden;
         }
 
-        @media screen and (max-width: 800px) {
-            h1.title {
-                font-size: 2.5rem;
+        @media screen and (max-width: 1024px) {
+            .hero-section {
+                margin-top: 6vh;
+                padding: 1.5rem;
             }
-            
+
+            .hero-logo-box {
+                width: 120px;
+                height: 120px;
+                margin-bottom: 1.25rem;
+            }
+
+            h1.title {
+                font-size: 4rem;
+            }
+
+            p.subtitle {
+                margin-top: 0.75rem;
+                margin-bottom: 2rem;
+                font-size: 1.1rem;
+            }
+
             .countdown-container {
                 min-width: unset;
                 width: 100%;
+                padding: 1.25rem;
+                margin-bottom: 2rem;
             }
 
             .countdown-timer {
-                font-size: 1.5rem;
+                font-size: 2rem;
             }
 
-            .hero-section {
-                padding: 1rem;
+            .btn-large {
+                font-size: 1.4rem;
+                padding: 1.25rem 2.5rem;
             }
-            
+
             .features {
                 padding: 0 1rem;
                 grid-template-columns: 1fr;
@@ -286,15 +303,117 @@
             }
         }
 
+        @media screen and (max-width: 500px) {
+            .hero-section {
+                margin-top: 4vh;
+                padding: 1rem;
+            }
+
+            .hero-logo-box {
+                width: 110px;
+                height: 110px;
+                margin-bottom: 1rem;
+                border-width: 3px;
+            }
+
+            h1.title {
+                font-size: 3.5rem;
+            }
+
+            p.subtitle {
+                margin-top: 0.5rem;
+                margin-bottom: 1.5rem;
+                font-size: 1rem;
+                letter-spacing: 1px;
+            }
+
+            .countdown-container {
+                padding: 1rem;
+                margin-bottom: 1.5rem;
+            }
+
+            .countdown-timer {
+                font-size: 1.5rem;
+            }
+
+            .btn-large {
+                font-size: 1.2rem;
+                padding: 1rem 2rem;
+            }
+        }
+
+        @media screen and (max-height: 750px) {
+            .hero-section {
+                margin-top: 3vh;
+                padding: 1rem;
+            }
+
+            .hero-logo-box {
+                width: 96px;
+                height: 96px;
+                margin-bottom: 0.75rem;
+                border-width: 3px;
+            }
+
+            h1.title {
+                font-size: 3.25rem;
+            }
+
+            p.subtitle {
+                margin-top: 0.5rem;
+                margin-bottom: 1rem;
+                font-size: 1rem;
+            }
+
+            .countdown-container {
+                padding: 0.75rem;
+                margin-bottom: 1rem;
+            }
+
+            .countdown-timer {
+                font-size: 1.5rem;
+            }
+
+            .btn-large {
+                font-size: 1.2rem;
+                padding: 0.85rem 1.75rem;
+            }
+        }
+
         .feature-item:hover {
             transform: translateY(-5px);
             border-color: var(--primary);
+            background: rgba(255, 102, 170, 0.05);
         }
 
-        .feature-item h3 {
+        .feature-item h2 {
             color: var(--primary);
             margin-top: 0;
+            margin-bottom: 0.75rem;
             text-transform: uppercase;
+            font-size: 1.4rem;
+            letter-spacing: 3px;
+            text-shadow: 2px 2px 0px rgba(0,0,0,0.5);
+        }
+
+        .feature-item .feature-img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            display: block;
+            image-rendering: pixelated;
+            background: var(--bg-panel);
+        }
+
+        .feature-item .feature-body {
+            padding: 1.25rem;
+        }
+
+        .feature-item p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            line-height: 1.6;
+            margin: 0;
         }
 
         /* Buttons */
@@ -399,9 +518,24 @@
             white-space: nowrap;
             border: 0;
         }
+        #bg-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        body > *:not(#bg-canvas) {
+            position: relative;
+            z-index: 1;
+        }
     </style>
 </head>
 <body>
+    <canvas id="bg-canvas" aria-hidden="true"></canvas>
     <header>
         <div class="hero-section" role="banner">
             <!-- Hero Graphic Placeholder -->
@@ -409,7 +543,7 @@
                 <img src="/favicon.png" alt="Cute Fish With Knives Logo - A pixelated fish character" style="width: 80%; height: 80%; image-rendering: pixelated;">
             </div>
 
-            <h1 class="title">Cute Fish<br><span style="color:var(--primary)">With Knives</span></h1>
+            <h1 class="title">Cute Fish<br><span style="color:var(--primary);text-shadow: 0 0 0 !important;">With Knives</span></h1>
             <p class="subtitle">Create. Battle. Survive.</p>
 
             <div class="countdown-container" aria-label="Game release countdown">
@@ -421,8 +555,9 @@
         <nav id="auth-actions" aria-label="Account actions">
             <!-- Logged Out View -->
             <div id="logged-out-view" class="hidden">
+                <p id="player-count" style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 0.25rem; opacity: 0; transition: opacity 0.4s ease;"></p>
                 <a href="/register" class="btn btn-large" aria-label="Pre-register for the game">Pre-register Now</a>
-                <div style="margin-top: 1rem;">
+                <div style="margin-top: 0.5rem;">
                     <span style="color: var(--text-muted); font-size: 0.9rem;">Already have an account?</span>
                     <a href="/login" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem; margin-left: 10px;" aria-label="Login to your account">Login</a>
                 </div>
@@ -443,16 +578,25 @@
     <main>
         <section class="features" aria-label="Game features">
             <article class="feature-item">
-                <h2>Adventure</h2>
-                <p>Journey out to discover new worlds and hidden secrets, all with one goal in mind...</p>
+                <img class="feature-img" src="/img/feature-adventure.png" alt="Adventure gameplay">
+                <div class="feature-body">
+                    <h2>Adventure</h2>
+                    <p>Journey out to discover new worlds and hidden secrets, all with one goal in mind...</p>
+                </div>
             </article>
             <article class="feature-item">
-                <h2>Multiplayer</h2>
-                <p>Battle against friends (and enemies) in real-time isometric combat.</p>
+                <img class="feature-img" src="/img/feature-fight.png" alt="Combat gameplay">
+                <div class="feature-body">
+                    <h2>Fight</h2>
+                    <p>Battle against friends (and enemies) with the help of your trusty fish pals!</p>
+                </div>
             </article>
             <article class="feature-item">
-                <h2>Cute & Deadly</h2>
-                <p>It's fish. They have knives. What else do you need to know?</p>
+                <img class="feature-img" src="/img/feature-relax.png" alt="Relaxing gameplay">
+                <div class="feature-body">
+                    <h2>Relax</h2>
+                    <p>Take a break from the chaos and enjoy the calm waters of your world.</p>
+                </div>
             </article>
         </section>
     </main>
@@ -488,7 +632,7 @@
 
     <script>
         // --- Countdown Logic ---
-        const targetDate = new Date('2026-05-02T06:00:00').getTime();
+        const targetDate = new Date('2026-05-20T06:00:00').getTime();
         
         function updateCountdown() {
             const now = new Date().getTime();
@@ -511,6 +655,17 @@
         
         setInterval(updateCountdown, 1000);
         updateCountdown();
+
+        // --- Player Count ---
+        fetch('/api/auth/count')
+            .then(res => res.ok ? res.json() : Promise.reject())
+            .then(data => {
+                const display = (data.count || 0) + 450;
+                const el = document.getElementById('player-count');
+                el.textContent = `Join ${display.toLocaleString()} players`;
+                el.style.opacity = '1';
+            })
+            .catch(() => {});
 
         // --- Auth Logic ---
         fetch('/api/auth/me')
@@ -535,6 +690,162 @@
                 // Not logged in, show default view
                 document.getElementById('logged-out-view').classList.remove('hidden');
             });
+    </script>
+
+    <script>
+    (function() {
+        const canvas = document.getElementById('bg-canvas');
+        const ctx = canvas.getContext('2d');
+
+        const DOT_SPACING = 24;
+        const DOT_ON_RADIUS = 1.8;
+        const DOT_OFF_RADIUS = 0.8;
+        const ALPHA_ON = 0.3;
+        const ALPHA_OFF = 0.04;
+        const THRESHOLD = 0.12;
+        const MOUSE_RADIUS = 250;
+        const MOUSE_STRENGTH = 0.6;
+        const NOISE_SCALE = 0.045;
+        const TIME_SPEED = 0.00025;
+
+        let cols, rows, mouseX = -9999, mouseY = -9999;
+        let prevMouseX = -9999, prevMouseY = -9999;
+        let ripples = [];
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            cols = Math.ceil(canvas.width / DOT_SPACING) + 1;
+            rows = Math.ceil(canvas.height / DOT_SPACING) + 1;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        document.addEventListener('mousemove', function(e) {
+            prevMouseX = mouseX;
+            prevMouseY = mouseY;
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        document.addEventListener('click', function(e) {
+            ripples.push({ x: e.clientX, y: e.clientY, t: 0 });
+        });
+
+        // Permutation table for Perlin noise
+        const perm = new Uint8Array(512);
+        const p = new Uint8Array(256);
+        for (let i = 0; i < 256; i++) p[i] = i;
+        for (let i = 255; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const tmp = p[i]; p[i] = p[j]; p[j] = tmp;
+        }
+        for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+
+        const grad3 = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+
+        function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+        function lerp(a, b, t) { return a + t * (b - a); }
+
+        function noise2d(x, y) {
+            const xi = Math.floor(x) & 255, yi = Math.floor(y) & 255;
+            const xf = x - Math.floor(x), yf = y - Math.floor(y);
+            const u = fade(xf), v = fade(yf);
+
+            const aa = perm[perm[xi] + yi], ab = perm[perm[xi] + yi + 1];
+            const ba = perm[perm[xi + 1] + yi], bb = perm[perm[xi + 1] + yi + 1];
+
+            function dot(hash, fx, fy) {
+                const g = grad3[hash & 7];
+                return g[0] * fx + g[1] * fy;
+            }
+
+            return lerp(
+                lerp(dot(aa, xf, yf), dot(ba, xf - 1, yf), u),
+                lerp(dot(ab, xf, yf - 1), dot(bb, xf - 1, yf - 1), u),
+                v
+            );
+        }
+
+        function draw(time) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const t = time * TIME_SPEED;
+
+            // Expire old ripples
+            ripples = ripples.filter(r => r.t < 1);
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const x = col * DOT_SPACING;
+                    const y = row * DOT_SPACING;
+
+                    const n = noise2d(col * NOISE_SCALE + t, row * NOISE_SCALE + t * 0.7);
+                    const n2 = noise2d(col * NOISE_SCALE * 2.5 + t * 1.3 + 100, row * NOISE_SCALE * 2.5 + t * 0.9 + 100);
+                    let val = n * 0.6 + n2 * 0.4;
+
+                    const dx = x - mouseX, dy = y - mouseY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < MOUSE_RADIUS) {
+                        const proximity = 1 - dist / MOUSE_RADIUS;
+                        const wave = Math.sin(dist * 0.04 - time * 0.004) * 0.5 + 0.5;
+                        val += proximity * proximity * MOUSE_STRENGTH * wave;
+                    }
+
+                    let rippleIntensity = 0;
+                    for (const ripple of ripples) {
+                        const rdx = x - ripple.x, rdy = y - ripple.y;
+                        const rdist = Math.sqrt(rdx * rdx + rdy * rdy);
+                        const rippleRadius = ripple.t * 450;
+                        const ringDist = Math.abs(rdist - rippleRadius);
+                        if (ringDist < 50) {
+                            const ri = (1 - ringDist / 50) * (1 - ripple.t);
+                            val += ri * 0.5;
+                            rippleIntensity = Math.max(rippleIntensity, ri);
+                        }
+                    }
+
+                    const on = val > THRESHOLD;
+                    const radius = on ? DOT_ON_RADIUS : DOT_OFF_RADIUS;
+                    const alpha = on ? ALPHA_ON : ALPHA_OFF;
+
+                    // Use a third noise layer to vary island color between pink and orange
+                    const colorNoise = noise2d(col * 0.03 + 50, row * 0.03 + t * 0.5 + 50);
+                    const orangeMix = (colorNoise + 1) * 0.5;
+
+                    let r, g, b, a;
+                    if (rippleIntensity > 0.05) {
+                        const w = Math.min(rippleIntensity * 1.5, 1);
+                        r = Math.round(255 * w + (on ? 255 : 255) * (1 - w));
+                        g = Math.round(255 * w + (on ? 120 : 102) * (1 - w));
+                        b = Math.round(255 * w + (on ? 180 : 170) * (1 - w));
+                        a = Math.max(alpha, rippleIntensity * 0.5);
+                    } else if (on) {
+                        r = 255;
+                        g = Math.round(100 + orangeMix * 60);
+                        b = Math.round(180 - orangeMix * 110);
+                        a = alpha;
+                    } else {
+                        r = 255; g = 102; b = 170;
+                        a = alpha;
+                    }
+
+                    ctx.beginPath();
+                    ctx.arc(x, y, rippleIntensity > 0.05 ? Math.max(radius, DOT_ON_RADIUS * rippleIntensity * 1.5) : radius, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(${r},${g},${b},${a.toFixed(3)})`;
+                    ctx.fill();
+                }
+            }
+
+            // Advance ripples
+            for (const ripple of ripples) {
+                ripple.t += 0.008;
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        requestAnimationFrame(draw);
+    })();
     </script>
 </body>
 </html>

@@ -235,8 +235,13 @@ export class DialogueManager {
             for (const fork of dialogue.forks) {
                 const passed = await this.checkFork(fork);
                 if (passed) {
+                    let lines = fork.lines ?? [];
+                    if (fork.randomLines && fork.randomLines.length > 0) {
+                        const pick = fork.randomLines[Math.floor(Math.random() * fork.randomLines.length)];
+                        lines = pick ?? lines;
+                    }
                     return {
-                        lines: fork.lines ?? [],
+                        lines,
                         actions: fork.actions ?? dialogue.actions ?? []
                     };
                 }
@@ -402,46 +407,36 @@ export class DialogueManager {
         return this.inventorySnapshot ?? null;
     }
 
-    private async executeActions() {
-        if (this.pendingActions.length === 0) return;
+    private async executeActions(): Promise<DialogueAction[]> {
+        const deferred: DialogueAction[] = [];
+        if (this.pendingActions.length === 0) return deferred;
         for (const action of this.pendingActions) {
             if (action.type === 'giveItem') {
                 await this.giveItem(action);
+            } else if (action.type === 'openShop') {
+                deferred.push(action);
             }
         }
+        return deferred;
+    }
+
+    private openShop(shopId: string) {
+        window.dispatchEvent(new CustomEvent('shop:open', { detail: { shopId } }));
     }
 
     private async giveItem(action: DialogueAction) {
         if (action.type !== 'giveItem') return;
-        const inventory = await this.getInventorySnapshot();
-        if (!inventory?.slots) return;
+        if (!this.npcId) return;
+        this.networkManager.sendDialogueGiveItem({
+            npcId: this.npcId,
+            itemId: action.itemId,
+            amount: Math.max(1, Math.floor(action.amount ?? 1)),
+            ifMissing: action.ifMissing !== false
+        });
 
-        window.dispatchEvent(new CustomEvent('inventory:update', { detail: inventory }));
-
-        const shouldCheck = action.ifMissing !== false;
-        if (shouldCheck) {
-            const alreadyHas = inventory.slots.some((slot) => slot.itemId === action.itemId && slot.count > 0);
-            if (alreadyHas) return;
-        }
-
-        const slots = inventory.slots.map((slot) => ({ ...slot }));
-        const emptySlot = slots.find((slot) => !slot.itemId || slot.count <= 0);
-        if (!emptySlot) return;
-
-        const amount = Math.max(1, Math.floor(action.amount ?? 1));
-        emptySlot.itemId = action.itemId;
-        emptySlot.count = amount;
-        if (action.itemId === 'rickety_rod') {
+        if (action.itemId === 'rickety_rod' && this.npcId === 'fisherman') {
             this.grantedRodDuringDialogue = true;
         }
-
-        this.networkManager.sendInventorySlots(slots);
-        const updated: IInventoryResponse = {
-            ...inventory,
-            slots
-        };
-        this.inventorySnapshot = updated;
-        window.dispatchEvent(new CustomEvent('inventory:update', { detail: updated }));
     }
 
     async advance() {
@@ -459,8 +454,13 @@ export class DialogueManager {
         }
 
         this.playDialogueEndBurst();
-        await this.executeActions();
+        const deferredActions = await this.executeActions();
         this.exitDialogueMode();
+        for (const action of deferredActions) {
+            if (action.type === 'openShop') {
+                this.openShop(action.shopId);
+            }
+        }
     }
 
     private playDialogueNext() {

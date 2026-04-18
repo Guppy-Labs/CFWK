@@ -26,15 +26,21 @@ export class GuideCoordinator {
     private simulatedFoodDamage = false;
     private foodDamageIntroDone = false;
     private fishingGuideEligibleAt = 0;
-    private readonly fishingGuideStartDelayMs = 2000;
+    private readonly fishingGuideStartDelayMs = 1000;
     private readonly fishingScenePromptDelayMs = 900;
     private readonly fishingReelPromptDelayMs = 900;
     private readonly fishingStopPromptDelayMs = 1500;
     private suppressFishingOverlayUntil = 0;
     private fishingTransitionLockActive = false;
+    private hideHoldCastPromptWhileHolding = false;
+    private finbookClickAdvanceReadyAt = 0;
+    private readonly finbookGuideQuestDelayMs = 5000;
+    private readonly finbookAdvanceDebounceMs = 180;
 
     private readonly rodGrantedHandler: (event: Event) => void;
     private readonly guiChangedHandler: (event: Event) => void;
+    private readonly bookTabChangedHandler: (event: Event) => void;
+    private readonly finbookPointerDownHandler: (event: Event) => void;
     private readonly rodSelectedHandler: (event: Event) => void;
     private readonly rodEquippedHandler: () => void;
     private readonly fishingEnteredHandler: () => void;
@@ -42,6 +48,8 @@ export class GuideCoordinator {
     private readonly fishingBiteHandler: () => void;
     private readonly fishingCaughtHandler: () => void;
     private readonly fishingStoppedHandler: () => void;
+    private readonly fishingCastHoldStartedHandler: () => void;
+    private readonly fishingCastHoldCancelledHandler: () => void;
     private readonly advancementsUpdatedHandler: (event: Event) => void;
     private readonly inventoryUpdateHandler: (event: Event) => void;
     private readonly foodSelectedHandler: (event: Event) => void;
@@ -76,6 +84,23 @@ export class GuideCoordinator {
             if (this.tutorial.foodStep === 'close_inventory' && !isOpen) {
                 this.setFoodStep('consume_quickslot_1');
             }
+            if (this.tutorial.finbookStep === 'open_inventory' && isOpen) {
+                this.setFinbookStep('open_finbook_tab');
+            }
+            if (this.tutorial.finbookStep === 'close_inventory' && !isOpen) {
+                this.completeFinbookGuide();
+            }
+        };
+        this.bookTabChangedHandler = (event: Event) => {
+            if (this.tutorial.finbookStep !== 'open_finbook_tab') return;
+            const detail = (event as CustomEvent<{ tab?: string }>).detail;
+            if (detail?.tab !== 'Finbook') return;
+            this.setFinbookStep('show_completed_quest');
+        };
+        this.finbookPointerDownHandler = (_event: Event) => {
+            if (!this.isFinbookClickAdvanceStep(this.tutorial.finbookStep)) return;
+            if (Date.now() < this.finbookClickAdvanceReadyAt) return;
+            this.advanceFinbookClickStep(this.tutorial.finbookStep);
         };
         this.rodSelectedHandler = () => {
             if (this.tutorial.rodStep === 'select_rod') {
@@ -89,6 +114,7 @@ export class GuideCoordinator {
         };
         this.fishingEnteredHandler = () => {
             if (this.tutorial.fishingStep !== 'use_rod') return;
+            this.hideHoldCastPromptWhileHolding = false;
             this.beginFishingTransition(this.fishingScenePromptDelayMs);
             this.fishingTransitionDelayHandle = window.setTimeout(() => {
                 if (this.tutorial.fishingStep !== 'use_rod') return;
@@ -97,6 +123,7 @@ export class GuideCoordinator {
         };
         this.fishingCastedHandler = () => {
             if (this.tutorial.fishingStep !== 'hold_cast') return;
+            this.hideHoldCastPromptWhileHolding = false;
             this.uiScene.setGuideFishingTimerFreeze(false);
             this.setFishingStep('wait_bite', { forceSalmonCatch: true });
         };
@@ -125,8 +152,19 @@ export class GuideCoordinator {
             }, this.fishingStopPromptDelayMs);
         };
         this.fishingStoppedHandler = () => {
+            this.hideHoldCastPromptWhileHolding = false;
             if (this.tutorial.fishingStep !== 'stop_fishing') return;
             this.completeFishingGuide();
+        };
+        this.fishingCastHoldStartedHandler = () => {
+            if (this.tutorial.fishingStep !== 'hold_cast') return;
+            this.hideHoldCastPromptWhileHolding = true;
+            this.uiScene.clearGuideOverlay();
+            this.uiScene.clearGuideInputGate();
+        };
+        this.fishingCastHoldCancelledHandler = () => {
+            if (this.tutorial.fishingStep !== 'hold_cast') return;
+            this.hideHoldCastPromptWhileHolding = false;
         };
         this.advancementsUpdatedHandler = (event: Event) => {
             const detail = (event as CustomEvent<IAdvancementsState>).detail;
@@ -179,6 +217,8 @@ export class GuideCoordinator {
 
         window.addEventListener('guide:rod-granted-dialogue-complete', this.rodGrantedHandler as EventListener);
         window.addEventListener('gui-open-changed', this.guiChangedHandler as EventListener);
+        window.addEventListener('guide:book:tab-changed', this.bookTabChangedHandler as EventListener);
+        window.addEventListener('pointerdown', this.finbookPointerDownHandler as EventListener);
         window.addEventListener('guide:book:rod-selected', this.rodSelectedHandler as EventListener);
         window.addEventListener('guide:book:rod-equipped', this.rodEquippedHandler as EventListener);
         window.addEventListener('guide:fishing:entered', this.fishingEnteredHandler as EventListener);
@@ -186,6 +226,8 @@ export class GuideCoordinator {
         window.addEventListener('guide:fishing:bite-started', this.fishingBiteHandler as EventListener);
         window.addEventListener('guide:fishing:caught', this.fishingCaughtHandler as EventListener);
         window.addEventListener('guide:fishing:stopped', this.fishingStoppedHandler as EventListener);
+        window.addEventListener('guide:fishing:cast-hold-started', this.fishingCastHoldStartedHandler as EventListener);
+        window.addEventListener('guide:fishing:cast-hold-cancelled', this.fishingCastHoldCancelledHandler as EventListener);
         window.addEventListener('advancements:update', this.advancementsUpdatedHandler as EventListener);
         window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
         window.addEventListener('guide:book:food-selected', this.foodSelectedHandler as EventListener);
@@ -248,6 +290,16 @@ export class GuideCoordinator {
             return;
         }
 
+        if (!this.tutorial.finbookCompleted) {
+            this.tryStartFinbookGuide();
+        }
+
+        if (!this.tutorial.finbookCompleted && this.tutorial.finbookStep !== 'idle') {
+            this.active = true;
+            this.renderFinbookStep();
+            return;
+        }
+
         this.active = false;
         this.uiScene.clearGuideOverlay();
         this.uiScene.clearGuideInputGate();
@@ -284,6 +336,8 @@ export class GuideCoordinator {
         }
         window.removeEventListener('guide:rod-granted-dialogue-complete', this.rodGrantedHandler as EventListener);
         window.removeEventListener('gui-open-changed', this.guiChangedHandler as EventListener);
+        window.removeEventListener('guide:book:tab-changed', this.bookTabChangedHandler as EventListener);
+        window.removeEventListener('pointerdown', this.finbookPointerDownHandler as EventListener);
         window.removeEventListener('guide:book:rod-selected', this.rodSelectedHandler as EventListener);
         window.removeEventListener('guide:book:rod-equipped', this.rodEquippedHandler as EventListener);
         window.removeEventListener('guide:fishing:entered', this.fishingEnteredHandler as EventListener);
@@ -291,6 +345,8 @@ export class GuideCoordinator {
         window.removeEventListener('guide:fishing:bite-started', this.fishingBiteHandler as EventListener);
         window.removeEventListener('guide:fishing:caught', this.fishingCaughtHandler as EventListener);
         window.removeEventListener('guide:fishing:stopped', this.fishingStoppedHandler as EventListener);
+        window.removeEventListener('guide:fishing:cast-hold-started', this.fishingCastHoldStartedHandler as EventListener);
+        window.removeEventListener('guide:fishing:cast-hold-cancelled', this.fishingCastHoldCancelledHandler as EventListener);
         window.removeEventListener('advancements:update', this.advancementsUpdatedHandler as EventListener);
         window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
         window.removeEventListener('guide:book:food-selected', this.foodSelectedHandler as EventListener);
@@ -320,6 +376,158 @@ export class GuideCoordinator {
             if (!nearWaterNow || guiOpenNow || fishingOpenNow) return;
             this.setFishingStep('use_rod', { forceSalmonCatch: true });
         }, this.fishingGuideStartDelayMs);
+    }
+
+    private tryStartFinbookGuide() {
+        if (this.tutorial.finbookStep !== 'idle') return;
+        if (!this.isAnchorHollowMap()) return;
+
+        if (this.tutorial.finbookAnchorEnteredAt === null) {
+            const enteredAt = Date.now();
+            this.tutorial.finbookAnchorEnteredAt = enteredAt;
+            this.tutorial.updatedAt = enteredAt;
+            this.networkManager.sendGuideTutorialUpdate({ finbookAnchorEnteredAt: enteredAt });
+        }
+
+        if (!this.tutorial.fishingCompleted) return;
+
+        const fishingQuestCompletedAt = this.getFishingQuestCompletedAt();
+        if (fishingQuestCompletedAt === null) return;
+
+        const eligibleAt = Math.max(
+            this.tutorial.finbookAnchorEnteredAt ?? 0,
+            fishingQuestCompletedAt + this.finbookGuideQuestDelayMs
+        );
+        if (Date.now() < eligibleAt) return;
+
+        this.setFinbookStep('open_inventory');
+    }
+
+    private renderFinbookStep() {
+        const inventoryKey = this.keybindManager.getDisplayLabel('inventory');
+        const inventoryTriggerRect = this.uiScene.getGuideInventoryTriggerRect();
+        const isBookOpen = this.uiScene.isGuideBookOpen();
+        const isFinbookTabActive = this.uiScene.isGuideFinbookTabActive();
+
+        if (!isBookOpen && this.tutorial.finbookStep !== 'open_inventory') {
+            this.setFinbookStep('open_inventory');
+            return;
+        }
+
+        if (!isFinbookTabActive && this.tutorial.finbookStep !== 'open_inventory' && this.tutorial.finbookStep !== 'open_finbook_tab' && this.tutorial.finbookStep !== 'close_inventory') {
+            this.setFinbookStep('open_finbook_tab');
+            return;
+        }
+
+        if (this.tutorial.finbookStep === 'open_inventory') {
+            if (isBookOpen) {
+                this.setFinbookStep('open_finbook_tab');
+                return;
+            }
+            this.showStep(
+                inventoryTriggerRect
+                    ? this.localeManager.t('guide.finbook.openInventoryMobile', undefined, 'The Finbook is your place to find quests, achievements, and more. Click the inventory button or press "E" to get started.')
+                    : this.localeManager.t('guide.finbook.openInventory', { key: inventoryKey }, `The Finbook is your place to find quests, achievements, and more. Open your inventory (press ${inventoryKey}) to get started.`),
+                inventoryTriggerRect,
+                ['inventory']
+            );
+            return;
+        }
+
+        if (this.tutorial.finbookStep === 'open_finbook_tab') {
+            if (isFinbookTabActive) {
+                this.setFinbookStep('show_completed_quest');
+                return;
+            }
+            this.showStep(
+                this.localeManager.t('guide.finbook.openTab', undefined, 'Click the "Finbook" tab'),
+                this.uiScene.getGuideFinbookTabRect(),
+                []
+            );
+            return;
+        }
+
+        if (this.tutorial.finbookStep === 'show_completed_quest') {
+            this.showStep(
+                this.localeManager.t('guide.finbook.completedQuest', undefined, 'Grayed out quests are ones you\'ve already finished. (Click anywhere to continue)'),
+                this.uiScene.getGuideFinbookCompletedQuestRect(),
+                [],
+                null,
+                true,
+                true
+            );
+            return;
+        }
+
+        if (this.tutorial.finbookStep === 'show_main_quest') {
+            this.showStep(
+                this.localeManager.t('guide.finbook.mainQuest', undefined, 'Quests with a star are main quests. You must complete them to progress. (Click anywhere to continue)'),
+                this.uiScene.getGuideFinbookTopMainQuestRect(),
+                [],
+                null,
+                true,
+                true
+            );
+            return;
+        }
+
+        if (this.tutorial.finbookStep === 'show_title') {
+            this.showStep(
+                this.localeManager.t('guide.finbook.title', undefined, 'This is the quest title. (Click anywhere to continue)'),
+                this.uiScene.getGuideFinbookQuestTitleRect(),
+                [],
+                null,
+                true,
+                true
+            );
+            return;
+        }
+
+        if (this.tutorial.finbookStep === 'show_status') {
+            this.showStep(
+                this.localeManager.t('guide.finbook.status', undefined, 'This tells you whether you\'ve already made progress on this quest or not. (Click anywhere to continue)'),
+                this.uiScene.getGuideFinbookQuestStatusRect(),
+                [],
+                null,
+                true,
+                true
+            );
+            return;
+        }
+
+        if (this.tutorial.finbookStep === 'show_objective') {
+            this.showStep(
+                this.localeManager.t('guide.finbook.objective', undefined, 'This tells you what you need to do next. (Click anywhere to continue)'),
+                this.uiScene.getGuideFinbookObjectiveLabelRect(),
+                [],
+                this.uiScene.getGuideFinbookObjectiveCardRect(),
+                true,
+                true
+            );
+            return;
+        }
+
+        if (this.tutorial.finbookStep === 'show_track_button') {
+            this.showStep(
+                this.localeManager.t('guide.finbook.trackButton', undefined, 'You can track a quest at any time to get help finding the next objective. (Click anywhere to continue)'),
+                this.uiScene.getGuideFinbookTrackButtonRect(),
+                [],
+                null,
+                true,
+                true
+            );
+            return;
+        }
+
+        if (this.tutorial.finbookStep === 'close_inventory') {
+            this.showStep(
+                inventoryTriggerRect
+                    ? this.localeManager.t('guide.finbook.closeInventoryMobile', undefined, 'Once again, click the inventory button or press E to exit')
+                    : this.localeManager.t('guide.finbook.closeInventory', { key: inventoryKey }, `Click the inventory button or press ${inventoryKey} to exit`),
+                inventoryTriggerRect,
+                ['inventory']
+            );
+        }
     }
 
     private renderRodStep() {
@@ -385,6 +593,11 @@ export class GuideCoordinator {
         }
 
         if (this.tutorial.fishingStep === 'hold_cast') {
+            if (this.hideHoldCastPromptWhileHolding) {
+                this.uiScene.clearGuideOverlay();
+                this.uiScene.clearGuideInputGate();
+                return;
+            }
             this.showStep(
                 this.localeManager.t('guide.fishing.holdCast', undefined, 'Hold the cast button for a few seconds, then release.'),
                 this.uiScene.getGuideFishingCastRect(),
@@ -668,6 +881,72 @@ export class GuideCoordinator {
         this.networkManager.sendGuideTutorialUpdate({ interactionStep: step });
     }
 
+    private setFinbookStep(step: IGuideTutorialState['finbookStep']) {
+        this.tutorial.finbookStep = step;
+        this.tutorial.updatedAt = Date.now();
+        this.finbookClickAdvanceReadyAt = Date.now() + this.finbookAdvanceDebounceMs;
+        this.networkManager.sendGuideTutorialUpdate({ finbookStep: step });
+    }
+
+    private completeFinbookGuide() {
+        this.tutorial.finbookCompleted = true;
+        this.tutorial.finbookStep = 'completed';
+        this.tutorial.updatedAt = Date.now();
+        this.networkManager.sendGuideTutorialUpdate({
+            finbookCompleted: true,
+            finbookStep: 'completed'
+        });
+        this.uiScene.clearGuideOverlay();
+        this.uiScene.clearGuideInputGate();
+    }
+
+    private isFinbookClickAdvanceStep(step: IGuideTutorialState['finbookStep']) {
+        return step === 'show_completed_quest'
+            || step === 'show_main_quest'
+            || step === 'show_title'
+            || step === 'show_status'
+            || step === 'show_objective'
+            || step === 'show_track_button';
+    }
+
+    private advanceFinbookClickStep(step: IGuideTutorialState['finbookStep']) {
+        if (step === 'show_completed_quest') {
+            this.setFinbookStep('show_main_quest');
+            return;
+        }
+        if (step === 'show_main_quest') {
+            this.setFinbookStep('show_title');
+            return;
+        }
+        if (step === 'show_title') {
+            this.setFinbookStep('show_status');
+            return;
+        }
+        if (step === 'show_status') {
+            this.setFinbookStep('show_objective');
+            return;
+        }
+        if (step === 'show_objective') {
+            this.setFinbookStep('show_track_button');
+            return;
+        }
+        if (step === 'show_track_button') {
+            this.setFinbookStep('close_inventory');
+        }
+    }
+
+    private isAnchorHollowMap() {
+        return this.uiScene.getGuideCurrentMapFile().startsWith('anchor-hollow');
+    }
+
+    private getFishingQuestCompletedAt(): number | null {
+        const completedAt = this.advancementsSnapshot?.questProgress?.first_catch?.completedAt;
+        if (typeof completedAt === 'number' && Number.isFinite(completedAt) && completedAt > 0) {
+            return completedAt;
+        }
+        return null;
+    }
+
     private tryReconcileGuideProgressAfterReload() {
         if (this.startupReconciled) return;
         const inventory = this.inventorySnapshot;
@@ -782,6 +1061,23 @@ export class GuideCoordinator {
         if (this.tutorial.fishingCompleted && this.tutorial.fishingStep !== 'completed') {
             this.tutorial.fishingStep = 'completed';
             update.fishingStep = 'completed';
+            changed = true;
+        }
+
+        if (!this.tutorial.finbookCompleted) {
+            if (this.tutorial.finbookStep === 'completed') {
+                this.tutorial.finbookCompleted = true;
+                update.finbookCompleted = true;
+                changed = true;
+            } else if (this.tutorial.finbookStep !== 'idle') {
+                this.tutorial.finbookStep = 'idle';
+                update.finbookStep = 'idle';
+                changed = true;
+            }
+        }
+        if (this.tutorial.finbookCompleted && this.tutorial.finbookStep !== 'completed') {
+            this.tutorial.finbookStep = 'completed';
+            update.finbookStep = 'completed';
             changed = true;
         }
 

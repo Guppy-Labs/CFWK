@@ -33,6 +33,7 @@
     "footstepWood": "-----",
     "meow": "-----",
     "eatYekberries": "-----",
+    "drinkYekjuice": "-----",
     "rodCast": "-----",
     "rodReel": "-----",
     "waterSplash": "-----",
@@ -248,5 +249,15 @@
       "name": "-----",
       "description": "-----"
     }
+  },
+  "shop": {
+    "buy1x": "--- --",
+    "buy10x": "---",
+    "limitedSupply": "------- ------ ------",
+    "available": "{count} ---------",
+    "restocksIn": "-------- -- {time}",
+    "restockingSoon": "--------- ----...",
+    "outOfStock": "--- -- -----",
+    "selectItem": "------ -- ----"
   }
 }

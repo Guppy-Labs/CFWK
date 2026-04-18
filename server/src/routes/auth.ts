@@ -419,6 +419,15 @@ router.post('/resend-verification', async (req, res) => {
     }
 });
 
+router.get('/count', async (_req, res) => {
+    try {
+        const count = await User.countDocuments();
+        res.json({ count });
+    } catch {
+        res.status(500).json({ count: 0 });
+    }
+});
+
 // Endpoint to check current session
 router.get('/me', async (req, res) => {
     if (req.isAuthenticated()) {

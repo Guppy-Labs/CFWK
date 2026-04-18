@@ -16,6 +16,7 @@ import { GuideOverlay, GuideOverlayState } from '../ui/guide/GuideOverlay';
 import { GuideCoordinator } from '../ui/guide/GuideCoordinator';
 import { GuideInputGate } from '../ui/guide/GuideInputGate';
 import { DebugNpcPanel } from '../ui/DebugNpcPanel';
+import { ShopUI } from '../ui/shop/ShopUI';
 import { DisconnectModal } from '../../ui/DisconnectModal';
 import type CrtPostFxPipeline from 'phaser3-rex-plugins/plugins/crtpipeline.js';
 
@@ -83,6 +84,8 @@ export class UIScene extends Phaser.Scene {
     private playerDefeatHandler?: (event: Event) => void;
     private playerDefeatAnimationCompleteHandler?: (event: Event) => void;
     private playerRecoveredHandler?: (event: Event) => void;
+    private shopOpenHandler?: (event: Event) => void;
+    private shopUI?: ShopUI;
     private pendingDefeatModal = false;
     private hudSuppressedForDefeat = false;
     private guiBlurFx?: unknown;
@@ -155,6 +158,7 @@ export class UIScene extends Phaser.Scene {
             .setScrollFactor(0)
             .setDepth(1005)
             .setVisible(false);
+        this.shopUI = new ShopUI(this);
         this.inventoryChangeMonitor = new InventoryChangeMonitor(this);
         this.subtitleStack = new SubtitleStack(this);
         this.dialogueUI = new DialogueUI(this);
@@ -227,6 +231,17 @@ export class UIScene extends Phaser.Scene {
             this.openDebugNpcPanel();
         };
         window.addEventListener('debug:npc:open', this.debugNpcOpenHandler as EventListener);
+
+        this.shopOpenHandler = (event: Event) => {
+            const detail = (event as CustomEvent<{ shopId?: string }>).detail;
+            if (!detail?.shopId) return;
+            if (this.bookUI?.isOpen()) {
+                this.bookUI.close();
+                this.registry.set('guiOpen', false);
+            }
+            this.shopUI?.open(detail.shopId);
+        };
+        window.addEventListener('shop:open', this.shopOpenHandler as EventListener);
         this.playerDefeatHandler = (_event: Event) => {
             this.registry.set('inputBlocked', true);
             this.registry.set('playerDefeated', true);
@@ -236,6 +251,9 @@ export class UIScene extends Phaser.Scene {
 
             if (this.chat?.isChatFocused()) {
                 this.chat.blur();
+            }
+            if (this.shopUI?.isOpen()) {
+                this.shopUI.close();
             }
             if (this.bookUI?.isOpen()) {
                 this.bookUI.close();
@@ -292,11 +310,18 @@ export class UIScene extends Phaser.Scene {
         this.playerHud.setOnUsableSlotUse((slotIndex) => this.tryUseHudUsableSlot(slotIndex));
 
         this.inventoryUpdateHandler = (event: Event) => {
-            const customEvent = event as CustomEvent<{ equippedRodId?: string | null; equippedUsableIds?: Array<string | null> }>;
+            const customEvent = event as CustomEvent<{
+                equippedRodId?: string | null;
+                equippedUsableIds?: Array<string | null>;
+                equippedUsableCounts?: number[];
+            }>;
             const equippedRodId = customEvent.detail?.equippedRodId ?? null;
             this.playerHud?.setEquippedRod(equippedRodId);
             if (customEvent.detail?.equippedUsableIds) {
-                this.playerHud?.setEquippedUsables(customEvent.detail.equippedUsableIds);
+                this.playerHud?.setEquippedUsables(
+                    customEvent.detail.equippedUsableIds,
+                    customEvent.detail.equippedUsableCounts
+                );
             }
         };
         window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
@@ -306,7 +331,7 @@ export class UIScene extends Phaser.Scene {
                 this.playerHud?.setEquippedRod(data.equippedRodId ?? null);
             }
             if (data?.equippedUsableIds) {
-                this.playerHud?.setEquippedUsables(data.equippedUsableIds);
+                this.playerHud?.setEquippedUsables(data.equippedUsableIds, data.equippedUsableCounts);
             }
         });
 
@@ -438,6 +463,10 @@ export class UIScene extends Phaser.Scene {
             if (this.chat?.isChatFocused()) return;
             event.preventDefault();
             event.stopPropagation();
+            if (this.shopUI?.isOpen()) {
+                this.shopUI.close();
+                return;
+            }
             if (this.bookUI?.isOpen()) {
                 this.bookUI.close();
             } else {
@@ -588,6 +617,10 @@ export class UIScene extends Phaser.Scene {
                 window.removeEventListener('player:recovered', this.playerRecoveredHandler as EventListener);
                 this.playerRecoveredHandler = undefined;
             }
+            if (this.shopOpenHandler) {
+                window.removeEventListener('shop:open', this.shopOpenHandler as EventListener);
+                this.shopOpenHandler = undefined;
+            }
             this.closeDebugNpcPanel();
             this.clearGuiBlurEffect();
             if (this.uiClickPointerHandler) {
@@ -614,6 +647,7 @@ export class UIScene extends Phaser.Scene {
             this.dangerCountdownText = undefined;
             this.chat?.destroy();
             this.bookUI?.destroy();
+            this.shopUI?.destroy();
             this.headbarUI?.destroy();
             this.playerHud?.destroy();
             this.inventoryChangeMonitor?.destroy();
@@ -688,6 +722,9 @@ export class UIScene extends Phaser.Scene {
         if (active) {
             this.headbarUI?.hideTabList();
             this.closeDebugNpcPanel();
+            if (this.shopUI?.isOpen()) {
+                this.shopUI.close();
+            }
             if (this.chat?.isChatFocused()) {
                 this.chat.blur();
             }
@@ -703,7 +740,6 @@ export class UIScene extends Phaser.Scene {
         this.playerHud?.setVisible(!active);
         this.headbarUI?.setVisible(!active);
         this.chat?.setVisible(!active);
-        this.inventoryChangeMonitor?.setVisible(!active);
     }
 
     private openDebugNpcPanel() {
@@ -802,6 +838,52 @@ export class UIScene extends Phaser.Scene {
 
     getGuideUsableEquipRect(slotIndex: number): Phaser.Geom.Rectangle | null {
         return this.bookUI?.getGuideUsableEquipRect(slotIndex) ?? null;
+    }
+
+    getGuideFinbookTabRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideFinbookTabRect() ?? null;
+    }
+
+    isGuideBookOpen(): boolean {
+        return this.bookUI?.isOpen() === true;
+    }
+
+    isGuideFinbookTabActive(): boolean {
+        return this.bookUI?.isGuideFinbookTabActive() === true;
+    }
+
+    getGuideFinbookCompletedQuestRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideFinbookCompletedQuestRect() ?? null;
+    }
+
+    getGuideFinbookTopMainQuestRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideFinbookTopMainQuestRect() ?? null;
+    }
+
+    getGuideFinbookQuestTitleRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideFinbookQuestTitleRect() ?? null;
+    }
+
+    getGuideFinbookQuestStatusRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideFinbookQuestStatusRect() ?? null;
+    }
+
+    getGuideFinbookObjectiveLabelRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideFinbookObjectiveLabelRect() ?? null;
+    }
+
+    getGuideFinbookObjectiveCardRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideFinbookObjectiveCardRect() ?? null;
+    }
+
+    getGuideFinbookTrackButtonRect(): Phaser.Geom.Rectangle | null {
+        return this.bookUI?.getGuideFinbookTrackButtonRect() ?? null;
+    }
+
+    getGuideCurrentMapFile(): string {
+        const gameScene = this.scene.get('GameScene') as any;
+        const mapFile = gameScene?.getCurrentMapFile?.();
+        return typeof mapFile === 'string' ? mapFile : '';
     }
 
     simulateGuideHeartLoss(amount = 1): boolean {
@@ -928,6 +1010,7 @@ export class UIScene extends Phaser.Scene {
             this.guiBackdrop.setSize(this.scale.width, this.scale.height);
         }
         this.bookUI?.layout();
+        this.shopUI?.layout();
         this.chat?.refreshLayout();
         this.headbarUI?.layout();
         this.dangerCountdownText?.setPosition(Math.floor(this.scale.width / 2), 112);

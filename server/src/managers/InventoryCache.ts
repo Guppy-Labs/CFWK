@@ -7,6 +7,7 @@ type CacheEntry = {
     items: InventoryItem[];
     equippedRodId: string | null;
     equippedUsableIds: Array<string | null>;
+    equippedUsableCounts: number[];
     dirty: boolean;
     lastLoaded: number;
 };
@@ -29,7 +30,7 @@ export class InventoryCache {
         const existing = this.cache.get(userId);
         if (existing) return existing.items;
 
-        const user = await User.findById(userId).select('inventory equippedRodId equippedUsableIds');
+        const user = await User.findById(userId).select('inventory equippedRodId equippedUsableIds equippedUsableCounts');
         if (!user) {
             throw new Error('User not found');
         }
@@ -41,6 +42,7 @@ export class InventoryCache {
             items: [...items],
             equippedRodId: user.equippedRodId ?? null,
             equippedUsableIds: this.normalizeEquippedUsables((user as any).equippedUsableIds),
+            equippedUsableCounts: this.normalizeEquippedUsableCounts((user as any).equippedUsableCounts, (user as any).equippedUsableIds),
             dirty: isLegacy,
             lastLoaded: Date.now()
         });
@@ -54,19 +56,22 @@ export class InventoryCache {
             items: [...items],
             equippedRodId: null,
             equippedUsableIds: this.createEmptyEquippedUsables(),
+            equippedUsableCounts: this.createEmptyEquippedUsableCounts(),
             dirty: false,
             lastLoaded: Date.now()
         });
         return items;
     }
 
-    async getInventoryState(userId: string): Promise<{ items: InventoryItem[]; equippedRodId: string | null; equippedUsableIds: Array<string | null> }> {
+    async getInventoryState(userId: string): Promise<{ items: InventoryItem[]; equippedRodId: string | null; equippedUsableIds: Array<string | null>; equippedUsableCounts: number[] }> {
         const items = await this.getInventory(userId);
         const entry = this.cache.get(userId);
+        const normalizedIds = this.normalizeEquippedUsables(entry?.equippedUsableIds);
         return {
             items,
             equippedRodId: entry?.equippedRodId ?? null,
-            equippedUsableIds: this.normalizeEquippedUsables(entry?.equippedUsableIds)
+            equippedUsableIds: normalizedIds,
+            equippedUsableCounts: this.normalizeEquippedUsableCounts(entry?.equippedUsableCounts, normalizedIds)
         };
     }
 
@@ -135,6 +140,7 @@ export class InventoryCache {
             items: [...items],
             equippedRodId: existing?.equippedRodId ?? null,
             equippedUsableIds: this.normalizeEquippedUsables(existing?.equippedUsableIds),
+            equippedUsableCounts: this.normalizeEquippedUsableCounts(existing?.equippedUsableCounts, existing?.equippedUsableIds),
             dirty: true,
             lastLoaded: Date.now()
         });
@@ -152,16 +158,19 @@ export class InventoryCache {
             items: this.createEmptySlots(DEFAULT_INVENTORY_SLOTS),
             equippedRodId,
             equippedUsableIds: this.createEmptyEquippedUsables(),
+            equippedUsableCounts: this.createEmptyEquippedUsableCounts(),
             dirty: true,
             lastLoaded: Date.now()
         });
     }
 
-    setEquippedUsables(userId: string, equippedUsableIds: Array<string | null>) {
+    setEquippedUsables(userId: string, equippedUsableIds: Array<string | null>, equippedUsableCounts?: number[]) {
         const normalized = this.normalizeEquippedUsables(equippedUsableIds);
+        const normalizedCounts = this.normalizeEquippedUsableCounts(equippedUsableCounts, normalized);
         const existing = this.cache.get(userId);
         if (existing) {
             existing.equippedUsableIds = normalized;
+            existing.equippedUsableCounts = normalizedCounts;
             existing.dirty = true;
             return;
         }
@@ -170,6 +179,7 @@ export class InventoryCache {
             items: this.createEmptySlots(DEFAULT_INVENTORY_SLOTS),
             equippedRodId: null,
             equippedUsableIds: normalized,
+            equippedUsableCounts: normalizedCounts,
             dirty: true,
             lastLoaded: Date.now()
         });
@@ -178,6 +188,11 @@ export class InventoryCache {
     getEquippedUsables(userId: string): Array<string | null> {
         const existing = this.cache.get(userId);
         return this.normalizeEquippedUsables(existing?.equippedUsableIds);
+    }
+
+    getEquippedUsableCounts(userId: string): number[] {
+        const existing = this.cache.get(userId);
+        return this.normalizeEquippedUsableCounts(existing?.equippedUsableCounts, existing?.equippedUsableIds);
     }
 
     getEquippedRod(userId: string): string | null {
@@ -197,6 +212,7 @@ export class InventoryCache {
             items: [...items],
             equippedRodId: null,
             equippedUsableIds: this.createEmptyEquippedUsables(),
+            equippedUsableCounts: this.createEmptyEquippedUsableCounts(),
             dirty: true,
             lastLoaded: Date.now()
         });
@@ -218,7 +234,8 @@ export class InventoryCache {
                         $set: {
                             inventory: entry.items,
                             equippedRodId: entry.equippedRodId ?? null,
-                            equippedUsableIds: this.normalizeEquippedUsables(entry.equippedUsableIds)
+                            equippedUsableIds: this.normalizeEquippedUsables(entry.equippedUsableIds),
+                            equippedUsableCounts: this.normalizeEquippedUsableCounts(entry.equippedUsableCounts, entry.equippedUsableIds)
                         }
                     }
                 );
@@ -289,12 +306,31 @@ export class InventoryCache {
         return Array.from({ length: DEFAULT_USABLE_EQUIP_SLOTS }, () => null);
     }
 
+    private createEmptyEquippedUsableCounts(): number[] {
+        return Array.from({ length: DEFAULT_USABLE_EQUIP_SLOTS }, () => 0);
+    }
+
     private normalizeEquippedUsables(values?: Array<string | null>): Array<string | null> {
         const next = this.createEmptyEquippedUsables();
         if (!Array.isArray(values)) return next;
         for (let i = 0; i < Math.min(values.length, DEFAULT_USABLE_EQUIP_SLOTS); i += 1) {
             const value = values[i];
             next[i] = typeof value === 'string' && value.trim().length > 0 ? value : null;
+        }
+        return next;
+    }
+
+    private normalizeEquippedUsableCounts(values?: number[], equippedUsableIds?: Array<string | null>): number[] {
+        const ids = this.normalizeEquippedUsables(equippedUsableIds);
+        const next = this.createEmptyEquippedUsableCounts();
+        const safeValues = Array.isArray(values) ? values : [];
+        for (let i = 0; i < DEFAULT_USABLE_EQUIP_SLOTS; i += 1) {
+            if (!ids[i]) {
+                next[i] = 0;
+                continue;
+            }
+            const requestedCount = Number.isFinite(safeValues[i]) ? Math.floor(Number(safeValues[i])) : 1;
+            next[i] = Math.max(1, requestedCount);
         }
         return next;
     }

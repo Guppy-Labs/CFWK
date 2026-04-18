@@ -345,6 +345,11 @@ export class NPCManager {
             this.applyDepth(sprite, depthOffset, spawnFeetY);
             if (resolvedFrameCount > 1 && this.scene.anims.exists(animKey)) {
                 sprite.play(animKey);
+                if (pointId !== 'debug') {
+                    // Desync regular NPC idle loops so they don't bob in lockstep.
+                    sprite.anims.timeScale = Phaser.Math.FloatBetween(0.82, 1.18);
+                    sprite.anims.setProgress(Phaser.Math.FloatBetween(0, 1));
+                }
             }
 
             const localizedName = this.localeManager.t(def.nameKey ?? `npc.${def.id}.name`, undefined, def.name);

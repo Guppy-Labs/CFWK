@@ -14,12 +14,19 @@ router.use(isAuthenticated);
 router.get('/', async (req, res) => {
     try {
         const userId = (req.user as any).id;
-        const { items: slots, equippedRodId } = await InventoryCache.getInstance().getInventoryState(userId);
+        const {
+            items: slots,
+            equippedRodId,
+            equippedUsableIds,
+            equippedUsableCounts
+        } = await InventoryCache.getInstance().getInventoryState(userId);
 
         const response: IInventoryResponse = {
             slots,
             totalSlots: DEFAULT_INVENTORY_SLOTS,
-            equippedRodId
+            equippedRodId,
+            equippedUsableIds,
+            equippedUsableCounts
         };
         res.json(response);
     } catch (err) {

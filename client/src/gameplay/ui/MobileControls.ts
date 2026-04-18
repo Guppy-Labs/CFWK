@@ -9,8 +9,9 @@
  */
 
 import Phaser from 'phaser';
-import { AvailableInteraction } from '../interaction/InteractionManager';
+import { AvailableInteraction, InteractionType } from '../interaction/InteractionManager';
 import { getInteractionPromptStyle } from './InteractionPromptStyle';
+import { ItemTextureLoader } from '../assets/ItemTextureLoader';
 
 export interface MobileInputState {
     up: boolean;
@@ -61,6 +62,7 @@ export class MobileControls {
     private menuButton?: Phaser.GameObjects.Image;
     private fullscreenChangeListener?: () => void;
     private guiOpenListener?: (event: Event) => void;
+    private itemTextureLoader = ItemTextureLoader.getInstance();
     
     private inputState: MobileInputState = {
         up: false,
@@ -104,6 +106,8 @@ export class MobileControls {
     private keyboardListener?: (e: KeyboardEvent) => void;
     private resizeListener?: () => void;
     private scaleResizeListener?: (gameSize: Phaser.Structs.Size) => void;
+    private guideRegistryListener?: () => void;
+    private interactEnsureRetryHandle?: number;
     private inputBlocked = false;
     
     // Interact button state
@@ -122,6 +126,7 @@ export class MobileControls {
         this.setupKeyboardDetection();
         this.setupGuiOpenListener();
         this.setupResizeListener();
+        this.setupGuideRegistryListener();
         
         // Don't auto-show - GameScene will show controls when the game is ready
     }
@@ -265,6 +270,25 @@ export class MobileControls {
         const bounds = this.interactButton.getBounds();
         return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
     }
+
+    isPointerOverAnyControl(screenX: number, screenY: number): boolean {
+        if (!this.isVisible) return false;
+        if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) return false;
+
+        if (this.isPointerOverButton(this.inventoryButton, screenX, screenY)) return true;
+        if (this.isPointerOverButton(this.interactButton, screenX, screenY)) return true;
+        if (this.isPointerOverButton(this.fullscreenButton, screenX, screenY)) return true;
+        if (this.isPointerOverButton(this.menuButton, screenX, screenY)) return true;
+
+        if (this.joystickBase?.visible) {
+            const radius = this.joystickBase.displayWidth * 0.5;
+            const dx = screenX - this.joystickBase.x;
+            const dy = screenY - this.joystickBase.y;
+            if (Math.hypot(dx, dy) <= radius) return true;
+        }
+
+        return false;
+    }
     
     /**
      * Show controls (top-right buttons on all devices; touch controls on mobile)
@@ -311,6 +335,14 @@ export class MobileControls {
         if (this.scaleResizeListener) {
             this.scene.scale.off('resize', this.scaleResizeListener);
         }
+        if (this.guideRegistryListener) {
+            this.scene.registry.events.off('changedata-guideBlockAll', this.guideRegistryListener);
+            this.scene.registry.events.off('changedata-guideAllowedActions', this.guideRegistryListener);
+        }
+        if (this.interactEnsureRetryHandle !== undefined) {
+            window.clearTimeout(this.interactEnsureRetryHandle);
+            this.interactEnsureRetryHandle = undefined;
+        }
         if (this.fullscreenChangeListener) {
             document.removeEventListener('fullscreenchange', this.fullscreenChangeListener);
             document.removeEventListener('webkitfullscreenchange', this.fullscreenChangeListener);
@@ -353,6 +385,16 @@ export class MobileControls {
         window.addEventListener('gui-open-changed', this.guiOpenListener as EventListener);
     }
 
+    private setupGuideRegistryListener() {
+        this.guideRegistryListener = () => {
+            if (this.inputBlocked) return;
+            this.updateInteractButtonVisibility();
+            this.updateInteractButtonIcon();
+        };
+        this.scene.registry.events.on('changedata-guideBlockAll', this.guideRegistryListener);
+        this.scene.registry.events.on('changedata-guideAllowedActions', this.guideRegistryListener);
+    }
+
     private setGuiOpen(isOpen: boolean, source: 'inventory' | 'menu' | null) {
         this.guiCurrentlyOpen = isOpen;
         this.guiOpenSource = isOpen ? source : null;
@@ -385,9 +427,10 @@ export class MobileControls {
      * Update interact button visibility based on interaction availability and GUI state
      */
     private updateInteractButtonVisibility() {
-        // Only show if: not in GUI AND there's an available interaction
+        this.ensureInteractSprite();
+        // Show while in interaction tutorial even if interaction state is temporarily stale.
         const shouldShow = !this.guiCurrentlyOpen
-            && this.currentInteraction !== null;
+            && (this.currentInteraction !== null || this.isGuideInteractPromptActive());
         this.setInteractVisible(shouldShow);
     }
 
@@ -395,8 +438,22 @@ export class MobileControls {
      * Update interact button icon based on interaction type
      */
     private updateInteractButtonIcon() {
-        if (!this.currentInteraction || !this.interactButton) return;
+        this.ensureInteractSprite();
+        if (!this.interactButton) return;
+        if (!this.currentInteraction) {
+            if (this.isGuideInteractPromptActive() && this.scene.textures.exists('ui-interact-chat')) {
+                if (this.interactButton.texture.key !== 'ui-interact-chat') {
+                    this.interactButton.setTexture('ui-interact-chat');
+                }
+            }
+            if (this.interactButtonOverlay && this.scene.textures.exists('ui-interact-blank') && this.interactButtonOverlay.texture.key !== 'ui-interact-blank') {
+                this.interactButtonOverlay.setTexture('ui-interact-blank');
+            }
+            this.interactButtonOverlay?.setVisible(false);
+            return;
+        }
 
+        this.ensureInteractionOverlayTexture(this.currentInteraction);
         const style = getInteractionPromptStyle(this.currentInteraction, this.scene.textures);
         if (this.interactButton.texture.key !== style.mobileButtonTexture) {
             this.interactButton.setTexture(style.mobileButtonTexture);
@@ -409,8 +466,34 @@ export class MobileControls {
             }
             this.interactButtonOverlay.setVisible(this.interactButton.visible);
         } else {
+            if (this.scene.textures.exists('ui-interact-blank') && this.interactButtonOverlay.texture.key !== 'ui-interact-blank') {
+                this.interactButtonOverlay.setTexture('ui-interact-blank');
+            }
             this.interactButtonOverlay.setVisible(false);
         }
+    }
+
+    private ensureInteractionOverlayTexture(interaction: AvailableInteraction) {
+        let overlayItemId: string | null = null;
+        if (interaction.type === InteractionType.Harvest) {
+            overlayItemId = 'yekberries';
+        } else if (interaction.type === InteractionType.Chest) {
+            overlayItemId = 'glimmeringkey';
+        }
+        if (!overlayItemId) return;
+
+        const overlayTextureKey = `item-${overlayItemId}-18`;
+        if (this.scene.textures.exists(overlayTextureKey)) return;
+
+        void this.itemTextureLoader.ensureItemIconTexture(this.scene, overlayItemId, 18)
+            .then((loadedKey) => {
+                if (!loadedKey) return;
+                if (this.currentInteraction?.type !== interaction.type) return;
+                this.updateInteractButtonIcon();
+            })
+            .catch(() => {
+                // Ignore optional overlay load failures and keep default icon.
+            });
     }
 
     private setTopButtonVisible(button: Phaser.GameObjects.Image | undefined, visible: boolean) {
@@ -621,14 +704,19 @@ export class MobileControls {
         this.inventoryButton.setInteractive({ useHandCursor: true });
         this.inventoryButton.on('pointerdown', () => {
             if (this.inputBlocked) return;
+            this.emitUiClickSignal();
             this.setInventoryPressed(true);
         });
         this.inventoryButton.on('pointerup', () => {
             if (this.inputBlocked) return;
+            this.emitUiPointerReleaseSignal();
             this.setInventoryPressed(false);
             window.dispatchEvent(new CustomEvent('mobile:inventory'));
         });
-        this.inventoryButton.on('pointerupoutside', () => this.setInventoryPressed(false));
+        this.inventoryButton.on('pointerupoutside', () => {
+            this.emitUiPointerReleaseSignal();
+            this.setInventoryPressed(false);
+        });
         this.inventoryButton.on('pointerout', () => this.setInventoryPressed(false));
 
         this.updateInventoryPosition();
@@ -649,11 +737,18 @@ export class MobileControls {
         this.interactButton.setInteractive({ useHandCursor: true });
         this.interactButton.on('pointerdown', () => {
             if (this.inputBlocked) return;
+            this.emitUiClickSignal();
             this.setInteractPressed(true);
             window.dispatchEvent(new CustomEvent('mobile:interact'));
         });
-        this.interactButton.on('pointerup', () => this.setInteractPressed(false));
-        this.interactButton.on('pointerupoutside', () => this.setInteractPressed(false));
+        this.interactButton.on('pointerup', () => {
+            this.emitUiPointerReleaseSignal();
+            this.setInteractPressed(false);
+        });
+        this.interactButton.on('pointerupoutside', () => {
+            this.emitUiPointerReleaseSignal();
+            this.setInteractPressed(false);
+        });
         this.interactButton.on('pointerout', () => this.setInteractPressed(false));
 
         this.interactButtonOverlay = targetScene.add.image(0, 0, 'ui-interact-blank');
@@ -671,8 +766,29 @@ export class MobileControls {
         if (this.interactButton) return;
         const targetScene = this.getJoystickScene();
         if (!targetScene) return;
-        if (!this.scene.textures.exists('ui-interact-blank') || !this.scene.textures.exists('ui-interact-chat')) return;
+        if (!this.scene.textures.exists('ui-interact-blank') || !this.scene.textures.exists('ui-interact-chat')) {
+            if (this.interactEnsureRetryHandle === undefined) {
+                this.interactEnsureRetryHandle = window.setTimeout(() => {
+                    this.interactEnsureRetryHandle = undefined;
+                    this.ensureInteractSprite();
+                    this.updateInteractButtonVisibility();
+                    this.updateInteractButtonIcon();
+                }, 250);
+            }
+            return;
+        }
+        if (this.interactEnsureRetryHandle !== undefined) {
+            window.clearTimeout(this.interactEnsureRetryHandle);
+            this.interactEnsureRetryHandle = undefined;
+        }
         this.createInteractSprite();
+    }
+
+    private isGuideInteractPromptActive(): boolean {
+        const guideBlocked = this.scene.registry.get('guideBlockAll') === true;
+        if (!guideBlocked) return false;
+        const allowed = this.scene.registry.get('guideAllowedActions');
+        return Array.isArray(allowed) && allowed.includes('interact');
     }
 
     private ensureKeyIcons() {
@@ -729,14 +845,19 @@ export class MobileControls {
         this.fullscreenButton.setInteractive({ useHandCursor: true });
         this.fullscreenButton.on('pointerdown', () => {
             if (this.inputBlocked) return;
+            this.emitUiClickSignal();
             this.setSpritePressed(this.fullscreenButton, true);
         });
         this.fullscreenButton.on('pointerup', () => {
             if (this.inputBlocked) return;
+            this.emitUiPointerReleaseSignal();
             this.setSpritePressed(this.fullscreenButton, false);
             this.toggleFullscreen();
         });
-        this.fullscreenButton.on('pointerupoutside', () => this.setSpritePressed(this.fullscreenButton, false));
+        this.fullscreenButton.on('pointerupoutside', () => {
+            this.emitUiPointerReleaseSignal();
+            this.setSpritePressed(this.fullscreenButton, false);
+        });
         this.fullscreenButton.on('pointerout', () => this.setSpritePressed(this.fullscreenButton, false));
 
         this.bindFullscreenChangeListener();
@@ -760,14 +881,19 @@ export class MobileControls {
         this.menuButton.setInteractive({ useHandCursor: true });
         this.menuButton.on('pointerdown', () => {
             if (this.inputBlocked) return;
+            this.emitUiClickSignal();
             this.setSpritePressed(this.menuButton, true);
         });
         this.menuButton.on('pointerup', () => {
             if (this.inputBlocked) return;
+            this.emitUiPointerReleaseSignal();
             this.setSpritePressed(this.menuButton, false);
             window.dispatchEvent(new CustomEvent('mobile:menu'));
         });
-        this.menuButton.on('pointerupoutside', () => this.setSpritePressed(this.menuButton, false));
+        this.menuButton.on('pointerupoutside', () => {
+            this.emitUiPointerReleaseSignal();
+            this.setSpritePressed(this.menuButton, false);
+        });
         this.menuButton.on('pointerout', () => this.setSpritePressed(this.menuButton, false));
 
         this.updateTopButtonPositions();
@@ -911,6 +1037,8 @@ export class MobileControls {
     }
     
     private toggleFullscreen() {
+        window.dispatchEvent(new CustomEvent('cfwk:game-fullscreen-button-used'));
+
         const doc = document as any;
         const gameEl = document.getElementById('app') as any;
         
@@ -984,6 +1112,21 @@ export class MobileControls {
         // Prevent context menu on long press
         this.container.addEventListener('contextmenu', (e) => e.preventDefault());
     }
+
+    private isPointerOverButton(button: Phaser.GameObjects.Image | undefined, x: number, y: number): boolean {
+        if (!button || !button.visible || !button.active) return false;
+        const bounds = button.getBounds();
+        return bounds.contains(x, y);
+    }
+
+    private emitUiClickSignal() {
+        window.dispatchEvent(new CustomEvent('ui:clicked', { detail: { at: Date.now() } }));
+    }
+
+    private emitUiPointerReleaseSignal() {
+        window.dispatchEvent(new CustomEvent('ui:pointer-release', { detail: { at: Date.now() } }));
+    }
+
     private onJoystickPointerDown(pointer: Phaser.Input.Pointer) {
         if (!this.isJoystickVisible()) return;
         if (!this.joystickBase || !this.joystickHandle) return;
@@ -994,6 +1137,7 @@ export class MobileControls {
         const radius = this.joystickBase.displayWidth * 0.5;
         if (Math.hypot(dx, dy) > radius) return;
 
+        this.emitUiClickSignal();
         this.joystickActive = true;
         this.joystickPointerId = pointer.id;
         this.joystickCenter = { x: this.joystickBase.x, y: this.joystickBase.y };
@@ -1010,6 +1154,7 @@ export class MobileControls {
         if (!this.joystickActive) return;
         if (this.joystickPointerId !== pointer.id) return;
 
+        this.emitUiPointerReleaseSignal();
         this.joystickActive = false;
         this.joystickPointerId = null;
         this.inputState.up = false;

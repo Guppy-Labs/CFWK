@@ -172,7 +172,7 @@ export async function renderCharacterPreview(
 }
 
 /**
- * Animated character preview for the skin editor
+ * Animated character preview for the Wardrobe
  */
 export class AnimatedCharacterPreview {
     private canvas: HTMLCanvasElement;

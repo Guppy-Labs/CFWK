@@ -33,6 +33,7 @@ import { NPCManager } from '../npc/NPCManager';
 import { SoftCollisionSystem } from '../collision/SoftCollisionSystem';
 import { Toast } from '../../ui/Toast';
 import { DisconnectModal } from '../../ui/DisconnectModal';
+import { DemoTimer } from '../ui/DemoTimer';
 import { DialogueManager } from '../dialogue/DialogueManager';
 import type { UIScene } from './UIScene';
 import {
@@ -71,6 +72,19 @@ type HarvestCooldownUiEntry = {
     fill: Phaser.GameObjects.Rectangle;
 };
 
+type HarvestBerryUiEntry = {
+    objectId: number;
+    maxBerryCount: number;
+    berries: Array<{
+        sprite: Phaser.GameObjects.Rectangle;
+        unripeColor: number;
+        ripeColor: number;
+    }>;
+    currentVisibleCount: number;
+    drainStartedAt: number | null;
+    drainUntilAt: number | null;
+};
+
 type WorldGlimmerbowlState = 'hidden' | 'spawning' | 'active' | 'despawning';
 
 type FishCombatArcVisual = {
@@ -93,6 +107,8 @@ export class GameScene extends Phaser.Scene {
     private unsubscribePlayerRecovered?: () => void;
     private inventoryUpdateHandler?: (event: Event) => void;
     private glimmerbowlUpdateHandler?: (event: Event) => void;
+    private demoStartHandler?: (event: Event) => void;
+    private demoTimerInstance?: DemoTimer;
     private rodUseHandler?: () => void;
     private glimmerbowlPointerDownHandler?: (pointer: Phaser.Input.Pointer) => void;
     private glimmerbowlFishLaunchHandler?: (event: Event) => void;
@@ -146,6 +162,11 @@ export class GameScene extends Phaser.Scene {
     private harvestTargets: StaticInteractiveTarget[] = [];
     private readonly chestInteractionObjectId = 990001;
     private harvestCooldownUiByObjectId = new Map<number, HarvestCooldownUiEntry>();
+    private harvestBerryUiByObjectId = new Map<number, HarvestBerryUiEntry>();
+    private readonly harvestBerryRipenStartProgress = 0.85;
+    private readonly harvestBerryDrainDurationMs = 750;
+    private readonly harvestBerryYieldMin = 3;
+    private readonly harvestBerryYieldMax = 5;
     private dangerRegionPolygon: Array<{ x: number; y: number }> | null = null;
     private dangerStayStartedAtMs: number | null = null;
     private dangerStayDurationMs = 60_000;
@@ -201,6 +222,10 @@ export class GameScene extends Phaser.Scene {
 
     getGuideInteractButtonRect(): Phaser.Geom.Rectangle | null {
         return this.mcPlayerController?.getGuideInteractButtonRect() ?? null;
+    }
+
+    getCurrentMapFile(): string {
+        return this.instanceInfo?.mapFile ?? '';
     }
 
     init(data: GameSceneData) {
@@ -380,6 +405,28 @@ export class GameScene extends Phaser.Scene {
             Toast.info(this.localeManager.t('scene.game.seasonalEffects', { state }, 'Seasonal Effects: {state}'), 2000);
         });
         
+        // Toggle nameplates (key 'U')
+        this.input.keyboard?.on('keydown-U', () => {
+            if (this.registry.get('chatFocused') === true) return;
+            if (this.registry.get('guiOpen') === true) return;
+            if (this.registry.get('guideBlockAll') === true) return;
+
+            const visible = !(this.registry.get('nameplatesVisible') ?? true);
+            this.registry.set('nameplatesVisible', visible);
+
+            this.mcPlayerController?.setNameplateVisible(visible);
+            if (this.remotePlayerManager) {
+                for (const remote of this.remotePlayerManager.getPlayers().values()) {
+                    remote.setNameplateVisible(visible);
+                }
+            }
+
+            const state = visible
+                ? this.localeManager.t('system.on', undefined, 'ON')
+                : this.localeManager.t('system.off', undefined, 'OFF');
+            Toast.info(`Nameplates: ${state}`, 2000);
+        });
+
         // Meow sound (key 'Z')
         this.input.keyboard?.on('keydown-Z', () => {
             if (this.registry.get('chatFocused') === true) return;
@@ -520,13 +567,26 @@ export class GameScene extends Phaser.Scene {
 
             const center = this.getObjectCenter(object);
             if (!center) continue;
+            const bounds = this.getObjectBounds(object);
+            if (!bounds) continue;
+            const polygon = Array.isArray(object.polygon) && object.polygon.length >= 3
+                ? object.polygon.map((point) => ({
+                    x: Number(object.x ?? 0) + Number(point.x ?? 0),
+                    y: Number(object.y ?? 0) + Number(point.y ?? 0)
+                }))
+                : undefined;
 
             targets.push({
                 objectId: Math.floor(object.id),
                 componentId,
                 x: center.x,
                 y: center.y,
-                rangePx: 3 * 32
+                rangePx: Math.round(3 * 32 * 0.25),
+                minX: bounds.minX,
+                maxX: bounds.maxX,
+                minY: bounds.minY,
+                maxY: bounds.maxY,
+                polygon
             });
         }
 
@@ -553,6 +613,37 @@ export class GameScene extends Phaser.Scene {
             x: baseX + Number(object.width ?? 0) * 0.5,
             y: baseY + Number(object.height ?? 0) * 0.5
         };
+    }
+
+    private getObjectBounds(object: { x: number; y: number; width?: number; height?: number; polygon?: Array<{ x: number; y: number }> }): { minX: number; maxX: number; minY: number; maxY: number } | null {
+        const baseX = Number(object.x ?? 0);
+        const baseY = Number(object.y ?? 0);
+        if (Array.isArray(object.polygon) && object.polygon.length > 0) {
+            let minX = Number.POSITIVE_INFINITY;
+            let maxX = Number.NEGATIVE_INFINITY;
+            let minY = Number.POSITIVE_INFINITY;
+            let maxY = Number.NEGATIVE_INFINITY;
+            object.polygon.forEach((point) => {
+                const worldX = baseX + Number(point.x ?? 0);
+                const worldY = baseY + Number(point.y ?? 0);
+                minX = Math.min(minX, worldX);
+                maxX = Math.max(maxX, worldX);
+                minY = Math.min(minY, worldY);
+                maxY = Math.max(maxY, worldY);
+            });
+            if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+                return null;
+            }
+            return { minX, maxX, minY, maxY };
+        }
+
+        const width = Number(object.width ?? 0);
+        const height = Number(object.height ?? 0);
+        const minX = Math.min(baseX, baseX + width);
+        const maxX = Math.max(baseX, baseX + width);
+        const minY = Math.min(baseY, baseY + height);
+        const maxY = Math.max(baseY, baseY + height);
+        return { minX, maxX, minY, maxY };
     }
 
     private upsertHarvestCooldownUi(objectId: number, centerX: number, centerY: number, readyAt: number, cooldownMs: number) {
@@ -609,6 +700,269 @@ export class GameScene extends Phaser.Scene {
             entry.fill.width = Math.max(1, 22 * ratio);
             entry.container.setPosition(entry.centerX, entry.centerY - 18);
             entry.container.setVisible(true);
+        });
+    }
+
+    private rebuildHarvestBerryUi() {
+        this.clearHarvestBerryUi();
+
+        this.harvestTargets.forEach((target) => {
+            const polygon = this.getHarvestTargetPolygon(target);
+            if (!polygon || polygon.length < 3) {
+                return;
+            }
+
+            const bounds = this.getPolygonBounds(polygon);
+            if (!bounds) return;
+            const minX = bounds.minX;
+            const maxX = bounds.maxX;
+            const minY = bounds.minY;
+            const maxY = bounds.maxY;
+            const width = Math.max(1, maxX - minX);
+            const height = Math.max(1, maxY - minY);
+            const area = Math.max(1, this.getPolygonArea(polygon));
+            const maxBerryCount = Phaser.Math.Clamp(Math.round(area / 850), 8, 24);
+            const edgeMargin = Math.min(14, Math.max(6, Math.min(width, height) * 0.14));
+
+            const berries: Array<{
+                sprite: Phaser.GameObjects.Rectangle;
+                unripeColor: number;
+                ripeColor: number;
+            }> = [];
+            for (let i = 0; i < maxBerryCount; i += 1) {
+                const randSize = this.getDeterministicRandom01(target.objectId * 739 + i * 29 + 7);
+                const randShade = this.getDeterministicRandom01(target.objectId * 199 + i * 43 + 17);
+                const randAlpha = this.getDeterministicRandom01(target.objectId * 557 + i * 31 + 19);
+
+                let x = target.x;
+                let y = target.y;
+                let placed = false;
+                for (let attempt = 0; attempt < 16; attempt += 1) {
+                    const randX = this.getDeterministicRandom01(target.objectId * 911 + i * 37 + attempt * 101 + 13);
+                    const randY = this.getDeterministicRandom01(target.objectId * 353 + i * 61 + attempt * 79 + 23);
+                    const candidateX = minX + randX * width;
+                    const candidateY = minY + randY * height;
+                    if (!this.isPointInPolygon(candidateX, candidateY, polygon)) continue;
+                    const borderDistance = this.getDistanceToPolygonBorder(candidateX, candidateY, polygon);
+                    if (borderDistance < edgeMargin) continue;
+                    x = candidateX;
+                    y = candidateY;
+                    placed = true;
+                    break;
+                }
+
+                if (!placed) continue;
+
+                const size = 2 + Math.round(randSize * 2);
+                const ripeColor = randShade < 0.33 ? 0xcf3b3b : (randShade < 0.66 ? 0xbe2a2a : 0xa81f1f);
+                const unripeColor = randShade < 0.33 ? 0x3f9f50 : (randShade < 0.66 ? 0x358a45 : 0x2d763b);
+                const alpha = 0.5 + (randAlpha * 0.4);
+                const sprite = this.add.rectangle(x, y, size, size, ripeColor, alpha).setOrigin(0.5, 0.5);
+                sprite.setDepth(ENTITY_BASE + Math.floor(y) + 2);
+                sprite.setVisible(true);
+                this.lightingManager?.enableLightingOn(sprite);
+                berries.push({
+                    sprite,
+                    unripeColor,
+                    ripeColor
+                });
+            }
+
+            const finalBerryCount = berries.length;
+            if (finalBerryCount <= 0) return;
+
+            this.harvestBerryUiByObjectId.set(target.objectId, {
+                objectId: target.objectId,
+                maxBerryCount: finalBerryCount,
+                berries,
+                currentVisibleCount: finalBerryCount,
+                drainStartedAt: null,
+                drainUntilAt: null
+            });
+        });
+
+        this.updateHarvestBerryUi(Date.now());
+    }
+
+    private clearHarvestBerryUi() {
+        this.harvestBerryUiByObjectId.forEach((entry) => {
+            entry.berries.forEach((berry) => berry.sprite.destroy());
+        });
+        this.harvestBerryUiByObjectId.clear();
+    }
+
+    private getDeterministicRandom01(seed: number): number {
+        const x = Math.sin(seed * 12.9898) * 43758.5453;
+        return x - Math.floor(x);
+    }
+
+    private getHarvestTargetPolygon(target: StaticInteractiveTarget): Array<{ x: number; y: number }> | null {
+        if (Array.isArray(target.polygon) && target.polygon.length >= 3) {
+            return target.polygon;
+        }
+        if (
+            Number.isFinite(target.minX)
+            && Number.isFinite(target.maxX)
+            && Number.isFinite(target.minY)
+            && Number.isFinite(target.maxY)
+        ) {
+            const minX = Number(target.minX);
+            const maxX = Number(target.maxX);
+            const minY = Number(target.minY);
+            const maxY = Number(target.maxY);
+            return [
+                { x: minX, y: minY },
+                { x: maxX, y: minY },
+                { x: maxX, y: maxY },
+                { x: minX, y: maxY }
+            ];
+        }
+        return null;
+    }
+
+    private getPolygonBounds(polygon: Array<{ x: number; y: number }>): { minX: number; maxX: number; minY: number; maxY: number } | null {
+        if (polygon.length < 3) return null;
+        let minX = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        polygon.forEach((point) => {
+            minX = Math.min(minX, point.x);
+            maxX = Math.max(maxX, point.x);
+            minY = Math.min(minY, point.y);
+            maxY = Math.max(maxY, point.y);
+        });
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+            return null;
+        }
+        return { minX, maxX, minY, maxY };
+    }
+
+    private getPolygonArea(polygon: Array<{ x: number; y: number }>): number {
+        if (polygon.length < 3) return 0;
+        let sum = 0;
+        for (let i = 0; i < polygon.length; i += 1) {
+            const current = polygon[i];
+            const next = polygon[(i + 1) % polygon.length];
+            sum += (current.x * next.y) - (next.x * current.y);
+        }
+        return Math.abs(sum) * 0.5;
+    }
+
+    private distancePointToSegment(
+        pointX: number,
+        pointY: number,
+        ax: number,
+        ay: number,
+        bx: number,
+        by: number
+    ): number {
+        const abx = bx - ax;
+        const aby = by - ay;
+        const apx = pointX - ax;
+        const apy = pointY - ay;
+        const lenSq = (abx * abx) + (aby * aby);
+        if (lenSq <= 0.000001) return Math.hypot(pointX - ax, pointY - ay);
+        const t = Math.max(0, Math.min(1, ((apx * abx) + (apy * aby)) / lenSq));
+        const closestX = ax + (abx * t);
+        const closestY = ay + (aby * t);
+        return Math.hypot(pointX - closestX, pointY - closestY);
+    }
+
+    private getDistanceToPolygonBorder(pointX: number, pointY: number, polygon: Array<{ x: number; y: number }>): number {
+        if (polygon.length < 3) return Number.POSITIVE_INFINITY;
+        let minDistance = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < polygon.length; i += 1) {
+            const a = polygon[i];
+            const b = polygon[(i + 1) % polygon.length];
+            const distance = this.distancePointToSegment(pointX, pointY, a.x, a.y, b.x, b.y);
+            if (distance < minDistance) {
+                minDistance = distance;
+            }
+        }
+        return minDistance;
+    }
+
+    private setHarvestBerryVisibleCount(objectId: number, visibleCount: number) {
+        const entry = this.harvestBerryUiByObjectId.get(objectId);
+        if (!entry) return;
+        const clamped = Phaser.Math.Clamp(visibleCount, 0, entry.maxBerryCount);
+        if (entry.currentVisibleCount === clamped) return;
+
+        entry.berries.forEach((berry, index) => {
+            berry.sprite.setVisible(index < clamped);
+        });
+        entry.currentVisibleCount = clamped;
+    }
+
+    private beginHarvestBerryDrain(objectId: number, durationMs = this.harvestBerryDrainDurationMs) {
+        const entry = this.harvestBerryUiByObjectId.get(objectId);
+        if (!entry) return;
+        const now = Date.now();
+        entry.drainStartedAt = now;
+        entry.drainUntilAt = now + Math.max(1, durationMs);
+    }
+
+    private getHarvestBerryRespawnProgress(objectId: number, timeMs: number): number {
+        const cooldown = this.harvestCooldownUiByObjectId.get(objectId);
+        if (!cooldown) return 1;
+        if (timeMs >= cooldown.readyAt) return 1;
+
+        const total = Math.max(1, cooldown.readyAt - cooldown.startedAt);
+        const elapsed = Math.max(0, Math.min(total, timeMs - cooldown.startedAt));
+        return elapsed / total;
+    }
+
+    private getHarvestBerryRipenFactor(progress: number): number {
+        if (progress <= this.harvestBerryRipenStartProgress) return 0;
+        const lateSpan = Math.max(0.0001, 1 - this.harvestBerryRipenStartProgress);
+        return Phaser.Math.Clamp((progress - this.harvestBerryRipenStartProgress) / lateSpan, 0, 1);
+    }
+
+    private blendColor(fromColor: number, toColor: number, t: number): number {
+        const fromR = (fromColor >> 16) & 0xff;
+        const fromG = (fromColor >> 8) & 0xff;
+        const fromB = fromColor & 0xff;
+        const toR = (toColor >> 16) & 0xff;
+        const toG = (toColor >> 8) & 0xff;
+        const toB = toColor & 0xff;
+
+        const r = Math.round(Phaser.Math.Linear(fromR, toR, t));
+        const g = Math.round(Phaser.Math.Linear(fromG, toG, t));
+        const b = Math.round(Phaser.Math.Linear(fromB, toB, t));
+        return (r << 16) | (g << 8) | b;
+    }
+
+    private setHarvestBerryRipeness(objectId: number, ripenFactor: number) {
+        const entry = this.harvestBerryUiByObjectId.get(objectId);
+        if (!entry) return;
+
+        entry.berries.forEach((berry) => {
+            const color = this.blendColor(berry.unripeColor, berry.ripeColor, ripenFactor);
+            berry.sprite.setFillStyle(color, berry.sprite.fillAlpha);
+        });
+    }
+
+    private updateHarvestBerryUi(timeMs: number) {
+        this.harvestBerryUiByObjectId.forEach((entry, objectId) => {
+            if (entry.drainStartedAt !== null && entry.drainUntilAt !== null) {
+                const total = Math.max(1, entry.drainUntilAt - entry.drainStartedAt);
+                const elapsed = Math.max(0, timeMs - entry.drainStartedAt);
+                const drainProgress = Math.max(0, Math.min(1, elapsed / total));
+                const remainingRatio = 1 - drainProgress;
+                const drainingCount = Math.floor(entry.maxBerryCount * remainingRatio);
+                this.setHarvestBerryVisibleCount(objectId, drainingCount);
+                if (timeMs < entry.drainUntilAt) {
+                    return;
+                }
+                entry.drainStartedAt = null;
+                entry.drainUntilAt = null;
+            }
+
+            const progress = this.getHarvestBerryRespawnProgress(objectId, timeMs);
+            const nextCount = Math.floor(entry.maxBerryCount * progress);
+            this.setHarvestBerryVisibleCount(objectId, nextCount);
+            this.setHarvestBerryRipeness(objectId, this.getHarvestBerryRipenFactor(progress));
         });
     }
 
@@ -969,6 +1323,7 @@ export class GameScene extends Phaser.Scene {
         this.mcPlayerController?.setNpcManager(this.npcManager);
 
         this.harvestTargets = this.extractHarvestTargets(map);
+        this.rebuildHarvestBerryUi();
         this.refreshStaticInteractiveTargets();
         this.dangerRegionPolygon = this.extractRegionPolygon(map, 'Danger');
         const heedQuestEntry = ADVANCEMENT_QUEST_CATALOG.find((entry) => entry.id === 'heed_the_warning');
@@ -1207,6 +1562,15 @@ export class GameScene extends Phaser.Scene {
         };
         window.addEventListener('glimmerbowl:update', this.glimmerbowlUpdateHandler as EventListener);
 
+        this.demoStartHandler = (event: Event) => {
+            const data = (event as CustomEvent<{ durationMs?: number; expiresAt?: number }>).detail;
+            if (data?.durationMs) this.startDemoTimer(data.durationMs, data.expiresAt);
+        };
+        window.addEventListener('demo:start', this.demoStartHandler as EventListener);
+
+        const cachedDemo = this.networkManager.getDemoDuration();
+        if (cachedDemo) this.startDemoTimer(cachedDemo, this.networkManager.getDemoExpiresAt() ?? undefined);
+
         this.rodUseHandler = () => {
             this.mcPlayerController?.requestFishing();
         };
@@ -1224,10 +1588,14 @@ export class GameScene extends Phaser.Scene {
             if (pointer.button !== 0) return;
             const targetWorldX = pointer.worldX;
             const targetWorldY = pointer.worldY;
+            const pointerScreenX = pointer.x;
+            const pointerScreenY = pointer.y;
             // Defer one tick so UIScene can mark same-event UI clicks before we evaluate.
             this.time.delayedCall(0, () => {
                 if (!this.scene.isActive()) return;
                 if (this.wasRecentUiClick()) return;
+                const mobileControls = this.mcPlayerController?.getMobileControls();
+                if (mobileControls?.isPointerOverAnyControl(pointerScreenX, pointerScreenY)) return;
                 if (!this.canUseManualGlimmerbowlTrigger()) return;
                 this.triggerWorldGlimmerbowl();
                 if (this.worldGlimmerbowlState === 'active') {
@@ -1337,6 +1705,23 @@ export class GameScene extends Phaser.Scene {
                 return;
             }
 
+            if (code === 4006) {
+                this.demoTimerInstance?.destroy();
+                this.demoTimerInstance = undefined;
+                DisconnectModal.show({
+                    title: 'Demo Over',
+                    message: 'Your 15-minute demo session has ended and your progress has been reset. Thanks for trying the game!',
+                    showReconnect: true,
+                    showLeave: false,
+                    reconnectLabel: 'Back to Lobby',
+                    icon: 'disconnect',
+                    onReconnect: () => {
+                        window.location.href = '/launch/';
+                    }
+                });
+                return;
+            }
+
             DisconnectModal.show({
                 title: this.localeManager.t('scene.game.offlineTitle', undefined, 'Server Offline'),
                 message: `The connection to the game server was lost${detail}.<br>Please try again later.`,
@@ -1385,6 +1770,12 @@ export class GameScene extends Phaser.Scene {
                  window.removeEventListener('glimmerbowl:update', this.glimmerbowlUpdateHandler as EventListener);
                  this.glimmerbowlUpdateHandler = undefined;
              }
+             if (this.demoStartHandler) {
+                 window.removeEventListener('demo:start', this.demoStartHandler as EventListener);
+                 this.demoStartHandler = undefined;
+             }
+             this.demoTimerInstance?.destroy();
+             this.demoTimerInstance = undefined;
              if (this.rodUseHandler) {
                  window.removeEventListener('hud:rod-use', this.rodUseHandler);
              }
@@ -1436,8 +1827,9 @@ export class GameScene extends Phaser.Scene {
                         this.bowlTravellerGuideTimer?.remove(false);
                         this.bowlTravellerGuideTimer = undefined;
                         this.cleanupChestCinematic(true);
-                             this.harvestCooldownUiByObjectId.forEach((entry) => entry.container.destroy(true));
-                             this.harvestCooldownUiByObjectId.clear();
+                        this.harvestCooldownUiByObjectId.forEach((entry) => entry.container.destroy(true));
+                        this.harvestCooldownUiByObjectId.clear();
+                        this.clearHarvestBerryUi();
               this.npcManager?.destroy();
                         this.destroyWorldGlimmerbowlSprite();
                         this.destroyWorldGlimmerbowlRangeRing();
@@ -1447,6 +1839,16 @@ export class GameScene extends Phaser.Scene {
         });
 
         this.events.on('fishing:stop', this.stopFishing, this);
+    }
+
+    private startDemoTimer(durationMs: number, expiresAt?: number) {
+        if (this.demoTimerInstance) {
+            console.log('[GameScene] Demo timer already active; skipping duplicate start.');
+            return;
+        }
+        console.log('[GameScene] Starting demo timer UI', { durationMs, expiresAt: expiresAt ?? null });
+        Toast.info('This is a demo session. You have 15 minutes to try the game!', 2500);
+        this.demoTimerInstance = new DemoTimer(this, durationMs, expiresAt);
     }
 
     private beginServerTransfer(locationId: string) {
@@ -2097,8 +2499,16 @@ export class GameScene extends Phaser.Scene {
             this.upsertHarvestCooldownUi(objectId, centerX, centerY, readyAt, cooldownMs);
         };
 
-        room.onMessage('interactive:harvest:success', (data: { objectId?: number; readyAt?: number; cooldownMs?: number; centerX?: number; centerY?: number }) => {
+        room.onMessage('interactive:harvest:success', (data: { objectId?: number; readyAt?: number; cooldownMs?: number; centerX?: number; centerY?: number; quantity?: number }) => {
+            const quantity = Number.isFinite(data?.quantity) ? Math.floor(Number(data.quantity)) : Number.NaN;
+            if (!Number.isFinite(quantity) || quantity < this.harvestBerryYieldMin || quantity > this.harvestBerryYieldMax) {
+                console.warn('[GameScene] Rejected harvest success with invalid quantity:', data?.quantity);
+                return;
+            }
             applyCooldown(data);
+            if (Number.isFinite(data?.objectId)) {
+                this.beginHarvestBerryDrain(Math.floor(Number(data.objectId)));
+            }
         });
 
         room.onMessage('interactive:harvest:cooldown', (data: { objectId?: number; readyAt?: number; cooldownMs?: number; centerX?: number; centerY?: number }) => {
@@ -2441,7 +2851,9 @@ export class GameScene extends Phaser.Scene {
             this.droppedItemManager?.update();
         }
 
-        this.updateHarvestCooldownUi(Date.now());
+        const harvestUiNow = Date.now();
+        this.updateHarvestCooldownUi(harvestUiNow);
+        this.updateHarvestBerryUi(harvestUiNow);
         this.updateQuestIndicators(_time);
         this.updateDangerCountdownUi(Date.now());
 
@@ -2547,6 +2959,9 @@ export class GameScene extends Phaser.Scene {
         this.dangerRegionPolygon = null;
         this.dangerStayStartedAtMs = null;
         this.setDangerCountdownDisplay(null);
+        this.harvestCooldownUiByObjectId.forEach((entry) => entry.container.destroy(true));
+        this.harvestCooldownUiByObjectId.clear();
+        this.clearHarvestBerryUi();
         this.audioManager?.destroy();
         this.remotePlayerManager?.destroy();
         this.aiNpcManager?.destroy();

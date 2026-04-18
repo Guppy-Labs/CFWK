@@ -5,6 +5,12 @@ import { DEFAULT_CHARACTER_APPEARANCE } from '@cfwk/shared';
 import { renderCharacterPreview } from './skin/CharacterPreview';
 import { getUsernameValidationError, normalizeUsername } from './utils/username';
 import { bootstrapLocale } from './gameplay/i18n/localeBootstrap';
+import {
+    clearAccountUserBootstrapCache,
+    patchAccountUserBootstrapCache,
+    readAccountUserBootstrapCache,
+    writeAccountUserBootstrapCache
+} from './utils/accountBootstrapCache';
 
 const usernameInput = document.getElementById('username-input') as HTMLInputElement;
 const saveUsernameBtn = document.getElementById('save-username-btn') as HTMLButtonElement;
@@ -79,7 +85,7 @@ if (unlinkModal) {
                 Toast.success(`Unlinked ${providerToUnlink}`);
                 closeUnlinkModal();
                 // Refresh user data
-                init();
+                init(false);
             } else {
                 Toast.error(data.message);
                 closeUnlinkModal();
@@ -141,8 +147,11 @@ const betaCodeInput = document.getElementById('beta-code-input') as HTMLInputEle
 const betaSubmitBtn = document.getElementById('beta-submit-btn') as HTMLButtonElement;
 const betaFeedback = document.getElementById('beta-feedback') as HTMLElement;
 
-const releaseDate = new Date('2026-05-02T06:00:00').getTime();
+const releaseDate = new Date('2026-05-20T06:00:00').getTime();
+const ACCOUNT_USER_POLL_INTERVAL_MS = 15_000;
 let countdownInterval: any;
+let accountUserPollInterval: number | null = null;
+let accountUserFetchPromise: Promise<any | null> | null = null;
 
 function openCountdownModal() {
     countdownModal.style.display = 'block';
@@ -217,25 +226,84 @@ if (betaCodeInput) {
 }
 
 // --- Fetch User Data ---
-async function init() {
+function redirectToLoginClearingCache() {
+    clearAccountUserBootstrapCache();
+    window.location.href = '/login';
+}
+
+function applyCachedUserSnapshot() {
+    const cachedUser = readAccountUserBootstrapCache();
+    if (!cachedUser) return;
+    renderUser(cachedUser);
+}
+
+function stopAccountUserPolling() {
+    if (accountUserPollInterval === null) return;
+    window.clearInterval(accountUserPollInterval);
+    accountUserPollInterval = null;
+}
+
+function startAccountUserPolling() {
+    if (accountUserPollInterval !== null) return;
+    accountUserPollInterval = window.setInterval(() => {
+        void refreshUserFromServer({ redirectOnAuthFailure: true });
+    }, ACCOUNT_USER_POLL_INTERVAL_MS);
+}
+
+async function refreshUserFromServer(options: { redirectOnAuthFailure: boolean }): Promise<any | null> {
+    if (accountUserFetchPromise) {
+        return accountUserFetchPromise;
+    }
+
+    accountUserFetchPromise = (async () => {
+        try {
+            const res = await fetch('/api/auth/me');
+            if (!res.ok) {
+                if (options.redirectOnAuthFailure && (res.status === 401 || res.status === 403)) {
+                    redirectToLoginClearingCache();
+                }
+                return null;
+            }
+
+            const data = await res.json();
+            if (!data.user) {
+                if (options.redirectOnAuthFailure) {
+                    redirectToLoginClearingCache();
+                }
+                return null;
+            }
+
+            if (!data.user.username) {
+                clearAccountUserBootstrapCache();
+                window.location.href = '/onboarding';
+                return null;
+            }
+
+            writeAccountUserBootstrapCache(data.user);
+            renderUser(data.user);
+            return data.user;
+        } catch {
+            return null;
+        } finally {
+            accountUserFetchPromise = null;
+        }
+    })();
+
+    return accountUserFetchPromise;
+}
+
+async function init(useCached = true) {
     try {
-        await bootstrapLocale({ fetchFromServer: true });
-        const res = await fetch('/api/auth/me');
-        if (!res.ok) window.location.href = '/login';
-        const data = await res.json();
-        
-        if (!data.user) {
-            window.location.href = '/login';
-            return;
+        if (useCached) {
+            applyCachedUserSnapshot();
         }
 
-        if (!data.user.username) {
-            window.location.href = '/onboarding';
-            return;
-        }
-        
-        renderUser(data.user);
+        await bootstrapLocale({ fetchFromServer: true });
+        const user = await refreshUserFromServer({ redirectOnAuthFailure: true });
+        if (!user) return;
+
         renderSkinPreview();
+        startAccountUserPolling();
     } catch (e) {
         console.error(e);
     }
@@ -264,15 +332,11 @@ function renderUser(user: any) {
     settingsAvatar.src = avatarUrl;
     
     // Username
-    if (user.username) {
-        navUsername.textContent = user.username;
-        usernameInput.value = user.username;
-    }
+    navUsername.textContent = user.username || 'Player';
+    usernameInput.value = user.username || '';
 
     // Status
-    if (user.status) {
-        statusInput.value = user.status;
-    }
+    statusInput.value = typeof user.status === 'string' ? user.status : '';
 
     // Cooldown
     checkUsernameCooldown(user.lastUsernameChange);
@@ -304,11 +368,8 @@ function renderUser(user: any) {
         }
     }
     
-    if (perms.includes('access.maps')) {
-        if (mapmakerCard) mapmakerCard.style.display = 'flex';
-    } else {
-        if (preregCard) preregCard.style.display = 'flex';
-    }
+    if (mapmakerCard) mapmakerCard.style.display = perms.includes('access.maps') ? 'flex' : 'none';
+    if (preregCard) preregCard.style.display = perms.includes('access.maps') ? 'none' : 'flex';
 
     // Always show countdown for all users
     startCountdown();
@@ -316,12 +377,15 @@ function renderUser(user: any) {
     const betaAccessUntil = user.betaAccessUntil ? new Date(user.betaAccessUntil) : null;
     const hasBetaAccess = !!(betaAccessUntil && betaAccessUntil.getTime() > Date.now());
 
-    if ((perms.includes('access.game') || hasBetaAccess) && !isBanned) {
-        if (navPlayBtn) navPlayBtn.style.display = 'inline-flex';
-        if (navBetaBtn) navBetaBtn.style.display = 'none';
-    } else if (!isBanned) {
-        if (navBetaBtn) navBetaBtn.style.display = 'inline-flex';
-        if (navPlayBtn) navPlayBtn.style.display = 'none';
+    if (navPlayBtn) navPlayBtn.style.display = 'none';
+    if (navBetaBtn) navBetaBtn.style.display = 'none';
+
+    if (!isBanned) {
+        if (perms.includes('access.game') || hasBetaAccess) {
+            if (navPlayBtn) navPlayBtn.style.display = 'inline-flex';
+        } else if (navBetaBtn) {
+            navBetaBtn.style.display = 'inline-flex';
+        }
     }
 
     if (betaAccessCard && betaAccessTime) {
@@ -340,6 +404,8 @@ function renderUser(user: any) {
     if (user.hasPassword) {
         if(currentPassGroup) currentPassGroup.style.display = 'block';
         if(currentPassInput) currentPassInput.required = true;
+        const reminder = document.getElementById('password-email-reminder');
+        if (reminder) reminder.remove();
     } else {
         if(currentPassGroup) currentPassGroup.style.display = 'none';
         if(currentPassInput) currentPassInput.required = false;
@@ -413,37 +479,22 @@ function updateUpgradeButton(user: any) {
     
     const perms = user.permissions || [];
     const isPremium = perms.includes('premium.shark');
-    const premiumStatus = user.premiumStatus as string | undefined;
-    const periodEnd = user.premiumCurrentPeriodEnd ? new Date(user.premiumCurrentPeriodEnd) : null;
-    
-    if (isPremium && premiumStatus === 'canceled' && periodEnd) {
-        // Canceled but still has benefits - show days remaining
-        const now = new Date();
-        const diff = periodEnd.getTime() - now.getTime();
-        const daysLeft = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-        navUpgradeBtn.innerHTML = `🦈 ${daysLeft}d`;
-        navUpgradeBtn.title = `Shark expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`;
-        navUpgradeBtn.style.color = '#ff9800'; // Orange for canceled
-        navUpgradeBtn.style.borderColor = 'rgba(255, 152, 0, 0.5)';
-        navUpgradeBtn.style.background = 'rgba(255, 152, 0, 0.12)';
-    } else if (isPremium) {
-        // Active premium - show shark
-        navUpgradeBtn.innerHTML = '🦈';
-        navUpgradeBtn.title = 'Shark Active';
-        navUpgradeBtn.style.color = '#ffd54f';
-        navUpgradeBtn.style.borderColor = 'rgba(255, 215, 0, 0.5)';
-        navUpgradeBtn.style.background = 'rgba(255, 215, 0, 0.12)';
-    } else {
-        // Not premium - show star upgrade button
-        navUpgradeBtn.innerHTML = '★';
-        navUpgradeBtn.title = 'Upgrade to Shark';
-        navUpgradeBtn.style.color = '#ffd54f';
-        navUpgradeBtn.style.borderColor = 'rgba(255, 215, 0, 0.5)';
-        navUpgradeBtn.style.background = 'rgba(255, 215, 0, 0.12)';
+
+    // Match launch page behavior: only show CTA for non-premium users.
+    if (isPremium) {
+        navUpgradeBtn.style.display = 'none';
+        return;
     }
+
+    navUpgradeBtn.style.display = 'inline-flex';
+    navUpgradeBtn.innerHTML = '<i class="fa-solid fa-crown"></i> Buy Shark';
+    navUpgradeBtn.title = 'Buy Shark';
+    navUpgradeBtn.setAttribute('aria-label', 'Buy Shark');
 }
 
 function startCountdown() {
+    if (countdownInterval) return;
+
     countdownContainer.style.display = 'flex';
     
     const updateTime = () => {
@@ -452,6 +503,7 @@ function startCountdown() {
 
         if (distance < 0) {
             clearInterval(countdownInterval);
+            countdownInterval = null;
             countdownContainer.innerHTML = '<span style="color: var(--mm-primary); font-weight: bold; font-size: 1.5rem;">RELEASED!</span>';
              if (countdownModal.style.display === 'block') {
                  countdownModal.querySelector('.large-countdown')!.innerHTML = '<h1 style="color: var(--mm-primary); font-size: 4rem;">RELEASED!</h1>';
@@ -571,6 +623,7 @@ avatarInput.addEventListener('change', async () => {
             Toast.success('Profile picture updated');
             navAvatar.src = data.profilePic;
             settingsAvatar.src = data.profilePic;
+            patchAccountUserBootstrapCache({ profilePic: data.profilePic });
         } else {
             Toast.error(data.message || 'Upload failed');
         }
@@ -605,6 +658,9 @@ saveUsernameBtn.addEventListener('click', async () => {
         if (res.ok) {
             Toast.success('Username updated');
             usernameMsg.textContent = '';
+            navUsername.textContent = normalized;
+            usernameInput.value = normalized;
+            patchAccountUserBootstrapCache({ username: normalized });
         } else {
             Toast.error(data.message);
             usernameMsg.textContent = data.message;
@@ -627,6 +683,7 @@ saveStatusBtn.addEventListener('click', async () => {
         
         if (res.ok) {
             Toast.success('Status updated');
+            patchAccountUserBootstrapCache({ status: val });
         } else {
             const data = await res.json();
             Toast.error(data.message);
@@ -670,8 +727,13 @@ passwordForm.addEventListener('submit', async (e) => {
 });
 
 logoutBtn.addEventListener('click', async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.href = '/login';
+    try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+        clearAccountUserBootstrapCache();
+        stopAccountUserPolling();
+        window.location.href = '/login';
+    }
 });
 
 if (betaSubmitBtn) {
@@ -709,7 +771,7 @@ if (betaSubmitBtn) {
                     betaFeedback.className = 'beta-feedback success';
                 }
                 setTimeout(() => closeBetaModal(), 600);
-                init();
+                init(false);
             } else {
                 Toast.error(data.message || 'Code rejected');
                 if (betaFeedback) {
@@ -740,6 +802,8 @@ if (error) {
     
     window.history.replaceState({}, '', window.location.pathname);
 }
+
+window.addEventListener('beforeunload', stopAccountUserPolling);
 
 init();
 

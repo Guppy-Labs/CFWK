@@ -67,6 +67,13 @@ export class FinbookTabUI {
     private seenQuestIds = new Set<string>();
     private targetedQuestId: string | null = null;
     private hasLoadedAdvancementsState = false;
+    private guideQuestOrder: string[] = [];
+    private guideQuestRowRects = new Map<string, Phaser.Geom.Rectangle>();
+    private guideQuestTitleRect: Phaser.Geom.Rectangle | null = null;
+    private guideQuestStatusRect: Phaser.Geom.Rectangle | null = null;
+    private guideQuestObjectiveLabelRect: Phaser.Geom.Rectangle | null = null;
+    private guideQuestObjectiveCardRect: Phaser.Geom.Rectangle | null = null;
+    private guideQuestTrackButtonRect: Phaser.Geom.Rectangle | null = null;
 
     constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container) {
         this.scene = scene;
@@ -153,6 +160,13 @@ export class FinbookTabUI {
         this.clearContainer(this.leftContainer);
         this.clearContainer(this.rightContainer);
         this.clearRenderTextures();
+        this.guideQuestOrder = [];
+        this.guideQuestRowRects.clear();
+        this.guideQuestTitleRect = null;
+        this.guideQuestStatusRect = null;
+        this.guideQuestObjectiveLabelRect = null;
+        this.guideQuestObjectiveCardRect = null;
+        this.guideQuestTrackButtonRect = null;
 
         this.renderSectionButtons();
 
@@ -261,6 +275,7 @@ export class FinbookTabUI {
         this.addNineSliceImage(this.leftContainer, leftX, listY, 'ui-item-info-frame', listWidth, listHeight);
 
         const sorted = this.getSortedAvailableQuestIds();
+        this.guideQuestOrder = [...sorted];
 
         if (!sorted.includes(this.selectedQuestId)) {
             this.selectedQuestId = sorted[0] ?? '';
@@ -303,6 +318,15 @@ export class FinbookTabUI {
                 this.markQuestSeen(questId);
                 this.render();
             });
+            this.guideQuestRowRects.set(
+                questId,
+                new Phaser.Geom.Rectangle(
+                    rowX,
+                    Math.floor(y),
+                    rowWidth,
+                    Math.floor(this.rowHeight * this.scale)
+                )
+            );
 
             if (isCompleted) {
                 rowBg.setTint(0x4f5563);
@@ -454,6 +478,12 @@ export class FinbookTabUI {
             this.scale * 1.1,
             12 * this.scale
         );
+        this.guideQuestTitleRect = new Phaser.Geom.Rectangle(
+            contentX,
+            Math.floor(topY + 4 * this.scale),
+            contentWidth,
+            Math.max(12, Math.floor(12 * this.scale))
+        );
 
         const questType = isMainQuest
             ? this.t('finbook.quest.type.main', 'MAIN QUEST')
@@ -471,6 +501,12 @@ export class FinbookTabUI {
         statusValue.setScale(this.scale);
         statusValue.setPosition(contentX, Math.floor(topY + 31 * this.scale));
         this.rightContainer.add(statusValue);
+        this.guideQuestStatusRect = new Phaser.Geom.Rectangle(
+            contentX,
+            Math.floor(topY + 31 * this.scale),
+            contentWidth,
+            Math.max(12, Math.floor(10 * this.scale))
+        );
         this.addQuestDetailDivider(contentX, contentWidth, Math.floor(topY + 43 * this.scale));
 
         const objectiveText = this.getQuestObjectiveText(questId);
@@ -482,6 +518,12 @@ export class FinbookTabUI {
             objectiveLabel.setScale(this.scale * 0.92);
             objectiveLabel.setPosition(contentX, Math.floor(topY + 49 * this.scale));
             this.rightContainer.add(objectiveLabel);
+            this.guideQuestObjectiveLabelRect = new Phaser.Geom.Rectangle(
+                contentX,
+                Math.floor(topY + 49 * this.scale),
+                contentWidth,
+                Math.max(10, Math.floor(8 * this.scale))
+            );
 
             const objectiveCardX = contentX;
             const objectiveCardY = Math.floor(topY + 58 * this.scale);
@@ -492,6 +534,12 @@ export class FinbookTabUI {
                 objectiveCardX,
                 objectiveCardY,
                 'ui-group-button-unselected',
+                objectiveCardW,
+                objectiveCardH
+            );
+            this.guideQuestObjectiveCardRect = new Phaser.Geom.Rectangle(
+                objectiveCardX,
+                objectiveCardY,
                 objectiveCardW,
                 objectiveCardH
             );
@@ -559,6 +607,12 @@ export class FinbookTabUI {
             buttonX,
             buttonY,
             targetActive ? 'ui-group-button-selected' : 'ui-group-button-unselected',
+            buttonWidth,
+            buttonHeight
+        );
+        this.guideQuestTrackButtonRect = new Phaser.Geom.Rectangle(
+            buttonX,
+            buttonY,
             buttonWidth,
             buttonHeight
         );
@@ -1362,6 +1416,90 @@ export class FinbookTabUI {
 
     private t(key: string, fallback: string, params?: Record<string, string | number>) {
         return this.localeManager.t(key, params, fallback);
+    }
+
+    getActiveSection(): FinbookSection {
+        return this.activeSection;
+    }
+
+    focusQuestSectionForGuide() {
+        if (this.activeSection !== 'quests') {
+            this.activeSection = 'quests';
+            this.render();
+            return;
+        }
+        if (this.container.visible) {
+            this.render();
+        }
+    }
+
+    isQuestSectionActive(): boolean {
+        return this.activeSection === 'quests';
+    }
+
+    getGuideQuestRowRectByIndex(index: number): Phaser.Geom.Rectangle | null {
+        if (index < 0 || index >= this.guideQuestOrder.length) return null;
+        const questId = this.guideQuestOrder[index];
+        const rect = questId ? this.guideQuestRowRects.get(questId) : null;
+        return this.copyRect(rect ?? null);
+    }
+
+    selectGuideCompletedQuest(): Phaser.Geom.Rectangle | null {
+        this.focusQuestSectionForGuide();
+        if (this.guideQuestOrder.length === 0) return null;
+
+        const preferredQuestId = this.guideQuestOrder[2];
+        const preferredCompleted = preferredQuestId ? this.isQuestCompleted(preferredQuestId) : false;
+        const fallbackQuestId = this.guideQuestOrder.find((questId) => this.isQuestCompleted(questId));
+        const questId = (preferredCompleted ? preferredQuestId : fallbackQuestId) ?? preferredQuestId ?? null;
+        if (!questId) return null;
+
+        if (this.selectedQuestId !== questId) {
+            this.selectedQuestId = questId;
+            this.markQuestSeen(questId);
+            this.render();
+        }
+        const rect = this.guideQuestRowRects.get(questId);
+        return this.copyRect(rect ?? null);
+    }
+
+    selectGuideTopMainQuest(): Phaser.Geom.Rectangle | null {
+        this.focusQuestSectionForGuide();
+        if (this.guideQuestOrder.length === 0) return null;
+        const questId = this.guideQuestOrder.find((value) => this.isMainQuest(value)) ?? this.guideQuestOrder[0] ?? null;
+        if (!questId) return null;
+        if (this.selectedQuestId !== questId) {
+            this.selectedQuestId = questId;
+            this.markQuestSeen(questId);
+            this.render();
+        }
+        const rect = this.guideQuestRowRects.get(questId);
+        return this.copyRect(rect ?? null);
+    }
+
+    getGuideQuestTitleRect(): Phaser.Geom.Rectangle | null {
+        return this.copyRect(this.guideQuestTitleRect);
+    }
+
+    getGuideQuestStatusRect(): Phaser.Geom.Rectangle | null {
+        return this.copyRect(this.guideQuestStatusRect);
+    }
+
+    getGuideQuestObjectiveLabelRect(): Phaser.Geom.Rectangle | null {
+        return this.copyRect(this.guideQuestObjectiveLabelRect);
+    }
+
+    getGuideQuestObjectiveCardRect(): Phaser.Geom.Rectangle | null {
+        return this.copyRect(this.guideQuestObjectiveCardRect);
+    }
+
+    getGuideQuestTrackButtonRect(): Phaser.Geom.Rectangle | null {
+        return this.copyRect(this.guideQuestTrackButtonRect);
+    }
+
+    private copyRect(rect: Phaser.Geom.Rectangle | null): Phaser.Geom.Rectangle | null {
+        if (!rect) return null;
+        return new Phaser.Geom.Rectangle(rect.x, rect.y, rect.width, rect.height);
     }
 
     destroy() {

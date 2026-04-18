@@ -1,4 +1,5 @@
 import { FishBowlSimulator } from './launch/FishBowlSimulator';
+import { clearAccountUserBootstrapCache } from './utils/accountBootstrapCache';
 
 type LaunchUser = {
     username?: string;
@@ -29,7 +30,8 @@ const betaBadge = document.getElementById('beta-badge') as HTMLSpanElement;
 const premiumBadge = document.getElementById('premium-badge') as HTMLSpanElement;
 const premiumCtaBtn = document.getElementById('premium-cta-btn') as HTMLAnchorElement;
 const playBtn = document.getElementById('play-btn') as HTMLButtonElement;
-const playBtnIcon = document.getElementById('play-btn-icon') as HTMLImageElement;
+const playBtnIconLeft = document.getElementById('play-btn-icon-left') as HTMLImageElement;
+const playBtnIconRight = document.getElementById('play-btn-icon-right') as HTMLImageElement;
 const logoutBtn = document.getElementById('logout-btn') as HTMLButtonElement;
 const launchTransitionOverlay = document.getElementById('launch-transition-overlay') as HTMLDivElement;
 const fishbowlHost = document.getElementById('fishbowl-host') as HTMLDivElement;
@@ -49,7 +51,7 @@ const FISHBOWL_STORAGE_KEY = 'cfwk_fishbowl_enabled';
 const DEFAULT_PLAY_ICON_SRC = '/assets/ui/play-icon.png';
 const FISH_TILE_MAX_INDEX = 374;
 const HOVER_FISH_FPS = 12;
-const RELEASE_TIMESTAMP = new Date('2026-05-02T06:00:00').getTime();
+const RELEASE_TIMESTAMP = new Date('2026-05-20T06:00:00').getTime();
 const FISHBOWL_FADE_MS = 240;
 const CURSOR_SCALE = 3;
 const CURSOR_DEFAULT_SRC = '/ui/Cursor03b.png';
@@ -79,7 +81,8 @@ function startPlayButtonIconCycle() {
     if (playBtn.disabled || hoverFishIntervalId !== null) return;
     const intervalMs = Math.round(1000 / HOVER_FISH_FPS);
     hoverFishIntervalId = window.setInterval(() => {
-        playBtnIcon.src = randomFishIconPath();
+        playBtnIconLeft.src = randomFishIconPath();
+        playBtnIconRight.src = randomFishIconPath();
     }, intervalMs);
 }
 
@@ -88,7 +91,8 @@ function stopPlayButtonIconCycle() {
         window.clearInterval(hoverFishIntervalId);
         hoverFishIntervalId = null;
     }
-    playBtnIcon.src = DEFAULT_PLAY_ICON_SRC;
+    playBtnIconLeft.src = DEFAULT_PLAY_ICON_SRC;
+    playBtnIconRight.src = DEFAULT_PLAY_ICON_SRC;
 }
 
 function escapeHtml(value: string): string {
@@ -341,12 +345,14 @@ async function init(): Promise<boolean> {
     try {
         const res = await fetch('/api/auth/me', { credentials: 'include' });
         if (!res.ok) {
+            clearAccountUserBootstrapCache();
             window.location.href = '/login';
             return false;
         }
 
         const data = await res.json() as { user?: LaunchUser };
         if (!data.user) {
+            clearAccountUserBootstrapCache();
             window.location.href = '/login';
             return false;
         }
@@ -364,6 +370,7 @@ async function init(): Promise<boolean> {
         await loadNews();
         return true;
     } catch {
+        clearAccountUserBootstrapCache();
         window.location.href = '/login';
         return false;
     }
@@ -388,8 +395,12 @@ playBtn.addEventListener('mouseenter', startPlayButtonIconCycle);
 playBtn.addEventListener('mouseleave', stopPlayButtonIconCycle);
 
 logoutBtn.addEventListener('click', async () => {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-    window.location.href = '/login';
+    try {
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } finally {
+        clearAccountUserBootstrapCache();
+        window.location.href = '/login';
+    }
 });
 
 fishbowlToggle.addEventListener('click', () => {

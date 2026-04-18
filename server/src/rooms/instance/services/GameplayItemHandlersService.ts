@@ -16,6 +16,61 @@ import {
     YEKBUSH_COMPONENT_ID,
     YEKBUSH_COOLDOWN_MS
 } from "../InstanceRoomConstants";
+import { isPointInPolygon } from "../../../maps/geometry/pointInPolygon";
+
+const YEKBUSH_MIN_BERRY_YIELD = 3;
+const YEKBUSH_MAX_BERRY_YIELD = 5;
+
+function distanceToBoundsEdge(
+    pointX: number,
+    pointY: number,
+    minX: number,
+    maxX: number,
+    minY: number,
+    maxY: number
+): number {
+    const clampedX = Math.max(minX, Math.min(maxX, pointX));
+    const clampedY = Math.max(minY, Math.min(maxY, pointY));
+    return Math.hypot(pointX - clampedX, pointY - clampedY);
+}
+
+function distancePointToSegment(
+    pointX: number,
+    pointY: number,
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number
+): number {
+    const abx = bx - ax;
+    const aby = by - ay;
+    const apx = pointX - ax;
+    const apy = pointY - ay;
+    const lenSq = (abx * abx) + (aby * aby);
+    if (lenSq <= 0.000001) return Math.hypot(pointX - ax, pointY - ay);
+    const t = Math.max(0, Math.min(1, ((apx * abx) + (apy * aby)) / lenSq));
+    const closestX = ax + (abx * t);
+    const closestY = ay + (aby * t);
+    return Math.hypot(pointX - closestX, pointY - closestY);
+}
+
+function distanceToPolygonRegion(
+    pointX: number,
+    pointY: number,
+    polygon: Array<{ x: number; y: number }>
+): number {
+    if (polygon.length < 3) return Number.POSITIVE_INFINITY;
+    if (isPointInPolygon(pointX, pointY, polygon)) return 0;
+
+    let minDistance = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < polygon.length; i += 1) {
+        const a = polygon[i];
+        const b = polygon[(i + 1) % polygon.length];
+        const distance = distancePointToSegment(pointX, pointY, a.x, a.y, b.x, b.y);
+        if (distance < minDistance) minDistance = distance;
+    }
+    return minDistance;
+}
 
 export function registerInteractiveWorldHandlers(room: InstanceRoomHost) {
     room.onMessage("interactive:harvest", async (client, data: { objectId?: number; componentId?: string }) => {
@@ -36,7 +91,16 @@ export function registerInteractiveWorldHandlers(room: InstanceRoomHost) {
         const target = room.harvestTargetsByObjectId.get(objectId);
         if (!target || target.componentId !== componentId) return;
 
-        const distance = Math.hypot(player.x - target.centerX, player.y - target.centerY);
+        const distance = Array.isArray(target.polygon) && target.polygon.length >= 3
+            ? distanceToPolygonRegion(player.x, player.y, target.polygon)
+            : distanceToBoundsEdge(
+                player.x,
+                player.y,
+                target.minX,
+                target.maxX,
+                target.minY,
+                target.maxY
+            );
         if (distance > target.radiusPx) return;
 
         const now = Date.now();
@@ -55,7 +119,7 @@ export function registerInteractiveWorldHandlers(room: InstanceRoomHost) {
             return;
         }
 
-        const quantity = Math.random() < 0.2 ? 2 : 1;
+        const quantity = YEKBUSH_MIN_BERRY_YIELD + Math.floor(Math.random() * (YEKBUSH_MAX_BERRY_YIELD - YEKBUSH_MIN_BERRY_YIELD + 1));
         const itemId = "yekberries";
 
         const { items: currentSlots } = await room.deps.inventoryCache.getInventoryState(player.odcid);
@@ -74,12 +138,17 @@ export function registerInteractiveWorldHandlers(room: InstanceRoomHost) {
         const nextReadyAt = now + YEKBUSH_COOLDOWN_MS;
         cooldownMap.set(objectId, nextReadyAt);
 
-        const { equippedRodId, equippedUsableIds } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+        const {
+            equippedRodId,
+            equippedUsableIds,
+            equippedUsableCounts
+        } = await room.deps.inventoryCache.getInventoryState(player.odcid);
         client.send("inventory", {
             slots: updatedSlots,
             totalSlots: DEFAULT_INVENTORY_SLOTS,
             equippedRodId,
-            equippedUsableIds
+            equippedUsableIds,
+            equippedUsableCounts
         });
 
         client.send("interactive:harvest:success", {
@@ -131,12 +200,17 @@ export function registerInteractiveWorldHandlers(room: InstanceRoomHost) {
         const inventorySlotsToSend = unlockState.movedFish && Array.isArray(unlockState.slots)
             ? unlockState.slots
             : updatedSlots;
-        const { equippedRodId, equippedUsableIds } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+        const {
+            equippedRodId,
+            equippedUsableIds,
+            equippedUsableCounts
+        } = await room.deps.inventoryCache.getInventoryState(player.odcid);
         client.send("inventory", {
             slots: inventorySlotsToSend,
             totalSlots: DEFAULT_INVENTORY_SLOTS,
             equippedRodId,
-            equippedUsableIds
+            equippedUsableIds,
+            equippedUsableCounts
         });
         client.send("glimmerbowl", {
             entries: unlockState.entries,
@@ -206,18 +280,29 @@ export function registerInventoryAndGlimmerbowlHandlers(room: InstanceRoomHost) 
             const removedContainerSlots = await room.deps.inventoryCache.removeItem(player.odcid, liquidContainerItemId, 1);
             if (!removedContainerSlots) return;
 
-            room.state.droppedItems.delete(data.droppedItemId);
+            const normalizedLiquidAmount = Math.max(1, Math.floor(Number.isFinite(droppedItem.amount) ? Number(droppedItem.amount) : 1));
+            const remainingLiquidAmount = normalizedLiquidAmount - 1;
+            if (remainingLiquidAmount <= 0) {
+                room.state.droppedItems.delete(data.droppedItemId);
+            } else {
+                droppedItem.amount = remainingLiquidAmount;
+            }
             const outputSlots = await room.deps.inventoryCache.addItem(
                 player.odcid,
                 liquidOutputItemId,
-                Math.max(1, Math.floor(droppedItem.amount || 1))
+                1
             );
-            const { equippedRodId, equippedUsableIds } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+            const {
+                equippedRodId,
+                equippedUsableIds,
+                equippedUsableCounts
+            } = await room.deps.inventoryCache.getInventoryState(player.odcid);
             client.send("inventory", {
                 slots: outputSlots,
                 totalSlots: DEFAULT_INVENTORY_SLOTS,
                 equippedRodId,
-                equippedUsableIds
+                equippedUsableIds,
+                equippedUsableCounts
             });
 
             void room.advancementsManager.onLiquidBottled(
@@ -242,7 +327,9 @@ export function registerInventoryAndGlimmerbowlHandlers(room: InstanceRoomHost) 
                 client.send("inventory", {
                     slots: migrated.slots,
                     totalSlots: DEFAULT_INVENTORY_SLOTS,
-                    equippedRodId: migrated.equippedRodId ?? null
+                    equippedRodId: migrated.equippedRodId ?? null,
+                    equippedUsableIds: migrated.equippedUsableIds ?? [],
+                    equippedUsableCounts: migrated.equippedUsableCounts ?? []
                 });
             }
             room.state.droppedItems.delete(data.droppedItemId);
@@ -260,12 +347,23 @@ export function registerInventoryAndGlimmerbowlHandlers(room: InstanceRoomHost) 
             return;
         }
 
-        const { items: currentSlots, equippedRodId: equippedRodIdFromState } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+        const {
+            items: currentSlots,
+            equippedRodId: equippedRodIdFromState,
+            equippedUsableIds,
+            equippedUsableCounts
+        } = await room.deps.inventoryCache.getInventoryState(player.odcid);
         const stackSize = getItemDefinition(droppedItem.itemId)?.stackSize ?? 99;
         const hasStackSpace = currentSlots.some((slot: { itemId: string | null; count: number }) => slot.itemId === droppedItem.itemId && slot.count < stackSize);
         const hasEmptySlot = currentSlots.some((slot: { itemId: string | null; count: number }) => !slot.itemId || slot.count === 0);
         if (!hasStackSpace && !hasEmptySlot) {
-            client.send("inventory", { slots: currentSlots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId: equippedRodIdFromState });
+            client.send("inventory", {
+                slots: currentSlots,
+                totalSlots: DEFAULT_INVENTORY_SLOTS,
+                equippedRodId: equippedRodIdFromState,
+                equippedUsableIds,
+                equippedUsableCounts
+            });
             client.send("inventory:skip", { itemId: droppedItem.itemId, quantity: droppedItem.amount });
             return;
         }
@@ -273,8 +371,18 @@ export function registerInventoryAndGlimmerbowlHandlers(room: InstanceRoomHost) 
         room.state.droppedItems.delete(data.droppedItemId);
         const slots = await room.deps.inventoryCache.addItem(player.odcid, droppedItem.itemId, droppedItem.amount);
         await room.setHasOwnedScarFromInventory(player.odcid, slots);
-        const { equippedRodId } = await room.deps.inventoryCache.getInventoryState(player.odcid);
-        client.send("inventory", { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+        const {
+            equippedRodId,
+            equippedUsableIds: equippedUsableIdsAfterPickup,
+            equippedUsableCounts: equippedUsableCountsAfterPickup
+        } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+        client.send("inventory", {
+            slots,
+            totalSlots: DEFAULT_INVENTORY_SLOTS,
+            equippedRodId,
+            equippedUsableIds: equippedUsableIdsAfterPickup,
+            equippedUsableCounts: equippedUsableCountsAfterPickup
+        });
         await room.sendInventoryCountObjectiveForItem(client, player.odcid, droppedItem.itemId, slots);
     });
 
@@ -297,7 +405,9 @@ export function registerInventoryAndGlimmerbowlHandlers(room: InstanceRoomHost) 
                 client.send("inventory", {
                     slots: migrated.slots,
                     totalSlots: DEFAULT_INVENTORY_SLOTS,
-                    equippedRodId: migrated.equippedRodId ?? null
+                    equippedRodId: migrated.equippedRodId ?? null,
+                    equippedUsableIds: migrated.equippedUsableIds ?? [],
+                    equippedUsableCounts: migrated.equippedUsableCounts ?? []
                 });
             }
             const glimmerUpdated = await room.deps.glimmerbowlCache.removeFish(player.odcid, data.itemId, amount);
@@ -314,8 +424,18 @@ export function registerInventoryAndGlimmerbowlHandlers(room: InstanceRoomHost) 
         const updated = await room.deps.inventoryCache.removeItem(player.odcid, data.itemId, amount);
         if (!updated) return;
         room.createDroppedItem(data.itemId, amount, player.x, player.y);
-        const { equippedRodId } = await room.deps.inventoryCache.getInventoryState(player.odcid);
-        client.send("inventory", { slots: updated, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId });
+        const {
+            equippedRodId,
+            equippedUsableIds: equippedUsableIdsAfterDrop,
+            equippedUsableCounts: equippedUsableCountsAfterDrop
+        } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+        client.send("inventory", {
+            slots: updated,
+            totalSlots: DEFAULT_INVENTORY_SLOTS,
+            equippedRodId,
+            equippedUsableIds: equippedUsableIdsAfterDrop,
+            equippedUsableCounts: equippedUsableCountsAfterDrop
+        });
     });
 
     room.onMessage("glimmerbowl:awaken", async (client, data: { fishEntryId?: string; scarItemId?: string }) => {
@@ -331,12 +451,17 @@ export function registerInventoryAndGlimmerbowlHandlers(room: InstanceRoomHost) 
 
         try {
             const result = await room.deps.glimmerbowlCache.awakenFish(player.odcid, fishEntryId, scarItemId);
-            const { equippedRodId, equippedUsableIds } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+            const {
+                equippedRodId,
+                equippedUsableIds,
+                equippedUsableCounts
+            } = await room.deps.inventoryCache.getInventoryState(player.odcid);
             client.send("inventory", {
                 slots: result.slots,
                 totalSlots: DEFAULT_INVENTORY_SLOTS,
                 equippedRodId,
-                equippedUsableIds
+                equippedUsableIds,
+                equippedUsableCounts
             });
             client.send("glimmerbowl", {
                 entries: result.entries,
@@ -366,18 +491,31 @@ export function registerInventoryAndGlimmerbowlHandlers(room: InstanceRoomHost) 
         const {
             items: currentSlots,
             equippedRodId,
-            equippedUsableIds
+            equippedUsableIds,
+            equippedUsableCounts
         } = await room.deps.inventoryCache.getInventoryState(player.odcid);
 
         const validation = validateClientInventorySnapshot(currentSlots, data.slots);
         if (!validation.valid) {
             console.warn(`[InstanceRoom] Rejected inventory:set for ${player.odcid}: ${validation.reason}`);
-            client.send("inventory", { slots: currentSlots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId, equippedUsableIds });
+            client.send("inventory", {
+                slots: currentSlots,
+                totalSlots: DEFAULT_INVENTORY_SLOTS,
+                equippedRodId,
+                equippedUsableIds,
+                equippedUsableCounts
+            });
             return;
         }
 
         room.deps.inventoryCache.setInventory(player.odcid, validation.slots);
-        client.send("inventory", { slots: validation.slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId, equippedUsableIds });
+        client.send("inventory", {
+            slots: validation.slots,
+            totalSlots: DEFAULT_INVENTORY_SLOTS,
+            equippedRodId,
+            equippedUsableIds,
+            equippedUsableCounts
+        });
     });
 }
 
@@ -388,12 +526,9 @@ export function registerFishingHandlers(room: InstanceRoomHost) {
         if (!player) return;
         if (room.defeatedByUserId.get(player.odcid || client.sessionId)) return;
 
-        const { items: slots, equippedRodId } = await room.deps.inventoryCache.getInventoryState(player.odcid);
-        const ownedRodCount = slots
-            .filter((slot: { itemId: string | null; count: number }) => slot.itemId === equippedRodId)
-            .reduce((sum: number, slot: { itemId: string | null; count: number }) => sum + slot.count, 0);
+        const { equippedRodId } = await room.deps.inventoryCache.getInventoryState(player.odcid);
         const rodDef = equippedRodId ? getItemDefinition(equippedRodId) : undefined;
-        if (!equippedRodId || !isRodItem(rodDef) || ownedRodCount <= 0) {
+        if (!equippedRodId || !isRodItem(rodDef)) {
             client.send("chat", {
                 username: "SYSTEM",
                 odcid: "SYSTEM",
@@ -523,7 +658,9 @@ export function registerFishingHandlers(room: InstanceRoomHost) {
                 client.send("inventory", {
                     slots: migrated.slots,
                     totalSlots: DEFAULT_INVENTORY_SLOTS,
-                    equippedRodId: migrated.equippedRodId ?? null
+                    equippedRodId: migrated.equippedRodId ?? null,
+                    equippedUsableIds: migrated.equippedUsableIds ?? [],
+                    equippedUsableCounts: migrated.equippedUsableCounts ?? []
                 });
             }
             const glimmerEntries = await room.deps.glimmerbowlCache.addFish(player.odcid, itemId, 1, "regular");
@@ -536,14 +673,25 @@ export function registerFishingHandlers(room: InstanceRoomHost) {
             return;
         }
 
-        const { items: currentSlots, equippedRodId: equippedRodIdFromState } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+        const {
+            items: currentSlots,
+            equippedRodId: equippedRodIdFromState,
+            equippedUsableIds: equippedUsableIdsForCatch,
+            equippedUsableCounts: equippedUsableCountsForCatch
+        } = await room.deps.inventoryCache.getInventoryState(player.odcid);
         const stackSize = getItemDefinition(itemId)?.stackSize ?? 99;
         const hasStackSpace = currentSlots.some((slot: { itemId: string | null; count: number }) => slot.itemId === itemId && slot.count < stackSize);
         const hasEmptySlot = currentSlots.some((slot: { itemId: string | null; count: number }) => !slot.itemId || slot.count === 0);
 
         if (!hasStackSpace && !hasEmptySlot) {
             room.createDroppedItem(itemId, 1, player.x, player.y);
-            client.send("inventory", { slots: currentSlots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId: equippedRodIdFromState });
+            client.send("inventory", {
+                slots: currentSlots,
+                totalSlots: DEFAULT_INVENTORY_SLOTS,
+                equippedRodId: equippedRodIdFromState,
+                equippedUsableIds: equippedUsableIdsForCatch,
+                equippedUsableCounts: equippedUsableCountsForCatch
+            });
             client.send("inventory:skip", { itemId, quantity: 1 });
             client.send("fishing:catchResult", { itemId });
             return;
@@ -551,7 +699,13 @@ export function registerFishingHandlers(room: InstanceRoomHost) {
 
         const slots = await room.deps.inventoryCache.addItem(player.odcid, itemId, 1);
         await room.setHasOwnedScarFromInventory(player.odcid, slots);
-        client.send("inventory", { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId: equippedRodIdFromState });
+        client.send("inventory", {
+            slots,
+            totalSlots: DEFAULT_INVENTORY_SLOTS,
+            equippedRodId: equippedRodIdFromState,
+            equippedUsableIds: equippedUsableIdsForCatch,
+            equippedUsableCounts: equippedUsableCountsForCatch
+        });
         client.send("fishing:catchResult", { itemId });
     });
 }

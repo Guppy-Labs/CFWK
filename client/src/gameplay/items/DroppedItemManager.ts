@@ -73,9 +73,9 @@ export class DroppedItemManager {
     private readonly clusterMergeDistance = 42;
     private readonly singleCardAnchorYOffset = -16;
     private readonly cardBgColor = 0x000000;
-    private readonly cardBgAlpha = 0.18;
-    private readonly cardBaseAlpha = 0.68;
-    private readonly cardTextAlpha = 0.7;
+    private readonly cardBgAlpha = 0.36;
+    private readonly cardBaseAlpha = 0.94;
+    private readonly cardTextAlpha = 0.95;
     private readonly cardTextFontSize = '5px';
     private readonly cardTextFontFamily = 'Minecraft, monospace';
     private dropCards: Map<string, DropClusterCard> = new Map();
@@ -528,6 +528,13 @@ export class DroppedItemManager {
         }
 
         const uniqueIds = Array.from(new Set(row.droppedItemIds));
+        if (isLiquidRow) {
+            const firstLiquidDropId = uniqueIds.find((droppedItemId) => this.items.has(droppedItemId));
+            if (firstLiquidDropId) {
+                this.networkManager.sendPickupItem(firstLiquidDropId);
+            }
+            return;
+        }
         uniqueIds.forEach((droppedItemId) => {
             if (this.items.has(droppedItemId)) {
                 this.networkManager.sendPickupItem(droppedItemId);

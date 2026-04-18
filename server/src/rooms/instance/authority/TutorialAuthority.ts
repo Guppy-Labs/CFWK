@@ -36,6 +36,20 @@ const FOOD_ORDER: GuideFoodStep[] = [
     "completed"
 ];
 
+const FINBOOK_ORDER: IGuideTutorialState["finbookStep"][] = [
+    "idle",
+    "open_inventory",
+    "open_finbook_tab",
+    "show_completed_quest",
+    "show_main_quest",
+    "show_title",
+    "show_status",
+    "show_objective",
+    "show_track_button",
+    "close_inventory",
+    "completed"
+];
+
 const INTERACTION_ORDER: GuideInteractionStep[] = [
     "idle",
     "press_interact",
@@ -70,14 +84,25 @@ export function sanitizeTutorialPatch(
     if (canTransition(current.foodStep, patch.foodStep, FOOD_ORDER)) {
         next.foodStep = patch.foodStep;
     }
+    if (canTransition(current.finbookStep, patch.finbookStep, FINBOOK_ORDER)) {
+        next.finbookStep = patch.finbookStep;
+    }
     if (canTransition(current.interactionStep, patch.interactionStep, INTERACTION_ORDER)) {
         next.interactionStep = patch.interactionStep;
+    }
+    if (typeof patch.finbookAnchorEnteredAt === "number" && Number.isFinite(patch.finbookAnchorEnteredAt) && patch.finbookAnchorEnteredAt > 0) {
+        if (next.finbookAnchorEnteredAt === null) {
+            next.finbookAnchorEnteredAt = Math.floor(patch.finbookAnchorEnteredAt);
+        } else {
+            next.finbookAnchorEnteredAt = Math.min(next.finbookAnchorEnteredAt, Math.floor(patch.finbookAnchorEnteredAt));
+        }
     }
 
     // Derive completion flags on the server instead of trusting client booleans.
     next.rodCompleted = next.rodStep === "completed";
     next.fishingCompleted = next.fishingStep === "completed";
     next.foodCompleted = next.foodStep === "completed";
+    next.finbookCompleted = next.finbookStep === "completed";
     next.interactionCompleted = next.interactionStep === "completed";
 
     // Server-managed tutorial force flags.
@@ -88,11 +113,14 @@ export function sanitizeTutorialPatch(
     if (next.rodStep !== current.rodStep) updates.rodStep = next.rodStep;
     if (next.fishingStep !== current.fishingStep) updates.fishingStep = next.fishingStep;
     if (next.foodStep !== current.foodStep) updates.foodStep = next.foodStep;
+    if (next.finbookStep !== current.finbookStep) updates.finbookStep = next.finbookStep;
     if (next.interactionStep !== current.interactionStep) updates.interactionStep = next.interactionStep;
     if (next.rodCompleted !== current.rodCompleted) updates.rodCompleted = next.rodCompleted;
     if (next.fishingCompleted !== current.fishingCompleted) updates.fishingCompleted = next.fishingCompleted;
     if (next.foodCompleted !== current.foodCompleted) updates.foodCompleted = next.foodCompleted;
+    if (next.finbookCompleted !== current.finbookCompleted) updates.finbookCompleted = next.finbookCompleted;
     if (next.interactionCompleted !== current.interactionCompleted) updates.interactionCompleted = next.interactionCompleted;
+    if (next.finbookAnchorEnteredAt !== current.finbookAnchorEnteredAt) updates.finbookAnchorEnteredAt = next.finbookAnchorEnteredAt;
     if (next.forceSalmonCatch !== current.forceSalmonCatch) updates.forceSalmonCatch = next.forceSalmonCatch;
     if (next.forceFoodGuideHeal !== current.forceFoodGuideHeal) updates.forceFoodGuideHeal = next.forceFoodGuideHeal;
 

@@ -154,9 +154,9 @@
             width: 94%;
             margin-left: auto;
             margin-right: auto;
-            display: flex;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
             align-items: center;
-            justify-content: center;
             gap: 1.2rem;
             border: 3px solid rgba(255, 102, 170, 0.85);
             background: linear-gradient(180deg, #ff66aa, #d9428f);
@@ -185,7 +185,10 @@
             image-rendering: crisp-edges;
             flex-shrink: 0;
             transform: translateY(-2px);
-            margin-right: 1rem;
+        }
+
+        .play-btn-label {
+            text-align: center;
         }
 
         .play-btn:disabled {
@@ -268,7 +271,10 @@
         .launch-transition-overlay {
             position: fixed;
             inset: 0;
-            background: #121212;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(18, 18, 18, 0.98);
             opacity: 0;
             visibility: hidden;
             pointer-events: none;
@@ -279,6 +285,17 @@
         .launch-transition-overlay.show {
             opacity: 1;
             visibility: visible;
+        }
+
+        .launch-transition-label {
+            margin: 0;
+            color: #bcbcbc;
+            font-family: 'Minecraft', sans-serif;
+            font-size: clamp(1rem, 2.1vw, 1.35rem);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-align: center;
+            text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
         }
 
         .news {
@@ -537,7 +554,9 @@
     </style>
 </head>
 <body>
-    <div id="launch-transition-overlay" class="launch-transition-overlay" aria-hidden="true"></div>
+    <div id="launch-transition-overlay" class="launch-transition-overlay" aria-hidden="true">
+        <p class="launch-transition-label">Launching CFWK</p>
+    </div>
     <div id="fishbowl-host" class="fishbowl-host" aria-hidden="true"></div>
     <div class="page">
         <section class="hero">
@@ -551,8 +570,9 @@
                 </div>
 
                 <button id="play-btn" class="play-btn" type="button">
-                    <img id="play-btn-icon" class="play-btn-icon" src="/assets/ui/play-icon.png" alt="" aria-hidden="true">
-                    Launch Game
+                    <img id="play-btn-icon-left" class="play-btn-icon" src="/assets/ui/play-icon.png" alt="" aria-hidden="true">
+                    <span class="play-btn-label">Launch Game</span>
+                    <img id="play-btn-icon-right" class="play-btn-icon" src="/assets/ui/play-icon.png" alt="" aria-hidden="true">
                 </button>
 
                 <div class="actions">

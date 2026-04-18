@@ -49,6 +49,8 @@ export class NetworkManager {
     private wasConnected: boolean = false;
 
     private inventoryCache: IInventoryResponse | null = null;
+    private demoDurationMs: number | null = null;
+    private demoExpiresAt: number | null = null;
     private glimmerbowlCache: IGlimmerbowlResponse | null = null;
     private settingsCache: IUserSettings | null = null;
     private statsCache: IPlayerStatsResponse | null = null;
@@ -165,6 +167,14 @@ export class NetworkManager {
             console.error('[NetworkManager] Error fetching inventory:', error);
             return null;
         }
+    }
+
+    getDemoDuration(): number | null {
+        return this.demoDurationMs;
+    }
+
+    getDemoExpiresAt(): number | null {
+        return this.demoExpiresAt;
     }
 
     async getGlimmerbowl(): Promise<IGlimmerbowlResponse | null> {
@@ -375,6 +385,8 @@ export class NetworkManager {
             const hadConnection = this.wasConnected;
             this.currentRoom = null;
             this.wasConnected = false;
+            this.demoDurationMs = null;
+            this.demoExpiresAt = null;
             
             // Handle bans specifically
             if (code === 4003) {
@@ -451,6 +463,21 @@ export class NetworkManager {
                 money: Math.max(0, Math.floor(Number.isFinite(data?.money) ? data.money : 0))
             };
             window.dispatchEvent(new CustomEvent('money:update', { detail: this.moneyCache }));
+        });
+
+        this.currentRoom.onMessage('shop:state', (data: unknown) => {
+            window.dispatchEvent(new CustomEvent('shop:state', { detail: data }));
+        });
+
+        this.currentRoom.onMessage('demo:start', (data: { durationMs?: number; expiresAt?: number }) => {
+            if (!data?.durationMs) return;
+            this.demoDurationMs = data.durationMs;
+            this.demoExpiresAt = Number.isFinite(data.expiresAt) ? Number(data.expiresAt) : null;
+            console.log('[NetworkManager] demo:start received', {
+                durationMs: data.durationMs,
+                expiresAt: this.demoExpiresAt
+            });
+            window.dispatchEvent(new CustomEvent('demo:start', { detail: data }));
         });
 
         this.currentRoom.onMessage('server:transfer', (data: { locationId?: string }) => {
@@ -590,9 +617,19 @@ export class NetworkManager {
     /**
      * Send equipped rod updates to the server
      */
-    sendEquippedRod(equippedRodId: string | null, equippedUsableIds?: Array<string | null>) {
+    sendEquippedRod(
+        equippedRodId: string | null,
+        equippedUsableIds?: Array<string | null>,
+        equippedUsableCounts?: number[],
+        slots?: IInventoryResponse['slots']
+    ) {
         if (this.currentRoom) {
-            this.currentRoom.send('equipment:set', { equippedRodId, equippedUsableIds });
+            this.currentRoom.send('equipment:set', {
+                equippedRodId,
+                equippedUsableIds,
+                equippedUsableCounts,
+                slots
+            });
         }
     }
 
@@ -751,6 +788,24 @@ export class NetworkManager {
     sendNpcInteract(npcId: string) {
         if (this.currentRoom) {
             this.currentRoom.send('npc:interact', { npcId });
+        }
+    }
+
+    sendDialogueGiveItem(payload: { npcId: string; itemId: string; amount?: number; ifMissing?: boolean }) {
+        if (this.currentRoom) {
+            this.currentRoom.send('dialogue:give-item', payload);
+        }
+    }
+
+    sendShopGet(shopId: string) {
+        if (this.currentRoom) {
+            this.currentRoom.send('shop:get', { shopId });
+        }
+    }
+
+    sendShopBuy(shopId: string, itemId: string, quantity: number) {
+        if (this.currentRoom) {
+            this.currentRoom.send('shop:buy', { shopId, itemId, quantity });
         }
     }
 

@@ -49,11 +49,13 @@ export function registerAdminEventListeners(room: InstanceRoomHost) {
             if (player && player.odcid === data.userId) {
                 const equippedRodId = room.deps.inventoryCache.getEquippedRod(data.userId);
                 const equippedUsableIds = room.deps.inventoryCache.getEquippedUsables(data.userId);
+                const equippedUsableCounts = room.deps.inventoryCache.getEquippedUsableCounts(data.userId);
                 client.send("inventory", {
                     slots: data.items,
                     totalSlots: DEFAULT_INVENTORY_SLOTS,
                     equippedRodId,
-                    equippedUsableIds
+                    equippedUsableIds,
+                    equippedUsableCounts
                 });
             }
         });

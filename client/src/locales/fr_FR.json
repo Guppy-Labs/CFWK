@@ -194,6 +194,7 @@
 		"footstepWood": "Pas sur le bois",
 		"meow": "Miaou",
 		"eatYekberries": "Mange des yekberries",
+		"drinkYekjuice": "Boit du yekjuice",
 		"rodCast": "Lancer de canne à pêche",
 		"rodReel": "Moulinage de canne à pêche",
 		"waterSplash": "Éclaboussure",
@@ -611,6 +612,16 @@
 	"drops": {
 		"needContainerToCollect": "Il faut {container} pour collecter",
 		"confirmConsumeJar": "Confirmer la consommation de 1 bocal"
+	},
+	"shop": {
+		"buy1x": "Acheter 1x",
+		"buy10x": "10x",
+		"limitedSupply": "Supplément stock limité",
+		"available": "{count} disponible(s)",
+		"restocksIn": "Réappro dans {time}",
+		"restockingSoon": "Réappro bientôt...",
+		"outOfStock": "Rupture de stock",
+		"selectItem": "Sélectionnez un article"
 	},
 	"system": {
 		"on": "ACTIVÉ",

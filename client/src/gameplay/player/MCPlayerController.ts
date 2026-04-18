@@ -873,6 +873,10 @@ export class MCPlayerController {
         this.localNameplate.setPosition(this.player.x, this.player.y + this.nameplateYOffset);
     }
 
+    setNameplateVisible(visible: boolean) {
+        this.localNameplate?.setVisible(visible);
+    }
+
     private getBubbleAnchor() {
         if (!this.player) return null;
         const nameplateTop = this.nameplateHeight

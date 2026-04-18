@@ -185,6 +185,43 @@
                     "textKey": "dialogue.npc.merchant.waresGalore.post.0",
                     "text": "You've got the look of a customer now. My wares are ready when you are."
                 }
+            ],
+            "randomLines": [
+                [
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.merchant.waresGalore.post.0",
+                        "text": "You've got the look of a customer now. My wares are ready when you are."
+                    }
+                ],
+                [
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.merchant.waresGalore.post.1",
+                        "text": "Back again? Smart fish. Let's see what catches your eye."
+                    }
+                ],
+                [
+                    {
+                        "speaker": "npc",
+                        "emotion": "surprise",
+                        "textKey": "dialogue.npc.merchant.waresGalore.post.2",
+                        "text": "Coins burning a hole in your pocket? I've got just the thing."
+                    }
+                ],
+                [
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.merchant.waresGalore.post.3",
+                        "text": "Welcome, welcome! Fresh stock, fair prices. Mostly."
+                    }
+                ]
+            ],
+            "actions": [
+                { "type": "openShop", "shopId": "merchant_wares" }
             ]
         },
         {
@@ -219,8 +256,11 @@
                     "speaker": "npc",
                     "emotion": "happy",
                     "textKey": "dialogue.npc.merchant.waresGalore.intro.2",
-                    "text": "Come see my wares any time. Soon I'll open the full stall for you."
+                    "text": "Take a look at what I've got. Welcome to the stall!"
                 }
+            ],
+            "actions": [
+                { "type": "openShop", "shopId": "merchant_wares" }
             ]
         },
         {
@@ -271,8 +311,11 @@
                     "speaker": "npc",
                     "emotion": "happy",
                     "textKey": "dialogue.npc.merchant.waresGalore.intro.2",
-                    "text": "Come see my wares any time. Soon I'll open the full stall for you."
+                    "text": "Take a look at what I've got. Welcome to the stall!"
                 }
+            ],
+            "actions": [
+                { "type": "openShop", "shopId": "merchant_wares" }
             ]
         },
         {

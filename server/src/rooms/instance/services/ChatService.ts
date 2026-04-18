@@ -25,6 +25,27 @@ export function registerChatHandlers(room: InstanceRoomHost) {
                     args
                 };
 
+                if (command === "demo") {
+                    try {
+                        const user = await User.findById(player.odcid);
+                        if (!user) {
+                            client.send("chat", { username: "SYSTEM", odcid: "SYSTEM", message: "User not found.", timestamp: Date.now(), isSystem: true });
+                            return;
+                        }
+                        const newState = !user.isDemo;
+                        user.isDemo = newState;
+                        await user.save();
+                        const message = newState
+                            ? "Demo mode enabled. Rejoin to start a 15-minute demo session."
+                            : "Demo mode disabled.";
+                        client.send("chat", { username: "SYSTEM", odcid: "SYSTEM", message, timestamp: Date.now(), isSystem: true });
+                    } catch (err) {
+                        console.error("[ChatService] /demo error:", err);
+                        client.send("chat", { username: "SYSTEM", odcid: "SYSTEM", message: "Failed to toggle demo mode.", timestamp: Date.now(), isSystem: true });
+                    }
+                    return;
+                }
+
                 if (command === "spawn_evil_tim") {
                     const hasAdmin = await hasGameAdminCapability(player.odcid);
                     if (!hasAdmin) {

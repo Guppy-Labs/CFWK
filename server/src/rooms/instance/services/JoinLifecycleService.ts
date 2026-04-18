@@ -16,9 +16,14 @@ import {
     resolveJoinState
 } from "./JoinStateResolver";
 import { initializeJoinedPlayerState, sendInitialJoinPayloads } from "./JoinPayloadService";
+import { wipePlayerGameplayData } from "./PlayerStateService";
 import { verifyJoinToken } from "../authority/JoinTokenAuthority";
 import { sanitizeEquippedRod, sanitizeEquippedUsables } from "../authority/EquipmentAuthority";
 import { sanitizeTutorialPatch } from "../authority/TutorialAuthority";
+import { validateClientInventoryEquipmentSnapshot } from "../authority/InventoryAuthority";
+
+const DEMO_DURATION_MS = 15 * 60 * 1000;
+const DEMO_START_RESEND_DELAY_MS = 800;
 
 export async function handleJoinLifecycle(
     room: InstanceRoomHost,
@@ -66,6 +71,63 @@ export async function handleJoinLifecycle(
     registerJoinInventoryAndProgressionHandlers(room);
 
     room.instanceManager.playerJoined(room.instanceId);
+
+    await startDemoTimerIfNeeded(room, client, joinState.odcid);
+}
+
+async function startDemoTimerIfNeeded(room: InstanceRoomHost, client: Client, odcid: string) {
+    try {
+        const user = await User.findById(odcid);
+        if (!user?.isDemo) return;
+
+        if (!room.demoTimers) room.demoTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+        const existing = room.demoTimers.get(client.sessionId);
+        if (existing) clearTimeout(existing);
+
+        const expiresAt = Date.now() + DEMO_DURATION_MS;
+        const demoPayload = { durationMs: DEMO_DURATION_MS, expiresAt };
+        sendDemoStartMessage(room, client, demoPayload, "initial");
+        // Resend shortly after join to avoid message timing races on client startup.
+        setTimeout(() => sendDemoStartMessage(room, client, demoPayload, "resend"), DEMO_START_RESEND_DELAY_MS);
+
+        console.log("[DemoMode] Demo session started", {
+            odcid,
+            sessionId: client.sessionId,
+            expiresAt
+        });
+
+        const timer = setTimeout(async () => {
+            room.demoTimers?.delete(client.sessionId);
+            try {
+                room.wipedUserIds.add(odcid);
+                client.leave(4006, "Demo session expired.");
+                await wipePlayerGameplayData(room, odcid);
+            } catch (err) {
+                console.error("[DemoMode] Failed to wipe demo user:", err);
+            }
+        }, DEMO_DURATION_MS);
+
+        room.demoTimers.set(client.sessionId, timer);
+    } catch (err) {
+        console.error("[DemoMode] Error checking demo status:", err);
+    }
+}
+
+function sendDemoStartMessage(
+    room: InstanceRoomHost,
+    client: Client,
+    payload: { durationMs: number; expiresAt: number },
+    attempt: "initial" | "resend"
+) {
+    const stillConnected = room.state?.players?.has(client.sessionId);
+    if (!stillConnected) return;
+    try {
+        client.send("demo:start", payload);
+        console.log(`[DemoMode] Sent demo:start (${attempt}) for session ${client.sessionId}`);
+    } catch (err) {
+        console.error(`[DemoMode] Failed to send demo:start (${attempt}):`, err);
+    }
 }
 
 export function registerJoinInventoryAndProgressionHandlers(room: InstanceRoomHost) {
@@ -107,19 +169,78 @@ export function registerJoinInventoryAndProgressionHandlers(room: InstanceRoomHo
         }
     });
 
-    room.onMessage("equipment:set", async (client, data: { equippedRodId?: string | null; equippedUsableIds?: Array<string | null> }) => {
+    room.onMessage("equipment:set", async (client, data: {
+        slots?: Array<{ index: number; itemId: string | null; count: number }>;
+        equippedRodId?: string | null;
+        equippedUsableIds?: Array<string | null>;
+        equippedUsableCounts?: number[];
+    }) => {
         room.markActivity(client);
         const player = room.state.players.get(client.sessionId);
         if (!player) return;
 
-        const { items: slots, equippedRodId: previousRodId, equippedUsableIds: previousUsables } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+        const {
+            items: slots,
+            equippedRodId: previousRodId,
+            equippedUsableIds: previousUsables,
+            equippedUsableCounts: previousUsableCounts
+        } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+
+        if (Array.isArray(data?.slots)) {
+            const validation = validateClientInventoryEquipmentSnapshot({
+                currentSlots: slots,
+                currentEquippedRodId: previousRodId,
+                currentEquippedUsableIds: previousUsables,
+                currentEquippedUsableCounts: previousUsableCounts,
+                candidateSlots: data.slots,
+                candidateEquippedRodId: data?.equippedRodId,
+                candidateEquippedUsableIds: data?.equippedUsableIds,
+                candidateEquippedUsableCounts: data?.equippedUsableCounts
+            });
+            if (!validation.valid) {
+                console.warn(`[InstanceRoom] Rejected equipment:set for ${player.odcid}: ${validation.reason}`);
+                client.send("inventory", {
+                    slots,
+                    totalSlots: DEFAULT_INVENTORY_SLOTS,
+                    equippedRodId: previousRodId,
+                    equippedUsableIds: previousUsables,
+                    equippedUsableCounts: previousUsableCounts
+                });
+                return;
+            }
+
+            room.deps.inventoryCache.setInventory(player.odcid, validation.slots);
+            room.deps.inventoryCache.setEquippedRod(player.odcid, validation.equippedRodId);
+            room.deps.inventoryCache.setEquippedUsables(
+                player.odcid,
+                validation.equippedUsableIds,
+                validation.equippedUsableCounts
+            );
+
+            client.send("inventory", {
+                slots: validation.slots,
+                totalSlots: DEFAULT_INVENTORY_SLOTS,
+                equippedRodId: validation.equippedRodId,
+                equippedUsableIds: validation.equippedUsableIds,
+                equippedUsableCounts: validation.equippedUsableCounts
+            });
+            return;
+        }
+
         const equippedRodId = sanitizeEquippedRod(slots, data?.equippedRodId, previousRodId);
         const equippedUsableIds = sanitizeEquippedUsables(slots, data?.equippedUsableIds, previousUsables);
+        const equippedUsableCounts = equippedUsableIds.map((itemId) => (itemId ? 1 : 0));
 
         room.deps.inventoryCache.setEquippedRod(player.odcid, equippedRodId);
-        room.deps.inventoryCache.setEquippedUsables(player.odcid, equippedUsableIds);
+        room.deps.inventoryCache.setEquippedUsables(player.odcid, equippedUsableIds, equippedUsableCounts);
 
-        client.send("inventory", { slots, totalSlots: DEFAULT_INVENTORY_SLOTS, equippedRodId, equippedUsableIds });
+        client.send("inventory", {
+            slots,
+            totalSlots: DEFAULT_INVENTORY_SLOTS,
+            equippedRodId,
+            equippedUsableIds,
+            equippedUsableCounts
+        });
     });
 
     room.onMessage("item:use", async (client, data: { slotIndex?: number }) => {
@@ -132,6 +253,7 @@ export function registerJoinInventoryAndProgressionHandlers(room: InstanceRoomHo
         if (slotIndex < 0) return;
 
         const equippedUsables = room.deps.inventoryCache.getEquippedUsables(player.odcid);
+        const equippedUsableCounts = room.deps.inventoryCache.getEquippedUsableCounts(player.odcid);
         if (slotIndex >= equippedUsables.length) return;
 
         const equippedItemId = equippedUsables[slotIndex];
@@ -141,20 +263,21 @@ export function registerJoinInventoryAndProgressionHandlers(room: InstanceRoomHo
         if (!isEquippableUsableItem(itemDef)) return;
 
         const { items: currentSlots } = await room.deps.inventoryCache.getInventoryState(player.odcid);
-        const inventoryCountForItem = currentSlots
-            .filter((slot: { itemId: string | null; count: number }) => slot.itemId === equippedItemId)
-            .reduce((sum: number, slot: { itemId: string | null; count: number }) => sum + slot.count, 0);
-
-        let updatedSlots = currentSlots;
-        if (inventoryCountForItem > 0) {
-            const removed = await room.deps.inventoryCache.removeItem(player.odcid, equippedItemId, 1);
-            if (!removed) return;
-            updatedSlots = removed;
-        }
-
+        const equippedCount = Number.isFinite(equippedUsableCounts[slotIndex])
+            ? Math.max(0, Math.floor(equippedUsableCounts[slotIndex]))
+            : 0;
+        if (equippedCount <= 0) return;
         const nextUsables = [...equippedUsables];
-        nextUsables[slotIndex] = null;
-        room.deps.inventoryCache.setEquippedUsables(player.odcid, nextUsables);
+        const nextUsableCounts = [...equippedUsableCounts];
+        const remainingCount = equippedCount - 1;
+        if (remainingCount <= 0) {
+            nextUsables[slotIndex] = null;
+            nextUsableCounts[slotIndex] = 0;
+        } else {
+            nextUsables[slotIndex] = equippedItemId;
+            nextUsableCounts[slotIndex] = remainingCount;
+        }
+        room.deps.inventoryCache.setEquippedUsables(player.odcid, nextUsables, nextUsableCounts);
 
         const guidedTutorial = room.tutorialStateBySession.get(client.sessionId);
         const forceGuideFoodHeal = guidedTutorial?.forceFoodGuideHeal === true && equippedItemId === "yekberries";
@@ -194,12 +317,17 @@ export function registerJoinInventoryAndProgressionHandlers(room: InstanceRoomHo
             }
         }
 
-        const { equippedRodId, equippedUsableIds } = await room.deps.inventoryCache.getInventoryState(player.odcid);
+        const {
+            equippedRodId,
+            equippedUsableIds,
+            equippedUsableCounts: equippedUsableCountsAfterUse
+        } = await room.deps.inventoryCache.getInventoryState(player.odcid);
         client.send("inventory", {
-            slots: updatedSlots,
+            slots: currentSlots,
             totalSlots: DEFAULT_INVENTORY_SLOTS,
             equippedRodId,
-            equippedUsableIds
+            equippedUsableIds,
+            equippedUsableCounts: equippedUsableCountsAfterUse
         });
         client.send("inventory:consumed", {
             itemId: equippedItemId,

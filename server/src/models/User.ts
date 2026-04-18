@@ -42,6 +42,7 @@ export interface IUser extends Document {
   inventory?: { index: number; itemId: string | null; count: number }[];
   equippedRodId?: string | null;
   equippedUsableIds?: Array<string | null>;
+  equippedUsableCounts?: number[];
   glimmerbowl?: GlimmerbowlEntry[];
   glimmerbowlUnlocked?: boolean;
   hasOwnedScar?: boolean;
@@ -60,6 +61,8 @@ export interface IUser extends Document {
   hearts?: IPlayerHeartsState;
   money?: number;
   advancements?: IAdvancementsState;
+  shopWares?: Record<string, Record<string, { available: number; lastReplenishAt: number | null }>>;
+  isDemo?: boolean;
 }
 
 type RawInventoryEntry = { index?: number; itemId?: string | null; count?: number };
@@ -174,6 +177,10 @@ const UserSchema: Schema = new Schema({
   equippedUsableIds: {
     type: [String],
     default: () => [null, null, null, null]
+  },
+  equippedUsableCounts: {
+    type: [Number],
+    default: () => [0, 0, 0, 0]
   },
   glimmerbowl: {
     type: [
@@ -296,7 +303,9 @@ const UserSchema: Schema = new Schema({
   advancements: {
     type: Schema.Types.Mixed,
     default: () => createDefaultAdvancements()
-  }
+  },
+  shopWares: { type: Schema.Types.Mixed, default: () => ({}) },
+  isDemo: { type: Boolean, default: false }
 }, {
   timestamps: true
 });

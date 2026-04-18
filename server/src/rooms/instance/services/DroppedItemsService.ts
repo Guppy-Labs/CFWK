@@ -65,13 +65,27 @@ export function tryRefineDropsFromMovement(
     nextY: number,
     now: number
 ) {
+    if (!(room.dropRefineInsideByUserAndDrop instanceof Map)) {
+        room.dropRefineInsideByUserAndDrop = new Map<string, boolean>();
+    }
+
     room.state.droppedItems.forEach((drop: any, dropId: string) => {
         if (!drop.refinementResultItemId || drop.refinementRequiredSteps <= 0) return;
         if (!drop.itemId || !DROP_REFINEMENT_RECIPES_BY_SOURCE.has(drop.itemId)) return;
         const distance = Math.hypot(drop.x - nextX, drop.y - nextY);
-        if (distance > DROP_REFINEMENT_TOUCH_RADIUS_PX) return;
-
         const touchKey = `${player.odcid}:${dropId}`;
+        const isInsideRefineRadius = distance <= DROP_REFINEMENT_TOUCH_RADIUS_PX;
+        const wasInsideRefineRadius = room.dropRefineInsideByUserAndDrop.get(touchKey) === true;
+        if (!isInsideRefineRadius) {
+            if (wasInsideRefineRadius) {
+                room.dropRefineInsideByUserAndDrop.set(touchKey, false);
+            }
+            return;
+        }
+        if (wasInsideRefineRadius) return;
+
+        // Only count a stomp when the player re-enters the drop after leaving it.
+        room.dropRefineInsideByUserAndDrop.set(touchKey, true);
         const lastTouchAt = room.dropRefineTouchByUserAndDrop.get(touchKey) ?? 0;
         if ((now - lastTouchAt) < DROP_REFINEMENT_TOUCH_COOLDOWN_MS) return;
         room.dropRefineTouchByUserAndDrop.set(touchKey, now);
@@ -82,8 +96,9 @@ export function tryRefineDropsFromMovement(
         const fromItemId = drop.itemId;
         const toLiquidItemId = drop.refinementResultItemId;
         const liquidRecipe = LIQUID_COLLECTION_RECIPES_BY_LIQUID.get(toLiquidItemId);
+        const preservedAmount = Math.max(1, Math.floor(Number.isFinite(drop.amount) ? Number(drop.amount) : 1));
         drop.itemId = toLiquidItemId;
-        drop.amount = 1;
+        drop.amount = preservedAmount;
         drop.refinementProgress = 0;
         drop.refinementRequiredSteps = 0;
         drop.refinementResultItemId = "";
