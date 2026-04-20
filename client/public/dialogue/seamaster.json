@@ -21,6 +21,7 @@
                             "id": "phrase_wrong_1",
                             "textKey": "dialogue.npc.seamaster.bowlThatShines.passphrase.choice.0",
                             "text": "The glass collector sent me.",
+                            "suppressNpcInteractSend": true,
                             "lines": [
                                 {
                                     "speaker": "npc",
@@ -201,6 +202,7 @@
                             "id": "phrase_wrong_2",
                             "textKey": "dialogue.npc.seamaster.bowlThatShines.passphrase.choice.2",
                             "text": "The shard keeper sent me.",
+                            "suppressNpcInteractSend": true,
                             "lines": [
                                 {
                                     "speaker": "npc",

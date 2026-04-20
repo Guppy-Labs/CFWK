@@ -66,6 +66,7 @@ export type DialogueOption = {
     lines?: DialogueLine[];
     actions?: DialogueAction[];
     branches?: DialogueOptionBranch[];
+    suppressNpcInteractSend?: boolean;
 };
 
 export type DialogueData = {

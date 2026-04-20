@@ -167,7 +167,7 @@
 				"description": "Apprenez le raffinage alimentaire avec le Marchand : écrasez des yekberries au sol pour faire un liquide, mettez-le en bocal, puis revenez le voir."
 			},
 			"village_weirdo": {
-				"description": "Parlez au Voyageur, récupérez 5 yekberries, puis revenez pour votre récompense."
+				"description": "Parlez au Voyageur, récupérez 1 yekberry, puis revenez pour votre récompense."
 			},
 			"wares_galore": {
 				"description": "Parlez au Marchand de votre nouvelle pièce et découvrez ses marchandises."
@@ -426,17 +426,17 @@
 					},
 					"villageWeirdo": {
 						"intro": {
-							"0": "Demande de voyageur : peux-tu me rapporter 5 yekberries ?",
+							"0": "Demande de voyageur : peux-tu me rapporter 1 yekberry ?",
 							"1": "Les objectifs précis forgent le caractère. S'il te plaît, merci.",
 							"player": {
-								"0": "Cinq ? C'est étrangement précis."
+								"0": "Un ? C'est étrangement précis."
 							}
 						},
 						"collect": {
-							"0": "Il me faut toujours 5 yekberries. Reviens avec les cinq et ce sera rentable."
+							"0": "Il me faut toujours 1 yekberry. Reviens avec une et ce sera rentable."
 						},
 						"return": {
-							"0": "Tu es vraiment revenu avec cinq yekberries. C'est très généreux.",
+							"0": "Tu es vraiment revenu avec une yekberry. C'est très généreux.",
 							"1": "Aveu : c'était une expérience sociale. Je voulais voir s'il restait des gens généreux à Anchor Hollow.",
 							"2": "D'accord, c'est vrai. Mon budget est... moins spectaculaire.",
 							"3": "Je peux te donner une pièce d'argent. Ce n'est pas grand-chose, mais ça te servira.",

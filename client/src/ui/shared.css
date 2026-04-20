@@ -6,7 +6,8 @@
 /* Font Import */
 @font-face {
     font-family: 'Minecraft';
-    src: url('https://cdn.jsdelivr.net/gh/IdreesInc/Minecraft-Font@master/Minecraft.otf') format('opentype');
+    src: url('/fonts/Minecraft.otf') format('opentype');
+    font-display: swap;
 }
 
 /* --- Toasts --- */

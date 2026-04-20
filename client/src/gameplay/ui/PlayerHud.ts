@@ -255,6 +255,35 @@ export class PlayerHud {
         return new Phaser.Geom.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height);
     }
 
+    getHeartsRowScreenRect(): Phaser.Geom.Rectangle | null {
+        if (this.hearts.length === 0) return null;
+
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+
+        for (const heart of this.hearts) {
+            const bounds = heart.getBounds();
+            minX = Math.min(minX, bounds.x);
+            minY = Math.min(minY, bounds.y);
+            maxX = Math.max(maxX, bounds.right);
+            maxY = Math.max(maxY, bounds.bottom);
+        }
+
+        if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+            return null;
+        }
+
+        const padding = 6;
+        return new Phaser.Geom.Rectangle(
+            Math.max(0, minX - padding),
+            Math.max(0, minY - padding),
+            Math.max(1, (maxX - minX) + padding * 2),
+            Math.max(1, (maxY - minY) + padding * 2)
+        );
+    }
+
     update(delta: number) {
         const deltaSeconds = delta / 1000;
         const diff = this.stamina - this.displayStamina;

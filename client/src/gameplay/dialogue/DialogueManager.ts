@@ -363,6 +363,9 @@ export class DialogueManager {
 
         const selected = line.options.find((option) => option.id === optionId);
         if (!selected) return;
+        if (selected.suppressNpcInteractSend === true) {
+            this.suppressNpcInteractSend = true;
+        }
 
         const selectedText = selected.textKey
             ? this.localeManager.t(selected.textKey, undefined, selected.text)

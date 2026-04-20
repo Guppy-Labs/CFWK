@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cute Fish With Knives</title>
+<style>
+@font-face {
+  font-family: 'Minecraft';
+  src: url('../client/public/fonts/Minecraft.otf') format('opentype');
+  font-display: block;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #080c18; }
+#c, #fx { position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+#fx { pointer-events: none; }
+#flash {
+  position: fixed; inset: 0; background: #c8d8ff;
+  opacity: 0; pointer-events: none;
+}
+#fade {
+  position: fixed; inset: 0; background: #080c18;
+  opacity: 0; pointer-events: none; transition: opacity 2.2s ease-in;
+}
+#fade.on { opacity: 1; }
+#fadein {
+  position: fixed; inset: 0; background: #080c18;
+  opacity: 1; pointer-events: none; transition: opacity 1.8s ease-out;
+}
+#fadein.off { opacity: 0; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<canvas id="fx"></canvas>
+<div id="flash"></div>
+<div id="fade"></div>
+<div id="fadein"></div>
+<script>
+(function () {
+  'use strict';
+
+  // ═══════════════════════════════════════════════════════════
+  // Configuration
+  // ═══════════════════════════════════════════════════════════
+
+  var CAM = { eye: [0, 2.8, 6], center: [0, 0.6, -5], up: [0, 1, 0],
+              fov: 50 * Math.PI / 180, near: 0.1, far: 80 };
+
+  var WP = { minX: -22, maxX: 22, minZ: -30, maxZ: 5, gx: 120, gz: 100 };
+  WP.sx = WP.maxX - WP.minX;
+  WP.sz = WP.maxZ - WP.minZ;
+
+  var SIM = { w: 256, h: 256, damp: 0.994 };
+
+  var FISH_VY0 = 5.5, FISH_G = 11, FISH_SCALE = 0.9;
+  var FISH_DUR = 2 * FISH_VY0 / FISH_G;
+  var TEXT_DELAY = FISH_DUR + 0.3;
+
+  var EVENTS = [
+    { t: 1.2,  fishIdx: 0, textIdx: 0, uv: [0.50, 0.62], fishVx:  0.5,
+      textDur: 5.5, textPeakY: 0.6, textScale: 5.0, headOn: true },
+    { t: 7.0,  fishIdx: 1, textIdx: 1, uv: [0.60, 0.68], fishVx: -1.2,
+      textDur: 4.0, textPeakY: 1.2, textScale: 0.55 },
+    { t: 11.5, fishIdx: 2, textIdx: 2, uv: [0.38, 0.56], fishVx:  1.2,
+      textDur: 4.0, textPeakY: 1.2, textScale: 0.55 },
+    { t: 16.0, fishIdx: 3, textIdx: 3, uv: [0.55, 0.70], fishVx: -1.5,
+      textDur: 4.0, textPeakY: 1.2, textScale: 0.55 },
+    { t: 21.5, fishIdx: 4, textIdx: 4, uv: [0.42, 0.65], fishVx: -0.5,
+      textDur: 3.5, textPeakY: 1.1, textScale: 0.38 },
+    { t: 21.5, fishIdx: 5, textIdx: 5, uv: [0.58, 0.72], fishVx:  0.5,
+      textDur: 3.5, textPeakY: 1.1, textScale: 0.38 },
+    { t: 26.5, fishIdx: 6, textIdx: 6, uv: [0.43, 0.60], fishVx: -0.5,
+      textDur: 3.5, textPeakY: 1.0, textScale: 0.38 },
+    { t: 26.5, fishIdx: 7, textIdx: 7, uv: [0.57, 0.67], fishVx:  0.5,
+      textDur: 3.5, textPeakY: 1.0, textScale: 0.38 },
+    { t: 31.5, fishIdx: 8, textIdx: 8, uv: [0.41, 0.70], fishVx: -0.6,
+      textDur: 3.5, textPeakY: 1.1, textScale: 0.38 },
+    { t: 31.5, fishIdx: 9, textIdx: 9, uv: [0.59, 0.62], fishVx:  0.6,
+      textDur: 3.5, textPeakY: 1.1, textScale: 0.38 }
+  ];
+
+  var FADE_T = 37.0;
+
+  var AMB_VY0 = 3.8, AMB_G = 9.5, AMB_DUR = 2 * AMB_VY0 / AMB_G;
+  var AMB_FISH = [];
+  (function genAmbient() {
+    function seeded(i) { var x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+    var count = 14;
+    for (var i = 0; i < count; i++) {
+      var r0 = seeded(i), r1 = seeded(i+50), r2 = seeded(i+100), r3 = seeded(i+150), r4 = seeded(i+200);
+      var tBase = 2.0 + r0 * (FADE_T - 4.0);
+      AMB_FISH.push({
+        t: tBase,
+        uv: [0.12 + r1 * 0.76, 0.35 + r2 * 0.55],
+        vx: (r3 < 0.5 ? -1 : 1) * (0.3 + r4 * 0.5),
+        fishIdx: Math.floor(r2 * 10) % 10,
+        scale: 0.35 + r3 * 0.2
+      });
+    }
+  })();
+
+  var FISH_PATHS = [
+    '../client/public/assets/fish/tile036.png',
+    '../client/public/assets/fish/tile007.png',
+    '../client/public/assets/fish/tile011.png',
+    '../client/public/assets/fish/tile003.png',
+    '../client/public/assets/fish/tile000.png',
+    '../client/public/assets/fish/tile002.png',
+    '../client/public/assets/fish/tile005.png',
+    '../client/public/assets/fish/tile008.png',
+    '../client/public/assets/fish/tile010.png',
+    '../client/public/assets/fish/tile012.png'
+  ];
+
+  var LIGHT = null;
+
+  // ═══════════════════════════════════════════════════════════
+  // Math
+  // ═══════════════════════════════════════════════════════════
+
+  function v3s(a,b){return[a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
+  function v3c(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+  function v3d(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+  function v3n(v){var l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);return l>1e-7?[v[0]/l,v[1]/l,v[2]/l]:[0,0,0];}
+  function m4(){var m=new Float32Array(16);m[0]=m[5]=m[10]=m[15]=1;return m;}
+  function m4p(fov,asp,n,f){var t=1/Math.tan(fov/2),nf=1/(n-f);return new Float32Array([t/asp,0,0,0,0,t,0,0,0,0,(f+n)*nf,-1,0,0,2*f*n*nf,0]);}
+  function m4l(eye,ctr,up){var z=v3n(v3s(eye,ctr)),x=v3n(v3c(up,z)),y=v3c(z,x);return new Float32Array([x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-v3d(x,eye),-v3d(y,eye),-v3d(z,eye),1]);}
+  function m4m(a,b){var o=new Float32Array(16);for(var i=0;i<4;i++)for(var j=0;j<4;j++)o[j*4+i]=a[i]*b[j*4]+a[4+i]*b[j*4+1]+a[8+i]*b[j*4+2]+a[12+i]*b[j*4+3];return o;}
+  function m4t(x,y,z){var o=m4();o[12]=x;o[13]=y;o[14]=z;return o;}
+  function m4rx(a){var c=Math.cos(a),s=Math.sin(a),o=m4();o[5]=c;o[6]=s;o[9]=-s;o[10]=c;return o;}
+  function m4ry(a){var c=Math.cos(a),s=Math.sin(a),o=m4();o[0]=c;o[2]=-s;o[8]=s;o[10]=c;return o;}
+  function m4rz(a){var c=Math.cos(a),s=Math.sin(a),o=m4();o[0]=c;o[1]=s;o[4]=-s;o[5]=c;return o;}
+  function m4sc(x,y,z){var o=m4();o[0]=x;o[5]=y;o[10]=z;return o;}
+
+  LIGHT = v3n([0.2, 0.8, 0.8]);
+
+  function easeOut(t){return 1-(1-t)*(1-t)*(1-t);}
+  function easeIn(t){return t*t*t;}
+
+  function textYCurve(p, pk, sub) {
+    if (p < 0.18) return sub + (pk - sub) * easeOut(p / 0.18);
+    if (p < 0.72) return pk;
+    return pk + (sub - pk) * easeIn((p - 0.72) / 0.28);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // WebGL bootstrap
+  // ═══════════════════════════════════════════════════════════
+
+  var el = document.getElementById('c');
+  var gl = el.getContext('webgl2', { antialias: true, alpha: false });
+  if (!gl) { document.body.textContent = 'WebGL 2 required'; return; }
+  gl.getExtension('EXT_color_buffer_float');
+
+  var dpr = window.devicePixelRatio || 1;
+  var W = window.innerWidth, H = window.innerHeight;
+  el.width = W * dpr; el.height = H * dpr;
+  el.style.width = W + 'px'; el.style.height = H + 'px';
+
+  gl.enable(gl.DEPTH_TEST);
+  gl.clearColor(0.031, 0.047, 0.094, 1);
+
+  function mkS(t,s){var sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(sh));return sh;}
+  function mkP(vs,fs){var p=gl.createProgram();gl.attachShader(p,mkS(gl.VERTEX_SHADER,vs));gl.attachShader(p,mkS(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))console.error(gl.getProgramInfoLog(p));return p;}
+  function ul(p,n){return gl.getUniformLocation(p,n);}
+
+  // ═══════════════════════════════════════════════════════════
+  // FX canvas (2D particles overlay)
+  // ═══════════════════════════════════════════════════════════
+
+  var fxEl = document.getElementById('fx');
+  var fxCtx = fxEl.getContext('2d');
+  fxEl.width = W; fxEl.height = H;
+  fxEl.style.width = W + 'px'; fxEl.style.height = H + 'px';
+
+  // ═══════════════════════════════════════════════════════════
+  // Audio
+  // ═══════════════════════════════════════════════════════════
+
+  var ac;
+  try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+  document.addEventListener('click', function () {
+    if (ac && ac.state === 'suspended') ac.resume();
+  }, { once: true });
+
+  function playSplash(vol) {
+    if (!ac) return;
+    try {
+      var dur = 0.45, sr = ac.sampleRate;
+      var buf = ac.createBuffer(1, sr * dur | 0, sr);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < d.length; i++) {
+        var t = i / sr;
+        d[i] = (Math.random() * 2 - 1) * Math.exp(-t * 11) * vol;
+      }
+      var src = ac.createBufferSource(); src.buffer = buf;
+      var flt = ac.createBiquadFilter(); flt.type = 'lowpass';
+      flt.frequency.value = 500 + vol * 500; flt.Q.value = 0.8;
+      src.connect(flt); flt.connect(ac.destination); src.start();
+    } catch(e) {}
+  }
+
+  function playRise() {
+    if (!ac) return;
+    try {
+      var now = ac.currentTime;
+      var osc = ac.createOscillator(); osc.type = 'sine';
+      osc.frequency.setValueAtTime(120, now);
+      osc.frequency.exponentialRampToValueAtTime(500, now + 0.35);
+      var g = ac.createGain();
+      g.gain.setValueAtTime(0.03, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+      var flt = ac.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 700;
+      osc.connect(flt); flt.connect(g); g.connect(ac.destination);
+      osc.start(now); osc.stop(now + 0.6);
+    } catch(e) {}
+  }
+
+  function startAmbient() {
+    if (!ac) return null;
+    try {
+      var sr = ac.sampleRate, len = sr * 3 | 0;
+      var buf = ac.createBuffer(1, len, sr);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * 0.006;
+      var src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+      var flt = ac.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 250;
+      var g = ac.createGain(); g.gain.value = 0.4;
+      src.connect(flt); flt.connect(g); g.connect(ac.destination); src.start();
+      return g;
+    } catch(e) { return null; }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Shaders
+  // ═══════════════════════════════════════════════════════════
+
+  var QUAD_VS = '#version 300 es\nlayout(location=0)in vec2 P;out vec2 uv;void main(){uv=P*.5+.5;gl_Position=vec4(P,0,1);}';
+
+  var SIM_FS = [
+    '#version 300 es','precision highp float;',
+    'uniform sampler2D S;uniform vec2 tx;uniform float dp;',
+    'in vec2 uv;out vec4 o;','void main(){',
+    '  vec2 s=texture(S,uv).rg;float h=s.r,v=s.g;',
+    '  float L=texture(S,uv-vec2(tx.x,0)).r,R=texture(S,uv+vec2(tx.x,0)).r,',
+    '        U=texture(S,uv+vec2(0,tx.y)).r,D=texture(S,uv-vec2(0,tx.y)).r;',
+    '  v=(v+((L+R+U+D)*.25-h)*1.8)*dp;h+=v;',
+    '  float e=min(min(uv.x,1.-uv.x),min(uv.y,1.-uv.y));',
+    '  float a=smoothstep(0.,.1,e);h*=mix(.92,1.,a);v*=mix(.82,1.,a);',
+    '  o=vec4(h,v,0,1);','}'
+  ].join('\n');
+
+  var DROP_FS = [
+    '#version 300 es','precision highp float;',
+    'uniform sampler2D S;uniform vec2 pos;uniform float rad,str;uniform vec2 sz;',
+    'in vec2 uv;out vec4 o;','void main(){',
+    '  vec2 s=texture(S,uv).rg;',
+    '  s.g+=str*smoothstep(rad,0.,length((uv-pos)*sz));',
+    '  o=vec4(s.rg,0,1);','}'
+  ].join('\n');
+
+  var WATER_VS = [
+    '#version 300 es','layout(location=0)in vec3 P;',
+    'uniform mat4 VP;uniform sampler2D R;uniform float hs;uniform vec2 wm,ws;',
+    'out vec2 ruv;out vec3 wp;','void main(){',
+    '  ruv=(P.xz-wm)/ws;',
+    '  float h=textureLod(R,ruv,0.).r;',
+    '  vec3 p=vec3(P.x,P.y+h*hs,P.z);',
+    '  wp=p;gl_Position=VP*vec4(p,1);','}'
+  ].join('\n');
+
+  var WATER_FS = [
+    '#version 300 es','precision highp float;',
+    'uniform sampler2D R,WT;',
+    'uniform vec2 tx;uniform float tm;uniform vec3 cp;',
+    'in vec2 ruv;in vec3 wp;out vec4 o;','void main(){',
+    '  float h=texture(R,ruv).r;',
+    '  float hL=texture(R,ruv-vec2(tx.x,0)).r,hR=texture(R,ruv+vec2(tx.x,0)).r,',
+    '        hU=texture(R,ruv+vec2(0,tx.y)).r,hD=texture(R,ruv-vec2(0,tx.y)).r;',
+    '  vec3 n=normalize(vec3((hL-hR)*8.,1.,(hD-hU)*8.));',
+    '  vec2 dp=n.xz*.015;',
+    '  float ts=.8;vec2 wu=wp.xz*ts+dp;',
+    '  vec2 tp=floor(wu);',
+    '  float fi=mod(floor(tm*2.5+tp.x*.3+tp.y*.5),8.);',
+    '  vec2 tu=vec2((fract(wu.x)+fi)/8.,fract(wu.y));',
+    '  vec4 wc=texture(WT,tu);',
+    '  vec3 L=normalize(vec3(.3,1.,.4));',
+    '  float df=max(dot(n,L),0.);',
+    '  wc.rgb*=.38+df*.22;',
+    '  vec3 V=normalize(cp-wp),H=normalize(L+V);',
+    '  wc.rgb+=pow(max(dot(n,H),0.),80.)*.22;',
+    '  float lap=(hL+hR+hU+hD)-4.*h;',
+    '  wc.rgb+=lap*vec3(.04,.05,.06);',
+    '  float d=length(wp-cp);',
+    '  float fog=smoothstep(16.,30.,d);',
+    '  wc.rgb=mix(wc.rgb,vec3(.031,.047,.094),fog);',
+    '  o=vec4(wc.rgb,1.);','}'
+  ].join('\n');
+
+  var SPRITE_VS = [
+    '#version 300 es',
+    'layout(location=0)in vec3 P;layout(location=1)in vec2 U;',
+    'uniform mat4 VP,M;out vec2 uv;',
+    'void main(){uv=U;gl_Position=VP*M*vec4(P,1);}'
+  ].join('\n');
+
+  var SPRITE_FS = [
+    '#version 300 es','precision highp float;',
+    'uniform sampler2D T;in vec2 uv;out vec4 o;',
+    'void main(){o=texture(T,uv);if(o.a<.01)discard;}'
+  ].join('\n');
+
+  var TEXT_VS = [
+    '#version 300 es',
+    'layout(location=0)in vec3 P;layout(location=1)in vec3 N;',
+    'uniform mat4 VP,M;out vec3 vN,vW;',
+    'void main(){vec4 w=M*vec4(P,1);vW=w.xyz;vN=mat3(M)*N;gl_Position=VP*w;}'
+  ].join('\n');
+
+  var TEXT_FS = [
+    '#version 300 es','precision highp float;',
+    'uniform vec3 uCol,uL,uC;uniform float uA;',
+    'in vec3 vN,vW;out vec4 o;',
+    'void main(){',
+    '  vec3 n=normalize(vN);',
+    '  float df=max(dot(n,uL),0.);',
+    '  vec3 c=uCol*(.28+.72*df);',
+    '  vec3 V=normalize(uC-vW),H=normalize(uL+V);',
+    '  c+=pow(max(dot(n,H),0.),48.)*.18;',
+    '  o=vec4(c,uA);','}'
+  ].join('\n');
+
+  // ═══════════════════════════════════════════════════════════
+  // Programs + uniforms
+  // ═══════════════════════════════════════════════════════════
+
+  var simP=mkP(QUAD_VS,SIM_FS),simU={S:ul(simP,'S'),tx:ul(simP,'tx'),dp:ul(simP,'dp')};
+  var drpP=mkP(QUAD_VS,DROP_FS),drpU={S:ul(drpP,'S'),pos:ul(drpP,'pos'),rad:ul(drpP,'rad'),str:ul(drpP,'str'),sz:ul(drpP,'sz')};
+  var watP=mkP(WATER_VS,WATER_FS),watU={VP:ul(watP,'VP'),R:ul(watP,'R'),hs:ul(watP,'hs'),wm:ul(watP,'wm'),ws:ul(watP,'ws'),tx:ul(watP,'tx'),tm:ul(watP,'tm'),cp:ul(watP,'cp'),WT:ul(watP,'WT')};
+  var sprP=mkP(SPRITE_VS,SPRITE_FS),sprU={VP:ul(sprP,'VP'),M:ul(sprP,'M'),T:ul(sprP,'T')};
+  var txtP=mkP(TEXT_VS,TEXT_FS),txtU={VP:ul(txtP,'VP'),M:ul(txtP,'M'),uCol:ul(txtP,'uCol'),uL:ul(txtP,'uL'),uC:ul(txtP,'uC'),uA:ul(txtP,'uA')};
+
+  // ═══════════════════════════════════════════════════════════
+  // Geometry
+  // ═══════════════════════════════════════════════════════════
+
+  var qVAO=gl.createVertexArray();gl.bindVertexArray(qVAO);
+  var qB=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,qB);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.bindVertexArray(null);
+
+  var nX=WP.gx,nZ=WP.gz,wVD=new Float32Array((nX+1)*(nZ+1)*3),wi=0;
+  for(var iz=0;iz<=nZ;iz++)for(var ix=0;ix<=nX;ix++){wVD[wi++]=WP.minX+(ix/nX)*WP.sx;wVD[wi++]=0;wVD[wi++]=WP.minZ+(iz/nZ)*WP.sz;}
+  var wID=new Uint32Array(nX*nZ*6),ii=0;
+  for(iz=0;iz<nZ;iz++)for(ix=0;ix<nX;ix++){var a=iz*(nX+1)+ix,b=a+1,c=a+nX+1,d=c+1;wID[ii++]=a;wID[ii++]=c;wID[ii++]=b;wID[ii++]=b;wID[ii++]=c;wID[ii++]=d;}
+  var wVAO=gl.createVertexArray();gl.bindVertexArray(wVAO);
+  var wVB=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,wVB);gl.bufferData(gl.ARRAY_BUFFER,wVD,gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  var wIB=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,wIB);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,wID,gl.STATIC_DRAW);
+  gl.bindVertexArray(null);var wIC=wID.length;
+
+  var sVAO=gl.createVertexArray();gl.bindVertexArray(sVAO);
+  var sB=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,sB);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-.5,-.5,0,0,0,.5,-.5,0,1,0,-.5,.5,0,0,1,.5,.5,0,1,1]),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,20,0);
+  gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,2,gl.FLOAT,false,20,12);gl.bindVertexArray(null);
+
+  // ═══════════════════════════════════════════════════════════
+  // FBOs
+  // ═══════════════════════════════════════════════════════════
+
+  function mkFBO(w,h){
+    var fb=gl.createFramebuffer(),tx=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D,tx);gl.texImage2D(gl.TEXTURE_2D,0,gl.RG16F,w,h,0,gl.RG,gl.HALF_FLOAT,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tx,0);
+    return{fb:fb,tx:tx};
+  }
+  var fboA=mkFBO(SIM.w,SIM.h),fboB=mkFBO(SIM.w,SIM.h);
+  gl.clearColor(0,0,0,0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fboA.fb);gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fboB.fb);gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.clearColor(0.031,0.047,0.094,1);
+  function swap(){var t=fboA;fboA=fboB;fboB=t;}
+
+  function addDrop(x,y,r,s){
+    gl.bindFramebuffer(gl.FRAMEBUFFER,fboB.fb);gl.viewport(0,0,SIM.w,SIM.h);
+    gl.useProgram(drpP);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fboA.tx);
+    gl.uniform1i(drpU.S,0);gl.uniform2f(drpU.pos,x,y);gl.uniform1f(drpU.rad,r);gl.uniform1f(drpU.str,s);gl.uniform2f(drpU.sz,SIM.w,SIM.h);
+    gl.bindVertexArray(qVAO);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);swap();
+  }
+  function stepSim(){
+    gl.bindFramebuffer(gl.FRAMEBUFFER,fboB.fb);gl.viewport(0,0,SIM.w,SIM.h);
+    gl.useProgram(simP);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fboA.tx);
+    gl.uniform1i(simU.S,0);gl.uniform2f(simU.tx,1/SIM.w,1/SIM.h);gl.uniform1f(simU.dp,SIM.damp);
+    gl.bindVertexArray(qVAO);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);swap();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Assets
+  // ═══════════════════════════════════════════════════════════
+
+  function loadImg(url){return new Promise(function(r,j){var i=new Image();i.onload=function(){r(i);};i.onerror=function(){j(new Error(url));};i.src=url;});}
+  function mkTex(img){
+    var tx=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tx);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);return tx;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Font atlas → glyph pixel masks
+  // ═══════════════════════════════════════════════════════════
+
+  function parseFontAtlas(img) {
+    var cv = document.createElement('canvas');
+    cv.width = img.width; cv.height = img.height;
+    var ctx = cv.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    var data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    var cw = img.width / 16, ch = img.height / 16;
+    var glyphs = {};
+
+    for (var code = 0x20; code <= 0x7e; code++) {
+      var row = Math.floor((code - 0x20) / 16) + 2;
+      var col = (code - 0x20) % 16;
+      var ox = col * cw, oy = row * ch;
+      var mask = [], maxCol = -1;
+
+      for (var py = 0; py < ch; py++) {
+        var rm = [];
+        for (var px = 0; px < cw; px++) {
+          var idx = ((oy + py) * cv.width + (ox + px)) * 4;
+          var filled = data[idx + 3] > 128;
+          rm.push(filled);
+          if (filled && px > maxCol) maxCol = px;
+        }
+        mask.push(rm);
+      }
+
+      glyphs[String.fromCharCode(code)] = {
+        mask: mask,
+        w: code === 0x20 ? 3 : Math.max(maxCol + 1, 1),
+        h: ch
+      };
+    }
+    return { glyphs: glyphs, cellH: ch };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 3D voxel text mesh builder
+  // ═══════════════════════════════════════════════════════════
+
+  function buildTextMesh(glyphs, lines, lineH) {
+    var grid = {};
+    var totalW = 0, totalH = 0;
+
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li], cx = 0;
+      for (var ci = 0; ci < line.length; ci++) {
+        var g = glyphs[line[ci]];
+        if (!g) continue;
+        for (var py = 0; py < g.h; py++) {
+          for (var px = 0; px < g.w; px++) {
+            if (g.mask[py] && g.mask[py][px]) {
+              var gx = cx + px;
+              var gy = li * lineH + py;
+              grid[gx + ',' + gy] = true;
+              if (gx + 1 > totalW) totalW = gx + 1;
+              if (gy + 1 > totalH) totalH = gy + 1;
+            }
+          }
+        }
+        cx += g.w + 1;
+      }
+    }
+
+    var verts = [], indices = [], vi = 0;
+    var ox = totalW / 2;
+
+    function has(x, y) { return grid[x + ',' + y] === true; }
+
+    function face(p0, p1, p2, p3, nx, ny, nz) {
+      verts.push(
+        p0[0],p0[1],p0[2], nx,ny,nz,
+        p1[0],p1[1],p1[2], nx,ny,nz,
+        p2[0],p2[1],p2[2], nx,ny,nz,
+        p3[0],p3[1],p3[2], nx,ny,nz
+      );
+      indices.push(vi, vi+1, vi+2, vi, vi+2, vi+3);
+      vi += 4;
+    }
+
+    var keys = Object.keys(grid);
+    for (var ki = 0; ki < keys.length; ki++) {
+      var parts = keys[ki].split(',');
+      var gxp = parseInt(parts[0]), gyp = parseInt(parts[1]);
+      var x0 = gxp - ox, x1 = x0 + 1;
+      var y0 = totalH - gyp - 1, y1 = y0 + 1;
+      var halfW = totalW / 2;
+      var curveAmt = 0.06 * totalW;
+      var xMid = gxp - halfW + 0.5;
+      var xn = halfW > 0 ? xMid / halfW : 0;
+      var zOff = curveAmt * xn * xn;
+      var z0 = zOff, z1 = 5 + zOff;
+
+      face([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1], 0,0,1);
+      face([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0], 0,0,-1);
+      if (!has(gxp+1,gyp)) face([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1], 1,0,0);
+      if (!has(gxp-1,gyp)) face([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0], -1,0,0);
+      if (!has(gxp,gyp-1)) face([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0], 0,1,0);
+      if (!has(gxp,gyp+1)) face([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1], 0,-1,0);
+    }
+
+    var vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    var vb = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+    var ib = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(indices), gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+
+    return { vao: vao, count: indices.length, w: totalW, h: totalH };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Splash pattern builder
+  // ═══════════════════════════════════════════════════════════
+
+  function buildSplashes() {
+    var all = [];
+    EVENTS.forEach(function (ev) {
+      var cx = ev.uv[0], cy = ev.uv[1];
+      var reUV = [(WP.minX + cx * WP.sx + ev.fishVx * FISH_DUR - WP.minX) / WP.sx, cy];
+
+      // Fish exit splash
+      all.push({ t: ev.t, x: cx, y: cy, r: 8, s: 0.5 });
+      for (var i = 0; i < 7; i++) {
+        var a = (i/7)*Math.PI*2;
+        all.push({ t: ev.t+0.03, x: cx+Math.cos(a)*0.03, y: cy+Math.sin(a)*0.03, r: 4, s: 0.2 });
+      }
+
+      // Fish re-entry splash (big)
+      all.push({ t: ev.t+FISH_DUR, x: reUV[0], y: reUV[1], r: 12, s: 0.75 });
+      for (var j = 0; j < 10; j++) {
+        var b = (j/10)*Math.PI*2;
+        all.push({ t: ev.t+FISH_DUR+0.03, x: reUV[0]+Math.cos(b)*0.04, y: reUV[1]+Math.sin(b)*0.04, r: 5, s: 0.3 });
+      }
+      for (var k = 0; k < 7; k++) {
+        var c = (k/7)*Math.PI*2+0.3;
+        all.push({ t: ev.t+FISH_DUR+0.08, x: reUV[0]+Math.cos(c)*0.07, y: reUV[1]+Math.sin(c)*0.07, r: 3, s: 0.15 });
+      }
+      all.push({ t: ev.t+FISH_DUR+0.15, x: reUV[0], y: reUV[1], r: 8, s: 0.25 });
+
+      // Text emergence ripples (continuous disturbance as text rises through surface)
+      var textT = ev.t + TEXT_DELAY;
+      var riseDur = ev.textDur * 0.18;
+      for (var tr = 0; tr < 6; tr++) {
+        var tt = textT + riseDur * (tr / 6);
+        all.push({ t: tt, x: reUV[0], y: reUV[1], r: 6, s: 0.25 });
+        var ta = (tr/6)*Math.PI*2 + tr*0.5;
+        all.push({ t: tt+0.02, x: reUV[0]+Math.cos(ta)*0.035, y: reUV[1]+Math.sin(ta)*0.035, r: 3, s: 0.12 });
+      }
+
+      // Text sinking ripples
+      var sinkStart = textT + ev.textDur * 0.72;
+      var sinkDur = ev.textDur * 0.32;
+      for (var ts = 0; ts < 4; ts++) {
+        var st = sinkStart + sinkDur * (ts / 4);
+        all.push({ t: st, x: reUV[0], y: reUV[1], r: 5, s: 0.2 });
+      }
+    });
+
+    AMB_FISH.forEach(function(af) {
+      var cx = af.uv[0], cy = af.uv[1];
+      var reX = (WP.minX + cx * WP.sx + af.vx * AMB_DUR - WP.minX) / WP.sx;
+      all.push({ t: af.t, x: cx, y: cy, r: 4, s: 0.2 });
+      for (var i = 0; i < 3; i++) {
+        var a = (i/3)*Math.PI*2;
+        all.push({ t: af.t+0.03, x: cx+Math.cos(a)*0.02, y: cy+Math.sin(a)*0.02, r: 2, s: 0.1 });
+      }
+      all.push({ t: af.t+AMB_DUR, x: reX, y: cy, r: 5, s: 0.3 });
+      for (var j = 0; j < 4; j++) {
+        var b = (j/4)*Math.PI*2;
+        all.push({ t: af.t+AMB_DUR+0.03, x: reX+Math.cos(b)*0.025, y: cy+Math.sin(b)*0.025, r: 2, s: 0.12 });
+      }
+    });
+
+    all.sort(function (a, b) { return a.t - b.t; });
+    return all;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Particle system
+  // ═══════════════════════════════════════════════════════════
+
+  var particles = [];
+  var SPRAY_COLORS = ['#4a6a8a','#6a8ab0','#8aaad0','#b0c8e8'];
+
+  function project3D(pos, vp) {
+    var x=vp[0]*pos[0]+vp[4]*pos[1]+vp[8]*pos[2]+vp[12];
+    var y=vp[1]*pos[0]+vp[5]*pos[1]+vp[9]*pos[2]+vp[13];
+    var w=vp[3]*pos[0]+vp[7]*pos[1]+vp[11]*pos[2]+vp[15];
+    if(Math.abs(w)<0.001)return[W/2,H/2];
+    return[(x/w*.5+.5)*W,(1-(y/w*.5+.5))*H];
+  }
+
+  function spawnSpray(sx, sy, count) {
+    for (var i = 0; i < count; i++) {
+      var angle = -Math.PI/2 + (Math.random()-0.5)*1.4;
+      var speed = 80 + Math.random()*280;
+      particles.push({
+        x: sx+(Math.random()-0.5)*6, y: sy+(Math.random()-0.5)*3,
+        vx: Math.cos(angle)*speed*(0.4+Math.random()*0.6),
+        vy: Math.sin(angle)*speed*(0.4+Math.random()*0.6),
+        life: 0.35+Math.random()*0.55, age: 0,
+        sz: 1.5+Math.random()*2.5,
+        col: SPRAY_COLORS[Math.random()*4|0]
+      });
+    }
+  }
+
+  var stars = [];
+  var horizonY = H * 0.45;
+
+  function initStars(hY) {
+    horizonY = hY;
+    stars = [];
+    var count = Math.round(W * hY / 1800);
+    for (var i = 0; i < count; i++) {
+      var tier = Math.random();
+      var sz, bright;
+      if (tier < 0.7) { sz = 1; bright = 0.25 + Math.random() * 0.35; }
+      else if (tier < 0.92) { sz = 1.5; bright = 0.4 + Math.random() * 0.3; }
+      else { sz = 2; bright = 0.55 + Math.random() * 0.35; }
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * (hY - 8),
+        sz: sz,
+        base: bright,
+        phase: Math.random() * Math.PI * 2,
+        freq: 0.3 + Math.random() * 0.8
+      });
+    }
+  }
+
+  function renderStars(t) {
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      var twinkle = s.base + 0.15 * Math.sin(s.phase + t * s.freq);
+      if (twinkle <= 0) continue;
+      fxCtx.globalAlpha = Math.min(twinkle, 1);
+      var c = Math.round(180 + 75 * (twinkle / 0.9));
+      if (c > 255) c = 255;
+      fxCtx.fillStyle = 'rgb(' + Math.round(c * 0.92) + ',' + Math.round(c * 0.95) + ',' + c + ')';
+      fxCtx.beginPath();
+      fxCtx.arc(s.x, s.y, s.sz * 0.5, 0, Math.PI * 2);
+      fxCtx.fill();
+    }
+    fxCtx.globalAlpha = 1;
+  }
+
+  function renderHorizon() {
+    var grad = fxCtx.createLinearGradient(0, horizonY - 30, 0, horizonY + 4);
+    grad.addColorStop(0, 'rgba(60,80,120,0)');
+    grad.addColorStop(0.7, 'rgba(60,80,120,0.12)');
+    grad.addColorStop(1, 'rgba(40,55,90,0.08)');
+    fxCtx.fillStyle = grad;
+    fxCtx.fillRect(0, horizonY - 30, W, 34);
+  }
+
+  function updateParticles(dt, t) {
+    fxCtx.clearRect(0,0,W,H);
+    renderStars(t);
+    renderHorizon();
+    for (var i=particles.length-1; i>=0; i--) {
+      var p=particles[i];
+      p.age+=dt;
+      if(p.age>=p.life){particles.splice(i,1);continue;}
+      p.vy+=500*dt;
+      p.x+=p.vx*dt; p.y+=p.vy*dt;
+      var alpha=1-p.age/p.life;
+      fxCtx.globalAlpha=alpha*0.75;
+      fxCtx.fillStyle=p.col;
+      fxCtx.fillRect(p.x-p.sz/2, p.y-p.sz/2, p.sz, p.sz);
+    }
+    fxCtx.globalAlpha=1;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Screen shake + flash
+  // ═══════════════════════════════════════════════════════════
+
+  var shakeAmt = 0;
+  var flashEl = document.getElementById('flash');
+
+  function doFlash(intensity) {
+    flashEl.style.transition = 'opacity 0.04s ease-out';
+    flashEl.style.opacity = String(intensity);
+    setTimeout(function () {
+      flashEl.style.transition = 'opacity 0.2s ease-in';
+      flashEl.style.opacity = '0';
+    }, 50);
+  }
+
+  function shakeVP(vp) {
+    if (shakeAmt < 0.0005) return vp;
+    var sv = new Float32Array(vp);
+    sv[12] += (Math.random()-0.5) * shakeAmt * 2;
+    sv[13] += (Math.random()-0.5) * shakeAmt * 2;
+    return sv;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Load + Run
+  // ═══════════════════════════════════════════════════════════
+
+  var promises = FISH_PATHS.map(loadImg);
+  promises.push(loadImg('../client/public/assets/special/ocean0a.png'));
+  promises.push(loadImg('../client/public/assets/font/ascii.png'));
+
+  var nFish = FISH_PATHS.length;
+Promise.all(promises).then(function(res){ run(res.slice(0,nFish), res[nFish], res[nFish+1]); });
+
+  function run(fishImgs, waterImg, fontImg) {
+    var fishTex = fishImgs.map(mkTex);
+    var waterTex = mkTex(waterImg);
+
+    var fontData = parseFontAtlas(fontImg);
+    var glyphs = fontData.glyphs;
+    var lineH = fontData.cellH + Math.ceil(fontData.cellH / 4);
+
+    var textData = [
+      buildTextMesh(glyphs, ['Cute','Fish','With','Knives'], lineH),
+      buildTextMesh(glyphs, ['A game by Aries Powvalla'], lineH),
+      buildTextMesh(glyphs, ['Art by Juli Hiramatsu'], lineH),
+      buildTextMesh(glyphs, ['Story by Luke Wagner'], lineH),
+      buildTextMesh(glyphs, ['Ethan Paes'], lineH),
+      buildTextMesh(glyphs, ['Matthew Buizon'], lineH),
+      buildTextMesh(glyphs, ['Aria Reilly'], lineH),
+      buildTextMesh(glyphs, ['Xan Pederson'], lineH),
+      buildTextMesh(glyphs, ['Lemmon Clemmons'], lineH),
+      buildTextMesh(glyphs, ['Megan Kennedy'], lineH)
+    ];
+
+    var vpMat = m4m(m4p(CAM.fov, el.width/el.height, CAM.near, CAM.far), m4l(CAM.eye, CAM.center, CAM.up));
+
+    (function computeHorizon() {
+      var hz = WP.minZ;
+      var cy = vpMat[1]*0 + vpMat[5]*0 + vpMat[9]*hz + vpMat[13];
+      var cw = vpMat[3]*0 + vpMat[7]*0 + vpMat[11]*hz + vpMat[15];
+      var ndy = cw > 0.001 ? cy / cw : 0;
+      var screenY = H * (1 - ndy) / 2;
+      initStars(Math.max(40, Math.min(screenY, H * 0.7)));
+    })();
+
+    function maxSafeY(x, z, ndcTarget) {
+      var a = vpMat[5] - ndcTarget * vpMat[7];
+      var b = ndcTarget * (vpMat[3]*x + vpMat[11]*z + vpMat[15]) - (vpMat[1]*x + vpMat[9]*z + vpMat[13]);
+      return Math.abs(a) > 0.001 ? b / a : 10;
+    }
+
+    EVENTS.forEach(function(ev) {
+      var re = [WP.minX+ev.uv[0]*WP.sx + ev.fishVx*FISH_DUR, WP.minZ+ev.uv[1]*WP.sz];
+      var topLimit = maxSafeY(re[0], re[1], 0.82);
+      var maxPeak = topLimit - ev.textScale;
+      if (ev.textPeakY > maxPeak) ev.textPeakY = Math.max(0.3, maxPeak);
+
+      var mesh = textData[ev.textIdx];
+      var s = ev.textScale / mesh.h;
+      var halfWorldW = mesh.w * s * 0.5;
+      var peakY = ev.textPeakY;
+      var rx = re[0] + halfWorldW, lx = re[0] - halfWorldW;
+      var rC = vpMat[0]*rx + vpMat[4]*peakY + vpMat[8]*re[1] + vpMat[12];
+      var rW = vpMat[3]*rx + vpMat[7]*peakY + vpMat[11]*re[1] + vpMat[15];
+      var lC = vpMat[0]*lx + vpMat[4]*peakY + vpMat[8]*re[1] + vpMat[12];
+      var lW = vpMat[3]*lx + vpMat[7]*peakY + vpMat[11]*re[1] + vpMat[15];
+      var maxNdc = Math.max(Math.abs(rW > 0.001 ? rC/rW : 0), Math.abs(lW > 0.001 ? lC/lW : 0));
+      if (maxNdc > 0.90) ev.textScale *= 0.90 / maxNdc;
+    });
+
+    var splashes = buildSplashes();
+    var nextSp = 0, simOn = false;
+    var ambientGain = startAmbient();
+
+    // ─── Helpers ───────────────────────────────────────────
+
+    function evExitXZ(ev)  { return [WP.minX+ev.uv[0]*WP.sx, WP.minZ+ev.uv[1]*WP.sz]; }
+    function evReXZ(ev)    { var e=evExitXZ(ev); return [e[0]+ev.fishVx*FISH_DUR, e[1]]; }
+
+    function fishPos(ev, t) {
+      var lt=t-ev.t;
+      if(lt<-0.1||lt>FISH_DUR+0.1)return null;
+      var e=evExitXZ(ev);
+      return [e[0]+ev.fishVx*lt, FISH_VY0*lt-0.5*FISH_G*lt*lt, e[1]];
+    }
+
+    function fishMdl(pos, ev, t) {
+      var lt=t-ev.t, vy=FISH_VY0-FISH_G*lt;
+      var tilt=Math.atan2(vy,Math.abs(ev.fishVx));
+      var flip=ev.fishVx<0?-1:1;
+      var yaw=Math.atan2(CAM.eye[0]-pos[0],CAM.eye[2]-pos[2]);
+      return m4m(m4t(pos[0],pos[1],pos[2]),m4m(m4ry(yaw),m4m(m4rz(tilt-Math.PI/4),m4sc(FISH_SCALE*flip,FISH_SCALE,FISH_SCALE))));
+    }
+
+    function textPos(ev, t) {
+      var lt=t-ev.t-TEXT_DELAY;
+      if(lt<0||lt>ev.textDur)return null;
+      var re=evReXZ(ev);
+      return [re[0], textYCurve(lt/ev.textDur, ev.textPeakY, -ev.textScale), re[1]];
+    }
+
+    function textMdl(pos, ev) {
+      var mesh = textData[ev.textIdx];
+      var yaw = Math.atan2(CAM.eye[0]-pos[0], CAM.eye[2]-pos[2]);
+      var s = ev.textScale / mesh.h;
+      if (ev.headOn) {
+        return m4m(m4t(pos[0],pos[1],pos[2]), m4m(m4ry(yaw), m4sc(s,s,s)));
+      }
+      var dx = CAM.eye[0]-pos[0], dy = CAM.eye[1]-pos[1], dz = CAM.eye[2]-pos[2];
+      var dh = Math.sqrt(dx*dx + dz*dz);
+      var pitch = Math.atan2(dy, dh) * -0.55;
+      return m4m(m4t(pos[0],pos[1],pos[2]), m4m(m4ry(yaw), m4m(m4rx(pitch), m4sc(s,s,s))));
+    }
+
+    // ─── Render ────────────────────────────────────────────
+
+    function renderWater(time, vp) {
+      gl.useProgram(watP);
+      gl.uniformMatrix4fv(watU.VP,false,vp);
+      gl.uniform1f(watU.hs,0.55);gl.uniform2f(watU.wm,WP.minX,WP.minZ);gl.uniform2f(watU.ws,WP.sx,WP.sz);
+      gl.uniform2f(watU.tx,1/SIM.w,1/SIM.h);gl.uniform1f(watU.tm,time);
+      gl.uniform3f(watU.cp,CAM.eye[0],CAM.eye[1],CAM.eye[2]);
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fboA.tx);gl.uniform1i(watU.R,0);
+      gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,waterTex);gl.uniform1i(watU.WT,1);
+      gl.bindVertexArray(wVAO);gl.drawElements(gl.TRIANGLES,wIC,gl.UNSIGNED_INT,0);
+    }
+
+    function renderSprite(mdl,tex,vp) {
+      gl.uniformMatrix4fv(sprU.M,false,mdl);
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);gl.uniform1i(sprU.T,0);
+      gl.bindVertexArray(sVAO);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    }
+
+    function render3DText(mdl, mesh, vp) {
+      gl.useProgram(txtP);
+      gl.uniformMatrix4fv(txtU.VP, false, vp);
+      gl.uniformMatrix4fv(txtU.M, false, mdl);
+      gl.uniform3f(txtU.uCol, 0.92, 0.94, 1.0);
+      gl.uniform3f(txtU.uL, LIGHT[0], LIGHT[1], LIGHT[2]);
+      gl.uniform3f(txtU.uC, CAM.eye[0], CAM.eye[1], CAM.eye[2]);
+      gl.uniform1f(txtU.uA, 0.7);
+      gl.bindVertexArray(mesh.vao);
+      gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_INT, 0);
+    }
+
+    // ─── FX triggers (per-event flags) ─────────────────────
+
+    EVENTS.forEach(function(ev) { ev._ex = false; ev._re = false; ev._tRise = false; ev._tSink = false; ev._lastSpray = 0; });
+    AMB_FISH.forEach(function(af) { af._ex = false; af._re = false; });
+
+    // ─── Main loop ─────────────────────────────────────────
+
+    var fadeEl = document.getElementById('fade'), faded = false;
+    var fadeinEl = document.getElementById('fadein'), fadedIn = false;
+    var start = null, prevT = 0;
+
+    function frame(ts) {
+      if (start === null) { start = ts; prevT = 0; }
+      if (!fadedIn) { fadeinEl.classList.add('off'); fadedIn = true; }
+      var t = (ts - start) / 1000;
+      var dt = Math.min(t - prevT, 0.05);
+      prevT = t;
+
+      // ── FX triggers ──
+      EVENTS.forEach(function(ev) {
+        if (!ev._ex && t >= ev.t) {
+          ev._ex = true;
+          playSplash(0.3);
+          shakeAmt = Math.max(shakeAmt, 0.015);
+          var sp = project3D([evExitXZ(ev)[0], 0, evExitXZ(ev)[1]], vpMat);
+          spawnSpray(sp[0], sp[1], 28);
+        }
+        if (!ev._re && t >= ev.t + FISH_DUR) {
+          ev._re = true;
+          playSplash(0.6);
+          playRise();
+          shakeAmt = Math.max(shakeAmt, 0.05);
+          doFlash(0.3);
+          var rp = project3D([evReXZ(ev)[0], 0, evReXZ(ev)[1]], vpMat);
+          spawnSpray(rp[0], rp[1], 45);
+        }
+
+        // Text emergence spray: while text base is below water and rising
+        var textT = ev.t + TEXT_DELAY;
+        var riseDur = ev.textDur * 0.18;
+        if (t >= textT && t < textT + riseDur) {
+          if (!ev._tRise) { ev._tRise = true; playSplash(0.35); }
+          if (t - ev._lastSpray > 0.08) {
+            ev._lastSpray = t;
+            var rp2 = project3D([evReXZ(ev)[0], 0, evReXZ(ev)[1]], vpMat);
+            spawnSpray(rp2[0], rp2[1], 6);
+          }
+        }
+
+        // Text sinking spray
+        var sinkStart = textT + ev.textDur * 0.72;
+        if (t >= sinkStart && t < textT + ev.textDur) {
+          if (!ev._tSink) { ev._tSink = true; playSplash(0.2); }
+          if (t - ev._lastSpray > 0.12) {
+            ev._lastSpray = t;
+            var rp3 = project3D([evReXZ(ev)[0], 0, evReXZ(ev)[1]], vpMat);
+            spawnSpray(rp3[0], rp3[1], 4);
+          }
+        }
+      });
+
+      AMB_FISH.forEach(function(af) {
+        if (!af._ex && t >= af.t) {
+          af._ex = true;
+          playSplash(0.12);
+          var ex = WP.minX + af.uv[0] * WP.sx, ez = WP.minZ + af.uv[1] * WP.sz;
+          var sp = project3D([ex, 0, ez], vpMat);
+          spawnSpray(sp[0], sp[1], 8);
+        }
+        if (!af._re && t >= af.t + AMB_DUR) {
+          af._re = true;
+          playSplash(0.18);
+          var rex = WP.minX + af.uv[0] * WP.sx + af.vx * AMB_DUR, rez = WP.minZ + af.uv[1] * WP.sz;
+          var rp = project3D([rex, 0, rez], vpMat);
+          spawnSpray(rp[0], rp[1], 12);
+        }
+      });
+
+      // ── Sim ──
+      gl.disable(gl.DEPTH_TEST);
+      while (nextSp < splashes.length && t >= splashes[nextSp].t) {
+        var sp = splashes[nextSp]; addDrop(sp.x,sp.y,sp.r,sp.s);
+        if (!simOn) simOn = true; nextSp++;
+      }
+      if (simOn) stepSim();
+      gl.enable(gl.DEPTH_TEST);
+
+      // ── Shake VP ──
+      shakeAmt *= 0.92;
+      var curVP = shakeVP(vpMat);
+
+      // ── Render scene ──
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+      gl.viewport(0,0,el.width,el.height);
+      gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+      renderWater(t, curVP);
+
+      // 3D text pass 1: depth only (establishes silhouette in z-buffer)
+      gl.colorMask(false, false, false, false);
+      EVENTS.forEach(function(ev) {
+        var tp = textPos(ev, t);
+        if (tp) render3DText(textMdl(tp, ev), textData[ev.textIdx], curVP);
+      });
+
+      // 3D text pass 2: color with alpha, only frontmost fragments pass
+      gl.colorMask(true, true, true, true);
+      gl.depthFunc(gl.LEQUAL);
+      gl.depthMask(false);
+      gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+      EVENTS.forEach(function(ev) {
+        var tp = textPos(ev, t);
+        if (tp) render3DText(textMdl(tp, ev), textData[ev.textIdx], curVP);
+      });
+      gl.depthFunc(gl.LESS);
+
+      // Fish sprites
+      gl.useProgram(sprP);gl.uniformMatrix4fv(sprU.VP,false,curVP);
+
+      EVENTS.forEach(function(ev) {
+        var fp = fishPos(ev,t);
+        if (fp && fp[1]>-1.2) renderSprite(fishMdl(fp,ev,t), fishTex[ev.fishIdx], curVP);
+      });
+
+      AMB_FISH.forEach(function(af) {
+        var lt = t - af.t;
+        if (lt < -0.1 || lt > AMB_DUR + 0.1) return;
+        var ex = WP.minX + af.uv[0] * WP.sx, ez = WP.minZ + af.uv[1] * WP.sz;
+        var px = ex + af.vx * lt, py = AMB_VY0 * lt - 0.5 * AMB_G * lt * lt;
+        if (py < -0.8) return;
+        var vy = AMB_VY0 - AMB_G * lt;
+        var tilt = Math.atan2(vy, Math.abs(af.vx));
+        var flip = af.vx < 0 ? -1 : 1;
+        var yaw = Math.atan2(CAM.eye[0] - px, CAM.eye[2] - ez);
+        var sc = af.scale;
+        var mdl = m4m(m4t(px, py, ez), m4m(m4ry(yaw), m4m(m4rz(tilt - Math.PI/4), m4sc(sc*flip, sc, sc))));
+        renderSprite(mdl, fishTex[af.fishIdx], curVP);
+      });
+
+      gl.depthMask(true);gl.disable(gl.BLEND);
+
+      // ── 2D particles ──
+      updateParticles(dt, t);
+
+      // ── Fade ──
+      if (!faded && t >= FADE_T) {
+        fadeEl.classList.add('on');
+        if (ambientGain) {
+          ambientGain.gain.linearRampToValueAtTime(0, ac.currentTime + 2.2);
+        }
+        faded = true;
+      }
+
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+})();
+</script>
+</body>
+</html>

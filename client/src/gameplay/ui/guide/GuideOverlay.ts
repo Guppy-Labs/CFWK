@@ -5,6 +5,7 @@ export type GuideOverlayState = {
     targetRect?: Phaser.Geom.Rectangle | null;
     secondaryVisibleRect?: Phaser.Geom.Rectangle | null;
     dimBackground?: boolean;
+    cardPlacement?: 'bottom' | 'center';
 };
 
 export class GuideOverlay {
@@ -16,6 +17,7 @@ export class GuideOverlay {
     private readonly cardText: Phaser.GameObjects.Text;
     private pulseTween?: Phaser.Tweens.Tween;
     private visible = false;
+    private activeCardPlacement: 'bottom' | 'center' = 'bottom';
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
@@ -52,8 +54,9 @@ export class GuideOverlay {
             return;
         }
 
+        this.activeCardPlacement = state.cardPlacement ?? 'bottom';
         this.cardText.setText(state.message);
-        this.layoutCard();
+        this.layoutCard(this.activeCardPlacement);
         this.drawMask(state.targetRect ?? null, state.secondaryVisibleRect ?? null, state.dimBackground !== false);
         this.layoutPulse(state.targetRect ?? null);
 
@@ -67,6 +70,7 @@ export class GuideOverlay {
     hide() {
         if (!this.visible) return;
         this.visible = false;
+        this.activeCardPlacement = 'bottom';
         this.pulseTween?.stop();
         this.pulseTween = undefined;
         this.scene.tweens.add({
@@ -84,7 +88,7 @@ export class GuideOverlay {
 
     resize() {
         if (!this.visible) return;
-        this.layoutCard();
+        this.layoutCard(this.activeCardPlacement);
     }
 
     destroy() {
@@ -94,7 +98,7 @@ export class GuideOverlay {
         this.card.destroy();
     }
 
-    private layoutCard() {
+    private layoutCard(cardPlacement: 'bottom' | 'center') {
         const width = this.scene.scale.width;
         const height = this.scene.scale.height;
         const mobileLike = width <= 900 || height <= 700;
@@ -116,6 +120,11 @@ export class GuideOverlay {
         const cardHeight = Math.max(mobileLike ? 76 : 92, textHeight + verticalPadding);
 
         this.cardBg.setSize(cardWidth, cardHeight);
+
+        if (cardPlacement === 'center') {
+            this.card.setPosition(width / 2, height / 2);
+            return;
+        }
 
         const bottomOffset = mobileLike
             ? Math.max(86, Math.round(height * 0.15))

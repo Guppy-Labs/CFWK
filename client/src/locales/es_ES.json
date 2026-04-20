@@ -168,7 +168,7 @@
 				"description": "Aprende refinado de comida con el Mercader: pisa yekberries soltadas para hacer líquido, embotéllalo con un frasco y vuelve con él."
 			},
 			"village_weirdo": {
-				"description": "Habla con el Viajero, consigue 5 yekberries y vuelve para cobrar tu recompensa."
+				"description": "Habla con el Viajero, consigue 1 yekberry y vuelve para cobrar tu recompensa."
 			},
 			"wares_galore": {
 				"description": "Habla con el Mercader sobre tu nueva moneda y escucha su oferta de mercancías."
@@ -427,17 +427,17 @@
 					},
 					"villageWeirdo": {
 						"intro": {
-							"0": "Petición de viajero: ¿me traes 5 yekberries?",
+							"0": "Petición de viajero: ¿me traes 1 yekberry?",
 							"1": "Los objetivos específicos forman carácter. Por favor y gracias.",
 							"player": {
-								"0": "¿Cinco? Eso es sospechosamente específico."
+								"0": "¿Uno? Eso es sospechosamente específico."
 							}
 						},
 						"collect": {
-							"0": "Aún necesito 5 yekberries. Tráeme las cinco y valdrá la pena."
+							"0": "Aún necesito 1 yekberry. Tráeme una y valdrá la pena."
 						},
 						"return": {
-							"0": "Volviste con cinco yekberries de verdad. Eres increíblemente amable.",
+							"0": "Volviste con una yekberry de verdad. Eres increíblemente amable.",
 							"1": "Confesión: esto era un experimento social. Quería ver si Anchor Hollow seguía teniendo gente generosa.",
 							"2": "Vale, justo. Mi presupuesto es... menos espectacular.",
 							"3": "Puedo darte una moneda de plata. No es mucho, pero te servirá.",

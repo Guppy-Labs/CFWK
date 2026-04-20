@@ -208,11 +208,10 @@ export class FishingScene extends Phaser.Scene {
     }
 
     private enableSharedControls() {
-        this.registry.set('inputBlocked', false);
+        this.registry.set('inputBlocked', true);
         const gameScene = this.scene.get('GameScene') as GameScene | null;
         const controls = gameScene?.getMobileControls?.();
-        controls?.setInputBlocked(false);
-        controls?.show();
+        controls?.setInputBlocked(true);
     }
 
     private setupDebugToggle() {

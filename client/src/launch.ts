@@ -381,7 +381,6 @@ playBtn.addEventListener('click', () => {
     if (canLaunch(currentUser)) {
         stopPlayButtonIconCycle();
         playBtn.disabled = true;
-        playBtn.textContent = 'Launching...';
         launchTransitionOverlay.classList.add('show');
         window.setTimeout(() => {
             window.location.href = '/game';

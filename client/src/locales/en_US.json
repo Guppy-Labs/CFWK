@@ -229,7 +229,7 @@
         "description": "Learn food refinement from the Merchant: stomp dropped yekberries into liquid, bottle it with a jar, then report back."
       },
       "village_weirdo": {
-        "description": "Talk to the Traveller, collect 5 yekberries, then return for your reward."
+        "description": "Talk to the Traveller, collect 1 yekberry, then return for your reward."
       },
       "wares_galore": {
         "description": "Talk to the Merchant about your new coin and hear about his wares."
@@ -607,17 +607,17 @@
         },
         "villageWeirdo": {
           "intro": {
-            "0": "Traveler's request: could you bring me 5 yekberries?",
+            "0": "Traveler's request: could you bring me 1 yekberry?",
             "1": "Specific goals build character. Please and thank you.",
             "player": {
-              "0": "Five? That's oddly specific."
+              "0": "One? That's oddly specific."
             }
           },
           "collect": {
-            "0": "I still need 5 yekberries. Bring all five and I'll make it worth your time."
+            "0": "I still need 1 yekberry. Bring one and I'll make it worth your time."
           },
           "return": {
-            "0": "You actually came back with five yekberries. You're incredibly kind.",
+            "0": "You actually came back with a yekberry. You're incredibly kind.",
             "1": "Confession: this was a social experiment. I wanted to see if Anchor Hollow still had generous people.",
             "2": "Fair. My budget is... less theatrical.",
             "3": "I can spare one silver coin. It's not much, but it'll be useful.",

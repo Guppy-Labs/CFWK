@@ -716,10 +716,10 @@ export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
     dependencyQuestIds: ['heed_the_warning', 'anti_death_measures'],
     startObjective: { kind: 'talk-to-npc', npcId: 'traveller' },
     objectives: [
-      { kind: 'inventory-count', itemId: 'yekberries', requiredCount: 5 },
+      { kind: 'inventory-count', itemId: 'yekberries', requiredCount: 1 },
       { kind: 'talk-to-npc', npcId: 'traveller' }
     ],
-    objective: { kind: 'inventory-count', itemId: 'yekberries', requiredCount: 5 }
+    objective: { kind: 'inventory-count', itemId: 'yekberries', requiredCount: 1 }
   },
   {
     id: 'wares_galore',

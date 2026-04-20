@@ -68,7 +68,7 @@
                     "speaker": "npc",
                     "emotion": "happy",
                     "textKey": "dialogue.npc.traveller.villageWeirdo.return.0",
-                    "text": "You actually came back with five yekberries. You're incredibly kind."
+                    "text": "You actually came back with a yekberry. You're incredibly kind."
                 },
                 {
                     "speaker": "npc",
@@ -140,7 +140,7 @@
                     "speaker": "npc",
                     "emotion": "surprise",
                     "textKey": "dialogue.npc.traveller.villageWeirdo.collect.0",
-                    "text": "I still need 5 yekberries. Bring all five and I'll make it worth your time."
+                    "text": "I still need 1 yekberry. Bring one and I'll make it worth your time."
                 }
             ]
         },
@@ -186,13 +186,13 @@
             "speaker": "npc",
             "emotion": "surprise",
             "textKey": "dialogue.npc.traveller.villageWeirdo.intro.0",
-            "text": "Traveler's request: could you bring me 5 yekberries?"
+            "text": "Traveler's request: could you bring me 1 yekberry?"
         },
         {
             "speaker": "player",
             "emotion": "surprise",
             "textKey": "dialogue.npc.traveller.villageWeirdo.intro.player.0",
-            "text": "Five? That's oddly specific."
+            "text": "One? That's oddly specific."
         },
         {
             "speaker": "npc",

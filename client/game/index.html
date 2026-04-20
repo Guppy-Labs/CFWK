@@ -56,7 +56,8 @@
         /* Font Import */
         @font-face {
             font-family: 'Minecraft';
-            src: url('https://cdn.jsdelivr.net/gh/IdreesInc/Minecraft-Font@master/Minecraft.otf') format('opentype');
+            src: url('/fonts/Minecraft.otf') format('opentype');
+            font-display: swap;
         }
 
         :root {
@@ -759,7 +760,7 @@
             if (!navbar) return;
 
             var hidden = false;
-            var hideDelayMs = 10000;
+            var hideDelayMs = 4000;
             var earlyHideDeadline = Date.now() + hideDelayMs;
             var hideTimerId = null;
 

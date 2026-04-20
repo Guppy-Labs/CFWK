@@ -712,7 +712,12 @@ export class GuideCoordinator {
                 this.showStep(
                     this.localeManager.t('guide.food.stabHeartLoss', undefined, "STAB! You just lost a heart! Now we'll use the berry to heal up."),
                     null,
-                    []
+                    [],
+                    this.uiScene.getGuideHeartsRect(),
+                    true,
+                    false,
+                    null,
+                    'center'
                 );
                 return;
             }
@@ -753,13 +758,15 @@ export class GuideCoordinator {
         secondaryVisibleRect: Phaser.Geom.Rectangle | null = null,
         dimBackground = true,
         allowAllInput = false,
-        allowedUsableSlotIndex: number | null = null
+        allowedUsableSlotIndex: number | null = null,
+        cardPlacement: 'bottom' | 'center' = 'bottom'
     ) {
         this.uiScene.showGuideOverlay({
             message,
             targetRect,
             secondaryVisibleRect,
-            dimBackground
+            dimBackground,
+            cardPlacement
         });
         if (allowAllInput) {
             this.uiScene.clearGuideInputGate();

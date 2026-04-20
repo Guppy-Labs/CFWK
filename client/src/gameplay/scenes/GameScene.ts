@@ -1241,9 +1241,16 @@ export class GameScene extends Phaser.Scene {
         }
 
         if (this.questTargetMarker) {
+            const isChestObjective = objectiveData.objective.kind === 'harvest-interactive'
+                && objectiveData.objective.componentId?.trim().toLowerCase() === 'glimmeringchest';
+            const markerYOffset = isChestObjective ? 74 : 54;
             const bobOffset = Math.sin(time * 0.0045) * 1.2;
+            const markerDepth = this.depthManager
+                ? this.depthManager.entityDepth(target.x, target.y, { baseDepth: ENTITY_BASE }) + 6
+                : (ENTITY_BASE + 2001);
             this.questTargetMarker.setVisible(true);
-            this.questTargetMarker.setPosition(target.x, target.y - 54 + bobOffset);
+            this.questTargetMarker.setPosition(target.x, target.y - markerYOffset + bobOffset);
+            this.questTargetMarker.setDepth(markerDepth);
             this.questTargetMarker.setScale(1.12, 1.16);
             this.questTargetMarker.setAlpha(0.93);
         }

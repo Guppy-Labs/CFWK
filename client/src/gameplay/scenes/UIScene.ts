@@ -828,6 +828,10 @@ export class UIScene extends Phaser.Scene {
         return this.playerHud?.getUsableSlotScreenRect(slotIndex) ?? null;
     }
 
+    getGuideHeartsRect(): Phaser.Geom.Rectangle | null {
+        return this.playerHud?.getHeartsRowScreenRect() ?? null;
+    }
+
     getGuideBerryInventoryRect(): Phaser.Geom.Rectangle | null {
         return this.bookUI?.getGuideFoodInventoryRect('yekberries') ?? null;
     }
