@@ -32,6 +32,21 @@ type ObjectTilesetBinding = {
     tileImages?: Map<number, { textureKey: string; width: number; height: number }>;
 };
 
+type CollectionTileImageBinding = {
+    gid: number;
+    textureKey: string;
+    tileOffsetX: number;
+    tileOffsetY: number;
+};
+
+type CreatedTileLayer = {
+    name: string;
+    layer: Phaser.Tilemaps.TilemapLayer;
+    isGroundLayer: boolean;
+    depth: number;
+    occlusionOrder: number | null;
+};
+
 type LayerDepthPlan = {
     depthByLayerName: Map<string, number[]>;
     occlusionOrderByLayerName: Map<string, number[]>;
@@ -49,6 +64,7 @@ export class MapLoader {
     private lightingManager?: LightingManager;
     private tileAnimationManager?: TileAnimationManager;
     private groundLayers: Phaser.Tilemaps.TilemapLayer[] = [];
+    private collectionTileImages: Phaser.GameObjects.Image[] = [];
 
     constructor(scene: Phaser.Scene, config: MapLoaderConfig) {
         this.scene = scene;
@@ -79,7 +95,11 @@ export class MapLoader {
         const mapData = mapCache?.data as {
             tilesets?: TiledTilesetData[];
             layers?: Array<{
+                name?: string;
                 type?: string;
+                visible?: boolean;
+                data?: number[];
+                chunks?: Array<{ data?: number[] }>;
                 objects?: Array<{ gid?: number }>;
             }>;
         } | undefined;
@@ -87,15 +107,13 @@ export class MapLoader {
 
         const tilesets = mapData?.tilesets || [];
         const objectGidsInUse = new Set<number>();
+        const tileLayerGidsInUse = this.collectTileLayerGidsInUse(mapData?.layers || []);
         (mapData?.layers || []).forEach((layer) => {
             if (layer.type !== 'objectgroup') return;
             (layer.objects || []).forEach((obj) => {
                 const raw = Number(obj.gid);
                 if (!Number.isFinite(raw) || raw <= 0) return;
-                const FLIP_H = 0x80000000;
-                const FLIP_V = 0x40000000;
-                const FLIP_D = 0x20000000;
-                const gid = (raw >>> 0) & ~(FLIP_H | FLIP_V | FLIP_D);
+                const gid = this.normalizeTiledGid(raw);
                 if (gid > 0) objectGidsInUse.add(gid);
             });
         });
@@ -119,7 +137,7 @@ export class MapLoader {
                 for (const tile of tileset.tiles) {
                     if (!tile.image) continue;
                     const tileGid = tileset.firstgid + tile.id;
-                    if (!objectGidsInUse.has(tileGid)) continue;
+                    if (!objectGidsInUse.has(tileGid) && !tileLayerGidsInUse.has(tileGid)) continue;
                     const imageKey = `tileset-${tileset.name}-tile-${tile.id}`;
                     if (this.scene.textures.exists(imageKey)) continue;
                     const imageUrl = encodeURI(`/maps/${tile.image}`);
@@ -186,6 +204,9 @@ export class MapLoader {
         let groundDepthIndex = 0;
         let occludableDepthIndex = 0;
         this.groundLayers = [];
+        this.collectionTileImages.forEach((image) => image.destroy());
+        this.collectionTileImages = [];
+        const createdTileLayers: CreatedTileLayer[] = [];
 
         // Create tile layers
         this.map.layers.forEach((layerData) => {
@@ -206,6 +227,13 @@ export class MapLoader {
                 groundDepthIndex += 1;
                 // Track ground layers for water detection
                 this.groundLayers.push(layer);
+                createdTileLayers.push({
+                    name: layerData.name,
+                    layer,
+                    isGroundLayer: true,
+                    depth,
+                    occlusionOrder: null
+                });
             } else {
                 const baseDepth = plannedDepth ?? (this.config.occludableBaseDepth + occludableDepthIndex * OCCLUDABLE_STEP);
                 layer.setDepth(baseDepth);
@@ -218,9 +246,17 @@ export class MapLoader {
                 // Register with occlusion manager
                 occlusionManager.addOccludableLayer(layer, baseDepth, layerData.name, occlusionOrder);
                 occludableDepthIndex += 1;
+                createdTileLayers.push({
+                    name: layerData.name,
+                    layer,
+                    isGroundLayer: false,
+                    depth: baseDepth,
+                    occlusionOrder
+                });
             }
         });
 
+        this.renderCollectionImageTilesOnTileLayers(tilesetKeys, createdTileLayers, occlusionManager);
         this.renderObjectTileLayers(tilesetKeys, depthPlan, groundDepthIndex, occludableDepthIndex, occlusionManager);
 
         // Setup collision and occlusion from object layers
@@ -413,6 +449,120 @@ export class MapLoader {
         }
     }
 
+    private renderCollectionImageTilesOnTileLayers(
+        tilesetKeys: TilesetEntry[],
+        createdTileLayers: CreatedTileLayer[],
+        occlusionManager: OcclusionManager
+    ) {
+        if (!this.map || createdTileLayers.length === 0) return;
+
+        const bindingsByGid = new Map<number, CollectionTileImageBinding>();
+
+        for (const entry of tilesetKeys) {
+            // "Collection of images" tilesets are represented by per-tile images and no tileset.image.
+            if (entry.tileset.image || !Array.isArray(entry.tileset.tiles)) continue;
+            const tileOffsetX = entry.tileset.tileoffset?.x ?? 0;
+            const tileOffsetY = entry.tileset.tileoffset?.y ?? 0;
+
+            for (const tile of entry.tileset.tiles) {
+                if (!tile.image) continue;
+                const textureKey = `tileset-${entry.tileset.name}-tile-${tile.id}`;
+                if (!this.scene.textures.exists(textureKey)) continue;
+                bindingsByGid.set(entry.tileset.firstgid + tile.id, {
+                    gid: entry.tileset.firstgid + tile.id,
+                    textureKey,
+                    tileOffsetX,
+                    tileOffsetY
+                });
+            }
+        }
+
+        if (bindingsByGid.size === 0) return;
+
+        for (const createdLayer of createdTileLayers) {
+            if (!createdLayer.layer.visible) continue;
+            const tileRows = createdLayer.layer.layer?.data;
+            if (!Array.isArray(tileRows) || tileRows.length === 0) continue;
+
+            const layerImages: Phaser.GameObjects.Image[] = [];
+            for (const row of tileRows) {
+                for (const tile of row) {
+                    if (!tile || !Number.isFinite(tile.index) || tile.index <= 0) continue;
+                    const binding = bindingsByGid.get(this.normalizeTiledGid(tile.index));
+                    if (!binding) continue;
+
+                    const image = this.scene.add.image(
+                        createdLayer.layer.x + tile.pixelX - binding.tileOffsetX,
+                        createdLayer.layer.y + tile.pixelY + this.map.tileHeight + binding.tileOffsetY,
+                        binding.textureKey
+                    );
+                    image.setOrigin(0, 1);
+                    image.setDepth(createdLayer.depth);
+                    image.setAlpha(createdLayer.layer.alpha);
+                    image.setScrollFactor(createdLayer.layer.scrollFactorX, createdLayer.layer.scrollFactorY);
+                    image.setFlip(tile.flipX, tile.flipY);
+                    image.setRotation(tile.rotation);
+                    this.lightingManager?.enableLightingOn(image);
+                    layerImages.push(image);
+                }
+            }
+
+            if (
+                !createdLayer.isGroundLayer
+                && layerImages.length > 0
+                && Number.isFinite(createdLayer.occlusionOrder)
+            ) {
+                occlusionManager.addOccludableObjectGroup(
+                    layerImages,
+                    createdLayer.depth,
+                    createdLayer.name,
+                    createdLayer.occlusionOrder as number
+                );
+            }
+
+            this.collectionTileImages.push(...layerImages);
+        }
+    }
+
+    private collectTileLayerGidsInUse(
+        layers: Array<{
+            type?: string;
+            visible?: boolean;
+            data?: number[];
+            chunks?: Array<{ data?: number[] }>;
+        }>
+    ): Set<number> {
+        const gids = new Set<number>();
+        for (const layer of layers) {
+            if (layer.type !== 'tilelayer' || layer.visible === false) continue;
+
+            const pushFromData = (data?: number[]) => {
+                if (!Array.isArray(data)) return;
+                for (const raw of data) {
+                    if (!Number.isFinite(raw) || raw <= 0) continue;
+                    const gid = this.normalizeTiledGid(raw);
+                    if (gid > 0) gids.add(gid);
+                }
+            };
+
+            pushFromData(layer.data);
+            if (Array.isArray(layer.chunks)) {
+                for (const chunk of layer.chunks) {
+                    pushFromData(chunk?.data);
+                }
+            }
+        }
+        return gids;
+    }
+
+    private normalizeTiledGid(rawGid: number): number {
+        const FLIP_H = 0x80000000;
+        const FLIP_V = 0x40000000;
+        const FLIP_D = 0x20000000;
+        const unsignedGid = Number(rawGid) >>> 0;
+        return unsignedGid & ~(FLIP_H | FLIP_V | FLIP_D);
+    }
+
     private buildLayerDepthPlan(): LayerDepthPlan {
         const depthByLayerName = new Map<string, number[]>();
         const occlusionOrderByLayerName = new Map<string, number[]>();
@@ -497,6 +647,8 @@ export class MapLoader {
     }
 
     destroy() {
+        this.collectionTileImages.forEach((image) => image.destroy());
+        this.collectionTileImages = [];
         this.lightingManager?.destroy();
     }
 }

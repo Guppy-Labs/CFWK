@@ -172,6 +172,7 @@ app.post("/api/instance/join", async (req, res) => {
         const requestedLocationId = typeof req.body?.locationId === 'string'
             ? req.body.locationId.trim().toLowerCase()
             : '';
+        const forceMapSpawn = req.body?.forceMapSpawn === true;
 
         let locationId = requestedLocationId;
         let persistedSpawnX: number | undefined;
@@ -198,8 +199,7 @@ app.post("/api/instance/join", async (req, res) => {
             persistedSpawnY = undefined;
         }
 
-        const explicitRequestedLocation = requestedLocationId.length > 0;
-        if (explicitRequestedLocation) {
+        if (forceMapSpawn) {
             persistedSpawnX = undefined;
             persistedSpawnY = undefined;
         }
@@ -217,7 +217,8 @@ app.post("/api/instance/join", async (req, res) => {
             userId: authUserId,
             instanceId: instance.instanceId,
             locationId: instance.locationId,
-            roomName: instance.roomName
+            roomName: instance.roomName,
+            forceMapSpawn
         });
 
         res.json({

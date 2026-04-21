@@ -49,7 +49,10 @@
     "itemDropped": "-----",
     "itemSkipped": "-----",
     "dialogueText": "-----",
-    "dialogueAdvance": "-----"
+    "dialogueAdvance": "-----",
+    "cabinDoorOpen": "-----",
+    "cabinDoorClose": "-----",
+    "cabinRoofToggle": "-----"
   },
   "fishing": {
     "buttons": {
@@ -92,6 +95,9 @@
       "name": "-----"
     },
     "guard": {
+      "name": "-----"
+    },
+    "dad": {
       "name": "-----"
     }
   },

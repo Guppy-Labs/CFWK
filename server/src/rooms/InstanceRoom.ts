@@ -284,8 +284,13 @@ export class InstanceRoom extends Room<InstanceState> {
         await enforceIpBanService(clientIP);
     }
 
-    private async resolveJoinState(client: Client, odcid: string, clientIP: string | null): Promise<JoinResolvedState> {
-        return resolveJoinStateService(this as unknown as InstanceRoomHost, client, odcid, clientIP);
+    private async resolveJoinState(
+        client: Client,
+        odcid: string,
+        clientIP: string | null,
+        options?: { forceMapSpawn?: boolean }
+    ): Promise<JoinResolvedState> {
+        return resolveJoinStateService(this as unknown as InstanceRoomHost, client, odcid, clientIP, options);
     }
 
     private registerJoinConnection(client: Client, odcid: string) {

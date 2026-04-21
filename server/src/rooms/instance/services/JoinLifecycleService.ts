@@ -61,9 +61,10 @@ export async function handleJoinLifecycle(
 
     const odcid = verification.payload.uid;
     const clientIP = getClientIP(client);
+    const forceMapSpawn = verification.payload.rsp === 1;
 
     await enforceIpBan(clientIP);
-    const joinState = await resolveJoinState(room, client, odcid, clientIP);
+    const joinState = await resolveJoinState(room, client, odcid, clientIP, { forceMapSpawn });
 
     registerJoinConnection(room, client, joinState.odcid);
     initializeJoinedPlayerState(room, client, options, joinState);

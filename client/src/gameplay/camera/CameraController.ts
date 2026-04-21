@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { CAMERA_ZOOM_MULTIPLIER } from '@cfwk/shared';
 import { getTiledProperty } from '../map/TiledTypes';
 
 export interface ZoomRegion {
@@ -50,7 +51,7 @@ export class CameraController {
         this.map = map;
         this.target = target;
 
-        this.baseZoom = options.zoom ?? 2;
+        this.baseZoom = (options.zoom ?? 2) * CAMERA_ZOOM_MULTIPLIER;
         this.zoomLerpSpeed = options.zoomLerpSpeed ?? 0.05;
         // Reference viewport: all players see at most this many world pixels
         // Default to 384x288 (12x9 tiles at 32px) for a fair view
@@ -340,6 +341,10 @@ export class CameraController {
         return this.targetZoom;
     }
     
+    addZoomRegion(region: ZoomRegion) {
+        this.zoomRegions.push(region);
+    }
+
     /**
      * Get all zoom regions for debug display
      */
@@ -366,7 +371,7 @@ export class CameraController {
         const fillZoom = Math.max(fillZoomX, fillZoomY);
 
         // Update base zoom and recalculate current/target zoom proportionally
-        const newBaseZoom = Math.max(fairZoom, fillZoom);
+        const newBaseZoom = Math.max(fairZoom * CAMERA_ZOOM_MULTIPLIER, fillZoom);
         const currentRatio = this.currentZoom / this.baseZoom;
         const targetRatio = this.targetZoom / this.baseZoom;
         

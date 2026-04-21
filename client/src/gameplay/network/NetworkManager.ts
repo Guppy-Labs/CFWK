@@ -43,7 +43,7 @@ export class NetworkManager {
     
     // Disconnect detection
     private disconnectCallbacks: Array<(code: number) => void> = [];
-    private transferCallbacks: Array<(locationId: string) => void> = [];
+    private transferCallbacks: Array<(locationId: string, forceMapSpawn?: boolean) => void> = [];
     private defeatCallbacks: Array<(data: { reason?: string; defeatedAt?: number }) => void> = [];
     private recoveredCallbacks: Array<(data: { x?: number; y?: number; invulnerableUntil?: number }) => void> = [];
     private wasConnected: boolean = false;
@@ -76,11 +76,21 @@ export class NetworkManager {
      * Request an instance assignment from the server.
      * This asks the server "where should I go?" and gets back instance info.
      */
-    async requestInstance(locationId?: string): Promise<IInstanceInfo | null> {
+    async requestInstance(
+        locationId?: string,
+        options?: { forceMapSpawn?: boolean }
+    ): Promise<IInstanceInfo | null> {
         console.log(`[NetworkManager] Requesting instance for location: ${locationId || 'auto'}`);
         
         try {
-            const joinPayload = JSON.stringify(locationId ? { locationId } : {});
+            const joinPayloadData: { locationId?: string; forceMapSpawn?: boolean } = {};
+            if (locationId) {
+                joinPayloadData.locationId = locationId;
+            }
+            if (options?.forceMapSpawn === true) {
+                joinPayloadData.forceMapSpawn = true;
+            }
+            const joinPayload = JSON.stringify(joinPayloadData);
             const joinUrls: string[] = ['/api/instance/join'];
             const configuredUrl = Config.getApiUrl('/instance/join');
             if (configuredUrl && configuredUrl !== joinUrls[0]) {
@@ -480,9 +490,9 @@ export class NetworkManager {
             window.dispatchEvent(new CustomEvent('demo:start', { detail: data }));
         });
 
-        this.currentRoom.onMessage('server:transfer', (data: { locationId?: string }) => {
+        this.currentRoom.onMessage('server:transfer', (data: { locationId?: string; forceMapSpawn?: boolean }) => {
             if (!data?.locationId) return;
-            this.transferCallbacks.forEach((callback) => callback(data.locationId!));
+            this.transferCallbacks.forEach((callback) => callback(data.locationId!, data.forceMapSpawn === true));
         });
 
         this.currentRoom.onMessage('player:defeat', (data: { reason?: string; defeatedAt?: number }) => {
@@ -541,7 +551,7 @@ export class NetworkManager {
         };
     }
 
-    onServerTransfer(callback: (locationId: string) => void): () => void {
+    onServerTransfer(callback: (locationId: string, forceMapSpawn?: boolean) => void): () => void {
         this.transferCallbacks.push(callback);
         return () => {
             const index = this.transferCallbacks.indexOf(callback);

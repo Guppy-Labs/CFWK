@@ -211,7 +211,10 @@
 		"itemDropped": "Objeto soltado",
 		"itemSkipped": "Objeto omitido",
 		"dialogueText": "Texto de diálogo",
-		"dialogueAdvance": "Avance de diálogo"
+		"dialogueAdvance": "Avance de diálogo",
+		"cabinDoorOpen": "La puerta de la cabaña se abre",
+		"cabinDoorClose": "La puerta de la cabaña se cierra",
+		"cabinRoofToggle": "El techo de la cabaña cambia"
 	},
 	"fishing": {
 		"buttons": {
@@ -277,6 +280,9 @@
 		},
 		"wiseman": {
 			"name": "Sabio"
+		},
+		"dad": {
+			"name": "Papá"
 		}
 	},
 	"dialogue": {
@@ -481,6 +487,45 @@
 							"0": "Encuentra al Maestro del Mar y di: \"el coleccionista de cristal te envió\"."
 						}
 					}
+			},
+			"dad": {
+				"fallback": {
+					"0": "Estoy orgulloso de ti. Siempre lo he estado."
+				},
+				"random": {
+					"0": {
+						"0": "Oye, pequeño... Acércate.",
+						"1": "Sé que las cosas se ven difíciles ahora. Pero tú... tienes algo que la mayoría no tiene.",
+						"2": "Vas a salvar este mundo. Lo creo con todo lo que me queda."
+					},
+					"1": {
+						"0": "Ahí estás...",
+						"1": "Ojalá pudiera levantarme y caminar a tu lado. Pero mis piernas se rindieron hace mucho.",
+						"2": "Pero eso no importa. Eres más fuerte de lo que yo fui jamás. Ve y demuéstralo."
+					},
+					"2": {
+						"0": "¿De vuelta? Bien. Me gusta ver tu cara.",
+						"1": "Todo gran héroe empezó sin saber lo que hacía. Vas justo a tiempo.",
+						"2": "¿De verdad crees que puedo hacer esto?",
+						"3": "No lo creo. Lo sé."
+					},
+					"3": {
+						"0": "El mundo está en mal estado, chico. Peor que cuando yo tenía tu edad.",
+						"1": "Pero te eligió por una razón. Y yo también, cuando te traje aquí.",
+						"2": "No cargues el peso solo. Encuentra amigos. Confía en ellos. Y luego sálvanos a todos."
+					},
+					"4": {
+						"0": "¿Sabes qué me mantuvo en pie todos esos años allá afuera?",
+						"1": "¿Qué?",
+						"2": "Saber que volvería a casa contigo. Y ahora eres tú quien sale.",
+						"3": "Haz que valga la pena. Estaré aquí cuando vuelvas."
+					},
+					"5": {
+						"0": "¿Hmm? No te preocupes por mí. Solo descanso los ojos.",
+						"1": "Escucha... pase lo que pase allá afuera, recuerda quién eres.",
+						"2": "Eres mi hijo. Y mi hijo no se rinde."
+					}
+				}
 			}
 		}
 	},

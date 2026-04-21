@@ -398,11 +398,14 @@ export class CommandProcessor {
         if (!user) return `User '${targetName}' not found.`;
 
         user.lastLocationId = targetLocationId;
+        user.lastPositionX = null;
+        user.lastPositionY = null;
         await user.save();
 
         instanceManager.events.emit('send_user', {
             userId: user._id.toString(),
-            locationId: targetLocationId
+            locationId: targetLocationId,
+            forceMapSpawn: true
         });
 
         return `Sent ${user.username} to ${targetLocationId}.`;

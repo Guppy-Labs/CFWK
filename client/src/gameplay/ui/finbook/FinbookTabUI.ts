@@ -67,6 +67,8 @@ export class FinbookTabUI {
     private seenQuestIds = new Set<string>();
     private targetedQuestId: string | null = null;
     private hasLoadedAdvancementsState = false;
+    private locationRegionNamesByMapFile = new Map<string, string[]>();
+    private locationRegionLoadInFlight = new Set<string>();
     private guideQuestOrder: string[] = [];
     private guideQuestRowRects = new Map<string, Phaser.Geom.Rectangle>();
     private guideQuestTitleRect: Phaser.Geom.Rectangle | null = null;
@@ -134,6 +136,9 @@ export class FinbookTabUI {
     setVisible(visible: boolean) {
         this.container.setVisible(visible);
         if (visible) {
+            ADVANCEMENT_LOCATION_CATALOG.forEach((entry) => {
+                this.ensureLocationRegionsLoaded(entry.mapFile);
+            });
             this.reconcileTargetedQuest();
             this.autoTrackFirstQuest(false);
             if (this.targetedQuestId && this.getSortedAvailableQuestIds().includes(this.targetedQuestId)) {
@@ -806,6 +811,7 @@ export class FinbookTabUI {
         }
 
         ADVANCEMENT_LOCATION_CATALOG.forEach((entry, index) => {
+            this.ensureLocationRegionsLoaded(entry.mapFile);
             const y = Math.floor(listY + 4 * this.scale + index * this.rowHeight * this.scale);
             const unlocked = this.isRegionUnlocked(entry.mapFile);
             const isSelected = this.selectedLocationMapFile === entry.mapFile;
@@ -846,6 +852,8 @@ export class FinbookTabUI {
         const entry = ADVANCEMENT_LOCATION_CATALOG.find((value) => value.mapFile === this.selectedLocationMapFile);
         if (!entry) return;
 
+        this.ensureLocationRegionsLoaded(entry.mapFile);
+
         const { x: rightX, width: listWidth } = this.getRightPageContentBounds();
         const listY = Math.floor(this.pageTopY + this.contentPadY * this.scale);
         const listHeight = Math.floor(this.pageHeight * this.scale - (listY - this.pageTopY) - this.contentPadY * this.scale);
@@ -859,15 +867,22 @@ export class FinbookTabUI {
         this.rightContainer.add(title);
 
         const discovered = this.advancementsState.discoveredRegions[entry.mapFile] ?? [];
-        const countText = this.makeTextImage(`${discovered.length}/${entry.regions.length}`, '#9A9EA7');
+        const regionIds = this.getRegionIdsForMap(entry.mapFile);
+        const knownRegionIds = new Set(regionIds);
+        const unknownDiscoveredIds = discovered.filter((regionId) => !knownRegionIds.has(regionId));
+        const displayedRegionIds = [...regionIds, ...unknownDiscoveredIds];
+        const discoveredCount = displayedRegionIds.length > 0
+            ? displayedRegionIds.filter((regionId) => discovered.includes(regionId)).length
+            : 0;
+        const countText = this.makeTextImage(`${discoveredCount}/${displayedRegionIds.length}`, '#9A9EA7');
         countText.setOrigin(0, 0);
         countText.setScale(this.scale * 0.95);
         countText.setPosition(Math.floor(rightX + 4 * this.scale), Math.floor(listY + 13 * this.scale));
         this.rightContainer.add(countText);
 
-        entry.regions.forEach((region, index) => {
+        displayedRegionIds.forEach((regionId, index) => {
             const y = Math.floor(listY + 24 * this.scale + index * this.rowHeight * this.scale);
-            const unlocked = this.isAreaUnlocked(entry.mapFile, region.id);
+            const unlocked = this.isAreaUnlocked(entry.mapFile, regionId);
 
             const rowBg = this.addNineSliceImage(
                 this.rightContainer,
@@ -881,7 +896,7 @@ export class FinbookTabUI {
 
             this.addMarqueeText(
                 this.rightContainer,
-                unlocked ? region.id : this.t('finbook.locked', '???'),
+                unlocked ? regionId : this.t('finbook.locked', '???'),
                 Math.floor(rightX + 8 * this.scale),
                 Math.floor(y + 3 * this.scale),
                 Math.floor(listWidth - 16 * this.scale),
@@ -891,6 +906,62 @@ export class FinbookTabUI {
                 rowBg
             );
         });
+    }
+
+    private getRegionIdsForMap(mapFile: string): string[] {
+        const runtimeRegions = this.locationRegionNamesByMapFile.get(mapFile) ?? [];
+        const catalogEntry = ADVANCEMENT_LOCATION_CATALOG.find((entry) => entry.mapFile === mapFile);
+        const catalogRegions = (catalogEntry?.regions ?? []).map((region) => region.id);
+        const discoveredRegions = this.advancementsState.discoveredRegions[mapFile] ?? [];
+        return Array.from(new Set([...runtimeRegions, ...catalogRegions, ...discoveredRegions]));
+    }
+
+    private ensureLocationRegionsLoaded(mapFile: string) {
+        if (this.locationRegionNamesByMapFile.has(mapFile) || this.locationRegionLoadInFlight.has(mapFile)) {
+            return;
+        }
+        this.locationRegionLoadInFlight.add(mapFile);
+        void this.loadLocationRegions(mapFile)
+            .then((regionIds) => {
+                this.locationRegionNamesByMapFile.set(mapFile, regionIds);
+            })
+            .catch(() => {
+                this.locationRegionNamesByMapFile.set(mapFile, []);
+            })
+            .finally(() => {
+                this.locationRegionLoadInFlight.delete(mapFile);
+                if (this.container.visible && this.activeSection === 'locations') {
+                    this.render();
+                }
+            });
+    }
+
+    private async loadLocationRegions(mapFile: string): Promise<string[]> {
+        const response = await fetch(`/maps/${encodeURIComponent(mapFile)}`, { cache: 'force-cache' });
+        if (!response.ok) {
+            return [];
+        }
+        const payload = await response.json() as {
+            layers?: Array<{
+                type?: string;
+                name?: string;
+                objects?: Array<{ name?: string }>;
+            }>;
+        };
+        const layers = Array.isArray(payload.layers) ? payload.layers : [];
+        const regionLayer = layers.find((layer) =>
+            layer?.type === 'objectgroup'
+            && typeof layer.name === 'string'
+            && layer.name.trim().toLowerCase() === 'regions'
+        );
+        if (!regionLayer || !Array.isArray(regionLayer.objects)) {
+            return [];
+        }
+        return Array.from(new Set(
+            regionLayer.objects
+                .map((object) => (typeof object?.name === 'string' ? object.name.trim() : ''))
+                .filter((name) => name.length > 0)
+        ));
     }
 
     private renderAchievements() {

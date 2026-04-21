@@ -13,6 +13,7 @@ type GroupCard = {
 };
 
 export class InventoryGroupsUI {
+    private static nextInstanceId = 0;
     private scene: Phaser.Scene;
     private container: Phaser.GameObjects.Container;
     private cards: GroupCard[] = [];
@@ -33,6 +34,8 @@ export class InventoryGroupsUI {
     private readonly fontCharGap = 1;
     private readonly fontRenderer: BitmapFontRenderer;
     private labelTextureCounter = 0;
+    private readonly labelTexturePrefix: string;
+    private createdLabelTextureKeys = new Set<string>();
     private selectedLabel?: Phaser.GameObjects.Image;
     private selectedLabelKey?: string;
 
@@ -42,6 +45,7 @@ export class InventoryGroupsUI {
     constructor(scene: Phaser.Scene, parent: Phaser.GameObjects.Container) {
         this.scene = scene;
         this.fontRenderer = new BitmapFontRenderer(scene, this.fontCharSize);
+        this.labelTexturePrefix = `__inv_group_label_${InventoryGroupsUI.nextInstanceId++}`;
         this.container = this.scene.add.container(0, 0);
         parent.add(this.container);
 
@@ -151,6 +155,7 @@ export class InventoryGroupsUI {
             this.selectedLabel.setTexture(newLabelTexture);
             if (oldKey && this.scene.textures.exists(oldKey)) {
                 this.scene.textures.remove(oldKey);
+                this.createdLabelTextureKeys.delete(oldKey);
             }
         }
 
@@ -173,6 +178,7 @@ export class InventoryGroupsUI {
             this.selectedLabel.setTexture(newLabelTexture);
             if (oldKey && this.scene.textures.exists(oldKey)) {
                 this.scene.textures.remove(oldKey);
+                this.createdLabelTextureKeys.delete(oldKey);
             }
         }
 
@@ -186,6 +192,13 @@ export class InventoryGroupsUI {
             window.removeEventListener('locale:changed', this.localeChangedHandler as EventListener);
             this.localeChangedHandler = undefined;
         }
+        this.createdLabelTextureKeys.forEach((key) => {
+            if (this.scene.textures.exists(key)) {
+                this.scene.textures.remove(key);
+            }
+        });
+        this.createdLabelTextureKeys.clear();
+        this.selectedLabelKey = undefined;
         this.container.destroy();
     }
 
@@ -226,8 +239,12 @@ export class InventoryGroupsUI {
         ctx.fillStyle = color;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        const key = `__inv_group_label_${this.labelTextureCounter++}`;
+        const key = `${this.labelTexturePrefix}_${this.labelTextureCounter++}`;
+        if (this.scene.textures.exists(key)) {
+            this.scene.textures.remove(key);
+        }
         this.scene.textures.addCanvas(key, canvas);
+        this.createdLabelTextureKeys.add(key);
         return key;
     }
 

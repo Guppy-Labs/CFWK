@@ -35,6 +35,7 @@ export class AINpcEntity {
     private hitFlashTween?: Phaser.Tweens.Tween;
     private waterSystem?: WaterSystem;
     private shadow?: PlayerShadow;
+    private destroyed = false;
 
     constructor(scene: Phaser.Scene, config: AINpcEntityConfig) {
         this.scene = scene;
@@ -99,6 +100,7 @@ export class AINpcEntity {
     }
 
     update(delta: number) {
+        if (this.destroyed || !this.sprite || !this.sprite.active || !this.sprite.anims) return;
         const prevX = this.sprite.x;
         const prevY = this.sprite.y;
         const alpha = Phaser.Math.Clamp(delta / 100, 0.08, 0.35);
@@ -121,12 +123,14 @@ export class AINpcEntity {
     }
 
     destroy() {
+        if (this.destroyed) return;
+        this.destroyed = true;
         this.hitFlashTween?.stop();
         this.hitFlashTween = undefined;
         this.waterSystem?.destroy();
         this.shadow?.destroy();
-        this.sprite.destroy();
-        this.nameplate.destroy();
+        this.sprite?.destroy();
+        this.nameplate?.destroy();
     }
 
     flashDamageHighlight(color: number, durationMs: number = 180) {
@@ -162,6 +166,10 @@ export class AINpcEntity {
 
     getPosition(): { x: number; y: number } {
         return { x: this.sprite.x, y: this.sprite.y };
+    }
+
+    isDestroyed(): boolean {
+        return this.destroyed || !this.sprite || !this.sprite.active;
     }
 
     getSoftCollisionFootprint(): { x: number; y: number; width: number; height: number } {
@@ -231,6 +239,7 @@ export class AINpcEntity {
     }
 
     private applyAnimationByMotion(movedX: number, movedY: number, deltaMs: number) {
+        if (this.destroyed || !this.sprite || !this.sprite.active || !this.sprite.anims) return;
         const dtSec = Math.max(0.001, deltaMs / 1000);
         const speed = Math.hypot(movedX, movedY) / dtSec;
         const isMoving = speed > 0.35 || this.targetAnim === 'walk';
@@ -250,7 +259,7 @@ export class AINpcEntity {
             : (direction === 5 || direction === 6 || direction === 7);
         this.sprite.setFlipX(shouldMirror);
 
-        if (this.sprite.anims.currentAnim?.key !== animKey) {
+        if (this.scene.anims.exists(animKey) && this.sprite.anims.currentAnim?.key !== animKey) {
             this.sprite.play(animKey, true);
         }
 
@@ -266,6 +275,7 @@ export class AINpcEntity {
     }
 
     private applySpriteOrigin() {
+        if (this.destroyed || !this.sprite || !this.sprite.active) return;
         const state: 'idle' | 'walk' | 'attack' | 'death' =
             this.targetAnim === 'death'
                 ? 'death'

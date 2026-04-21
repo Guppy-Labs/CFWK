@@ -99,12 +99,13 @@ export function registerAdminEventListeners(room: InstanceRoomHost) {
         });
     });
 
-    room.instanceManager.events.on("send_user", (data: { userId: string; locationId: string }) => {
+    room.instanceManager.events.on("send_user", (data: { userId: string; locationId: string; forceMapSpawn?: boolean }) => {
         room.clients.forEach((client: Client) => {
             const player = room.state.players.get(client.sessionId);
             if (player && player.odcid === data.userId) {
                 client.send("server:transfer", {
-                    locationId: data.locationId
+                    locationId: data.locationId,
+                    forceMapSpawn: data.forceMapSpawn === true
                 });
             }
         });

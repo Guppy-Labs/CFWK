@@ -1,0 +1,150 @@
+{
+    "id": "dad",
+    "forks": [
+        {
+            "checks": [],
+            "randomLines": [
+                [
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.0.0",
+                        "text": "Hey, kiddo... Come closer."
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.0.1",
+                        "text": "I know things look rough right now. But you... you've got something most people don't."
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.0.2",
+                        "text": "You're going to save this world. I believe that with everything I have left."
+                    }
+                ],
+                [
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.1.0",
+                        "text": "There you are..."
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "sad",
+                        "textKey": "dialogue.npc.dad.random.1.1",
+                        "text": "I wish I could stand up and walk beside you. But my legs gave out a long time ago."
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.1.2",
+                        "text": "That doesn't matter though. You're stronger than I ever was. Go prove it."
+                    }
+                ],
+                [
+                    {
+                        "speaker": "npc",
+                        "emotion": "surprise",
+                        "textKey": "dialogue.npc.dad.random.2.0",
+                        "text": "Back again? Good. I like seeing your face."
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.2.1",
+                        "text": "Every great hero started out not knowing what they were doing. You're right on schedule."
+                    },
+                    {
+                        "speaker": "player",
+                        "emotion": "sad",
+                        "textKey": "dialogue.npc.dad.random.2.2",
+                        "text": "You really think I can do this?"
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.2.3",
+                        "text": "I don't think it. I know it."
+                    }
+                ],
+                [
+                    {
+                        "speaker": "npc",
+                        "emotion": "sad",
+                        "textKey": "dialogue.npc.dad.random.3.0",
+                        "text": "The world's in bad shape, kid. Worse than when I was your age."
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.3.1",
+                        "text": "But it chose you for a reason. And so did I, when I brought you here."
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.3.2",
+                        "text": "Don't carry the weight alone. Find friends. Trust them. Then save us all."
+                    }
+                ],
+                [
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.4.0",
+                        "text": "You know what kept me going all those years out there?"
+                    },
+                    {
+                        "speaker": "player",
+                        "emotion": "surprise",
+                        "textKey": "dialogue.npc.dad.random.4.1",
+                        "text": "What?"
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.4.2",
+                        "text": "Knowing I'd come home to you. And now you're the one heading out."
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.4.3",
+                        "text": "Make it count. I'll be right here when you get back."
+                    }
+                ],
+                [
+                    {
+                        "speaker": "npc",
+                        "emotion": "surprise",
+                        "textKey": "dialogue.npc.dad.random.5.0",
+                        "text": "Hmm? Oh, don't mind me. Just resting my eyes."
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.5.1",
+                        "text": "Listen... whatever happens out there, remember who you are."
+                    },
+                    {
+                        "speaker": "npc",
+                        "emotion": "happy",
+                        "textKey": "dialogue.npc.dad.random.5.2",
+                        "text": "You're my kid. And my kid doesn't give up."
+                    }
+                ]
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.dad.fallback.0",
+                    "text": "I'm proud of you. Always have been."
+                }
+            ]
+        }
+    ]
+}

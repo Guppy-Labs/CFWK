@@ -5,6 +5,7 @@ export type JoinTokenIssueInput = {
     instanceId: string;
     locationId: string;
     roomName: string;
+    forceMapSpawn?: boolean;
 };
 
 export type JoinTokenPayload = {
@@ -13,6 +14,7 @@ export type JoinTokenPayload = {
     iid: string;
     lid: string;
     room: string;
+    rsp?: 1;
     iat: number;
     exp: number;
     nonce: string;
@@ -72,6 +74,7 @@ export function issueJoinToken(input: JoinTokenIssueInput): { token: string; exp
         iid: input.instanceId,
         lid: input.locationId,
         room: input.roomName,
+        ...(input.forceMapSpawn ? { rsp: 1 } : {}),
         iat: now,
         exp: now + JOIN_TOKEN_TTL_MS,
         nonce: randomUUID()
@@ -113,6 +116,7 @@ export function verifyJoinToken(token: string): { valid: boolean; payload?: Join
             typeof decoded.iid !== "string" ||
             typeof decoded.lid !== "string" ||
             typeof decoded.room !== "string" ||
+            (decoded.rsp !== undefined && decoded.rsp !== 1) ||
             !Number.isFinite(decoded.iat) ||
             !Number.isFinite(decoded.exp) ||
             typeof decoded.nonce !== "string"
@@ -126,6 +130,7 @@ export function verifyJoinToken(token: string): { valid: boolean; payload?: Join
             iid: decoded.iid,
             lid: decoded.lid,
             room: decoded.room,
+            ...(decoded.rsp === 1 ? { rsp: 1 as const } : {}),
             iat: Number(decoded.iat),
             exp: Number(decoded.exp),
             nonce: decoded.nonce

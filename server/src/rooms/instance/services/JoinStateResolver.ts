@@ -53,8 +53,10 @@ export async function resolveJoinState(
     room: InstanceRoomHost,
     client: Client,
     odcid: string,
-    clientIP: string | null
+    clientIP: string | null,
+    options?: { forceMapSpawn?: boolean }
 ): Promise<JoinResolvedState> {
+    const forceMapSpawn = options?.forceMapSpawn === true;
     let isPremium = false;
     let hasGameAccess = false;
     let userAppearance: string = JSON.stringify(DEFAULT_CHARACTER_APPEARANCE);
@@ -89,7 +91,11 @@ export async function resolveJoinState(
                     maxHearts: Number((storedHearts as any).maxHearts)
                 });
             }
-            if (typeof (user as any)?.lastPositionX === "number" && typeof (user as any)?.lastPositionY === "number") {
+            if (
+                !forceMapSpawn
+                && typeof (user as any)?.lastPositionX === "number"
+                && typeof (user as any)?.lastPositionY === "number"
+            ) {
                 persistedJoinX = Number((user as any).lastPositionX);
                 persistedJoinY = Number((user as any).lastPositionY);
             }

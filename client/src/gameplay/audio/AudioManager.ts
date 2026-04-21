@@ -115,6 +115,15 @@ export const AUDIO_CONFIG = {
         dialogueEnd: {
             volume: 0.9,
         },
+        cabinDoorOpen: {
+            volume: 0.82,
+        },
+        cabinDoorClose: {
+            volume: 0.78,
+        },
+        cabinRoofToggle: {
+            volume: 0.72,
+        }
     },
 };
 // ============================================================
@@ -141,6 +150,10 @@ export const MAP_AUDIO_CONFIGS: Record<string, MapAudioConfig> = {
     },
     'anchor-hollow': {
         music: 'music-anchor-hollow',
+        ambientLoops: ['ambient-ocean', 'ambient-fire'],
+    },
+    'whiskerwake': {
+        music: 'music-whiskerwake',
         ambientLoops: ['ambient-ocean', 'ambient-fire'],
     },
     'beach': {
@@ -179,7 +192,10 @@ const SUBTITLE_KEYS: Record<string, string> = {
     'advancement-location-discovered': 'subtitles.locationDiscovered',
     'dialogue-click': 'subtitles.dialogueText',
     'dialogue-next': 'subtitles.dialogueAdvance',
-    'dialogue-end': 'subtitles.dialogueAdvance'
+    'dialogue-end': 'subtitles.dialogueAdvance',
+    'cabin-door-open': 'subtitles.cabinDoorOpen',
+    'cabin-door-close': 'subtitles.cabinDoorClose',
+    'cabin-roof-toggle': 'subtitles.cabinRoofToggle'
 };
 
 /**
@@ -928,14 +944,14 @@ export class AudioManager {
 
     playConsumableEat(itemId: string) {
         if (itemId !== 'yekberries' && itemId !== 'yekjuice') return;
-        const soundKey = 'item-eat-yekberries';
-        if (!this.scene.cache.audio.exists(soundKey)) return;
-        const cfg = AUDIO_CONFIG.sfx.eat;
-        this.scene.sound.play(soundKey, {
-            volume: this.getEffectivePlayersVolume(cfg.volume)
-        });
-        const subtitleSoundKey = itemId === 'yekjuice' ? 'item-drink-yekjuice' : soundKey;
-        this.emitSubtitle(subtitleSoundKey);
+        const soundKey = itemId === 'yekjuice' ? 'item-drink-yekjuice' : 'item-eat-yekberries';
+        if (this.scene.cache.audio.exists(soundKey)) {
+            const cfg = AUDIO_CONFIG.sfx.eat;
+            this.scene.sound.play(soundKey, {
+                volume: this.getEffectivePlayersVolume(cfg.volume)
+            });
+        }
+        this.emitSubtitle(soundKey);
     }
 
     playQuestStarted() {
@@ -991,6 +1007,18 @@ export class AudioManager {
         this.emitSubtitle('dialogue-end');
     }
 
+    playCabinDoorOpen() {
+        this.playSceneAmbientSfx('cabin-door-open', AUDIO_CONFIG.sfx.cabinDoorOpen.volume);
+    }
+
+    playCabinDoorClose() {
+        this.playSceneAmbientSfx('cabin-door-close', AUDIO_CONFIG.sfx.cabinDoorClose.volume);
+    }
+
+    playCabinRoofToggle() {
+        this.playSceneAmbientSfx('cabin-roof-toggle', AUDIO_CONFIG.sfx.cabinRoofToggle.volume);
+    }
+
     private playDialogueSfxUnfiltered(key: string, volume: number) {
         const sound = this.scene.sound.add(key, {
             volume
@@ -1001,6 +1029,16 @@ export class AudioManager {
         }
 
         sound.play();
+        sound.once('complete', () => sound.destroy());
+    }
+
+    private playSceneAmbientSfx(key: string, baseVolume: number) {
+        if (!this.scene.cache.audio.exists(key)) return;
+        const sound = this.scene.sound.add(key, {
+            volume: this.getEffectiveAmbientVolume(baseVolume)
+        }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        this.emitSubtitle(key);
         sound.once('complete', () => sound.destroy());
     }
     

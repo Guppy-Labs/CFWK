@@ -210,7 +210,10 @@
 		"itemDropped": "Objet jeté",
 		"itemSkipped": "Objet ignoré",
 		"dialogueText": "Texte de dialogue",
-		"dialogueAdvance": "Avancement du dialogue"
+		"dialogueAdvance": "Avancement du dialogue",
+		"cabinDoorOpen": "La porte de la cabane s'ouvre",
+		"cabinDoorClose": "La porte de la cabane se ferme",
+		"cabinRoofToggle": "Le toit de la cabane se déplace"
 	},
 	"fishing": {
 		"buttons": {
@@ -276,6 +279,9 @@
 		},
 		"wiseman": {
 			"name": "Sage"
+		},
+		"dad": {
+			"name": "Papa"
 		}
 	},
 	"dialogue": {
@@ -480,6 +486,45 @@
 							"0": "Trouve le Maître des Mers et dis : \"le collectionneur de verre t'a envoyé\"."
 						}
 					}
+			},
+			"dad": {
+				"fallback": {
+					"0": "Je suis fier de toi. Je l'ai toujours été."
+				},
+				"random": {
+					"0": {
+						"0": "Hé, gamin... Approche-toi.",
+						"1": "Je sais que les choses ont l'air difficiles en ce moment. Mais toi... tu as quelque chose que la plupart n'ont pas.",
+						"2": "Tu vas sauver ce monde. J'y crois de tout ce qu'il me reste."
+					},
+					"1": {
+						"0": "Te voilà...",
+						"1": "J'aimerais pouvoir me lever et marcher à tes côtés. Mais mes jambes ont lâché il y a longtemps.",
+						"2": "Mais ça n'a pas d'importance. Tu es plus fort que je ne l'ai jamais été. Va le prouver."
+					},
+					"2": {
+						"0": "De retour ? Bien. J'aime voir ton visage.",
+						"1": "Tout grand héros a commencé sans savoir ce qu'il faisait. Tu es pile dans les temps.",
+						"2": "Tu crois vraiment que je peux y arriver ?",
+						"3": "Je ne le crois pas. Je le sais."
+					},
+					"3": {
+						"0": "Le monde est en mauvais état, petit. Pire que quand j'avais ton âge.",
+						"1": "Mais il t'a choisi pour une raison. Et moi aussi, quand je t'ai amené ici.",
+						"2": "Ne porte pas ce poids tout seul. Trouve des amis. Fais-leur confiance. Et sauve-nous tous."
+					},
+					"4": {
+						"0": "Tu sais ce qui m'a gardé debout toutes ces années là-bas ?",
+						"1": "Quoi ?",
+						"2": "Savoir que je rentrerais à la maison pour toi. Et maintenant c'est toi qui pars.",
+						"3": "Fais que ça compte. Je serai là quand tu reviendras."
+					},
+					"5": {
+						"0": "Hmm ? Ne t'inquiète pas pour moi. Je repose juste mes yeux.",
+						"1": "Écoute... quoi qu'il arrive là-bas, souviens-toi de qui tu es.",
+						"2": "Tu es mon enfant. Et mon enfant n'abandonne pas."
+					}
+				}
 			}
 		}
 	},

@@ -41,6 +41,7 @@ export class AINpcManager {
     private entities = new Map<string, AINpcEntity>();
     private debugGraphics?: Phaser.GameObjects.Graphics;
     private trimMetaPromiseByKind = new Map<AINpcKind, Promise<GremlinTrimMeta | null>>();
+    private destroyed = false;
 
     constructor(scene: Phaser.Scene, config: AINpcManagerConfig) {
         this.scene = scene;
@@ -48,13 +49,22 @@ export class AINpcManager {
     }
 
     initialize() {
+        if (this.destroyed) return;
         const room = this.networkManager.getRoom();
         if (!room) return;
 
         room.state.aiNpcs?.onAdd((npc: IAiNpcState, id: string) => {
             this.ensureAssetsForKind(npc.kind as AINpcKind, () => {
+                if (this.destroyed || !this.scene.sys.isActive()) return;
+                if (!room.state.aiNpcs?.has(id)) return;
                 const definition = getAiNpcVisualDefinition(npc.kind as AINpcKind);
                 if (!definition) return;
+
+                const existing = this.entities.get(id);
+                if (existing) {
+                    existing.destroy();
+                    this.entities.delete(id);
+                }
 
                 const entity = new AINpcEntity(this.scene, {
                     definition,
@@ -103,7 +113,14 @@ export class AINpcManager {
     }
 
     update(delta: number) {
-        this.entities.forEach((entity) => entity.update(delta));
+        if (this.destroyed) return;
+        this.entities.forEach((entity, id) => {
+            if (entity.isDestroyed()) {
+                this.entities.delete(id);
+                return;
+            }
+            entity.update(delta);
+        });
     }
 
     getEntities(): Map<string, AINpcEntity> {
@@ -158,6 +175,8 @@ export class AINpcManager {
     }
 
     destroy() {
+        if (this.destroyed) return;
+        this.destroyed = true;
         this.debugGraphics?.destroy();
         this.debugGraphics = undefined;
         this.entities.forEach((entity) => entity.destroy());

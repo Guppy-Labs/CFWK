@@ -47,10 +47,14 @@ export class BootScene extends Phaser.Scene {
 
     private async requestInstance() {
         const joinLocationOverride = localStorage.getItem('cfwk_join_location_override') || undefined;
+        const forceMapSpawn = localStorage.getItem('cfwk_join_force_map_spawn') === '1';
         const lastLocationId = localStorage.getItem('cfwk_last_location_id') || undefined;
         const requestedLocationId = joinLocationOverride || lastLocationId;
         if (joinLocationOverride) {
             localStorage.removeItem('cfwk_join_location_override');
+        }
+        if (forceMapSpawn) {
+            localStorage.removeItem('cfwk_join_force_map_spawn');
         }
 
         localStorage.removeItem('cfwk_afk');
@@ -59,7 +63,9 @@ export class BootScene extends Phaser.Scene {
         localStorage.removeItem('cfwk_disconnected');
 
         const attemptJoin = async () => {
-            const instance = await this.networkManager.requestInstance(requestedLocationId);
+            const instance = await this.networkManager.requestInstance(requestedLocationId, {
+                forceMapSpawn
+            });
             if (!instance) return null;
             
             // Pass user data when connecting

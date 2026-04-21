@@ -68,9 +68,26 @@ export interface ServerMovementImpulse {
   serverTime: number;
 }
 
-export const SOFT_COLLISION_PLAYER_FOOT_HITBOX = {
+export const WORLD_VIEW_TUNING = {
+  // Global 20% player scale increase.
+  playerScaleMultiplier: 1.2,
+  // Global 25% zoom-out (0.75x zoom).
+  cameraZoomMultiplier: 0.75
+} as const;
+
+const BASE_PLAYER_RENDER_SCALE = 1.35;
+const BASE_SOFT_COLLISION_PLAYER_FOOT_HITBOX = {
   width: 19.2,
   height: 7.2
+} as const;
+
+export const PLAYER_RENDER_SCALE = BASE_PLAYER_RENDER_SCALE * WORLD_VIEW_TUNING.playerScaleMultiplier;
+
+export const CAMERA_ZOOM_MULTIPLIER = WORLD_VIEW_TUNING.cameraZoomMultiplier;
+
+export const SOFT_COLLISION_PLAYER_FOOT_HITBOX = {
+  width: BASE_SOFT_COLLISION_PLAYER_FOOT_HITBOX.width * WORLD_VIEW_TUNING.playerScaleMultiplier,
+  height: BASE_SOFT_COLLISION_PLAYER_FOOT_HITBOX.height * WORLD_VIEW_TUNING.playerScaleMultiplier
 } as const;
 
 export const SOFT_COLLISION_FORCE = {
@@ -154,8 +171,6 @@ export interface IPlayer {
     isGuiOpen?: boolean; // Whether main GUI is open
     isChatOpen?: boolean; // Whether chat is open/focused
 }
-
-  export const PLAYER_RENDER_SCALE = 1.35;
 
 // --- Map System Types ---
 
@@ -763,6 +778,11 @@ export const ADVANCEMENT_LOCATION_CATALOG: ILocationCatalogEntry[] = [
     regions: [
       { id: 'Coast Town' }
     ]
+  },
+  {
+    mapFile: 'whiskerwake.tmj',
+    mapName: 'Whiskerwake Island',
+    regions: []
   }
 ];
 

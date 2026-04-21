@@ -46,7 +46,8 @@ const MOBILE_SAFE_CRITICAL_ASSETS = [
     '/ui/Handle01a.png',
     '/ui/Joystick01a.png',
     '/ui/glimmerbowl/idle.png',
-    '/maps/anchor-hollow.tmj'
+    '/maps/anchor-hollow.tmj',
+    '/maps/whiskerwake.tmj'
 ];
 
 function isCacheApiAvailable() {

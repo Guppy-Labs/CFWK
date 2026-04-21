@@ -277,7 +277,10 @@
     "itemDropped": "Item dropped",
     "itemSkipped": "Item skipped",
     "dialogueText": "Dialogue text",
-    "dialogueAdvance": "Dialogue advance"
+    "dialogueAdvance": "Dialogue advance",
+    "cabinDoorOpen": "Cabin door opens",
+    "cabinDoorClose": "Cabin door closes",
+    "cabinRoofToggle": "Cabin roof shifts"
   },
   "fishing": {
     "buttons": {
@@ -357,6 +360,9 @@
     },
     "wiseman": {
       "name": "Wise Man"
+    },
+    "dad": {
+      "name": "Dad"
     }
   },
   "dialogue": {
@@ -659,6 +665,45 @@
           },
           "reminder": {
             "0": "Find the Sea Master and say the collector of glass sent you."
+          }
+        }
+      },
+      "dad": {
+        "fallback": {
+          "0": "I'm proud of you. Always have been."
+        },
+        "random": {
+          "0": {
+            "0": "Hey, kiddo... Come closer.",
+            "1": "I know things look rough right now. But you... you've got something most people don't.",
+            "2": "You're going to save this world. I believe that with everything I have left."
+          },
+          "1": {
+            "0": "There you are...",
+            "1": "I wish I could stand up and walk beside you. But my legs gave out a long time ago.",
+            "2": "That doesn't matter though. You're stronger than I ever was. Go prove it."
+          },
+          "2": {
+            "0": "Back again? Good. I like seeing your face.",
+            "1": "Every great hero started out not knowing what they were doing. You're right on schedule.",
+            "2": "You really think I can do this?",
+            "3": "I don't think it. I know it."
+          },
+          "3": {
+            "0": "The world's in bad shape, kid. Worse than when I was your age.",
+            "1": "But it chose you for a reason. And so did I, when I brought you here.",
+            "2": "Don't carry the weight alone. Find friends. Trust them. Then save us all."
+          },
+          "4": {
+            "0": "You know what kept me going all those years out there?",
+            "1": "What?",
+            "2": "Knowing I'd come home to you. And now you're the one heading out.",
+            "3": "Make it count. I'll be right here when you get back."
+          },
+          "5": {
+            "0": "Hmm? Oh, don't mind me. Just resting my eyes.",
+            "1": "Listen... whatever happens out there, remember who you are.",
+            "2": "You're my kid. And my kid doesn't give up."
           }
         }
       }

@@ -10,6 +10,7 @@ import { CameraController } from '../camera/CameraController';
 import { MapLoader } from '../map/MapLoader';
 import { CollisionManager } from '../map/CollisionManager';
 import { OcclusionManager } from '../map/OcclusionManager';
+import { RegionActivatedTileLayerAnimationSpec, RegionActivatedTileLayerAnimator } from '../map/RegionActivatedTileLayerAnimator';
 import { TiledObjectLayer, getTiledProperty } from '../map/TiledTypes';
 import { DepthManager } from '../rendering/DepthManager';
 import { ENTITY_BASE, FIRE_BASE, DROPPED_ITEM_BASE, OCCLUSION_OFFSET, GROUND_LAYER_NAMES, OCCLUDABLE_BASE } from '../rendering/DepthBands';
@@ -21,6 +22,7 @@ import { AINpcManager } from '../ai/AINpcManager';
 import { DebugOverlay, ExtendedDebugInfo } from '../debug/DebugOverlay';
 import { DustParticleSystem } from '../fx/DustParticleSystem';
 import { FireParticleSystem } from '../fx/FireParticleSystem';
+import { WallLightSystem } from '../fx/WallLightSystem';
 import { WaterSystem } from '../fx/water/WaterSystem';
 import { LightingManager } from '../fx/LightingManager';
 import { VisualEffectsManager } from '../fx/VisualEffectsManager';
@@ -92,6 +94,41 @@ type FishCombatArcVisual = {
     shadow: Phaser.GameObjects.Ellipse;
 };
 
+type RegionLayerAnimationSceneSpec = RegionActivatedTileLayerAnimationSpec & {
+    activateSound?: 'cabin-door-open' | 'cabin-roof-toggle';
+    deactivateSound?: 'cabin-door-close' | 'cabin-roof-toggle';
+};
+
+type InteractiveZoomSpec = {
+    componentId: string;
+    zoomMultiplier: number;
+};
+
+const INTERACTIVE_ZOOM_SPECS: Record<string, InteractiveZoomSpec[]> = {
+    'whiskerwake.tmj': [
+        { componentId: 'cabin', zoomMultiplier: 1.3 }
+    ]
+};
+
+const REGION_LAYER_ANIMATION_SPECS: Record<string, RegionLayerAnimationSceneSpec[]> = {
+    'whiskerwake.tmj': [
+        {
+            activationComponentId: 'cabindoor',
+            layerSpecialId: 'physicaldoor',
+            frameRateFps: 14,
+            activateSound: 'cabin-door-open',
+            deactivateSound: 'cabin-door-close'
+        },
+        {
+            activationComponentId: 'cabin',
+            layerSpecialId: 'physicalroof',
+            frameRateFps: 12,
+            activateSound: 'cabin-roof-toggle',
+            deactivateSound: 'cabin-roof-toggle'
+        }
+    ]
+};
+
 export class GameScene extends Phaser.Scene {
     private static readonly WORLD_METERS_TO_PIXELS = 16;
     private instanceInfo?: IInstanceInfo;
@@ -145,8 +182,11 @@ export class GameScene extends Phaser.Scene {
     private seasonalEffectsManager?: SeasonalEffectsManager;
     private audioManager?: AudioManager;
     private dialogueManager?: DialogueManager;
+    private regionActivatedTileLayerAnimator?: RegionActivatedTileLayerAnimator;
     private groundLayers?: Phaser.Tilemaps.TilemapLayer[];
     private fires: FireParticleSystem[] = [];
+    private wallLightSystem?: WallLightSystem;
+    private pendingDoorCloseTimer?: Phaser.Time.TimerEvent;
     private lastTablistSnapshot = '';
     private currentVideoSettings: IVideoSettings = { ...DEFAULT_USER_SETTINGS.video };
     private advancementsState: IAdvancementsState = {
@@ -1304,6 +1344,7 @@ export class GameScene extends Phaser.Scene {
                 this.cameraController.destroy();
             }
             this.cameraController = new CameraController(this, map, player, { zoom: 2 });
+            this.registerInteractiveZoomRegions(map);
 
             // Initialize dust particle system for player
             this.dustParticles = new DustParticleSystem(this, player, map);
@@ -1315,6 +1356,7 @@ export class GameScene extends Phaser.Scene {
 
         // Create fire effects from POI points in the map
         this.setupFireEffects(map);
+        this.setupWallLights(map);
         this.setupKeyLocationCue(map);
         this.setupChestPoi(map);
 
@@ -1332,6 +1374,7 @@ export class GameScene extends Phaser.Scene {
         this.harvestTargets = this.extractHarvestTargets(map);
         this.rebuildHarvestBerryUi();
         this.refreshStaticInteractiveTargets();
+        this.initializeRegionActivatedLayerAnimations(map);
         this.dangerRegionPolygon = this.extractRegionPolygon(map, 'Danger');
         const heedQuestEntry = ADVANCEMENT_QUEST_CATALOG.find((entry) => entry.id === 'heed_the_warning');
         const stayObjective = heedQuestEntry?.objectives?.find((objective) => objective.kind === 'stay-in-region' && objective.regionName === 'Danger');
@@ -1384,6 +1427,11 @@ export class GameScene extends Phaser.Scene {
         // Register fire positions with audio manager for distance-based volume
         const firePositions = this.fires.map(fire => fire.getPosition());
         this.audioManager?.setFirePositions(firePositions);
+    }
+
+    private setupWallLights(map: Phaser.Tilemaps.Tilemap) {
+        this.wallLightSystem?.destroy();
+        this.wallLightSystem = WallLightSystem.createFromMap(this, map, this.lightingManager);
     }
 
     private setupKeyLocationCue(map: Phaser.Tilemaps.Tilemap) {
@@ -1480,6 +1528,87 @@ export class GameScene extends Phaser.Scene {
             x: Number(poiObject.x ?? 0) + Number(poiObject.width ?? 0) / 2,
             y: Number(poiObject.y ?? 0) + Number(poiObject.height ?? 0) / 2
         };
+    }
+
+    private initializeRegionActivatedLayerAnimations(map: Phaser.Tilemaps.Tilemap) {
+        this.regionActivatedTileLayerAnimator?.destroy();
+        this.regionActivatedTileLayerAnimator = undefined;
+
+        const mapFile = String(this.instanceInfo?.mapFile || '').trim().toLowerCase();
+        const specs = REGION_LAYER_ANIMATION_SPECS[mapFile];
+        if (!Array.isArray(specs) || specs.length === 0) return;
+
+        const resolvedSpecs: RegionActivatedTileLayerAnimationSpec[] = specs.map((spec) => ({
+            activationComponentId: spec.activationComponentId,
+            layerSpecialId: spec.layerSpecialId,
+            frameRateFps: spec.frameRateFps,
+            onActiveChanged: (active) => {
+                const soundKey = active ? spec.activateSound : spec.deactivateSound;
+                if (!soundKey) return;
+                if (soundKey === 'cabin-door-open') {
+                    this.pendingDoorCloseTimer?.remove(false);
+                    this.pendingDoorCloseTimer = undefined;
+                    this.audioManager?.playCabinDoorOpen();
+                } else if (soundKey === 'cabin-door-close') {
+                    this.pendingDoorCloseTimer?.remove(false);
+                    this.pendingDoorCloseTimer = this.time.delayedCall(300, () => {
+                        this.audioManager?.playCabinDoorClose();
+                        this.pendingDoorCloseTimer = undefined;
+                    });
+                } else if (soundKey === 'cabin-roof-toggle') {
+                    this.audioManager?.playCabinRoofToggle();
+                }
+            }
+        }));
+
+        this.regionActivatedTileLayerAnimator = new RegionActivatedTileLayerAnimator(map, resolvedSpecs);
+    }
+
+    private registerInteractiveZoomRegions(map: Phaser.Tilemaps.Tilemap) {
+        if (!this.cameraController) return;
+        const mapFile = String(this.instanceInfo?.mapFile || '').trim().toLowerCase();
+        const specs = INTERACTIVE_ZOOM_SPECS[mapFile];
+        if (!Array.isArray(specs) || specs.length === 0) return;
+
+        const objectLayers = map.objects as TiledObjectLayer[];
+        const interactivesLayer = objectLayers.find((layer) => layer.name === 'Interactives');
+        if (!interactivesLayer || !Array.isArray(interactivesLayer.objects)) return;
+
+        for (const spec of specs) {
+            const normalizedId = spec.componentId.trim().toLowerCase();
+            for (const obj of interactivesLayer.objects) {
+                const cid = getTiledProperty(obj, 'componentid');
+                if (typeof cid !== 'string' || cid.trim().toLowerCase() !== normalizedId) continue;
+
+                let polygon: { x: number; y: number }[] | undefined;
+                const baseX = Number(obj.x ?? 0);
+                const baseY = Number(obj.y ?? 0);
+
+                if (Array.isArray(obj.polygon) && obj.polygon.length >= 3) {
+                    polygon = obj.polygon.map((pt: { x: number; y: number }) => ({
+                        x: baseX + pt.x,
+                        y: baseY + pt.y
+                    }));
+                } else {
+                    const w = Number(obj.width ?? 0);
+                    const h = Number(obj.height ?? 0);
+                    if (w > 0 && h > 0) {
+                        polygon = [
+                            { x: baseX, y: baseY },
+                            { x: baseX + w, y: baseY },
+                            { x: baseX + w, y: baseY + h },
+                            { x: baseX, y: baseY + h }
+                        ];
+                    }
+                }
+
+                if (!polygon || polygon.length < 3) continue;
+                this.cameraController.addZoomRegion({
+                    polygon,
+                    zoomMultiplier: spec.zoomMultiplier
+                });
+            }
+        }
     }
 
     private updateKeyLocationCue(hour: number) {
@@ -1740,8 +1869,8 @@ export class GameScene extends Phaser.Scene {
             });
         });
 
-        this.unsubscribeServerTransfer = this.networkManager.onServerTransfer((locationId) => {
-            this.beginServerTransfer(locationId);
+        this.unsubscribeServerTransfer = this.networkManager.onServerTransfer((locationId, forceMapSpawn) => {
+            this.beginServerTransfer(locationId, forceMapSpawn === true);
         });
 
         this.unsubscribePlayerDefeat = this.networkManager.onPlayerDefeat(() => {
@@ -1837,12 +1966,15 @@ export class GameScene extends Phaser.Scene {
                         this.harvestCooldownUiByObjectId.forEach((entry) => entry.container.destroy(true));
                         this.harvestCooldownUiByObjectId.clear();
                         this.clearHarvestBerryUi();
-              this.npcManager?.destroy();
+                        this.regionActivatedTileLayerAnimator?.destroy();
+                        this.regionActivatedTileLayerAnimator = undefined;
+                        this.npcManager?.destroy();
+                        this.aiNpcManager?.destroy();
                         this.destroyWorldGlimmerbowlSprite();
                         this.destroyWorldGlimmerbowlRangeRing();
                         this.setWorldGlimmerbowlCombatActive(false);
                         this.clearFishCombatArcVisuals();
-                         this.dialogueManager?.destroy();
+                        this.dialogueManager?.destroy();
         });
 
         this.events.on('fishing:stop', this.stopFishing, this);
@@ -1858,11 +1990,16 @@ export class GameScene extends Phaser.Scene {
         this.demoTimerInstance = new DemoTimer(this, durationMs, expiresAt);
     }
 
-    private beginServerTransfer(locationId: string) {
+    private beginServerTransfer(locationId: string, forceMapSpawn: boolean = false) {
         if (this.isTransferringServer) return;
         this.isTransferringServer = true;
 
         localStorage.setItem('cfwk_join_location_override', locationId);
+        if (forceMapSpawn) {
+            localStorage.setItem('cfwk_join_force_map_spawn', '1');
+        } else {
+            localStorage.removeItem('cfwk_join_force_map_spawn');
+        }
         setLoaderText(this.localeManager.t('scene.boot.connecting', undefined, 'Connecting...'));
         showLoader();
 
@@ -2779,6 +2916,10 @@ export class GameScene extends Phaser.Scene {
         if (player && this.collisionManager) {
             this.collisionManager.enforceContainment(player);
         }
+
+        if (player) {
+            this.regionActivatedTileLayerAnimator?.update(player.x, player.y, delta);
+        }
         
         // Update camera zoom based on player feet line segment
         if (player && this.cameraController) {
@@ -2838,6 +2979,7 @@ export class GameScene extends Phaser.Scene {
                 fire.updateLight(delta);
             });
         }
+        this.wallLightSystem?.update(delta);
 
         // Update remote players
         this.remotePlayerManager?.update(delta);
@@ -2975,6 +3117,10 @@ export class GameScene extends Phaser.Scene {
         this.droppedItemManager?.destroy();
         this.fires.forEach(fire => fire.destroy());
         this.fires = [];
+        this.wallLightSystem?.destroy();
+        this.wallLightSystem = undefined;
+        this.pendingDoorCloseTimer?.remove(false);
+        this.pendingDoorCloseTimer = undefined;
         this.waterSystem?.destroy();
         this.seasonalEffectsManager?.destroy();
         this.mapLoader?.destroy();

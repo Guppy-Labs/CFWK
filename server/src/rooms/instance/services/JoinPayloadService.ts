@@ -19,6 +19,9 @@ export function initializeJoinedPlayerState(
     if (typeof joinState.persistedJoinX === "number" && typeof joinState.persistedJoinY === "number") {
         player.x = joinState.persistedJoinX;
         player.y = joinState.persistedJoinY;
+    } else {
+        player.x = room.playerRespawnPoint.x;
+        player.y = room.playerRespawnPoint.y;
     }
     player.username = options.username || "Guest";
     player.isPremium = joinState.isPremium;

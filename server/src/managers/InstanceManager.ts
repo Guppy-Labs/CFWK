@@ -92,6 +92,14 @@ export class InstanceManager {
             isPublic: true
         });
 
+        this.registerLocation({
+            id: "whiskerwake",
+            name: "Whiskerwake Island",
+            mapFile: "whiskerwake.tmj",
+            maxPlayers: 15,
+            isPublic: true
+        });
+
     }
 
     /**
