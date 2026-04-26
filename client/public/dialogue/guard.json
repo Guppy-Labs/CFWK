@@ -5,6 +5,34 @@
             "checks": [
                 {
                     "type": "questObjective",
+                    "questId": "bowl_that_shines",
+                    "status": "active",
+                    "objectiveIndex": 1
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.guard.bowlThatShines.askAround.player.0"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "shake": "mild",
+                    "textKey": "dialogue.npc.guard.bowlThatShines.askAround.0"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.guard.bowlThatShines.askAround.1"
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
                     "questId": "heed_the_warning",
                     "status": "completed"
                 }
@@ -13,8 +41,7 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.guard.heed.post.0",
-                    "text": "Come back when you are ready... you're not quite there yet."
+                    "textKey": "dialogue.npc.guard.heed.post.0"
                 }
             ]
         },
@@ -31,76 +58,79 @@
                 {
                     "speaker": "player",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.guard.heed.return.player.0",
-                    "text": "I'm back!"
+                    "textKey": "dialogue.npc.guard.heed.return.player.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
                     "shake": "mild",
-                    "textKey": "dialogue.npc.guard.heed.return.0",
-                    "text": "WHAT?? How did you survive that???"
+                    "textKey": "dialogue.npc.guard.heed.return.0"
                 },
                 {
                     "speaker": "player",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.guard.heed.return.player.1",
-                    "text": "I kinda just ran around..."
+                    "textKey": "dialogue.npc.guard.heed.return.player.1"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.guard.heed.return.1",
-                    "text": "Well, color me impressed. Not many in our town could survive out there..."
+                    "textKey": "dialogue.npc.guard.heed.return.1"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.guard.heed.return.2",
-                    "text": "Tell you what, If you gear up right, and show me that you're ready, I'll help you learn how to fight these evil beasts."
+                    "textKey": "dialogue.npc.guard.heed.return.2"
                 },
                 {
                     "speaker": "player",
                     "emotion": "happy",
                     "textKey": "dialogue.npc.guard.heed.return.choice.prompt",
-                    "text": "How should I respond?",
                     "options": [
                         {
                             "id": "yay",
                             "textKey": "dialogue.npc.guard.heed.return.choice.yay",
-                            "text": "Yay!",
                             "lines": [
                                 {
                                     "speaker": "npc",
                                     "emotion": "happy",
-                                    "textKey": "dialogue.npc.guard.heed.return.3",
-                                    "text": "Don't worry, you'll know when you are ready. Until then, good luck."
+                                    "textKey": "dialogue.npc.guard.heed.return.reaction.yay"
+                                },
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "happy",
+                                    "textKey": "dialogue.npc.guard.heed.return.3"
                                 }
                             ]
                         },
                         {
                             "id": "hooray",
                             "textKey": "dialogue.npc.guard.heed.return.choice.hooray",
-                            "text": "Hooray!",
                             "lines": [
                                 {
                                     "speaker": "npc",
                                     "emotion": "happy",
-                                    "textKey": "dialogue.npc.guard.heed.return.3",
-                                    "text": "Don't worry, you'll know when you are ready. Until then, good luck."
+                                    "textKey": "dialogue.npc.guard.heed.return.reaction.hooray"
+                                },
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "happy",
+                                    "textKey": "dialogue.npc.guard.heed.return.3"
                                 }
                             ]
                         },
                         {
                             "id": "cool",
                             "textKey": "dialogue.npc.guard.heed.return.choice.cool",
-                            "text": "Cool.",
                             "lines": [
                                 {
                                     "speaker": "npc",
                                     "emotion": "happy",
-                                    "textKey": "dialogue.npc.guard.heed.return.3",
-                                    "text": "Don't worry, you'll know when you are ready. Until then, good luck."
+                                    "textKey": "dialogue.npc.guard.heed.return.reaction.cool"
+                                },
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "happy",
+                                    "textKey": "dialogue.npc.guard.heed.return.3"
                                 }
                             ]
                         }
@@ -121,8 +151,7 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.guard.heed.wait.0",
-                    "text": "Cross this bridge, survive 60 seconds in the danger zone, then report back to me."
+                    "textKey": "dialogue.npc.guard.heed.wait.0"
                 }
             ]
         },
@@ -139,8 +168,7 @@
                 {
                     "speaker": "npc",
                     "emotion": "angry",
-                    "textKey": "dialogue.npc.guard.preUnlock.0",
-                    "text": "It's not safe out here... GET BACK TO TOWN!"
+                    "textKey": "dialogue.npc.guard.preUnlock.0"
                 }
             ]
         }
@@ -149,62 +177,52 @@
         {
             "speaker": "npc",
             "emotion": "angry",
-            "textKey": "dialogue.npc.guard.heed.intro.0",
-            "text": "WOAH! Where do you think you're going??"
+            "textKey": "dialogue.npc.guard.heed.intro.0"
         },
         {
             "speaker": "player",
             "emotion": "surprise",
             "textKey": "dialogue.npc.guard.heed.intro.choice.prompt",
-            "text": "How should I answer?",
             "options": [
                 {
                     "id": "exploring",
                     "textKey": "dialogue.npc.guard.heed.intro.choice.exploring",
-                    "text": "Uhhh... I'm just exploring I guess?",
                     "lines": [
                         {
                             "speaker": "npc",
                             "emotion": "angry",
-                            "textKey": "dialogue.npc.guard.heed.intro.1",
-                            "text": "Well, what do you think is over there? A fancy hotel? Look kid, you aren't ready for what's across this bridge"
+                            "textKey": "dialogue.npc.guard.heed.intro.1"
                         },
                         {
                             "speaker": "player",
                             "emotion": "angry",
-                            "textKey": "dialogue.npc.guard.heed.intro.player.0",
-                            "text": "Yes I am."
+                            "textKey": "dialogue.npc.guard.heed.intro.player.0"
                         },
                         {
                             "speaker": "npc",
                             "emotion": "angry",
                             "shake": "mild",
-                            "textKey": "dialogue.npc.guard.heed.intro.2",
-                            "text": "NO YOU AREN'T!"
+                            "textKey": "dialogue.npc.guard.heed.intro.2"
                         },
                         {
                             "speaker": "player",
                             "emotion": "angry",
-                            "textKey": "dialogue.npc.guard.heed.intro.player.1",
-                            "text": "Yes I am."
+                            "textKey": "dialogue.npc.guard.heed.intro.player.1"
                         },
                         {
                             "speaker": "npc",
                             "emotion": "happy",
-                            "textKey": "dialogue.npc.guard.heed.intro.3",
-                            "text": "Okay fine. If you're really so tough, cross this bridge, and stay a while. Let's say... 60 seconds. Sound good?"
+                            "textKey": "dialogue.npc.guard.heed.intro.3"
                         },
                         {
                             "speaker": "player",
                             "emotion": "happy",
-                            "textKey": "dialogue.npc.guard.heed.intro.player.2",
-                            "text": "Sure!"
+                            "textKey": "dialogue.npc.guard.heed.intro.player.2"
                         },
                         {
                             "speaker": "npc",
                             "emotion": "happy",
-                            "textKey": "dialogue.npc.guard.heed.intro.4",
-                            "text": "HA! Alright, good luck!"
+                            "textKey": "dialogue.npc.guard.heed.intro.4"
                         }
                     ]
                 }

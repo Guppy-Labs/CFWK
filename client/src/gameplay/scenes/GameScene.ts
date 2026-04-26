@@ -28,7 +28,9 @@ import { LightingManager } from '../fx/LightingManager';
 import { VisualEffectsManager } from '../fx/VisualEffectsManager';
 import { SeasonalEffectsManager } from '../fx/SeasonalEffectsManager';
 import { WorldTimeManager } from '../time/WorldTimeManager';
-import { AudioManager, FootstepSurface } from '../audio/AudioManager';
+import { AudioManager } from '../audio/AudioManager';
+import { getLocalVideoSettings } from '../settings/LocalVideoSettingsStore';
+import { getFootstepSurfaceAt } from '../audio/FootstepSurfaceDetector';
 import { LocaleManager } from '../i18n/LocaleManager';
 import { DroppedItemManager } from '../items/DroppedItemManager';
 import { NPCManager } from '../npc/NPCManager';
@@ -43,7 +45,6 @@ import {
     DEFAULT_CHARACTER_APPEARANCE,
     DEFAULT_GUIDE_TUTORIAL_STATE,
     DEFAULT_USER_ADVANCEMENTS,
-    DEFAULT_USER_SETTINGS,
     GlimmerbowlFishLandEvent,
     GlimmerbowlFishLaunchEvent,
     GlimmerbowlFishReturnEvent,
@@ -59,6 +60,8 @@ import { SharedMCTextures } from '../player/SharedMCTextures';
 import { FullscreenManager } from '../ui/FullscreenManager';
 import { KeybindManager } from '../input/KeybindManager';
 import { ItemTextureLoader } from '../assets/ItemTextureLoader';
+import { CutsceneGroupRunner, type CutsceneSceneHost } from '../cutscene/CutsceneGroupRunner';
+import { buildIntroCutsceneSteps } from '../cutscene/scenes/IntroCutscene';
 
 interface GameSceneData {
     instance: IInstanceInfo;
@@ -129,6 +132,13 @@ const REGION_LAYER_ANIMATION_SPECS: Record<string, RegionLayerAnimationSceneSpec
     ]
 };
 
+// Sprite offset applied when playing /assets/animations/chest-open.png over the
+// server-authoritative chest center. The 128x128 frames have visual padding
+// that doesn't match the 2x2 tile footprint on the map, so we can nudge the
+// sprite to compensate. Tune with `client/admin/sprite-tuner`.
+const QUEST_CHEST_ANIM_OFFSET_X = 0;
+const QUEST_CHEST_ANIM_OFFSET_Y = 0;
+
 export class GameScene extends Phaser.Scene {
     private static readonly WORLD_METERS_TO_PIXELS = 16;
     private instanceInfo?: IInstanceInfo;
@@ -188,7 +198,7 @@ export class GameScene extends Phaser.Scene {
     private wallLightSystem?: WallLightSystem;
     private pendingDoorCloseTimer?: Phaser.Time.TimerEvent;
     private lastTablistSnapshot = '';
-    private currentVideoSettings: IVideoSettings = { ...DEFAULT_USER_SETTINGS.video };
+    private currentVideoSettings: IVideoSettings = getLocalVideoSettings();
     private advancementsState: IAdvancementsState = {
         enrolled: DEFAULT_USER_ADVANCEMENTS.enrolled,
         questProgress: {},
@@ -214,7 +224,6 @@ export class GameScene extends Phaser.Scene {
     private keyLocationPoi: { x: number; y: number } | null = null;
     private chestPoi: { x: number; y: number } | null = null;
     private keyLocationCue?: Phaser.GameObjects.Particles.ParticleEmitter;
-    private bowlTravellerGuideTimer?: Phaser.Time.TimerEvent;
     private chestCinematicActive = false;
     private chestCinematicTimers: Phaser.Time.TimerEvent[] = [];
     private chestCinematicObjects: Phaser.GameObjects.GameObject[] = [];
@@ -244,6 +253,7 @@ export class GameScene extends Phaser.Scene {
     private fishCombatArcsByEventId = new Map<string, FishCombatArcVisual>();
     private defeatFloatTween?: Phaser.Tweens.Tween;
     private readonly defeatFloatDurationMs = 1150;
+    private cutsceneRunner?: CutsceneGroupRunner;
     
     // Character appearance (fetched async)
     private characterAppearance: ICharacterAppearance = DEFAULT_CHARACTER_APPEARANCE;
@@ -476,21 +486,24 @@ export class GameScene extends Phaser.Scene {
             this.audioManager?.playMeow();
         });
 
-        // Default to user settings until profile settings load
-        this.registry.set('visualEffectsEnabled', DEFAULT_USER_SETTINGS.video.visualEffectsEnabled);
-        this.registry.set('seasonalEffectsEnabled', DEFAULT_USER_SETTINGS.video.seasonalEffectsEnabled);
+        // Default to the locally-persisted video settings until profile settings load
+        this.registry.set('visualEffectsEnabled', this.currentVideoSettings.visualEffectsEnabled);
+        this.registry.set('seasonalEffectsEnabled', this.currentVideoSettings.seasonalEffectsEnabled);
     }
 
     private applyStartupSettings() {
+        // Video settings are persisted locally (not on the account); see LocalVideoSettingsStore.
+        const localVideo: IVideoSettings = {
+            ...getLocalVideoSettings(),
+            fullscreen: FullscreenManager.isEnabled()
+        };
+        this.applyUserVideoSettings(localVideo);
+
         const cached = this.networkManager.getCachedSettings();
         if (cached) {
             this.keybindManager.hydrateFromSettings(cached);
             this.localeManager.setLocale(cached.language || 'en_US');
             this.audioManager?.applyUserAudioSettings?.(cached.audio);
-            this.applyUserVideoSettings({
-                ...cached.video,
-                fullscreen: FullscreenManager.isEnabled()
-            });
             return;
         }
 
@@ -499,10 +512,6 @@ export class GameScene extends Phaser.Scene {
             this.keybindManager.hydrateFromSettings(settings);
             this.localeManager.setLocale(settings.language || 'en_US');
             this.audioManager?.applyUserAudioSettings?.(settings.audio);
-            this.applyUserVideoSettings({
-                ...settings.video,
-                fullscreen: FullscreenManager.isEnabled()
-            });
         });
     }
 
@@ -521,39 +530,26 @@ export class GameScene extends Phaser.Scene {
         return this.audioManager;
     }
 
-    private getFootstepSurfaceForPlayer(player: Phaser.Physics.Matter.Sprite): FootstepSurface {
-        const mapFile = this.instanceInfo?.mapFile ?? '';
-        if (!mapFile.startsWith('anchor-hollow')) {
-            return 'sand';
-        }
+    getCutsceneHost(): CutsceneSceneHost {
+        return {
+            scene: this,
+            getActivePlayer: () => this.mcPlayerController?.getPlayer(),
+            getAudioManager: () => this.audioManager,
+            findPoiPoint: (map, name) => this.findPoiPoint(map, name),
+            getMap: () => this.mapLoader?.getMap(),
+            beginServerTransfer: (locationId, forceMapSpawn) => this.beginServerTransfer(locationId, forceMapSpawn),
+            getMcPlayerController: () => this.mcPlayerController ? {
+                setForcedFacingTarget: (angle?: number) => this.mcPlayerController!.setForcedFacingTarget(angle),
+                getMobileControls: () => this.mcPlayerController!.getMobileControls()
+            } : undefined
+        };
+    }
 
+    private getFootstepSurfaceForPlayer(player: Phaser.Physics.Matter.Sprite) {
         const map = this.mapLoader?.getMap();
-        if (!map) return 'sand';
-
+        if (!map) return 'sand' as const;
         const feet = player.getBottomCenter();
-        const trackedLayers = new Set(['Ground', 'Stone', 'Dock']);
-
-        let bestDepth = Number.NEGATIVE_INFINITY;
-        let bestLayerName: string | null = null;
-
-        map.layers.forEach((layerData) => {
-            if (!trackedLayers.has(layerData.name)) return;
-            const layer = layerData.tilemapLayer;
-            if (!layer || !layer.visible || layer.alpha <= 0) return;
-            const tile = layer.getTileAtWorldXY(feet.x, feet.y, false);
-            if (!tile || tile.index < 0) return;
-
-            const depth = layer.depth ?? 0;
-            if (depth >= bestDepth) {
-                bestDepth = depth;
-                bestLayerName = layerData.name;
-            }
-        });
-
-        if (bestLayerName === 'Dock') return 'wood';
-        if (bestLayerName === 'Stone') return 'stone';
-        if (bestLayerName === 'Ground') return 'grass';
-        return 'sand';
+        return getFootstepSurfaceAt(map, feet.x, feet.y, this.instanceInfo?.mapFile ?? '');
     }
 
     applyUserVideoSettings(video: IVideoSettings) {
@@ -1026,7 +1022,6 @@ export class GameScene extends Phaser.Scene {
         this.advancementsUpdateHandler = (event: Event) => {
             const detail = (event as CustomEvent<IAdvancementsState>).detail;
             if (!detail) return;
-            const previousBowlProgress = this.advancementsState.questProgress['bowl_that_shines'];
             this.advancementsState = {
                 enrolled: detail.enrolled,
                 questProgress: { ...detail.questProgress },
@@ -1036,61 +1031,10 @@ export class GameScene extends Phaser.Scene {
                 ),
                 tutorial: { ...detail.tutorial }
             };
-            this.maybeShowBowlTravellerGuide(previousBowlProgress, this.advancementsState.questProgress['bowl_that_shines']);
             this.refreshStaticInteractiveTargets();
         };
 
         window.addEventListener('advancements:update', this.advancementsUpdateHandler as EventListener);
-    }
-
-    private maybeShowBowlTravellerGuide(
-        previousProgress: IAdvancementsState['questProgress'][string] | undefined,
-        nextProgress: IAdvancementsState['questProgress'][string] | undefined
-    ) {
-        const previousIndex = typeof previousProgress?.objectiveIndex === 'number'
-            ? Math.floor(previousProgress.objectiveIndex)
-            : null;
-        const nextIndex = typeof nextProgress?.objectiveIndex === 'number'
-            ? Math.floor(nextProgress.objectiveIndex)
-            : null;
-        const transitionedToTravellerStep = nextProgress?.status === 'active' && nextIndex === 1 && previousIndex !== 1;
-        if (!transitionedToTravellerStep) {
-            return;
-        }
-
-        const uiScene = this.scene.get('UIScene') as UIScene | undefined;
-        if (!uiScene) return;
-
-        const targetRect = this.getGuideNpcScreenRect('traveller');
-        uiScene.showGuideOverlay({
-            message: this.localeManager.t(
-                'guide.bowlThatShines.travellerHint',
-                undefined,
-                'Hm... I wonder if the traveller has had the info all along.'
-            ),
-            targetRect,
-            dimBackground: true
-        });
-
-        this.bowlTravellerGuideTimer?.remove(false);
-        this.bowlTravellerGuideTimer = this.time.delayedCall(4200, () => {
-            uiScene.clearGuideOverlay();
-            this.bowlTravellerGuideTimer = undefined;
-        });
-    }
-
-    private getGuideNpcScreenRect(npcId: string): Phaser.Geom.Rectangle | null {
-        const npc = this.getNpcPosition(npcId);
-        if (!npc) return null;
-        const camera = this.cameras.main;
-        const width = 34;
-        const height = 56;
-        return new Phaser.Geom.Rectangle(
-            npc.x - camera.scrollX - width / 2,
-            npc.y - camera.scrollY - height,
-            width,
-            height
-        );
     }
 
     private getTargetedQuestObjective(): { questId: string; objective: IQuestObjectiveEntry } | null {
@@ -1121,6 +1065,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     private getQuestObjectiveTarget(objective: IQuestObjectiveEntry, playerX: number, playerY: number): { x: number; y: number } | null {
+        if (objective.hideGuidance) {
+            return null;
+        }
+
         if (objective.kind === 'talk-to-npc' && objective.npcId) {
             const npc = this.getNpcPosition(objective.npcId);
             if (!npc) return null;
@@ -1414,6 +1362,74 @@ export class GameScene extends Phaser.Scene {
         hideLoader();
         this.mcPlayerController?.getMobileControls()?.show();
 
+        this.maybeStartIntroCutscene(mapFile);
+        this.maybeStartArrivalDialogue(mapFile);
+    }
+
+    private async maybeStartIntroCutscene(mapFile: string): Promise<void> {
+        if (!mapFile.startsWith('whiskerwake')) return;
+        if (this.cutsceneRunner) return;
+
+        const freshState = await this.networkManager.awaitAdvancementsState(2000, true);
+        if (freshState) {
+            this.advancementsState = {
+                enrolled: freshState.enrolled,
+                questProgress: { ...freshState.questProgress },
+                completedAchievements: [...freshState.completedAchievements],
+                discoveredRegions: Object.fromEntries(
+                    Object.entries(freshState.discoveredRegions).map(([mf, regions]) => [mf, [...regions]])
+                ),
+                tutorial: { ...freshState.tutorial }
+            };
+        }
+
+        if (this.advancementsState.tutorial.introCutsceneCompleted) return;
+
+        const host = this.getCutsceneHost();
+        const steps = buildIntroCutsceneSteps(host);
+
+        this.cutsceneRunner = new CutsceneGroupRunner(host, steps, () => {
+            this.networkManager.sendGuideTutorialUpdate({ introCutsceneCompleted: true });
+            this.cutsceneRunner = undefined;
+        });
+    }
+
+    private async maybeStartArrivalDialogue(mapFile: string): Promise<void> {
+        if (!mapFile.startsWith('anchor-hollow')) return;
+
+        const freshState = await this.networkManager.awaitAdvancementsState(2000, true);
+        if (freshState) {
+            this.advancementsState = {
+                enrolled: freshState.enrolled,
+                questProgress: { ...freshState.questProgress },
+                completedAchievements: [...freshState.completedAchievements],
+                discoveredRegions: Object.fromEntries(
+                    Object.entries(freshState.discoveredRegions).map(([mf, regions]) => [mf, [...regions]])
+                ),
+                tutorial: { ...freshState.tutorial }
+            };
+        }
+
+        const tut = this.advancementsState.tutorial;
+        if (!tut.introCutsceneCompleted || tut.introArrivalCompleted) return;
+
+        const handler = () => {
+            window.removeEventListener('dialogue:complete', handler);
+            this.networkManager.sendGuideTutorialUpdate({ introArrivalCompleted: true });
+        };
+        window.addEventListener('dialogue:complete', handler);
+
+        window.dispatchEvent(new CustomEvent('dialogue:forced', {
+            detail: {
+                npcId: 'mc',
+                lines: [
+                    {
+                        speaker: 'player',
+                        textKey: 'dialogue.npc.mc.arrival.0'
+                    }
+                ]
+            }
+        }));
     }
 
     private setupFireEffects(map: Phaser.Tilemaps.Tilemap) {
@@ -1504,19 +1520,34 @@ export class GameScene extends Phaser.Scene {
         const layerOffsetX = Number((layerData as any).x ?? 0);
         const layerOffsetY = Number((layerData as any).y ?? 0);
 
+        // Use the bounding-box centroid of every non-empty tile so multi-tile
+        // footprints (e.g. a 2x2 chest) anchor to their visual center instead
+        // of the first tile in scan order.
+        let minTx = Number.POSITIVE_INFINITY;
+        let minTy = Number.POSITIVE_INFINITY;
+        let maxTx = Number.NEGATIVE_INFINITY;
+        let maxTy = Number.NEGATIVE_INFINITY;
+        let found = false;
+
         for (let ty = 0; ty < layerData.data.length; ty += 1) {
             const row = layerData.data[ty];
             if (!Array.isArray(row)) continue;
             for (let tx = 0; tx < row.length; tx += 1) {
                 const tile = row[tx];
                 if (!tile || tile.index < 0) continue;
-                const centerX = layerOffsetX + (tx * tileWidth) + tileWidth * 0.5;
-                const centerY = layerOffsetY + (ty * tileHeight) + tileHeight * 0.5;
-                return { x: centerX, y: centerY };
+                if (tx < minTx) minTx = tx;
+                if (ty < minTy) minTy = ty;
+                if (tx > maxTx) maxTx = tx;
+                if (ty > maxTy) maxTy = ty;
+                found = true;
             }
         }
 
-        return null;
+        if (!found) return null;
+
+        const centerX = layerOffsetX + ((minTx + maxTx + 1) * 0.5) * tileWidth;
+        const centerY = layerOffsetY + ((minTy + maxTy + 1) * 0.5) * tileHeight;
+        return { x: centerX, y: centerY };
     }
 
     private findPoiPoint(map: Phaser.Tilemaps.Tilemap, name: string): { x: number; y: number } | null {
@@ -1665,7 +1696,15 @@ export class GameScene extends Phaser.Scene {
             occlusionManager: this.occlusionManager,
             depthManager: this.depthManager,
             lightingManager: this.lightingManager,
-            groundLayers: this.groundLayers
+            groundLayers: this.groundLayers,
+            getAudioManager: () => this.audioManager,
+            getMap: () => this.mapLoader?.getMap(),
+            getMapFile: () => this.instanceInfo?.mapFile ?? '',
+            getLocalPlayerPosition: () => {
+                const player = this.mcPlayerController?.getPlayer();
+                if (!player) return undefined;
+                return { x: player.x, y: player.y };
+            }
         });
         this.aiNpcManager.initialize();
 
@@ -1829,6 +1868,9 @@ export class GameScene extends Phaser.Scene {
             }
 
             if (code === 4005) {
+                localStorage.removeItem('cfwk_last_location_id');
+                localStorage.removeItem('cfwk_join_location_override');
+                localStorage.removeItem('cfwk_join_force_map_spawn');
                 DisconnectModal.show({
                     title: this.localeManager.t('scene.game.wipedTitle', undefined, 'Game Wiped'),
                     message: this.localeManager.t('scene.game.wipedMessage', undefined, 'Your gameplay data was reset by an admin. Please reconnect.'),
@@ -1960,8 +2002,6 @@ export class GameScene extends Phaser.Scene {
                         this.keyLocationCue = undefined;
                         this.keyLocationPoi = null;
                         this.chestPoi = null;
-                        this.bowlTravellerGuideTimer?.remove(false);
-                        this.bowlTravellerGuideTimer = undefined;
                         this.cleanupChestCinematic(true);
                         this.harvestCooldownUiByObjectId.forEach((entry) => entry.container.destroy(true));
                         this.harvestCooldownUiByObjectId.clear();
@@ -2702,12 +2742,14 @@ export class GameScene extends Phaser.Scene {
             });
         }
 
-        const chest = this.add.sprite(centerX, centerY, 'quest-chest-open', 0);
+        const spriteX = centerX + QUEST_CHEST_ANIM_OFFSET_X;
+        const spriteY = centerY + QUEST_CHEST_ANIM_OFFSET_Y;
+        const chest = this.add.sprite(spriteX, spriteY, 'quest-chest-open', 0);
         chest.setDepth(ENTITY_BASE + 2200);
         chest.setScale(1.0);
         this.chestCinematicObjects.push(chest);
 
-        const bowlInChest = this.add.image(centerX, centerY - 4, 'ui-glimmerbowl', 0);
+        const bowlInChest = this.add.image(spriteX, spriteY - 4, 'ui-glimmerbowl', 0);
         bowlInChest.setDepth(ENTITY_BASE + 2201);
         bowlInChest.setScale(2.2);
         bowlInChest.setVisible(false);
@@ -2764,31 +2806,53 @@ export class GameScene extends Phaser.Scene {
     }
 
     private startChestRevealOverlay() {
-        const whiteFade = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0xffffff, 0);
+        const screenW = this.scale.width;
+        const screenH = this.scale.height;
+        const minDim = Math.min(screenW, screenH);
+
+        // Bowl base art is 32x32. Size it to ~22% of the smaller screen axis,
+        // but cap it so it never intrudes into the title/subtitle bands above
+        // and below. Small screens end up with a smaller, still-punchy reveal
+        // rather than a bowl that eats the titles.
+        const topTextRelY = 0.22;
+        const bottomTextRelY = 0.80;
+        const titleFontPx = Math.round(Phaser.Math.Clamp(minDim * 0.05, 22, 54));
+        const subtitleFontPx = Math.round(Phaser.Math.Clamp(minDim * 0.048, 20, 52));
+        const titleHalfHeight = titleFontPx * 0.6 + 8;
+        const subtitleHalfHeight = subtitleFontPx * 0.6 + 8;
+        const bowlCenterRelY = 0.52;
+        // Max bowl radius that still clears the title text (in px).
+        const topGapPx = Math.max(24, (bowlCenterRelY - topTextRelY) * screenH - titleHalfHeight - 12);
+        const bottomGapPx = Math.max(24, (bottomTextRelY - bowlCenterRelY) * screenH - subtitleHalfHeight - 12);
+        const maxBowlRadiusPx = Math.min(topGapPx, bottomGapPx, minDim * 0.22);
+        const targetBowlScale = Math.max(2.5, Math.min(maxBowlRadiusPx / 16, 8.0));
+        const initialBowlScale = Math.max(1.2, targetBowlScale * 0.28);
+
+        const whiteFade = this.add.rectangle(0, 0, screenW, screenH, 0xffffff, 0);
         whiteFade.setOrigin(0, 0);
         whiteFade.setScrollFactor(0);
         whiteFade.setDepth(20000);
         this.chestCinematicObjects.push(whiteFade);
 
-        const bowlReveal = this.add.image(this.scale.width * 0.5, this.scale.height * 0.52, 'ui-glimmerbowl', 0);
+        const bowlReveal = this.add.image(screenW * 0.5, screenH * bowlCenterRelY, 'ui-glimmerbowl', 0);
         bowlReveal.setScrollFactor(0);
         bowlReveal.setDepth(20001);
-        bowlReveal.setScale(2.2);
+        bowlReveal.setScale(initialBowlScale);
         bowlReveal.setAlpha(0.25);
         this.chestCinematicObjects.push(bowlReveal);
 
-        const topText = this.add.text(this.scale.width * 0.5, this.scale.height * 0.26, '', {
+        const topText = this.add.text(screenW * 0.5, screenH * topTextRelY, '', {
             fontFamily: 'Minecraft, monospace',
-            fontSize: '48px',
+            fontSize: `${titleFontPx}px`,
             color: '#1a1a1a',
             stroke: '#ffffff',
             strokeThickness: 4
         }).setOrigin(0.5).setScrollFactor(0).setDepth(20002).setAlpha(0);
         this.chestCinematicObjects.push(topText);
 
-        const bottomText = this.add.text(this.scale.width * 0.5, this.scale.height * 0.78, '', {
+        const bottomText = this.add.text(screenW * 0.5, screenH * bottomTextRelY, '', {
             fontFamily: 'Minecraft, monospace',
-            fontSize: '46px',
+            fontSize: `${subtitleFontPx}px`,
             color: '#1a1a1a',
             stroke: '#ffffff',
             strokeThickness: 4
@@ -2804,7 +2868,8 @@ export class GameScene extends Phaser.Scene {
         this.tweens.add({
             targets: bowlReveal,
             alpha: 1,
-            scale: 8.8,
+            scaleX: targetBowlScale,
+            scaleY: targetBowlScale,
             duration: 650,
             ease: 'Back.easeOut'
         });
@@ -2867,11 +2932,11 @@ export class GameScene extends Phaser.Scene {
         const uiScene = this.scene.get('UIScene') as UIScene | undefined;
         if (!uiScene) return;
 
-        const seamasterTarget = this.getGuideNpcScreenRect('seamaster') ?? undefined;
+        const seamasterScreenRect = this.getNpcScreenRect('seamaster', 14);
+
         uiScene.showGuideOverlay({
-            text: this.localeManager.t('guide.bowlThatShines.returnToSeamaster', undefined, 'Show the Sea Master what you found.'),
-            target: seamasterTarget,
-            targetPadding: 14,
+            message: this.localeManager.t('guide.bowlThatShines.returnToSeamaster', undefined, 'Show the Sea Master what you found.'),
+            targetRect: seamasterScreenRect,
             dimBackground: true
         });
 
@@ -2879,6 +2944,25 @@ export class GameScene extends Phaser.Scene {
             uiScene.clearGuideOverlay();
         });
         this.chestCinematicTimers.push(timer);
+    }
+
+    private getNpcScreenRect(npcId: string, padding = 8): Phaser.Geom.Rectangle | null {
+        const npc = this.getNpcPosition(npcId);
+        if (!npc) return null;
+        const cam = this.cameras?.main;
+        if (!cam) return null;
+        const zoom = cam.zoom || 1;
+        const screenX = (npc.x - cam.worldView.x) * zoom;
+        const screenY = (npc.y - cam.worldView.y) * zoom;
+        // Bail out if the NPC is off-screen; a mask cutout outside the viewport
+        // just shows an empty dim layer with no visible spotlight.
+        if (screenX < 0 || screenX > cam.width || screenY < 0 || screenY > cam.height) {
+            return null;
+        }
+        // NPC footprint is roughly 16x32 in world pixels; expand by padding.
+        const halfW = (16 * zoom) * 0.5 + padding;
+        const halfH = (32 * zoom) * 0.5 + padding;
+        return new Phaser.Geom.Rectangle(screenX - halfW, screenY - halfH, halfW * 2, halfH * 2);
     }
 
     private cleanupChestCinematic(force = false) {
@@ -2980,6 +3064,7 @@ export class GameScene extends Phaser.Scene {
             });
         }
         this.wallLightSystem?.update(delta);
+        this.cutsceneRunner?.update(_time, delta);
 
         // Update remote players
         this.remotePlayerManager?.update(delta);
@@ -3119,6 +3204,8 @@ export class GameScene extends Phaser.Scene {
         this.fires = [];
         this.wallLightSystem?.destroy();
         this.wallLightSystem = undefined;
+        this.cutsceneRunner?.destroy();
+        this.cutsceneRunner = undefined;
         this.pendingDoorCloseTimer?.remove(false);
         this.pendingDoorCloseTimer = undefined;
         this.waterSystem?.destroy();

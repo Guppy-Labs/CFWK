@@ -7,6 +7,8 @@ export const FISH_COMBAT_MAX_LAUNCH_RANGE_PX = 10 * AI_METERS_TO_PIXELS;
 export const ENEMY_MELEE_KNOCKBACK_SPEED = 120;
 export const ENEMY_MELEE_KNOCKBACK_DURATION_MS = 170;
 export const ENEMY_MELEE_KNOCKBACK_RECOVERY_TAIL_MS = 100;
-export const AI_TO_AI_COLLISION_MIN_PUSH_PER_STEP = 0.06;
+// Bumped from 0.06 to help same-kind enemies (e.g. gremlins) separate faster
+// in choke points so shoulder-locks resolve rather than stalling the pack.
+export const AI_TO_AI_COLLISION_MIN_PUSH_PER_STEP = 0.10;
 export const AI_TO_AI_COLLISION_MAX_PUSH_PER_STEP = 0.45;
 export const PLAYER_RECOVERY_INVULNERABILITY_MS = 3000;

@@ -52,11 +52,11 @@ export class GuideCoordinator {
     private readonly fishingCastHoldCancelledHandler: () => void;
     private readonly advancementsUpdatedHandler: (event: Event) => void;
     private readonly inventoryUpdateHandler: (event: Event) => void;
+    private readonly inventoryConsumedHandler: (event: Event) => void;
     private readonly foodSelectedHandler: (event: Event) => void;
     private readonly foodEquippedHandler: (event: Event) => void;
     private readonly fishermanInRangeHandler: () => void;
     private readonly npcInteractHandler: (event: Event) => void;
-    private fishermanInteractPromptPending = false;
 
     constructor(private readonly uiScene: UIScene, initial: IGuideTutorialState) {
         this.tutorial = { ...initial };
@@ -172,21 +172,20 @@ export class GuideCoordinator {
             this.advancementsSnapshot = detail;
             if (detail.tutorial) {
                 this.tutorial = { ...detail.tutorial };
-                if (this.tutorial.interactionCompleted) {
-                    this.fishermanInteractPromptPending = false;
-                }
             }
         };
         this.inventoryUpdateHandler = (event: Event) => {
             const detail = (event as CustomEvent<IInventoryResponse>).detail;
             if (!detail) return;
             this.inventorySnapshot = detail;
-            if (this.tutorial.foodStep === 'consume_quickslot_1') {
-                const slotZeroItemId = detail.equippedUsableIds?.[0] ?? null;
-                if (slotZeroItemId !== 'yekberries') {
-                    this.completeFoodGuide();
-                }
-            }
+        };
+        this.inventoryConsumedHandler = (event: Event) => {
+            const detail = (event as CustomEvent<{ itemId?: string; slotIndex?: number }>).detail;
+            if (!detail) return;
+            if (this.tutorial.foodStep !== 'consume_quickslot_1') return;
+            if (detail.itemId !== 'yekberries') return;
+            if (detail.slotIndex !== 0) return;
+            this.completeFoodGuide();
         };
         this.foodSelectedHandler = (event: Event) => {
             if (this.tutorial.foodStep !== 'select_berry') return;
@@ -203,7 +202,6 @@ export class GuideCoordinator {
         };
         this.fishermanInRangeHandler = () => {
             if (this.tutorial.interactionCompleted) return;
-            this.fishermanInteractPromptPending = true;
             if (this.tutorial.interactionStep === 'idle') {
                 this.setInteractionStep('press_interact');
             }
@@ -230,6 +228,7 @@ export class GuideCoordinator {
         window.addEventListener('guide:fishing:cast-hold-cancelled', this.fishingCastHoldCancelledHandler as EventListener);
         window.addEventListener('advancements:update', this.advancementsUpdatedHandler as EventListener);
         window.addEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+        window.addEventListener('inventory:consumed', this.inventoryConsumedHandler as EventListener);
         window.addEventListener('guide:book:food-selected', this.foodSelectedHandler as EventListener);
         window.addEventListener('guide:book:food-equipped', this.foodEquippedHandler as EventListener);
         window.addEventListener('guide:interaction:fisherman-in-range', this.fishermanInRangeHandler as EventListener);
@@ -248,8 +247,7 @@ export class GuideCoordinator {
 
         if (!this.tutorial.interactionCompleted && this.tutorial.interactionStep === 'idle') {
             const fishermanInRange = this.uiScene.registry.get('guideFishermanInRange') === true;
-            if (fishermanInRange || this.fishermanInteractPromptPending) {
-                this.fishermanInteractPromptPending = true;
+            if (fishermanInRange) {
                 this.setInteractionStep('press_interact');
             }
         }
@@ -349,6 +347,7 @@ export class GuideCoordinator {
         window.removeEventListener('guide:fishing:cast-hold-cancelled', this.fishingCastHoldCancelledHandler as EventListener);
         window.removeEventListener('advancements:update', this.advancementsUpdatedHandler as EventListener);
         window.removeEventListener('inventory:update', this.inventoryUpdateHandler as EventListener);
+        window.removeEventListener('inventory:consumed', this.inventoryConsumedHandler as EventListener);
         window.removeEventListener('guide:book:food-selected', this.foodSelectedHandler as EventListener);
         window.removeEventListener('guide:book:food-equipped', this.foodEquippedHandler as EventListener);
         window.removeEventListener('guide:interaction:fisherman-in-range', this.fishermanInRangeHandler as EventListener);
@@ -700,7 +699,7 @@ export class GuideCoordinator {
         if (this.tutorial.foodStep === 'consume_quickslot_1') {
             if (!this.simulatedFoodDamage) {
                 this.simulatedFoodDamage = true;
-                this.uiScene.simulateGuideHeartLoss(1);
+                this.networkManager.sendGuideTutorialStab();
             }
             if (!this.foodDamageIntroDone) {
                 if (!this.foodDamageIntroHandle) {
@@ -740,13 +739,28 @@ export class GuideCoordinator {
 
     private renderInteractionStep() {
         if (this.tutorial.interactionStep !== 'press_interact') return;
+        const fishermanInRange = this.uiScene.registry.get('guideFishermanInRange') === true;
+        if (!fishermanInRange) {
+            this.uiScene.clearGuideOverlay();
+            this.uiScene.clearGuideInputGate();
+            return;
+        }
+
+        const interactRect = this.uiScene.getGuideInteractTriggerRect();
+        if (!interactRect) {
+            // Keep movement available if the interact button is not currently visible.
+            this.uiScene.clearGuideOverlay();
+            this.uiScene.clearGuideInputGate();
+            return;
+        }
+
         this.showStep(
             this.localeManager.t(
                 'guide.interaction.useInteract',
                 undefined,
                 'Use this interact button for most world and character interactions.'
             ),
-            this.uiScene.getGuideInteractTriggerRect(),
+            interactRect,
             ['interact']
         );
     }
@@ -837,7 +851,6 @@ export class GuideCoordinator {
         this.tutorial.interactionCompleted = true;
         this.tutorial.interactionStep = 'completed';
         this.tutorial.updatedAt = Date.now();
-        this.fishermanInteractPromptPending = false;
         this.networkManager.sendGuideTutorialUpdate({
             interactionCompleted: true,
             interactionStep: 'completed'

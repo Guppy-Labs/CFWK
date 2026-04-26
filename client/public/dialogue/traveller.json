@@ -14,26 +14,22 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.bowlThatShines.clue.0",
-                    "text": "What's up?"
+                    "textKey": "dialogue.npc.traveller.bowlThatShines.clue.0"
                 },
                 {
                     "speaker": "player",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.traveller.bowlThatShines.clue.player.0",
-                    "text": "Have you seen a key?"
+                    "textKey": "dialogue.npc.traveller.bowlThatShines.clue.player.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.traveller.bowlThatShines.clue.1",
-                    "text": "Nope. But I heard this: when the sky is dark and the stars glimmer, the moon reveals treasure reflections in the water."
+                    "textKey": "dialogue.npc.traveller.bowlThatShines.clue.1"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.bowlThatShines.clue.2",
-                    "text": "If you're key hunting, check the docks at night."
+                    "textKey": "dialogue.npc.traveller.bowlThatShines.clue.2"
                 }
             ]
         },
@@ -49,8 +45,7 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.post.0",
-                    "text": "How's the silver treating you? Spend it wisely, not stylishly."
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.post.0"
                 }
             ]
         },
@@ -67,62 +62,52 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.0",
-                    "text": "You actually came back with a yekberry. You're incredibly kind."
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.1",
-                    "text": "Confession: this was a social experiment. I wanted to see if Anchor Hollow still had generous people."
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.1"
                 },
                 {
                     "speaker": "player",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.player.0",
-                    "text": "Bro is NOT MrBeast."
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.player.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.2",
-                    "text": "Fair. My budget is... less theatrical."
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.2"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.3",
-                    "text": "I can spare one silver coin. It's not much, but it'll be useful."
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.3"
                 },
                 {
                     "speaker": "player",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.player.1",
-                    "text": "I've never had a coin before..."
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.player.1"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.4",
-                    "text": "You've never had a coin? What, do you live under a rock?"
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.4"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.5",
-                    "text": "A silver coin is worth 100 bronze coins."
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.5"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.6",
-                    "text": "And 100 silver coins make one gold coin."
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.6"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.7",
-                    "text": "One silver might not look like much, but used properly, it can get you what you need."
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.return.7"
                 }
             ]
         },
@@ -139,8 +124,7 @@
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.traveller.villageWeirdo.collect.0",
-                    "text": "I still need 1 yekberry. Bring one and I'll make it worth your time."
+                    "textKey": "dialogue.npc.traveller.villageWeirdo.collect.0"
                 }
             ]
         },
@@ -157,8 +141,7 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.greeting.0",
-                    "text": "Road dust fades. Stories don't."
+                    "textKey": "dialogue.npc.traveller.greeting.0"
                 }
             ]
         },
@@ -175,8 +158,7 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.traveller.greeting.0",
-                    "text": "Road dust fades. Stories don't."
+                    "textKey": "dialogue.npc.traveller.greeting.0"
                 }
             ]
         }
@@ -185,20 +167,17 @@
         {
             "speaker": "npc",
             "emotion": "surprise",
-            "textKey": "dialogue.npc.traveller.villageWeirdo.intro.0",
-            "text": "Traveler's request: could you bring me 1 yekberry?"
+            "textKey": "dialogue.npc.traveller.villageWeirdo.intro.0"
         },
         {
             "speaker": "player",
             "emotion": "surprise",
-            "textKey": "dialogue.npc.traveller.villageWeirdo.intro.player.0",
-            "text": "One? That's oddly specific."
+            "textKey": "dialogue.npc.traveller.villageWeirdo.intro.player.0"
         },
         {
             "speaker": "npc",
             "emotion": "happy",
-            "textKey": "dialogue.npc.traveller.villageWeirdo.intro.1",
-            "text": "Specific goals build character. Please and thank you."
+            "textKey": "dialogue.npc.traveller.villageWeirdo.intro.1"
         }
     ]
 }

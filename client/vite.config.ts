@@ -33,6 +33,10 @@ const mapsRewritePlugin = () => ({
         req.url = '/logs/index.html';
       } else if (shouldRewriteToLaunch(req?.url)) {
         req.url = '/launch/index.html';
+      } else if (shouldRewriteToAdminSpriteTuner(req?.url)) {
+        req.url = '/admin/sprite-tuner/index.html';
+      } else if (shouldRewriteToAdminUsers(req?.url)) {
+        req.url = '/admin/users/index.html';
       } else if (shouldRewriteToAdmin(req?.url)) {
         req.url = '/admin/index.html';
       } else if (shouldRewriteToGame(req?.url)) {
@@ -71,6 +75,10 @@ const mapsRewritePlugin = () => ({
         req.url = '/logs/index.html';
       } else if (shouldRewriteToLaunch(req?.url)) {
         req.url = '/launch/index.html';
+      } else if (shouldRewriteToAdminSpriteTuner(req?.url)) {
+        req.url = '/admin/sprite-tuner/index.html';
+      } else if (shouldRewriteToAdminUsers(req?.url)) {
+        req.url = '/admin/users/index.html';
       } else if (shouldRewriteToAdmin(req?.url)) {
         req.url = '/admin/index.html';
       } else if (shouldRewriteToGame(req?.url)) {
@@ -187,6 +195,20 @@ function shouldRewriteToAdmin(url?: string) {
   return false;
 }
 
+function shouldRewriteToAdminSpriteTuner(url?: string) {
+  if (!url) return false;
+  const pathname = url.split('?')[0];
+  if (pathname === '/admin/sprite-tuner' || pathname === '/admin/sprite-tuner/') return true;
+  return false;
+}
+
+function shouldRewriteToAdminUsers(url?: string) {
+  if (!url) return false;
+  const pathname = url.split('?')[0];
+  if (pathname === '/admin/users' || pathname === '/admin/users/') return true;
+  return false;
+}
+
 function shouldRewriteToMaps(url?: string) {
   if (!url) return false;
   const pathname = url.split('?')[0];
@@ -249,6 +271,8 @@ export default defineConfig(({ mode }) => {
           logs: resolve(__dirname, 'logs/index.html'),
           launch: resolve(__dirname, 'launch/index.html'),
           admin: resolve(__dirname, 'admin/index.html'),
+          adminUsers: resolve(__dirname, 'admin/users/index.html'),
+          adminSpriteTuner: resolve(__dirname, 'admin/sprite-tuner/index.html'),
           soon: resolve(__dirname, 'soon.html')
         }
       }

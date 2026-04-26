@@ -295,6 +295,20 @@ export class InstanceManager {
     }
 
     /**
+     * Get all registered location configs.
+     */
+    getRegisteredLocations(): ILocationConfig[] {
+        return Array.from(this.locationConfigs.values());
+    }
+
+    /**
+     * Get all connected user ids.
+     */
+    getConnectedUserIds(): string[] {
+        return Array.from(this.connectedUsers.keys());
+    }
+
+    /**
      * Get location config
      */
     getLocationConfig(locationId: string): ILocationConfig | undefined {

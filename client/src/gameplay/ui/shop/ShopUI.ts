@@ -297,6 +297,27 @@ export class ShopUI {
 
         this.renderLeftPage();
         this.renderRightPage();
+        this.renderCloseButton();
+    }
+
+    private renderCloseButton() {
+        const scale = this.currentScale;
+        const label = this.localeManager.t('shop.close', undefined, 'Close');
+        const btnWidth = Math.floor(42 * scale);
+        const btnHeight = Math.floor(14 * scale);
+        const coverRight = this.cover.x + (this.coverWidth / 2) * scale;
+        const coverTop = this.cover.y - (this.coverHeight / 2) * scale;
+        const pad = Math.floor(4 * scale);
+        const x = Math.floor(coverRight - btnWidth - pad);
+        const y = Math.floor(coverTop + pad);
+
+        const bg = this.addNineSliceImage(this.rightContainer, x, y, 'ui-group-button-selected', btnWidth, btnHeight);
+        const textImg = this.makeTextImage(label, '#f2e9dd');
+        textImg.setOrigin(0.5, 0.5).setPosition(x + btnWidth / 2, y + btnHeight / 2).setScale(scale * 0.9);
+        this.rightContainer.add(textImg);
+
+        bg.setInteractive({ useHandCursor: true });
+        bg.on('pointerdown', () => this.close());
     }
 
     private renderLeftPage() {

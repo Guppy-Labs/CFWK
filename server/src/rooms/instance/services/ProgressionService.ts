@@ -22,6 +22,15 @@ export async function sendAdvancements(
     const player = room.state.players.get(client.sessionId);
     if (player) {
         await processQuestCompletionRewards(room, client, player.odcid, updates.alerts);
+        // Defensive cleanup: drop any lingering Skip to Night offset once
+        // the bowl quest has fully completed, even if the client never
+        // sent its own quest:time-skip-clear message.
+        const bowlCompleted = updates.alerts.some((alert) =>
+            alert.type === "quest-completed" && alert.questId === "bowl_that_shines"
+        );
+        if (bowlCompleted) {
+            room.clientTimeOffsetByUserId?.delete(player.odcid);
+        }
     }
     if (player) {
         try {
@@ -46,7 +55,8 @@ export async function sendAdvancements(
 }
 
 export async function shouldForceGlimmeringKeyCatch(room: InstanceRoomHost, userId: string, x: number, y: number): Promise<boolean> {
-    if (!isNightWindowForGlimmeringKey()) return false;
+    const clientOffsetMs = Number(room.clientTimeOffsetByUserId?.get(userId) ?? 0);
+    if (!isNightWindowForGlimmeringKey(clientOffsetMs)) return false;
 
     const activeObjective = await room.advancementsManager.getActiveFishNearLocationObjective(userId, "KeyLocation");
     if (!activeObjective) return false;
@@ -58,8 +68,9 @@ export async function shouldForceGlimmeringKeyCatch(room: InstanceRoomHost, user
     return keyLocations.some((location: { x: number; y: number }) => Math.hypot(location.x - x, location.y - y) <= radiusPx);
 }
 
-export function isNightWindowForGlimmeringKey(): boolean {
-    const hour = calculateWorldTime().hour;
+export function isNightWindowForGlimmeringKey(offsetMs: number = 0): boolean {
+    const normalizedOffset = Number.isFinite(offsetMs) ? Math.max(0, Math.floor(offsetMs)) : 0;
+    const hour = calculateWorldTime(Date.now() + normalizedOffset).hour;
     return hour >= 23 || hour < 4;
 }
 
@@ -124,8 +135,7 @@ export async function syncInventoryCountObjectives(room: InstanceRoomHost, clien
 export function updateHeedTheWarningUnlockState(room: InstanceRoomHost, userId: string, state: IAdvancementsState) {
     const progress = state.questProgress?.[HEED_THE_WARNING_QUEST_ID];
     const unlocked = progress?.status === "active" || progress?.status === "completed";
-    const onStayObjective = progress?.status === "active"
-        && (typeof progress.objectiveIndex !== "number" || Math.floor(progress.objectiveIndex) === 0);
+    const dangerExitHealActive = progress?.status === "active";
     room.enemyBridgeUnlockedByUserId.set(userId, unlocked);
-    room.heedTheWarningStayObjectiveByUserId.set(userId, onStayObjective);
+    room.heedTheWarningStayObjectiveByUserId.set(userId, dangerExitHealActive);
 }

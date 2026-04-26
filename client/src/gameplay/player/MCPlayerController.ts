@@ -130,8 +130,10 @@ export class MCPlayerController {
 
         this.animationController = new MCAnimationController(scene, {
             walkFrameRate: 10,
-            walkAnimSpeedMin: 6,
-            walkAnimSpeedMax: 14,
+            // Widened range so the effective animation rate tracks movement
+            // roughly proportionally (sprint ~= 2x walk rate, not ~1.4x).
+            walkAnimSpeedMin: 5,
+            walkAnimSpeedMax: 20,
             walkAnimSpeedMaxVelocity: this.config.sprintSpeed,
             scale: this.config.scale
         });
@@ -288,11 +290,12 @@ export class MCPlayerController {
         const guideBlocked = this.scene.registry.get('guideBlockAll') === true;
         const guideAllowedActions = this.scene.registry.get('guideAllowedActions') as string[] | undefined;
         const guideAllowsFish = guideBlocked && Array.isArray(guideAllowedActions) && guideAllowedActions.includes('fish');
+        const guideAllowsInteract = guideBlocked && Array.isArray(guideAllowedActions) && guideAllowedActions.includes('interact');
         const inputBlocked = guiOpen || chatFocused || transitionBlocked || guideBlocked;
 
-        if (!inputBlocked || guideAllowsFish) {
+        if (!inputBlocked || guideAllowsFish || guideAllowsInteract) {
             const actionPresses = this.inputManager.getActionPresses();
-            if (actionPresses.interactPressed && !interactionLocked && !guideBlocked) {
+            if (actionPresses.interactPressed && !interactionLocked && (!guideBlocked || guideAllowsInteract)) {
                 this.tryInteract();
             }
             if (actionPresses.fishingPressed && !interactionLocked) {
@@ -647,7 +650,10 @@ export class MCPlayerController {
         const chatFocused = this.scene.registry.get('chatFocused') === true;
         const guiOpen = this.scene.registry.get('guiOpen') === true;
         const transitionBlocked = this.scene.registry.get('inputBlocked') === true;
-        if (chatFocused || guiOpen || transitionBlocked) return;
+        const guideBlocked = this.scene.registry.get('guideBlockAll') === true;
+        const guideAllowedActions = this.scene.registry.get('guideAllowedActions') as string[] | undefined;
+        const guideAllowsInteract = guideBlocked && Array.isArray(guideAllowedActions) && guideAllowedActions.includes('interact');
+        if (chatFocused || guiOpen || (transitionBlocked && !guideAllowsInteract)) return;
 
         this.afkManager.registerAfkActivity(Date.now());
 

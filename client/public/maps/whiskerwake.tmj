@@ -1672,8 +1672,8 @@
                  "type":"",
                  "visible":true,
                  "width":0,
-                 "x":1616,
-                 "y":1426.66666666667
+                 "x":1486,
+                 "y":1159.33333333334
                 }, 
                 {
                  "height":0,
@@ -1756,6 +1756,30 @@
                  "width":0,
                  "x":1487.66666666667,
                  "y":1125.33333333333
+                }, 
+                {
+                 "height":0,
+                 "id":52,
+                 "name":"IntroPlayerLocation",
+                 "point":true,
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":1488.33333333333,
+                 "y":1158
+                }, 
+                {
+                 "height":0,
+                 "id":53,
+                 "name":"DockTarget",
+                 "point":true,
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":1871.33333333333,
+                 "y":1617.33333333333
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -4000,7 +4024,7 @@
                 }],
          "opacity":1,
          "type":"objectgroup",
-         "visible":true,
+         "visible":false,
          "x":0,
          "y":0
         }, 
@@ -4052,7 +4076,7 @@
          "y":0
         }],
  "nextlayerid":32,
- "nextobjectid":52,
+ "nextobjectid":54,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",

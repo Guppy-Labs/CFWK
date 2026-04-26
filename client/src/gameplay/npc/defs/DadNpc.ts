@@ -2,7 +2,7 @@ import type { NPCDefinition } from '../NPCRegistry';
 
 export const DAD_NPC_DEFINITION: NPCDefinition = {
     id: 'dad',
-    name: 'Dad',
+    name: 'Papa Cat',
     nameKey: 'npc.dad.name',
     idleTexturePath: '/assets/npc/dad/idle.png',
     scale: 1,

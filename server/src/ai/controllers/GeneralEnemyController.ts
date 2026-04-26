@@ -1,10 +1,26 @@
 import { DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG } from '@cfwk/shared';
 import { AIController } from './AIController';
-import { AiControllerContext, AiNpcRuntimeState, Vec2 } from '../types';
+import { AiAvoidanceEntity, AiControllerContext, AiNpcRuntimeState, Vec2 } from '../types';
 
 const ATTACK_ANIM_TOTAL_MS = 900;
 const ATTACK_IMPACT_DELAY_MS = 320;
 const ATTACK_IMPACT_RANGE_SCALE = 1.15;
+const AVOIDANCE_RADIUS_PX = 45;
+const AVOIDANCE_STRENGTH = 0.35;
+const AVOIDANCE_MAX_OFFSET_PX = 12;
+const CHASE_DISENGAGE_HYSTERESIS = 1.2;
+const DISENGAGE_IDLE_COOLDOWN_TICKS = 80;
+// Minimum fraction of requested step distance that must be achieved for a tick
+// to count as "progress". Anything below this during chase contributes to the
+// stuck accumulator. 0.25 tolerates wall slides but catches full stalls.
+const PROGRESS_FRACTION_OF_STEP = 0.25;
+// How long an enemy may remain below the progress threshold before we force a
+// repath with a small jitter on the target cell.
+const STUCK_TIMEOUT_MS = 400;
+// How far (in pixels) to jitter the repath destination after a stuck trigger.
+// One tile (~32px) gives A* a chance to pick a different corridor without
+// abandoning the player entirely.
+const STUCK_REPATH_JITTER_PX = 24;
 
 function toFacingDirectionIndex(vx: number, vy: number, fallback: number): number {
     if (Math.abs(vx) < 0.001 && Math.abs(vy) < 0.001) return fallback;
@@ -46,6 +62,7 @@ export class GeneralEnemyController implements AIController {
         }
         entity.controllerConfig = config;
         const chaseRangePx = context.metersToPixels(config.chaseRangeMeters);
+        const disengageRangePx = chaseRangePx * CHASE_DISENGAGE_HYSTERESIS;
         let disengagedThisTick = false;
 
         const existingTarget = entity.targetSessionId
@@ -54,7 +71,7 @@ export class GeneralEnemyController implements AIController {
 
         if (existingTarget) {
             const distance = Math.hypot(existingTarget.x - entity.x, existingTarget.y - entity.y);
-            if (distance > chaseRangePx) {
+            if (distance > disengageRangePx) {
                 entity.targetSessionId = undefined;
                 entity.mode = 'idle';
                 entity.chasePath = [];
@@ -62,6 +79,7 @@ export class GeneralEnemyController implements AIController {
                 entity.wanderTarget = undefined;
                 entity.vx = 0;
                 entity.vy = 0;
+                entity.lastIdleCheckTick = context.tick + DISENGAGE_IDLE_COOLDOWN_TICKS;
                 disengagedThisTick = true;
             }
         }
@@ -180,7 +198,7 @@ export class GeneralEnemyController implements AIController {
             return;
         }
 
-        const chaseRangePx = context.metersToPixels(entity.controllerConfig.chaseRangeMeters);
+        const disengageRangePx = context.metersToPixels(entity.controllerConfig.chaseRangeMeters) * CHASE_DISENGAGE_HYSTERESIS;
         const distanceToTarget = Math.hypot(target.x - entity.x, target.y - entity.y);
         const pendingAttackReady = Number.isFinite(entity.pendingMeleeTriggerAtMs) && context.now >= Number(entity.pendingMeleeTriggerAtMs);
         if (pendingAttackReady) {
@@ -214,7 +232,7 @@ export class GeneralEnemyController implements AIController {
             entity.pendingMeleeDamageHearts = entity.controllerConfig.meleeDamageHearts;
         }
 
-        if (distanceToTarget > chaseRangePx) {
+        if (distanceToTarget > disengageRangePx) {
             entity.targetSessionId = undefined;
             entity.mode = 'idle';
             entity.chasePath = [];
@@ -222,6 +240,7 @@ export class GeneralEnemyController implements AIController {
             entity.wanderTarget = undefined;
             entity.vx = 0;
             entity.vy = 0;
+            entity.lastIdleCheckTick = context.tick + DISENGAGE_IDLE_COOLDOWN_TICKS;
             return;
         }
 
@@ -230,9 +249,18 @@ export class GeneralEnemyController implements AIController {
 
         if (shouldRecomputePath) {
             entity.lastPathRecomputeTick = context.tick;
-            const path = context.nav.findPath({ x: entity.x, y: entity.y }, { x: target.x, y: target.y }, entity.hitbox);
+            // When recomputing because we're stuck, jitter the end so A* has a
+            // chance to pick a different corridor. Regular repaths aim straight at the player.
+            const pathEndTarget = entity.stuckAccumulatorMs >= STUCK_TIMEOUT_MS
+                ? {
+                    x: target.x + (context.random() * 2 - 1) * STUCK_REPATH_JITTER_PX,
+                    y: target.y + (context.random() * 2 - 1) * STUCK_REPATH_JITTER_PX
+                }
+                : { x: target.x, y: target.y };
+            const path = context.nav.findPath({ x: entity.x, y: entity.y }, pathEndTarget, entity.hitbox);
             entity.chasePath = path;
             entity.chasePathIndex = path.length > 1 ? 1 : 0;
+            entity.stuckAccumulatorMs = 0;
         }
 
         let chaseTarget: Vec2 = { x: target.x, y: target.y };
@@ -244,29 +272,58 @@ export class GeneralEnemyController implements AIController {
             return;
         }
 
-        const reached = this.moveToward(entity, context, chaseTarget, entity.controllerConfig.speedPxPerSecond);
-        if (reached && entity.chasePath.length > 0 && entity.chasePathIndex < entity.chasePath.length - 1) {
+        const stepResult = this.stepTowardTarget(entity, context, chaseTarget, entity.controllerConfig.speedPxPerSecond);
+        if (stepResult.reached && entity.chasePath.length > 0 && entity.chasePathIndex < entity.chasePath.length - 1) {
             entity.chasePathIndex += 1;
+        }
+
+        // Track whether the entity is making meaningful progress. If we've
+        // been below the progress threshold for long enough, force a repath
+        // on the next tick so stepChase's recompute path takes the jitter branch.
+        const progressThreshold = stepResult.stepDistance * PROGRESS_FRACTION_OF_STEP;
+        if (stepResult.stepDistance > 0.01 && stepResult.progressPx < progressThreshold) {
+            entity.stuckAccumulatorMs += context.deltaSec * 1000;
+            if (entity.stuckAccumulatorMs >= STUCK_TIMEOUT_MS) {
+                entity.lastPathRecomputeTick = -1;
+            }
+        } else {
+            entity.stuckAccumulatorMs = 0;
         }
     }
 
     private moveToward(entity: AiNpcRuntimeState, context: AiControllerContext, target: Vec2, speedPxPerSecond: number): boolean {
+        return this.stepTowardTarget(entity, context, target, speedPxPerSecond).reached;
+    }
+
+    private stepTowardTarget(
+        entity: AiNpcRuntimeState,
+        context: AiControllerContext,
+        target: Vec2,
+        speedPxPerSecond: number
+    ): { reached: boolean; progressPx: number; stepDistance: number } {
         const dx = target.x - entity.x;
         const dy = target.y - entity.y;
         const distance = Math.hypot(dx, dy);
 
         if (distance <= 1.5) {
-            return true;
+            return { reached: true, progressPx: 0, stepDistance: 0 };
         }
 
         const nx = dx / Math.max(0.0001, distance);
         const ny = dy / Math.max(0.0001, distance);
         const stepDistance = Math.min(distance, Math.max(0, speedPxPerSecond) * context.deltaSec);
 
-        const desired = {
-            x: entity.x + nx * stepDistance,
-            y: entity.y + ny * stepDistance
-        };
+        let desiredX = entity.x + nx * stepDistance;
+        let desiredY = entity.y + ny * stepDistance;
+
+        const avoidance = this.computeAvoidanceOffset(entity, context);
+        desiredX += avoidance.x * stepDistance;
+        desiredY += avoidance.y * stepDistance;
+
+        const desired = { x: desiredX, y: desiredY };
+
+        const startX = entity.x;
+        const startY = entity.y;
 
         const resolved = context.nav.resolveMovement({ x: entity.x, y: entity.y }, desired, entity.hitbox);
         entity.vx = (resolved.x - entity.x) / Math.max(0.0001, context.deltaSec);
@@ -275,11 +332,49 @@ export class GeneralEnemyController implements AIController {
         entity.y = resolved.y;
         entity.moveTs = context.now;
 
-        if (Math.abs(resolved.x - desired.x) > 0.01 || Math.abs(resolved.y - desired.y) > 0.01) {
-            return true;
+        // Actual scalar progress made along the step. Using the raw distance
+        // moved keeps "sliding along a wall" from being mistaken for having
+        // reached a waypoint (which previously advanced the path index and
+        // caused chokes to starve).
+        const progressPx = Math.hypot(resolved.x - startX, resolved.y - startY);
+
+        // Only treat a path node as "reached" when we are actually close to it.
+        const reached = Math.hypot(target.x - entity.x, target.y - entity.y) <= 2;
+        return { reached, progressPx, stepDistance };
+    }
+
+    private computeAvoidanceOffset(entity: AiNpcRuntimeState, context: AiControllerContext): Vec2 {
+        let repX = 0;
+        let repY = 0;
+
+        for (const other of context.aiEntities) {
+            const odx = entity.x - other.x;
+            const ody = entity.y - other.y;
+            const dist = Math.hypot(odx, ody);
+            if (dist < 0.5 || dist > AVOIDANCE_RADIUS_PX) continue;
+            const strength = AVOIDANCE_STRENGTH * (1 - dist / AVOIDANCE_RADIUS_PX);
+            repX += (odx / dist) * strength;
+            repY += (ody / dist) * strength;
         }
 
-        return Math.hypot(target.x - entity.x, target.y - entity.y) <= 2;
+        for (const npc of context.staticNpcs) {
+            const odx = entity.x - npc.x;
+            const ody = entity.y - npc.y;
+            const dist = Math.hypot(odx, ody);
+            if (dist < 0.5 || dist > AVOIDANCE_RADIUS_PX) continue;
+            const strength = AVOIDANCE_STRENGTH * (1 - dist / AVOIDANCE_RADIUS_PX);
+            repX += (odx / dist) * strength;
+            repY += (ody / dist) * strength;
+        }
+
+        const repLen = Math.hypot(repX, repY);
+        if (repLen < 0.001) return { x: 0, y: 0 };
+
+        const clampedLen = Math.min(repLen, AVOIDANCE_MAX_OFFSET_PX);
+        return {
+            x: (repX / repLen) * clampedLen,
+            y: (repY / repLen) * clampedLen
+        };
     }
 
     private getGremlinDirection(entity: AiNpcRuntimeState, target?: Vec2): number {

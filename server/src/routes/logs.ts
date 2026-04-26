@@ -1,7 +1,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import User from '../models/User';
+import { isGameAdmin } from './_adminAuth';
 
 type CommandLogRow = {
     timestamp?: string;
@@ -28,15 +28,6 @@ function escapeHtml(input: string): string {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
-}
-
-async function isGameAdmin(req: express.Request): Promise<boolean> {
-    if (!req.isAuthenticated || !req.isAuthenticated()) return false;
-    const userId = (req.user as any)?.id || (req.user as any)?._id;
-    if (!userId) return false;
-
-    const user = await User.findById(userId).select('permissions');
-    return Boolean(user && Array.isArray(user.permissions) && user.permissions.includes('game.admin'));
 }
 
 function readCommandLogs(limit = 1000): CommandLogRow[] {

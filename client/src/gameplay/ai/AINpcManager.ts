@@ -6,6 +6,7 @@ import { OcclusionManager } from '../map/OcclusionManager';
 import { AINpcEntity } from './AINpcEntity';
 import { getAiNpcVisualDefinition } from './AINpcRegistry';
 import type { DepthManager } from '../rendering/DepthManager';
+import type { AudioManager, FootstepSurface } from '../audio/AudioManager';
 
 type TrimMetaAnimation = {
     frameWidth: number;
@@ -32,6 +33,15 @@ export type AINpcManagerConfig = {
     depthManager?: DepthManager;
     lightingManager?: LightingManager;
     groundLayers?: Phaser.Tilemaps.TilemapLayer[];
+    getAudioManager?: () => AudioManager | undefined;
+    getMap?: () => Phaser.Tilemaps.Tilemap | undefined;
+    getMapFile?: () => string;
+    getLocalPlayerPosition?: () => { x: number; y: number } | undefined;
+};
+
+export type GremlinFootstepEvent = {
+    surface: FootstepSurface;
+    audible: boolean;
 };
 
 export class AINpcManager {
@@ -42,6 +52,7 @@ export class AINpcManager {
     private debugGraphics?: Phaser.GameObjects.Graphics;
     private trimMetaPromiseByKind = new Map<AINpcKind, Promise<GremlinTrimMeta | null>>();
     private destroyed = false;
+    private pendingFootstepSurfaces: FootstepSurface[] = [];
 
     constructor(scene: Phaser.Scene, config: AINpcManagerConfig) {
         this.scene = scene;
@@ -73,7 +84,8 @@ export class AINpcManager {
                     occlusionManager: this.config.occlusionManager,
                     depthManager: this.config.depthManager,
                     lightingManager: this.config.lightingManager,
-                    groundLayers: this.config.groundLayers
+                    groundLayers: this.config.groundLayers,
+                    manager: this
                 });
 
                 this.entities.set(id, entity);
@@ -110,10 +122,18 @@ export class AINpcManager {
             entity.destroy();
             this.entities.delete(id);
         });
+
+        room.onMessage('ai:attack-hit', (data: { attackerId?: string }) => {
+            if (!data?.attackerId) return;
+            const entity = this.entities.get(data.attackerId);
+            if (!entity) return;
+            entity.onAttackHit();
+        });
     }
 
     update(delta: number) {
         if (this.destroyed) return;
+        this.pendingFootstepSurfaces = [];
         this.entities.forEach((entity, id) => {
             if (entity.isDestroyed()) {
                 this.entities.delete(id);
@@ -121,6 +141,45 @@ export class AINpcManager {
             }
             entity.update(delta);
         });
+        this.emitAggregatedFootstepSubtitle();
+    }
+
+    reportGremlinFootstep(surface: FootstepSurface) {
+        this.pendingFootstepSurfaces.push(surface);
+    }
+
+    getFootstepContext(): {
+        audioManager: AudioManager | undefined;
+        map: Phaser.Tilemaps.Tilemap | undefined;
+        mapFile: string;
+        playerPos: { x: number; y: number } | undefined;
+        manager: AINpcManager;
+    } {
+        return {
+            audioManager: this.config.getAudioManager?.(),
+            map: this.config.getMap?.(),
+            mapFile: this.config.getMapFile?.() ?? '',
+            playerPos: this.config.getLocalPlayerPosition?.(),
+            manager: this
+        };
+    }
+
+    private emitAggregatedFootstepSubtitle() {
+        if (this.pendingFootstepSurfaces.length === 0) return;
+        const audioManager = this.config.getAudioManager?.();
+        if (!audioManager) return;
+
+        const surfaceCounts = new Map<FootstepSurface, number>();
+        for (const surface of this.pendingFootstepSurfaces) {
+            surfaceCounts.set(surface, (surfaceCounts.get(surface) ?? 0) + 1);
+        }
+
+        const totalAudible = this.pendingFootstepSurfaces.length;
+        const isPlural = totalAudible > 1;
+
+        for (const [surface] of surfaceCounts) {
+            audioManager.emitGremlinFootstepSubtitle(surface, isPlural);
+        }
     }
 
     getEntities(): Map<string, AINpcEntity> {

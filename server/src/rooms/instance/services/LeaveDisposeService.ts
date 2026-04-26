@@ -40,6 +40,7 @@ export async function handleLeave(room: InstanceRoomHost, client: Client, consen
         room.enemyBridgeUnlockedByUserId.delete(odcid);
         room.heedTheWarningStayObjectiveByUserId.delete(odcid);
         room.wasInDangerByUserId.delete(odcid);
+        room.clientTimeOffsetByUserId?.delete(odcid);
         const prefix = `${odcid}:`;
         Array.from(room.dropRefineTouchByUserAndDrop.keys()).forEach((key: unknown) => {
             const touchKey = typeof key === "string" ? key : "";
@@ -95,6 +96,7 @@ export async function handleLeave(room: InstanceRoomHost, client: Client, consen
     room.state.players.delete(client.sessionId);
     room.fishingCasts.delete(client.sessionId);
     room.tutorialStateBySession.delete(client.sessionId);
+    room.tutorialStabAppliedBySession.delete(client.sessionId);
     room.lastActivityBySession.delete(client.sessionId);
     room.pendingStatsDeltasBySession.delete(client.sessionId);
     room.sprintStateBySession.delete(client.sessionId);
@@ -125,6 +127,7 @@ export function handleDispose(room: InstanceRoomHost) {
     room.moneyByUserId.clear();
     room.defeatedByUserId.clear();
     room.harvestCooldownByUserId.clear();
+    room.clientTimeOffsetByUserId?.clear();
     if (room.shopWaresByUserId) room.shopWaresByUserId.clear();
     room.harvestTargetsByObjectId.clear();
     room.chestInteractionTarget = null;

@@ -169,6 +169,12 @@ export class DialogueManager {
         if (completedNpcId && shouldSendNpcInteract) {
             this.networkManager.sendNpcInteract(completedNpcId);
         }
+
+        if (completedNpcId) {
+            window.dispatchEvent(new CustomEvent('dialogue:complete', {
+                detail: { npcId: completedNpcId }
+            }));
+        }
     }
 
     private getFocusPoint() {
@@ -200,13 +206,13 @@ export class DialogueManager {
             : (line.name ?? defaultSpeakerName);
         const localizedText = line.textKey
             ? this.localeManager.t(line.textKey, undefined, line.text)
-            : line.text;
+            : (line.text ?? '');
         const emotion = (line.emotion ?? (speaker === 'npc' ? 'happy' : 'happy')) as DialogueEmotion;
         const options = line.options?.map((option) => ({
             id: option.id,
             text: option.textKey
                 ? this.localeManager.t(option.textKey, undefined, option.text)
-                : option.text
+                : (option.text ?? '')
         }));
 
         const renderLine: DialogueRenderLine = {
@@ -369,7 +375,7 @@ export class DialogueManager {
 
         const selectedText = selected.textKey
             ? this.localeManager.t(selected.textKey, undefined, selected.text)
-            : selected.text;
+            : (selected.text ?? '');
 
         lines[this.currentIndex] = {
             ...line,

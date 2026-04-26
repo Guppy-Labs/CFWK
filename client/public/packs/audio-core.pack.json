@@ -31,11 +31,17 @@
     { "type": "audio", "key": "advancement-quest-started", "url": "/audio/ambient/ui/advancements/quests/start.mp3" },
     { "type": "audio", "key": "advancement-quest-objective", "url": "/audio/ambient/ui/advancements/quests/objective.mp3" },
     { "type": "audio", "key": "advancement-quest-completed", "url": "/audio/ambient/ui/advancements/quests/complete.mp3" },
-    { "type": "audio", "key": "advancement-quest-track", "url": "/audio/ambient/ui/advancements/quests/track.mp3" },
     { "type": "audio", "key": "advancement-achievement-unlocked", "url": "/audio/ambient/ui/advancements/achivement.mp3" },
     { "type": "audio", "key": "advancement-location-discovered", "url": "/audio/ambient/ui/advancements/location.mp3" },
     { "type": "audio", "key": "dialogue-click", "url": "/audio/ambient/dialogue/click.mp3" },
     { "type": "audio", "key": "dialogue-next", "url": "/audio/ambient/dialogue/next.mp3" },
-    { "type": "audio", "key": "dialogue-end", "url": "/audio/ambient/dialogue/end.mp3" }
+    { "type": "audio", "key": "dialogue-end", "url": "/audio/ambient/dialogue/end.mp3" },
+    { "type": "audio", "key": "music-intro-sequence", "url": "/assets/scene/intro/audio_splash.mp3" },
+    { "type": "audio", "key": "gremlin-grunt-1", "url": "/audio/ambient/entity/enemy/gremlin/vocal/gremlin-grunt-1.mp3" },
+    { "type": "audio", "key": "gremlin-grunt-2", "url": "/audio/ambient/entity/enemy/gremlin/vocal/gremlin-grunt-2.mp3" },
+    { "type": "audio", "key": "gremlin-grunt-3", "url": "/audio/ambient/entity/enemy/gremlin/vocal/gremlin-grunt-3.mp3" },
+    { "type": "audio", "key": "gremlin-grunt-4", "url": "/audio/ambient/entity/enemy/gremlin/vocal/gremlin-grunt-4.mp3" },
+    { "type": "audio", "key": "gremlin-weapon-swing", "url": "/audio/ambient/entity/enemy/gremlin/weapon/gremlin-weapon-swing.mp3" },
+    { "type": "audio", "key": "gremlin-weapon-land", "url": "/audio/ambient/entity/enemy/gremlin/weapon/gremlin-weapon-land.mp3" }
   ]
 }

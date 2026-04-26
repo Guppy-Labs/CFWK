@@ -570,6 +570,8 @@ export interface IGuideTutorialState {
   finbookAnchorEnteredAt: number | null;
   forceSalmonCatch: boolean;
   forceFoodGuideHeal: boolean;
+  introCutsceneCompleted: boolean;
+  introArrivalCompleted: boolean;
   updatedAt: number | null;
 }
 
@@ -587,6 +589,8 @@ export const DEFAULT_GUIDE_TUTORIAL_STATE: IGuideTutorialState = {
   finbookAnchorEnteredAt: null,
   forceSalmonCatch: false,
   forceFoodGuideHeal: false,
+  introCutsceneCompleted: false,
+  introArrivalCompleted: false,
   updatedAt: null
 };
 
@@ -658,6 +662,12 @@ export type IQuestObjectiveEntry = {
   liquidItemId?: string;
   containerItemId?: string;
   outputItemId?: string;
+  // When true, suppress the on-screen quest arrow and overhead marker for this step.
+  // Progression still triggers on the matching event (e.g. talk-to-npc), the player just isn't guided.
+  hideGuidance?: boolean;
+  // Optional override for the objective label shown in the Finbook + alerts.
+  // When set, replaces the auto-generated text (e.g. "Talk to {name}") with this localized key.
+  labelKey?: string;
 };
 
 export type IAchievementCatalogEntry = {
@@ -731,10 +741,10 @@ export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
     dependencyQuestIds: ['heed_the_warning', 'anti_death_measures'],
     startObjective: { kind: 'talk-to-npc', npcId: 'traveller' },
     objectives: [
-      { kind: 'inventory-count', itemId: 'yekberries', requiredCount: 1 },
+      { kind: 'inventory-count', itemId: 'yekberries', requiredCount: 19 },
       { kind: 'talk-to-npc', npcId: 'traveller' }
     ],
-    objective: { kind: 'inventory-count', itemId: 'yekberries', requiredCount: 1 }
+    objective: { kind: 'inventory-count', itemId: 'yekberries', requiredCount: 19 }
   },
   {
     id: 'wares_galore',
@@ -756,7 +766,7 @@ export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
     startObjective: { kind: 'talk-to-npc', npcId: 'wiseman' },
     objectives: [
       { kind: 'talk-to-npc', npcId: 'seamaster' },
-      { kind: 'talk-to-npc', npcId: 'traveller' },
+      { kind: 'talk-to-npc', npcId: 'traveller', hideGuidance: true, labelKey: 'finbook.quest.objective.askAround' },
       { kind: 'wait-for-time-window', startHour: 23, endHourExclusive: 4 },
       { kind: 'fish-near-location', locationName: 'KeyLocation', radiusMeters: 6 },
       { kind: 'talk-to-npc', npcId: 'seamaster' },
@@ -816,14 +826,14 @@ export const DEFAULT_USER_SETTINGS: IUserSettings = {
     stereoEnabled: true
   },
   video: {
-    qualityPreset: 'high',
+    qualityPreset: 'medium',
     fullscreen: false,
     visualEffectsEnabled: true,
     seasonalEffectsEnabled: true,
     bloomEnabled: false,
     vignetteEnabled: true,
-    tiltShiftEnabled: true,
-    crtEnabled: true,
+    tiltShiftEnabled: false,
+    crtEnabled: false,
     dustParticlesEnabled: true
   },
   controls: {

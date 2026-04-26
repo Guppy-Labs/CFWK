@@ -11,6 +11,7 @@ import { SettingsStatisticsPanel } from './SettingsStatisticsPanel';
 import { SettingsControlsPanel } from './SettingsControlsPanel';
 import { FullscreenManager } from '../FullscreenManager';
 import { KeybindManager } from '../../input/KeybindManager';
+import { getLocalVideoSettings, saveLocalVideoSettings } from '../../settings/LocalVideoSettingsStore';
 
 export class SettingsTabUI {
     private scene: Phaser.Scene;
@@ -44,7 +45,8 @@ export class SettingsTabUI {
     private settings: IUserSettings = {
         ...DEFAULT_USER_SETTINGS,
         audio: { ...DEFAULT_USER_SETTINGS.audio },
-        video: { ...DEFAULT_USER_SETTINGS.video },
+        // Video is persisted locally, not on the server account.
+        video: getLocalVideoSettings(),
         controls: { ...DEFAULT_USER_SETTINGS.controls }
     };
     private settingsLoaded = false;
@@ -122,11 +124,14 @@ export class SettingsTabUI {
 
         const cachedSettings = this.networkManager.getCachedSettings();
         if (cachedSettings) {
+            // Video settings are persisted locally (see LocalVideoSettingsStore)
+            // so we ignore whatever the server cached for the video slice and
+            // keep the locally-hydrated value that was set on this.settings init.
             this.settings = {
                 ...cachedSettings,
                 audio: { ...cachedSettings.audio },
                 video: {
-                    ...cachedSettings.video,
+                    ...this.settings.video,
                     fullscreen: this.sessionFullscreenEnabled
                 },
                 controls: { ...(cachedSettings.controls ?? DEFAULT_USER_SETTINGS.controls) }
@@ -136,6 +141,11 @@ export class SettingsTabUI {
             this.soundPanel.setValues(this.settings.audio);
             this.videoPanel.setValues(this.settings.video);
             this.applyAudioSettings(this.settings.audio);
+            this.applyVideoSettings(this.settings.video);
+        } else {
+            // No cached server settings yet — still push our local video to the
+            // game/UI scenes so the user's preferences apply immediately on boot.
+            this.videoPanel.setValues(this.settings.video);
             this.applyVideoSettings(this.settings.video);
         }
 
@@ -271,11 +281,12 @@ export class SettingsTabUI {
 
         this.networkManager.getSettings().then((settings) => {
             if (settings) {
+                // Keep the locally-persisted video slice; server has no authority over it.
                 this.settings = {
                     ...settings,
                     audio: { ...settings.audio },
                     video: {
-                        ...settings.video,
+                        ...this.settings.video,
                         fullscreen: this.sessionFullscreenEnabled
                     },
                     controls: { ...(settings.controls ?? DEFAULT_USER_SETTINGS.controls) }
@@ -391,7 +402,9 @@ export class SettingsTabUI {
                 this.settings.video.bloomEnabled = true;
                 this.settings.video.vignetteEnabled = true;
                 this.settings.video.tiltShiftEnabled = true;
-                this.settings.video.crtEnabled = true;
+                // CRT is intentionally NOT part of the high preset; it must be
+                // enabled manually by the user who wants it.
+                this.settings.video.crtEnabled = false;
                 this.settings.video.dustParticlesEnabled = true;
                 break;
             case 'custom':
@@ -400,6 +413,13 @@ export class SettingsTabUI {
     }
 
     private scheduleSave() {
+        // Video settings are persisted locally (not tied to the account). Write
+        // immediately — cheap sync call — and exclude video from the server payload.
+        saveLocalVideoSettings({
+            ...this.settings.video,
+            fullscreen: DEFAULT_USER_SETTINGS.video.fullscreen
+        });
+
         this.saveTimer?.remove(false);
         this.saveTimer = this.scene.time.delayedCall(400, () => {
             const requestId = ++this.saveRequestId;
@@ -407,6 +427,8 @@ export class SettingsTabUI {
             const settingsToPersist: IUserSettings = {
                 ...this.settings,
                 audio: { ...this.settings.audio },
+                // Server still accepts a video blob for schema compatibility, but
+                // the canonical source of truth is localStorage.
                 video: {
                     ...this.settings.video,
                     fullscreen: DEFAULT_USER_SETTINGS.video.fullscreen
@@ -418,20 +440,19 @@ export class SettingsTabUI {
                 if (requestId !== this.saveRequestId) return;
                 if (revisionAtSend !== this.settingsRevision) return;
                 if (next) {
+                    // Preserve our local video slice regardless of what the server echoes.
                     this.settings = {
                         ...next,
                         audio: { ...next.audio },
                         video: {
-                            ...next.video,
+                            ...this.settings.video,
                             fullscreen: this.sessionFullscreenEnabled
                         },
                         controls: { ...(next.controls ?? DEFAULT_USER_SETTINGS.controls) }
                     };
                     this.keybindManager.hydrateFromSettings(this.settings);
                     this.soundPanel.setValues(this.settings.audio);
-                    this.videoPanel.setValues(this.settings.video);
                     this.applyAudioSettings(this.settings.audio);
-                    this.applyVideoSettings(this.settings.video);
                 }
             });
         });

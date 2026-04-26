@@ -34,7 +34,13 @@ export class FishViewCardUI {
     private scarFlickerTween?: Phaser.Tweens.Tween;
     private cardWidth = 120;
     private cardHeight = 168;
-    private readonly cardScale = 3;
+    // Scale is recomputed per render so short viewports (e.g. mobile landscape)
+    // can shrink the card to avoid clipping top/bottom content.
+    private cardScale = 3;
+    private readonly maxCardScale = 3;
+    private readonly minCardScale = 1.75;
+    // Vertical space reserved below the card for the Back button + margins.
+    private readonly backButtonReservePx = 88;
     private lastRenderEntryId?: string;
 
     constructor(scene: Phaser.Scene) {
@@ -102,8 +108,18 @@ export class FishViewCardUI {
         const width = this.scene.scale.width;
         const height = this.scene.scale.height;
         this.blocker.setSize(width, height);
-        this.cardContainer.setPosition(Math.floor(width / 2), Math.floor(height / 2 - 12));
-        this.backButtonContainer.setPosition(Math.floor(width / 2), Math.floor(height / 2 + (this.cardHeight * this.cardScale) / 2 + 38));
+        // Vertically recenter the card inside the budget (card + back button reserve)
+        // rather than always shifting by -12 — keeps short viewports from pushing
+        // the top of the card off screen.
+        const scaledCardHeight = this.cardHeight * this.cardScale;
+        const contentHeight = scaledCardHeight + this.backButtonReservePx;
+        const contentTop = Math.max(8, Math.floor((height - contentHeight) / 2));
+        const cardCenterY = contentTop + Math.floor(scaledCardHeight / 2);
+        this.cardContainer.setPosition(Math.floor(width / 2), cardCenterY);
+        // Place back button below the card, but clamp so it never clips the bottom.
+        const desiredButtonY = cardCenterY + Math.floor(scaledCardHeight / 2) + 38;
+        const clampedButtonY = Math.min(desiredButtonY, height - 24);
+        this.backButtonContainer.setPosition(Math.floor(width / 2), clampedButtonY);
     }
 
     destroy() {
@@ -128,11 +144,24 @@ export class FishViewCardUI {
         this.clearCardContent();
         this.lastRenderEntryId = data.entry.id;
         const awakened = data.entry.tier === 'awakened';
-        const baseWidth = Math.max(108, Math.min(136, Math.floor(this.scene.scale.width / (this.cardScale * 1.65))));
-        const baseHeight = Math.max(150, Math.min(186, Math.floor(this.scene.scale.height / (this.cardScale * 1.5))));
+
+        // Pick a base square size, then fit the scaled card inside the viewport
+        // so short screens (phone landscape, small windows) don't clip the
+        // name or rarity icon.
+        const viewportWidth = this.scene.scale.width;
+        const viewportHeight = this.scene.scale.height;
+        const baseWidth = Math.max(108, Math.min(136, Math.floor(viewportWidth / (this.maxCardScale * 1.65))));
+        const baseHeight = Math.max(150, Math.min(186, Math.floor(viewportHeight / (this.maxCardScale * 1.5))));
         const squareSize = Math.max(baseWidth, baseHeight);
         this.cardWidth = squareSize;
         this.cardHeight = squareSize;
+
+        const heightBudget = Math.max(1, viewportHeight - this.backButtonReservePx);
+        const widthBudget = Math.max(1, viewportWidth - 16);
+        const heightFitScale = heightBudget / this.cardHeight;
+        const widthFitScale = widthBudget / this.cardWidth;
+        const fitScale = Math.min(heightFitScale, widthFitScale, this.maxCardScale);
+        this.cardScale = Math.max(this.minCardScale, fitScale);
 
         const bannerBaseKey = awakened ? 'ui-banner-a' : 'ui-banner-b';
         this.bannerTextureKey = this.createNineSliceTexture(

@@ -5,6 +5,33 @@
             "checks": [
                 {
                     "type": "questObjective",
+                    "questId": "bowl_that_shines",
+                    "status": "active",
+                    "objectiveIndex": 1
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.merchant.bowlThatShines.askAround.player.0"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.bowlThatShines.askAround.0"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.merchant.bowlThatShines.askAround.1"
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
                     "questId": "merchant_side_brew",
                     "status": "active",
                     "objectiveIndex": 4
@@ -14,26 +41,22 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.sideBrew.finish.0",
-                    "text": "Now THAT is proper fuel. Smooth, sharp, and it actually keeps a blade-cat standing."
+                    "textKey": "dialogue.npc.merchant.sideBrew.finish.0"
                 },
                 {
                     "speaker": "player",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.merchant.sideBrew.finish.player.0",
-                    "text": "That healed way better than the raw berries."
+                    "textKey": "dialogue.npc.merchant.sideBrew.finish.player.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.sideBrew.finish.1",
-                    "text": "Exactly. Skill in the kitchen is skill in combat, just with fewer screams."
+                    "textKey": "dialogue.npc.merchant.sideBrew.finish.1"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.sideBrew.finish.2",
-                    "text": "Come back later and I'll teach you deadlier recipes. Anchor Hollow feeds those who experiment."
+                    "textKey": "dialogue.npc.merchant.sideBrew.finish.2"
                 }
             ]
         },
@@ -50,14 +73,12 @@
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.merchant.sideBrew.collect.0",
-                    "text": "You made juice, now bottle it. Click the puddle and confirm the pour."
+                    "textKey": "dialogue.npc.merchant.sideBrew.collect.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.sideBrew.collect.1",
-                    "text": "One jar in, one serving of Yek Juice out. Chemistry with consequences."
+                    "textKey": "dialogue.npc.merchant.sideBrew.collect.1"
                 }
             ]
         },
@@ -74,20 +95,17 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.sideBrew.jar.0",
-                    "text": "Perfect stomp-work. You wrung those berries into liquid."
+                    "textKey": "dialogue.npc.merchant.sideBrew.jar.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.merchant.sideBrew.jar.1",
-                    "text": "Hands can't hold a puddle, so use a jar. I'll spot you one for free."
+                    "textKey": "dialogue.npc.merchant.sideBrew.jar.1"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.merchant.sideBrew.jar.2",
-                    "text": "Next time, you pay. Glass doesn't grow on trees."
+                    "textKey": "dialogue.npc.merchant.sideBrew.jar.2"
                 }
             ],
             "actions": [
@@ -112,14 +130,12 @@
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.merchant.sideBrew.stomp.0",
-                    "text": "Drop your yekberries on the ground and walk over them a few times."
+                    "textKey": "dialogue.npc.merchant.sideBrew.stomp.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.sideBrew.stomp.1",
-                    "text": "No dainty steps. Mash them like they insulted your knife."
+                    "textKey": "dialogue.npc.merchant.sideBrew.stomp.1"
                 }
             ]
         },
@@ -147,26 +163,22 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.sideBrew.intro.0",
-                    "text": "Back for lesson two? Good. Raw food keeps you alive, refined food wins fights."
+                    "textKey": "dialogue.npc.merchant.sideBrew.intro.0"
                 },
                 {
                     "speaker": "player",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.merchant.sideBrew.intro.player.0",
-                    "text": "So spending time on prep actually matters?"
+                    "textKey": "dialogue.npc.merchant.sideBrew.intro.player.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.sideBrew.intro.1",
-                    "text": "Always. First trick: pressure extraction."
+                    "textKey": "dialogue.npc.merchant.sideBrew.intro.1"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.merchant.sideBrew.intro.2",
-                    "text": "Drop your berries, stomp them into liquid, then report back."
+                    "textKey": "dialogue.npc.merchant.sideBrew.intro.2"
                 }
             ]
         },
@@ -182,8 +194,7 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.waresGalore.post.0",
-                    "text": "You've got the look of a customer now. My wares are ready when you are."
+                    "textKey": "dialogue.npc.merchant.waresGalore.post.0"
                 }
             ],
             "randomLines": [
@@ -191,32 +202,28 @@
                     {
                         "speaker": "npc",
                         "emotion": "happy",
-                        "textKey": "dialogue.npc.merchant.waresGalore.post.0",
-                        "text": "You've got the look of a customer now. My wares are ready when you are."
+                        "textKey": "dialogue.npc.merchant.waresGalore.post.0"
                     }
                 ],
                 [
                     {
                         "speaker": "npc",
                         "emotion": "happy",
-                        "textKey": "dialogue.npc.merchant.waresGalore.post.1",
-                        "text": "Back again? Smart fish. Let's see what catches your eye."
+                        "textKey": "dialogue.npc.merchant.waresGalore.post.1"
                     }
                 ],
                 [
                     {
                         "speaker": "npc",
                         "emotion": "surprise",
-                        "textKey": "dialogue.npc.merchant.waresGalore.post.2",
-                        "text": "Coins burning a hole in your pocket? I've got just the thing."
+                        "textKey": "dialogue.npc.merchant.waresGalore.post.2"
                     }
                 ],
                 [
                     {
                         "speaker": "npc",
                         "emotion": "happy",
-                        "textKey": "dialogue.npc.merchant.waresGalore.post.3",
-                        "text": "Welcome, welcome! Fresh stock, fair prices. Mostly."
+                        "textKey": "dialogue.npc.merchant.waresGalore.post.3"
                     }
                 ]
             ],
@@ -237,26 +244,22 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.waresGalore.intro.0",
-                    "text": "I heard through the grapevine that you have some money now... are the stories true?"
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.0"
                 },
                 {
                     "speaker": "player",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.merchant.waresGalore.intro.player.0",
-                    "text": "I guess..."
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.player.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.waresGalore.intro.1",
-                    "text": "Marvelous! A customer with coin is my favorite kind of miracle."
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.1"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.waresGalore.intro.2",
-                    "text": "Take a look at what I've got. Welcome to the stall!"
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.2"
                 }
             ],
             "actions": [
@@ -292,26 +295,22 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.waresGalore.intro.0",
-                    "text": "I heard through the grapevine that you have some money now... are the stories true?"
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.0"
                 },
                 {
                     "speaker": "player",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.merchant.waresGalore.intro.player.0",
-                    "text": "I guess..."
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.player.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.waresGalore.intro.1",
-                    "text": "Marvelous! A customer with coin is my favorite kind of miracle."
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.1"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.waresGalore.intro.2",
-                    "text": "Take a look at what I've got. Welcome to the stall!"
+                    "textKey": "dialogue.npc.merchant.waresGalore.intro.2"
                 }
             ],
             "actions": [
@@ -331,26 +330,22 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.antiDeath.return.0",
-                    "text": "Good haul. Those yekberries keep fighters standing."
+                    "textKey": "dialogue.npc.merchant.antiDeath.return.0"
                 },
                 {
                     "speaker": "player",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.merchant.antiDeath.return.player.0",
-                    "text": "So this is just... survival food?"
+                    "textKey": "dialogue.npc.merchant.antiDeath.return.player.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.antiDeath.return.1",
-                    "text": "For now. Come back when you want the advanced method, and I'll show you how to refine food."
+                    "textKey": "dialogue.npc.merchant.antiDeath.return.1"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.antiDeath.return.2",
-                    "text": "Keep a few slotted and use them before panic takes over. Then we'll upgrade your menu."
+                    "textKey": "dialogue.npc.merchant.antiDeath.return.2"
                 }
             ]
         },
@@ -367,14 +362,12 @@
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.merchant.antiDeath.harvest.0",
-                    "text": "Find a nearby Yekbush and gather some yekberries. Barely nourishing, but enough to keep you alive."
+                    "textKey": "dialogue.npc.merchant.antiDeath.harvest.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.antiDeath.harvest.1",
-                    "text": "Come back once you've picked a bush and we'll call you battle-ready."
+                    "textKey": "dialogue.npc.merchant.antiDeath.harvest.1"
                 }
             ]
         },
@@ -397,55 +390,46 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.merchant.antiDeath.intro.0",
-                    "text": "Looking to buy something?"
+                    "textKey": "dialogue.npc.merchant.antiDeath.intro.0"
                 },
                 {
                     "speaker": "player",
                     "emotion": "surprise",
                     "textKey": "dialogue.npc.merchant.antiDeath.intro.choice.prompt",
-                    "text": "What do I even say?",
                     "options": [
                         {
                             "id": "uhhh_i_guess",
                             "textKey": "dialogue.npc.merchant.antiDeath.intro.choice.uhh",
-                            "text": "Uhhh... I guess?",
                             "lines": [
                                 {
                                     "speaker": "npc",
                                     "emotion": "surprise",
-                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.1",
-                                    "text": "Then let's start with money. You got any?"
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.1"
                                 },
                                 {
                                     "speaker": "player",
                                     "emotion": "sad",
-                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.2",
-                                    "text": "No... not a single coin."
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.2"
                                 },
                                 {
                                     "speaker": "npc",
                                     "emotion": "surprise",
-                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.3",
-                                    "text": "How are you even surviving in Anchor Hollow?"
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.3"
                                 },
                                 {
                                     "speaker": "player",
                                     "emotion": "sad",
-                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.4",
-                                    "text": "I'm new here. Still figuring things out."
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.4"
                                 },
                                 {
                                     "speaker": "npc",
                                     "emotion": "happy",
-                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.5",
-                                    "text": "Alright, I'll help. Find a nearby Yekbush and grab some yekberries for a barely nourishing meal."
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.5"
                                 },
                                 {
                                     "speaker": "npc",
                                     "emotion": "happy",
-                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.6",
-                                    "text": "Bring them back to me when you've harvested one."
+                                    "textKey": "dialogue.npc.merchant.antiDeath.intro.6"
                                 }
                             ]
                         }
@@ -458,8 +442,7 @@
         {
             "speaker": "npc",
             "emotion": "happy",
-            "textKey": "dialogue.npc.merchant.greeting.0",
-            "text": "If your pack feels light, my stall can fix that."
+            "textKey": "dialogue.npc.merchant.greeting.0"
         }
     ]
 }

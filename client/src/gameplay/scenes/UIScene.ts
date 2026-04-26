@@ -7,7 +7,8 @@ import { HeadbarUI } from '../ui/HeadbarUI';
 import { NetworkManager } from '../network/NetworkManager';
 import { InventoryChangeMonitor } from '../ui/InventoryChangeMonitor';
 import { SubtitleStack } from '../ui/SubtitleStack';
-import { ControlActionKey, DEFAULT_GUIDE_TUTORIAL_STATE, DEFAULT_USER_SETTINGS, IAdvancementAlertMessage, IVideoSettings } from '@cfwk/shared';
+import { ControlActionKey, DEFAULT_GUIDE_TUTORIAL_STATE, DEFAULT_USER_SETTINGS, IAdvancementAlertMessage, IAdvancementsState, IVideoSettings } from '@cfwk/shared';
+import { WorldTimeManager } from '../time/WorldTimeManager';
 import { DialogueUI } from '../ui/DialogueUI';
 import type { DialogueRenderLine } from '../dialogue/DialogueTypes';
 import { KeybindManager } from '../input/KeybindManager';
@@ -19,6 +20,7 @@ import { DebugNpcPanel } from '../ui/DebugNpcPanel';
 import { ShopUI } from '../ui/shop/ShopUI';
 import { DisconnectModal } from '../../ui/DisconnectModal';
 import type CrtPostFxPipeline from 'phaser3-rex-plugins/plugins/crtpipeline.js';
+import { getLocalVideoSettings } from '../settings/LocalVideoSettingsStore';
 
 type CrtPipelinePlugin = {
     add: (camera: Phaser.Cameras.Scene2D.Camera, config?: {
@@ -52,7 +54,6 @@ export class UIScene extends Phaser.Scene {
     private nearWaterHandler?: (parent: any, value: boolean) => void;
     private subtitleEventHandler?: (event: Event) => void;
     private subtitlesEnabledChangedHandler?: (event: Event) => void;
-    private finbookQuestTargetedHandler?: (event: Event) => void;
     private inventoryConsumedHandler?: (event: Event) => void;
     private uiClickPointerHandler?: (pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => void;
     private uiPointerReleaseHandler?: (pointer: Phaser.Input.Pointer) => void;
@@ -73,6 +74,10 @@ export class UIScene extends Phaser.Scene {
     private hasReceivedHeartsSnapshot = false;
     private dangerCountdownText?: Phaser.GameObjects.Text;
     private dangerCountdownRegistryHandler?: (_parent: any, value: string | null) => void;
+    private worldTimeManager = WorldTimeManager.getInstance();
+    private bowlAdvancementsHandler?: (event: Event) => void;
+    private bowlQuestObjectiveIndex: number | null = null;
+    private bowlQuestCompleted = false;
     private uiCrtPipeline?: CrtPostFxPipeline;
     private pendingVideoSettings?: IVideoSettings;
     private guiBackdrop?: Phaser.GameObjects.Rectangle;
@@ -127,7 +132,13 @@ export class UIScene extends Phaser.Scene {
 
     create() {
         this.setupCustomCursor();
+        this.dialogueActive = false;
         this.registry.set('dialogueActive', false);
+        // Reset guide input-gate registry keys on scene boot so reconnects
+        // cannot inherit stale gating state from a prior UIScene instance.
+        this.registry.set('guideBlockAll', false);
+        this.registry.set('guideAllowedActions', []);
+        this.registry.set('guideAllowedUsableSlot', null);
         this.playerHud = new PlayerHud(this);
         this.chat = new Chat(this);
         this.bookUI = new BookUI(this);
@@ -179,14 +190,16 @@ export class UIScene extends Phaser.Scene {
         const cachedAdvancements = this.networkManager.getCachedAdvancementsState();
         this.guideCoordinator = new GuideCoordinator(this, cachedAdvancements?.tutorial ?? { ...DEFAULT_GUIDE_TUTORIAL_STATE });
         const cachedSettings = this.networkManager.getCachedSettings();
-        this.applyUserVideoSettings(this.pendingVideoSettings ?? cachedSettings?.video ?? DEFAULT_USER_SETTINGS.video);
+        // Video settings live in localStorage (not tied to the account); see LocalVideoSettingsStore.
+        const localVideo = getLocalVideoSettings();
+        this.applyUserVideoSettings(this.pendingVideoSettings ?? localVideo ?? cachedSettings?.video ?? DEFAULT_USER_SETTINGS.video);
         this.networkManager.getSettings().then((settings) => {
             if (!settings) return;
             const gameScene = this.scene.get('GameScene') as { getAudioManager?: () => { applyUserAudioSettings?: (audio: any) => void } | undefined };
             const audioManager = gameScene?.getAudioManager?.();
             audioManager?.applyUserAudioSettings?.(settings.audio);
             this.subtitleStack?.setEnabled(Boolean(settings.audio.subtitlesEnabled));
-            this.applyUserVideoSettings(settings.video);
+            // Do NOT overwrite video settings from the server payload — local is the source of truth.
         });
         this.subtitleEventHandler = (event: Event) => {
             const customEvent = event as CustomEvent<{ soundKey?: string; label?: string }>;
@@ -202,11 +215,6 @@ export class UIScene extends Phaser.Scene {
             this.subtitleStack?.setEnabled(Boolean(customEvent.detail?.enabled));
         };
         window.addEventListener('audio:subtitles-enabled-changed', this.subtitlesEnabledChangedHandler as EventListener);
-
-        this.finbookQuestTargetedHandler = (_event: Event) => {
-            this.getAudioManager()?.playQuestTrack?.();
-        };
-        window.addEventListener('finbook:quest-targeted', this.finbookQuestTargetedHandler as EventListener);
 
         this.inventoryConsumedHandler = (event: Event) => {
             const customEvent = event as CustomEvent<{ itemId?: string; quantity?: number }>;
@@ -308,6 +316,14 @@ export class UIScene extends Phaser.Scene {
             window.dispatchEvent(new CustomEvent('hud:rod-use'));
         });
         this.playerHud.setOnUsableSlotUse((slotIndex) => this.tryUseHudUsableSlot(slotIndex));
+        this.playerHud.setOnSkipToNight(() => this.handleSkipToNightPressed());
+
+        this.bowlAdvancementsHandler = (event: Event) => {
+            const detail = (event as CustomEvent<IAdvancementsState>).detail;
+            this.applyBowlQuestSnapshot(detail ?? this.networkManager.getCachedAdvancementsState());
+        };
+        window.addEventListener('advancements:update', this.bowlAdvancementsHandler as EventListener);
+        this.applyBowlQuestSnapshot(this.networkManager.getCachedAdvancementsState());
 
         this.inventoryUpdateHandler = (event: Event) => {
             const customEvent = event as CustomEvent<{
@@ -587,9 +603,6 @@ export class UIScene extends Phaser.Scene {
             if (this.subtitlesEnabledChangedHandler) {
                 window.removeEventListener('audio:subtitles-enabled-changed', this.subtitlesEnabledChangedHandler as EventListener);
             }
-            if (this.finbookQuestTargetedHandler) {
-                window.removeEventListener('finbook:quest-targeted', this.finbookQuestTargetedHandler as EventListener);
-            }
             if (this.inventoryConsumedHandler) {
                 window.removeEventListener('inventory:consumed', this.inventoryConsumedHandler as EventListener);
             }
@@ -653,6 +666,11 @@ export class UIScene extends Phaser.Scene {
             this.inventoryChangeMonitor?.destroy();
             this.subtitleStack?.destroy();
             this.dialogueUI?.destroy();
+            this.dialogueUI = undefined;
+            if (this.bowlAdvancementsHandler) {
+                window.removeEventListener('advancements:update', this.bowlAdvancementsHandler as EventListener);
+                this.bowlAdvancementsHandler = undefined;
+            }
         });
     }
 
@@ -1055,6 +1073,7 @@ export class UIScene extends Phaser.Scene {
         });
 
         room.onMessage('advancement:alert', (data: IAdvancementAlertMessage) => {
+            this.maybeTriggerBowlResync(data);
             if (!this.headbarUI) return;
             this.headbarUI.enqueueAdvancementAlert(data);
             this.networkManager.requestAdvancementsState();
@@ -1090,6 +1109,7 @@ export class UIScene extends Phaser.Scene {
         this.playerHud?.update(delta);
         this.inventoryChangeMonitor?.update();
         this.subtitleStack?.update();
+        this.updateSkipToNightButtonVisibility();
 
         if (this.headbarUI) {
             this.headbarUI.update();
@@ -1098,6 +1118,50 @@ export class UIScene extends Phaser.Scene {
         if (this.dangerCountdownText?.visible) {
             this.dangerCountdownText.setPosition(Math.floor(this.scale.width / 2), 112);
         }
+    }
+
+    private applyBowlQuestSnapshot(state: IAdvancementsState | null | undefined) {
+        const progress = state?.questProgress?.bowl_that_shines;
+        if (!progress) {
+            this.bowlQuestObjectiveIndex = null;
+            this.bowlQuestCompleted = false;
+            return;
+        }
+        this.bowlQuestCompleted = progress.status === 'completed';
+        this.bowlQuestObjectiveIndex = progress.status === 'active'
+            && typeof progress.objectiveIndex === 'number'
+            ? Math.floor(progress.objectiveIndex)
+            : null;
+    }
+
+    private updateSkipToNightButtonVisibility() {
+        if (!this.playerHud) return;
+        // Hide whenever gameplay HUD itself is hidden (fishing scene, etc.).
+        const hudSuppressed = this.guiIsOpen || this.fishViewIsOpen || this.dialogueActive;
+        const shouldShow = !hudSuppressed
+            && this.bowlQuestObjectiveIndex === 2
+            && !this.bowlQuestCompleted
+            && this.worldTimeManager.getSkipPhase() === 'idle'
+            && !this.worldTimeManager.isInBowlNightWindow();
+        this.playerHud.setSkipToNightVisible(shouldShow);
+    }
+
+    private handleSkipToNightPressed() {
+        if (this.bowlQuestObjectiveIndex !== 2 || this.bowlQuestCompleted) return;
+        if (this.worldTimeManager.isInBowlNightWindow()) return;
+        if (!this.worldTimeManager.beginSkipToNight()) return;
+        this.playerHud?.setSkipToNightVisible(false);
+    }
+
+    private maybeTriggerBowlResync(alert: IAdvancementAlertMessage) {
+        if (alert.type !== 'quest-objective') return;
+        if (alert.questId !== 'bowl_that_shines') return;
+        // The fish-near-location step is objective index 3. When it
+        // completes, the server emits the next objective's index (4,
+        // "talk seamaster"). That is our cue to begin the resync.
+        if (alert.objectiveIndex !== 4) return;
+        if (this.worldTimeManager.getClientOffsetMs() <= 0) return;
+        this.worldTimeManager.beginResync();
     }
 
     private tryUseHudUsableSlot(slotIndex: number): boolean {

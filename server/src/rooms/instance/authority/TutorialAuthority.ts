@@ -105,6 +105,14 @@ export function sanitizeTutorialPatch(
     next.finbookCompleted = next.finbookStep === "completed";
     next.interactionCompleted = next.interactionStep === "completed";
 
+    if (patch.introCutsceneCompleted === true && !current.introCutsceneCompleted) {
+        next.introCutsceneCompleted = true;
+    }
+
+    if (patch.introArrivalCompleted === true && !current.introArrivalCompleted) {
+        next.introArrivalCompleted = true;
+    }
+
     // Server-managed tutorial force flags.
     next.forceSalmonCatch = !next.fishingCompleted && FORCE_SALMON_STEPS.has(next.fishingStep);
     next.forceFoodGuideHeal = !next.foodCompleted && next.foodStep === "consume_quickslot_1";
@@ -123,6 +131,8 @@ export function sanitizeTutorialPatch(
     if (next.finbookAnchorEnteredAt !== current.finbookAnchorEnteredAt) updates.finbookAnchorEnteredAt = next.finbookAnchorEnteredAt;
     if (next.forceSalmonCatch !== current.forceSalmonCatch) updates.forceSalmonCatch = next.forceSalmonCatch;
     if (next.forceFoodGuideHeal !== current.forceFoodGuideHeal) updates.forceFoodGuideHeal = next.forceFoodGuideHeal;
+    if (next.introCutsceneCompleted !== current.introCutsceneCompleted) updates.introCutsceneCompleted = next.introCutsceneCompleted;
+    if (next.introArrivalCompleted !== current.introArrivalCompleted) updates.introArrivalCompleted = next.introArrivalCompleted;
 
     return Object.keys(updates).length > 0 ? updates : null;
 }

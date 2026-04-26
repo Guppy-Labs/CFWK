@@ -5,13 +5,16 @@ export type DialogueEmotion =
     | 'disgust'
     | 'fear'
     | 'happy'
+    | 'neutral'
     | 'sad'
+    | 'shock'
+    | 'sleep'
     | 'surprise';
 
 export type DialogueLine = {
     speaker: DialogueSpeaker;
-    text: string;
     textKey?: string;
+    text?: string;
     emotion?: DialogueEmotion;
     shake?: 'mild';
     name?: string;
@@ -61,8 +64,8 @@ export type DialogueOptionBranch = {
 
 export type DialogueOption = {
     id: string;
-    text: string;
     textKey?: string;
+    text?: string;
     lines?: DialogueLine[];
     actions?: DialogueAction[];
     branches?: DialogueOptionBranch[];

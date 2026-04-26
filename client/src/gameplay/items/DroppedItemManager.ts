@@ -76,7 +76,6 @@ export class DroppedItemManager {
     private readonly cardBgAlpha = 0.36;
     private readonly cardBaseAlpha = 0.94;
     private readonly cardTextAlpha = 0.95;
-    private readonly cardTextFontSize = '5px';
     private readonly cardTextFontFamily = 'Minecraft, monospace';
     private dropCards: Map<string, DropClusterCard> = new Map();
     private inventorySnapshot: IInventoryResponse | null = null;
@@ -423,17 +422,35 @@ export class DroppedItemManager {
         });
     }
 
+    private getCardTextFontPx(): number {
+        // Drop tooltips were a fixed 5px which is effectively illegible on
+        // mobile viewports. Scale up for small screens and high-DPR displays
+        // so mobile players can read loot labels. These values preserve the
+        // original compact look on large desktop windows.
+        const viewportMin = Math.min(this.scene.scale.width, this.scene.scale.height);
+        const dpr = typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio)
+            ? Math.min(Math.max(window.devicePixelRatio || 1, 1), 3)
+            : 1;
+        let base: number;
+        if (viewportMin < 700) base = 10;
+        else if (viewportMin < 900) base = 9;
+        else if (viewportMin < 1280) base = 7;
+        else base = 5;
+        return Math.round(base + (dpr - 1) * 1.5);
+    }
+
     private createDropCard(cluster: DropCluster): Phaser.GameObjects.Container {
         const container = this.scene.add.container(0, 0);
 
-        const rowPaddingX = 1;
-        const rowPaddingY = 0;
+        const fontPx = this.getCardTextFontPx();
+        const rowPaddingX = Math.max(1, Math.round(fontPx * 0.2));
+        const rowPaddingY = Math.max(0, Math.round(fontPx * 0.2));
         const rowGap = 0;
         const rowTexts: Phaser.GameObjects.Text[] = [];
         const rowRows = cluster.rows.map((row) => {
             const content = this.getRowDisplayLabel(row);
             const text = this.scene.add.text(0, 0, content, {
-                fontSize: this.cardTextFontSize,
+                fontSize: `${fontPx}px`,
                 fontFamily: this.cardTextFontFamily,
                 color: this.getRarityColorHex(row),
                 resolution: 2
@@ -444,7 +461,7 @@ export class DroppedItemManager {
         });
 
         const maxTextWidth = rowTexts.reduce((max, text) => Math.max(max, text.width), 10);
-        const rowHeight = Math.max(6, (rowTexts[0]?.height ?? 5) + (rowPaddingY * 2));
+        const rowHeight = Math.max(fontPx + 1, (rowTexts[0]?.height ?? fontPx) + (rowPaddingY * 2));
         const cardWidth = maxTextWidth + rowPaddingX * 2;
         const cardHeight = (rowRows.length * rowHeight) + (Math.max(0, rowRows.length - 1) * rowGap);
 

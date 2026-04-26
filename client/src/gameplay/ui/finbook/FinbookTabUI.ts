@@ -718,6 +718,10 @@ export class FinbookTabUI {
     }
 
     private autoTrackFirstQuest(force: boolean) {
+        const isResetState = this.isAdvancementsResetState(this.advancementsState);
+        if (isResetState && this.advancementsState.tutorial?.introArrivalCompleted !== true) {
+            return;
+        }
         if (!force && this.targetedQuestId) return;
         const firstQuestId = this.getSortedAvailableQuestIds().find((questId) => {
             if (this.isQuestCompleted(questId)) return false;
@@ -1282,6 +1286,10 @@ export class FinbookTabUI {
     }
 
     private objectiveToText(objective: IQuestObjectiveEntry): string {
+        if (objective.labelKey) {
+            return this.t(objective.labelKey, objective.labelKey);
+        }
+
         if (objective.kind === 'fish-catch') {
             return this.t('finbook.quest.objective.fishCatch', 'Catch a fish');
         }

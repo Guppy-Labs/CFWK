@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import NewsPost, { NewsClassification } from '../models/NewsPost';
 import User from '../models/User';
 import { normalizeUsername } from '../utils/username';
+import { isAuthenticated, requireGameAdmin } from './_adminAuth';
 
 const router = express.Router();
 
@@ -42,28 +43,6 @@ const upload = multer({
         cb(new Error('Only image uploads are allowed (jpeg, jpg, png, gif, webp).'));
     }
 });
-
-function isAuthenticated(req: express.Request, res: express.Response, next: express.NextFunction) {
-    if (req.isAuthenticated && req.isAuthenticated()) return next();
-    return res.status(401).json({ message: 'Not authenticated' });
-}
-
-async function isGameAdmin(req: express.Request): Promise<boolean> {
-    if (!req.isAuthenticated || !req.isAuthenticated()) return false;
-    const userId = (req.user as any)?.id || (req.user as any)?._id;
-    if (!userId) return false;
-
-    const user = await User.findById(userId).select('permissions');
-    return Boolean(user && Array.isArray(user.permissions) && user.permissions.includes('game.admin'));
-}
-
-async function requireGameAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
-    const allowed = await isGameAdmin(req);
-    if (!allowed) {
-        return res.status(403).json({ message: 'Forbidden' });
-    }
-    return next();
-}
 
 function parseClassification(input: unknown): NewsClassification | null {
     if (typeof input !== 'string') return null;

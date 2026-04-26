@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import { ADVANCEMENT_QUEST_CATALOG, IAdvancementAlertMessage, IQuestObjectiveEntry } from '@cfwk/shared';
-import { calculateWorldTime, Season } from '@cfwk/shared';
+import { Season } from '@cfwk/shared';
 import { HeadbarTabList, TabListEntry } from './HeadbarTabList';
 import { MobileControls } from './MobileControls';
 import { LocaleManager } from '../i18n/LocaleManager';
 import { BitmapFontRenderer } from './BitmapFontRenderer';
+import { WorldTimeManager } from '../time/WorldTimeManager';
 
 export type HeadbarConfig = {
     bannerTextureKey?: string;
@@ -542,6 +543,10 @@ export class HeadbarUI {
     }
 
     private objectiveToText(objective: IQuestObjectiveEntry): string {
+        if (objective.labelKey) {
+            return this.localeManager.t(objective.labelKey);
+        }
+
         if (objective.kind === 'fish-catch') {
             return this.localeManager.t('finbook.quest.objective.fishCatch', undefined, 'Catch a fish');
         }
@@ -635,7 +640,7 @@ export class HeadbarUI {
     }
 
     update() {
-        const worldTime = calculateWorldTime();
+        const worldTime = WorldTimeManager.getInstance().getTime();
 
         // Format time in 12-hour format
         const hour12 = worldTime.hour % 12 || 12;

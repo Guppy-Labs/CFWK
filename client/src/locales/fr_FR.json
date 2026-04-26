@@ -125,6 +125,9 @@
 			}
 		}
 	},
+	"hud": {
+		"skipToNight": "Passer à la nuit"
+	},
 	"headbar": {
 		"playersOnline": "Joueurs en ligne",
 		"datePattern": "{season} Jour {day}",
@@ -138,14 +141,26 @@
 	},
 	"advancements": {
 		"quest": {
+			"first_catch": {
+				"name": "La première prise d'un apprenti"
+			},
+			"travellers_errand": {
+				"name": "La course de la Voyageuse"
+			},
+			"heed_the_warning": {
+				"name": "Prends garde à l'avertissement"
+			},
+			"anti_death_measures": {
+				"name": "Mesures anti-mort"
+			},
 			"merchant_side_brew": {
-				"name": "Infusion secondaire du Marchand"
+				"name": "La potion du Marchand"
 			},
 			"village_weirdo": {
 				"name": "L'étrange du village"
 			},
 			"wares_galore": {
-				"name": "Marchandises à Gogo"
+				"name": "Marchandises à gogo"
 			},
 			"bowl_that_shines": {
 				"name": "Le Bol qui Brille"
@@ -154,7 +169,18 @@
 	},
 	"finbook": {
 		"quest": {
+			"new": "NOUVEAU",
+			"descriptionFallback": "Détails à venir.",
+			"track": "Suivre",
+			"untrack": "Ne plus suivre",
 			"objective": {
+				"label": "Objectif",
+				"nextLabel": "Prochain objectif",
+				"fishCatch": "Attraper un poisson",
+				"talkToNpc": "Parler à {name}",
+				"stayInRegion": "Rester dans {region} pendant {seconds}s",
+				"askAround": "Demande aux gens du village ce qu'ils entendent",
+				"generic": "Accomplir la prochaine tâche",
 				"inventoryCount": "Collecter {count} {item}",
 				"refineFood": "Raffiner {item} en liquide",
 				"bottleLiquid": "Collecter {liquid} avec {container}",
@@ -163,17 +189,35 @@
 				"harvestInteractive": "Utiliser l'interactable à proximité",
 				"openGlimmeringChest": "Ouvrir le Coffre Étincelant"
 			},
+			"status": {
+				"label": "Statut",
+				"notStarted": "Non commencée",
+				"inProgress": "En cours",
+				"completed": "Terminée"
+			},
+			"first_catch": {
+				"description": "Parle au Pêcheur, récupère une canne et sors ta première prise des eaux d'Anchor Hollow."
+			},
+			"travellers_errand": {
+				"description": "Un petit service pour une inconnue sur la route. Écoute-la, puis va en parler au Garde."
+			},
+			"heed_the_warning": {
+				"description": "Le Garde ne pense pas que tu tiendras 60 secondes au-delà du pont. Prouve-lui le contraire, puis viens le lui raconter."
+			},
+			"anti_death_measures": {
+				"description": "Première leçon de survie du Marchand : trouve un yekbush, récolte des yekberries et apprends pourquoi un chat-lame ne sort jamais les pattes vides."
+			},
 			"merchant_side_brew": {
-				"description": "Apprenez le raffinage alimentaire avec le Marchand : écrasez des yekberries au sol pour faire un liquide, mettez-le en bocal, puis revenez le voir."
+				"description": "Leçon deux du Marchand. Écrase des yekberries en liquide, mets le jus en bocal, et trinque à quelque chose de plus fort que la simple nourriture de survie."
 			},
 			"village_weirdo": {
-				"description": "Parlez au Voyageur, récupérez 1 yekberry, puis revenez pour votre récompense."
+				"description": "La Voyageuse veut exactement 19 yekberries. Tu sauras pourquoi en les lui apportant."
 			},
 			"wares_galore": {
-				"description": "Parlez au Marchand de votre nouvelle pièce et découvrez ses marchandises."
+				"description": "La rumeur dit que tu as des pièces. Le Marchand aimerait te dire un mot. Un long."
 			},
 			"bowl_that_shines": {
-				"description": "Parlez au Sage puis suivez sa piste jusqu'au Maître des Mers."
+				"description": "Le Sage détient un secret. Il dit de le porter au Maître des Mers. Le Maître des Mers dit : les quais, la nuit, sous la lune. Entre les deux dort la Clé Étincelante et le coffre qu'elle ouvre."
 			}
 		}
 	},
@@ -213,7 +257,17 @@
 		"dialogueAdvance": "Avancement du dialogue",
 		"cabinDoorOpen": "La porte de la cabane s'ouvre",
 		"cabinDoorClose": "La porte de la cabane se ferme",
-		"cabinRoofToggle": "Le toit de la cabane se déplace"
+		"cabinRoofToggle": "Le toit de la cabane se déplace",
+		"gremlinFootstepGrass": "Pas de gremlin sur l'herbe",
+		"gremlinFootstepGrassPlural": "Pas de gremlins sur l'herbe",
+		"gremlinFootstepSand": "Pas de gremlin sur le sable",
+		"gremlinFootstepSandPlural": "Pas de gremlins sur le sable",
+		"gremlinFootstepStone": "Pas de gremlin sur la pierre",
+		"gremlinFootstepStonePlural": "Pas de gremlins sur la pierre",
+		"gremlinFootstepWood": "Pas de gremlin sur le bois",
+		"gremlinFootstepWoodPlural": "Pas de gremlins sur le bois",
+		"gremlinFootstepWater": "Pas de gremlin dans l'eau peu profonde",
+		"gremlinFootstepWaterPlural": "Pas de gremlins dans l'eau peu profonde"
 	},
 	"fishing": {
 		"buttons": {
@@ -239,8 +293,7 @@
 	},
 	"guide": {
 		"bowlThatShines": {
-			"travellerHint": "Hm... et si le voyageur avait cette info depuis le début.",
-			"returnToSeamaster": "Montrez au Maître des Mers ce que vous avez trouvé."
+			"returnToSeamaster": "Rapporte la clé au Maître des Mers. Il l'attend depuis plus longtemps que tu es vivant."
 		},
 		"rod": {
 			"openInventory": "Pour équiper votre nouvelle canne, ouvrez votre inventaire (appuyez sur {key} sur PC).",
@@ -281,7 +334,7 @@
 			"name": "Sage"
 		},
 		"dad": {
-			"name": "Papa"
+			"name": "Papa Chat"
 		}
 	},
 	"dialogue": {
@@ -324,206 +377,388 @@
 						"0": "Pff, d'accord. Mais tu ferais mieux de ne pas gâcher mon coin de pêche !"
 					}
 				}
+			},
+			"seamaster": {
+				"greeting": {
+					"0": "Les marées sont honnêtes. Garde ta lame affûtée, et ton cœur plus encore."
 				},
-				"seamaster": {
-					"greeting": {
-						"0": "Les marées sont honnêtes. Garde ta lame affûtée, et ton cœur plus encore."
+				"bowlThatShines": {
+					"passphrase": {
+						"prompt": "Si vous avez affaire à moi, dites-le sans détour.",
+						"choice": {
+							"0": "Le collectionneur de verre m'envoie.",
+							"1": "Le collectionneur de verre m'a envoyé.",
+							"2": "Le gardien des éclats m'envoie."
+						},
+						"wrong": {
+							"0": "Proche. Proche n'est pas un mot de passe. Dégagez.",
+							"1": "Jamais entendu parler de lui. Jamais entendu parler de vous. Dégagez."
+						}
 					},
-					"bowlThatShines": {
-						"passphrase": {
-							"prompt": "Si vous avez affaire à moi, parlez clairement.",
-							"choice": {
-								"0": "Le collectionneur de verre m'a envoyé.",
-								"1": "Le collectionneur de verre t'a envoyé ici.",
-								"2": "Le gardien des éclats m'a envoyé."
-							},
-							"wrong": {
-								"0": "Mauvaise formule. Revenez quand vous saurez quoi dire.",
-								"1": "Non. Ce n'est pas la phrase. Réessayez quand vous serez prêt."
-							},
-							"correct": {
-								"0": "...",
-								"1": "Texte temporaire : la voie s'ouvrira bientôt. Revenez dans un prochain chapitre."
-							}
+					"story": {
+						"0": "Le Sage ne donne pas ce code à n'importe qui. S'il vous a fait confiance, j'imagine que je devrai en faire autant.",
+						"1": "Écoutez bien. Avant le sel, j'étais une créature du désert — archéologue, né dans la poussière, nourri aux expéditions.",
+						"2": "Un jour, j'ai déterré un coffre qui n'appartenait à aucun siècle que je connaisse.",
+						"3": "Mes sources — ne demandez pas — m'ont dit que la clé était perdue dans les dunes que je venais de quitter.",
+						"4": "Alors j'ai traîné le coffre jusqu'à Anchor Hollow et je n'ai jamais regardé en arrière. J'ai juré à la mer. J'ai appris chaque courant qu'elle a bien voulu m'apprendre.",
+						"5": "En chassant cette clé, je suis devenu le Maître des Mers.",
+						"6": "Et maintenant, je vous accorde le privilège de m'aider à poursuivre ce que je n'arrive pas à attraper.",
+						"7": "Elle est sous les quais, quelque part. Je le sens comme on sent une marée tourner.",
+						"8": "Demandez aux gens du village. Et faites attention à qui vous faites confiance — cet endroit a son lot d'hurluberlus. Suspects. Bizarres. Ça se sent.",
+						"9": "Allez. Ne vous noyez pas.",
+						"choice": {
+							"prompt": "Comment devrais-je répondre ?",
+							"justMet": "... je l'ai rencontré il y a genre 30 secondes",
+							"pals": "Oui, on est potes depuis toujours !"
 						},
-						"postKey": {
-							"0": "Par les marées... c'est la Clé Étincelante.",
-							"1": "Je suis sincèrement impressionné. Vous avez trouvé ce que je n'ai pas pu trouver.",
-							"2": "Et voici le retournement : gardez le trésor pour vous. J'ai déjà assez pris à la mer dans ma vie.",
-							"3": "Le coffre vous attend. Allez l'ouvrir.",
-							"player": {
-								"0": "Merci... sincèrement."
-							}
+						"choiceResponse": {
+							"justMet": "Trente secondes ? Hmph. Alors votre timing est suspectement parfait.",
+							"pals": "Potes depuis toujours, avec votre taille ? Seulement si la vie a commencé mardi dernier. Bon. C'est bien assez."
 						},
-						"finalPlaceholder": {
-							"0": "Alors, qu'a révélé le coffre ? Ha, ne me le dites pas encore.",
-							"1": "Nous reparlerons bientôt. Pour l'instant, que ceci soit votre commencement."
+						"player": {
+							"0": "Qu'est-ce que vous avez pu rassembler jusqu'ici ?"
+						}
+					},
+					"postKey": {
+						"0": "Par les marées... c'est la Clé Étincelante.",
+						"1": "Trente ans de cartes de courants, et un inconnu la trouve en une semaine. Le destin a un humour cruel.",
+						"2": "Gardez ce qu'il y a à l'intérieur. Tout. J'ai déjà assez pris à la mer pour une vie.",
+						"3": "Allez-y. Le coffre attend depuis plus longtemps que vous êtes en vie. Ne le faites pas attendre plus.",
+						"player": {
+							"0": "Merci... sincèrement."
+						}
+					},
+					"finalPlaceholder": {
+						"0": "Alors. Le coffre vous a-t-il montré ce que je pensais qu'il vous montrerait ? Ne répondez pas encore.",
+						"1": "Restez avec ça. Rêvez-y. Revenez me voir quand l'éclat se sera posé en quelque chose que vous pourrez porter."
+					}
+				}
+			},
+			"guard": {
+				"greeting": {
+					"0": "Reste sur tes gardes. Anchor Hollow est calme — et le calme, c'est un travail."
+				},
+				"preUnlock": {
+					"0": "HÉ — ce n'est pas sûr là-bas. RENTRE EN VILLE avant que je le dise à ton père. C'est une blague. Presque."
+				},
+				"bridgeBlocked": {
+					"0": "PAS SI VITE — personne ne traverse ce pont sans que je sois au courant !"
+				},
+				"heed": {
+					"intro": {
+						"0": "HÉ — où crois-tu aller comme ça ?",
+						"1": "Qu'est-ce qu'il y a de l'autre côté de ce pont, hein ? Un spa ? Une boulangerie ? Spoiler : bien pire. Et tu n'es pas prêt.",
+						"2": "NON — TU — NE — L'ES — PAS !",
+						"3": "Bon, d'accord. Prouve-le. Traverse le pont. Reste vivant là-bas. Soixante secondes. Le chrono tourne.",
+						"4": "HA ! Allez. Que les marées te soient favorables. Et le vent. Et littéralement n'importe quoi d'autre !",
+						"player": {
+							"0": "Si, je le suis.",
+							"1": "Si, je le suis.",
+							"2": "D'accord !"
+						},
+						"choice": {
+							"prompt": "Comment devrais-je répondre ?",
+							"exploring": "Euh... j'explore, je suppose ?"
+						}
+					},
+					"wait": {
+						"0": "Pont. Soixante secondes. Zone dangereuse. Puis tu reviens en courant. Espérons, en un seul morceau."
+					},
+					"return": {
+						"0": "QUOI — comment — COMMENT as-tu survécu à ça ?",
+						"1": "D'accord. D'accord. Mets-moi la couleur de \"pas préparé à ça\". Peu de gens à Anchor Hollow tiennent trente secondes là-bas, encore moins soixante.",
+						"2": "Écoute, petit. Quand tu seras équipé et sérieux, reviens me trouver. Je t'apprendrai à te battre vraiment contre ce qui est là — pas juste à t'enfuir.",
+						"3": "Tu sauras quand tu seras prêt. Tout le monde le sait. En attendant — ne te fais pas bouffer.",
+						"player": {
+							"0": "Je suis de retour !",
+							"1": "Euh... j'ai surtout couru en rond."
+						},
+						"choice": {
+							"prompt": "Comment devrais-je répondre ?",
+							"yay": "Youpi !",
+							"hooray": "Hourra !",
+							"cool": "Cool."
+						},
+						"reaction": {
+							"yay": "\"Youpi\" ?? Tu viens de semer la mort et ta réaction c'est \"youpi\". J'adore. J'adore ça.",
+							"hooray": "HOURRA ! C'est exactement le bon volume pour quelqu'un qui a oublié d'avoir peur !",
+							"cool": "\"Cool.\" Regarde-toi. Trop cool pour la survie. D'accord. D'accord."
+						}
+					},
+					"post": {
+						"0": "Reviens quand tu auras l'équipement et le cran. Tu y es presque. Pas tout à fait."
+					}
+				},
+				"bowlThatShines": {
+					"askAround": {
+						"0": "UNE CLÉ perdue ? Petit, si j'avais la clé de tout, je PRENDRAIS MA RETRAITE.",
+						"1": "J'en sais rien de celle-là. C'est pas un truc de garde. Demande à quelqu'un qui ÉCOUTE vraiment les rumeurs.",
+						"player": {
+							"0": "Tu n'aurais pas vu une clé ?"
+						}
+					}
+				}
+			},
+			"fisherman": {
+				"greeting": {
+					"0": "Doucement. Les poissons mordent quand l'eau est calme — et les mains patientes."
+				},
+				"choice": {
+					"prompt": "Qu'est-ce que je devrais demander ?",
+					"needRod": "Je peux avoir une canne à pêche ?",
+					"basics": "Comment est-ce qu'on pêche ?"
+				},
+				"needRod": {
+					"hasRod": {
+						"0": "Tu as ta canne. Bien. Trouve de l'eau. Lance. Moulinet."
+					},
+					"noRod": {
+						"0": "Tiens. Ta première canne. Ne la laisse pas tomber à l'eau.",
+						"1": "Équipe-la. Trouve un coin d'eau. Lance. Mouline quand la ligne te le dira."
+					}
+				},
+				"basics": {
+					"0": "Équipe la canne. Trouve de l'eau. Lance la ligne. Mouline quand ça mord.",
+					"1": "Sors-en un et reviens. Tu auras les bases. Juste les bases, attention. Il y a un secret là-dessous — un auquel je n'ai jamais touché."
+				},
+				"postCatch": {
+					"0": "Ha. Tu l'as fait. Tu as les bases.",
+					"1": "Il y a un secret là-dessous, petit. Plus vieux que le quai. Plus vieux que moi. Je n'en ai jamais effleuré le bord.",
+					"2": "Va plus loin. Rencontre le village. Ils t'apprendront bien plus que moi."
+				},
+				"bowlThatShines": {
+					"askAround": {
+						"0": "Une clé. Hm.",
+						"1": "J'en ai jamais sorti une de l'eau. Mon métier, c'est le poisson, pas les secrets.",
+						"2": "Demande à quelqu'un qui regarde les gens. C'est pas mon heure.",
+						"player": {
+							"0": "Tu n'aurais pas vu une clé ?"
+						}
+					}
+				}
+			},
+			"merchant": {
+				"greeting": {
+					"0": "Sac léger, cœur lourd. Je peux arranger les deux — pour le bon prix."
+				},
+				"antiDeath": {
+					"intro": {
+						"0": "Tu cherches à acheter quelque chose ?",
+						"1": "Bien. Étape un du commerce : as-tu des pièces ?",
+						"2": "Non... pas une seule pièce.",
+						"3": "Pas une ? Comment es-tu encore debout à Anchor Hollow ?",
+						"4": "Je suis nouveau ici. Je m'y retrouve encore.",
+						"5": "Bon, bon. Je t'aide. Pas de pièce aujourd'hui — on saute direct à la survie. Trouve un yekbush près d'ici et récolte des yekberries.",
+						"6": "Reviens quand tu auras récolté. Ensuite, on parlera de vraie nourriture.",
+						"choice": {
+							"prompt": "Qu'est-ce que je dis même ?",
+							"uhh": "Euh... je suppose ?"
+						}
+					},
+					"harvest": {
+						"0": "Yekbush. Près d'ici. Récolte des yekberries. Amères, à peine nourrissantes — mais elles gardent un chat-lame debout.",
+						"1": "Un buisson suffit. C'est tout. Reviens et je te déclare prêt au combat."
+					},
+					"return": {
+						"0": "Belle récolte. Ces yekberries gardent les combattants debout quand rester debout est tout le boulot.",
+						"1": "C'est l'étape un. Reviens quand tu voudras la méthode avancée, je te montrerai comment raffiner la nourriture.",
+						"2": "Équipes-en quelques-unes. Utilise-les avant que la panique arrive, pas pendant. La panique les utilise mal.",
+						"player": {
+							"0": "Donc c'est juste... de la nourriture de survie ?"
 						}
 					}
 				},
-				"guard": {
-					"greeting": {
-						"0": "Restez vigilant. Anchor Hollow est paisible, mais la paix demande du travail."
-					}
-				},
-				"fisherman": {
-					"greeting": {
-						"0": "Doucement. Les poissons mordent quand l'eau est calme et les mains patientes."
-					}
-				},
-				"merchant": {
-					"greeting": {
-						"0": "Si votre sac semble léger, mon étal peut y remédier."
-					},
-					"antiDeath": {
-						"return": {
-							"1": "Pour l'instant. Revenez quand vous voudrez la méthode avancée, je vous apprendrai à raffiner la nourriture.",
-							"2": "Gardez-en quelques-unes équipées et utilisez-les avant de paniquer. Ensuite, on améliorera votre menu."
-						}
-					},
-					"sideBrew": {
+				"sideBrew": {
 						"intro": {
-							"0": "De retour pour la leçon deux ? Bien. La nourriture brute vous maintient en vie ; la nourriture raffinée gagne les combats.",
-							"1": "Toujours. Première astuce : l'extraction par pression.",
-							"2": "Jetez vos baies, piétinez-les jusqu'à en faire du liquide, puis revenez me voir.",
+							"0": "De retour pour la leçon deux ? Bien. La nourriture brute te garde en vie. La raffinée gagne les combats.",
+							"1": "Toujours. Premier truc : extraction par pression. Ça sonne fancy. Ça ne l'est pas.",
+							"2": "Laisse tomber tes baies au sol. Piétine-les en liquide. Viens me le dire quand ce sera une flaque.",
 							"player": {
-								"0": "Donc passer du temps à préparer, ça change vraiment tout ?"
+								"0": "Donc passer du temps à préparer, ça change vraiment quelque chose ?"
 							}
 						},
 						"stomp": {
-							"0": "Déposez vos yekberries au sol et marchez dessus plusieurs fois.",
-							"1": "Pas de petits pas. Écrasez-les comme si elles avaient insulté votre couteau."
+							"0": "Laisse tomber les baies. Marche dessus. Plusieurs fois. Sans élégance.",
+							"1": "Pas de petits pas. Écrase-les comme si elles avaient insulté ton couteau."
 						},
 						"jar": {
-							"0": "Parfait. Vous avez transformé ces baies en liquide.",
-							"1": "On ne ramasse pas une flaque à mains nues, alors utilisez un bocal. Je vous en offre un.",
-							"2": "La prochaine fois, vous payez. Le verre ne pousse pas sur les arbres."
+							"0": "Piétinement parfait. Tu as réduit ces baies à une insulte de ce qu'elles étaient.",
+							"1": "Les flaques glissent entre les pattes. Utilise un bocal. Je t'en offre un. Une fois.",
+							"2": "Le bocal suivant, tu paies. Le verre ne pousse pas sur les arbres — à moins que les arbres aient beaucoup changé pendant que je ne regardais pas."
 						},
 						"collect": {
-							"0": "Vous avez fait du jus, maintenant mettez-le en bocal. Cliquez la flaque puis confirmez le versement.",
-							"1": "Un bocal consommé, une portion de Jus Yek obtenue. De la chimie avec des conséquences."
+							"0": "Tu as du jus. Maintenant, mets-le en bocal. Clique sur la flaque. Confirme le versement.",
+							"1": "Un bocal dedans, un Jus Yek dehors. Chimie. Conséquences."
 						},
 						"finish": {
-							"0": "LÀ, c'est du vrai carburant. Doux, puissant, et ça garde vraiment un chat-lame debout.",
-							"1": "Exactement. Le talent en cuisine, c'est aussi du talent en combat, juste avec moins de cris.",
-							"2": "Revenez plus tard et je vous montrerai des recettes plus dangereuses. Anchor Hollow nourrit celles et ceux qui expérimentent.",
+							"0": "ÇA, c'est du carburant. Propre, tranchant, et ça garde vraiment un chat-lame debout.",
+							"1": "Exactement. Le talent en cuisine, c'est du talent en combat — avec moins de cris.",
+							"2": "Reviens vite. Anchor Hollow nourrit ceux qui expérimentent. Je t'apprendrai des recettes qui mordent.",
 							"player": {
-								"0": "Ça soigne bien mieux que les baies crues."
+								"0": "Ça a soigné beaucoup mieux que les baies crues."
 							}
 						}
 					},
-					"waresGalore": {
-						"intro": {
-							"0": "J'ai entendu dire que tu avais un peu d'argent maintenant... c'est vrai ?",
-							"1": "Merveilleux ! Un client avec des pièces, c'est mon genre de miracle préféré.",
-							"2": "Viens voir mes marchandises quand tu veux. Bientôt, je t'ouvrirai l'étal complet.",
-							"player": {
-								"0": "J'imagine..."
-							}
-						},
-						"post": {
-							"0": "Tu as l'allure d'un vrai client maintenant. Mes marchandises t'attendent."
+				"waresGalore": {
+					"intro": {
+						"0": "La rumeur court — tu as des pièces maintenant. Vrai ?",
+						"1": "Merveilleux. Un client avec de la vraie monnaie, c'est mon genre de miracle préféré.",
+						"2": "Viens voir l'étal. Le premier regard est offert par la maison. Seulement le premier.",
+						"player": {
+							"0": "J'imagine..."
+						}
+					},
+					"post": {
+						"0": "Tu as la démarche d'un client qui paie. L'étal est ouvert.",
+						"1": "De retour ? Un marchand aime un flair fidèle.",
+						"2": "Des pièces ? J'ai la chose. J'ai plusieurs choses. J'ai une chose précise pour toi.",
+						"3": "Rebienvenue. Stock frais. Prix justes. Surtout justes."
+					}
+				},
+				"bowlThatShines": {
+					"askAround": {
+						"0": "Une clé perdue ? Pas sur mon étal. Je vends ce que je peux compter — et les rumeurs, ça ne s'empile pas.",
+						"1": "Essaie quelqu'un qui fait commerce de chuchotements. Moi, je suis couteau-et-bocal.",
+						"player": {
+							"0": "Tu n'aurais pas vu une clé ?"
+						}
+					}
+				}
+			},
+			"traveller": {
+				"greeting": {
+					"0": "La poussière de la route s'efface. Pas les histoires."
+				},
+				"bowlThatShines": {
+					"clue": {
+						"0": "Oh — encore toi.",
+						"1": "Une clé. Hm. J'ai entendu ça une fois, assise seule sur les quais : quand le ciel s'assombrit et que les étoiles deviennent bruyantes, la lune déverse des trésors sur l'eau.",
+						"2": "Si tu cherches une clé — les quais, après la tombée de la nuit. Va voir.",
+						"player": {
+							"0": "Tu as vu une clé ?"
 						}
 					}
 				},
-				"traveller": {
-					"greeting": {
-						"0": "La poussière de la route s'efface. Pas les histoires."
-					},
-					"villageWeirdo": {
-						"intro": {
-							"0": "Demande de voyageur : peux-tu me rapporter 1 yekberry ?",
-							"1": "Les objectifs précis forgent le caractère. S'il te plaît, merci.",
-							"player": {
-								"0": "Un ? C'est étrangement précis."
-							}
-						},
-						"collect": {
-							"0": "Il me faut toujours 1 yekberry. Reviens avec une et ce sera rentable."
-						},
-						"return": {
-							"0": "Tu es vraiment revenu avec une yekberry. C'est très généreux.",
-							"1": "Aveu : c'était une expérience sociale. Je voulais voir s'il restait des gens généreux à Anchor Hollow.",
-							"2": "D'accord, c'est vrai. Mon budget est... moins spectaculaire.",
-							"3": "Je peux te donner une pièce d'argent. Ce n'est pas grand-chose, mais ça te servira.",
-							"4": "Tu n'as jamais eu de pièce ? Quoi, tu vis sous un rocher ?",
-							"5": "Une pièce d'argent vaut 100 pièces de bronze.",
-							"6": "Et 100 pièces d'argent font une pièce d'or.",
-							"7": "Une pièce d'argent, ça peut sembler peu, mais bien utilisée, elle peut t'obtenir ce dont tu as besoin.",
-							"player": {
-								"0": "Bro is NOT MrBeast.",
-								"1": "Je n'ai jamais eu de pièce avant..."
-							}
-						},
-						"post": {
-							"0": "Alors, cette pièce d'argent ? Dépense-la utilement, pas juste élégamment."
+				"villageWeirdo": {
+					"intro": {
+						"0": "Alors, requête de voyageuse. Apporte-moi 19 yekberries. Exactement 19.",
+						"1": "Les objectifs précis forgent le caractère. S'il te plaît. Merci.",
+						"player": {
+							"0": "19 ? C'est étrangement précis."
 						}
+					},
+					"collect": {
+						"0": "J'attends toujours ces 19 yekberries. Je garde mes marchés précis pour que personne n'ait d'excuse."
+					},
+					"return": {
+						"0": "Tu es vraiment revenu. Avec exactement 19 yekberries. Hm.",
+						"1": "Confession — je n'avais pas vraiment faim. Je voulais voir s'il reste encore quelqu'un dans ce village qui regarde un inconnu dans les yeux.",
+						"2": "Juste. C'est une façon discrète de financer un test.",
+						"3": "Tiens — une pièce d'argent. Pas grand-chose. L'argent a une manière de devenir utile quand même.",
+						"4": "Tu n'as jamais eu de pièce ? Quoi, tu as grandi sous un rocher ? Ne réponds pas.",
+						"5": "Une pièce d'argent vaut cent pièces de bronze.",
+						"6": "Cent pièces d'argent font une pièce d'or.",
+						"7": "Une seule pièce d'argent semble petite. Dépensée avec soin, elle devient exactement ce dont tu as besoin.",
+						"player": {
+							"0": "Attends — c'était un test ?",
+							"1": "Je n'avais jamais eu de pièce avant..."
+						}
+					},
+					"post": {
+						"0": "Alors, comment va la pièce d'argent ? Dépense-la intelligemment. Pas avec style."
 					}
+				}
+			},
+			"wiseman": {
+				"greeting": {
+					"0": "Un esprit calme entend ce que les vagues bruyantes cachent."
 				},
-				"wiseman": {
-					"greeting": {
-						"0": "Un esprit calme entend ce que les vagues bruyantes cachent."
-					},
-					"bowlThatShines": {
-						"intro": {
-							"0": "Tu as l'air fatigué.",
-							"1": "J'ai toujours été doté.",
-							"2": "Ha ! Tu es drôle.",
-							"3": "Je peux te confier un secret. Un qui allègera ton fardeau et t'ouvrira un tout nouveau monde.",
-							"4": "Bien. Va parler au Maître des Mers.",
-							"5": "Dis-lui exactement ceci : \"le collectionneur de verre t'a envoyé\".",
-							"6": "N'improvise pas.",
-							"choice": {
-								"prompt": "Je veux l'entendre ?",
-								"yes": "Oui."
-							},
-							"player": {
-								"0": "Comment le sais-tu ?",
-								"1": "À quel point es-tu doté ?"
-							}
+				"bowlThatShines": {
+					"intro": {
+						"0": "Tu as l'air fatigué.",
+						"1": "J'ai toujours été doté.",
+						"2": "Ha ! Tu es drôle.",
+						"3": "Je vais te donner un secret. Il troque le poids sur tes épaules contre le poids derrière tes yeux. Je soupçonne que tu peux le porter.",
+						"4": "Va parler au Maître des Mers.",
+						"5": "Dis-lui, mot pour mot : le collectionneur de verre t'a envoyé.",
+						"6": "Ces mots-là, exactement. Un seul de travers et il te renverra.",
+						"choice": {
+							"prompt": "Est-ce que je veux l'entendre ?",
+							"yes": "Oui."
 						},
-						"reminder": {
-							"0": "Trouve le Maître des Mers et dis : \"le collectionneur de verre t'a envoyé\"."
+						"player": {
+							"0": "Comment le sais-tu ?",
+							"1": "Doté à quel point ?"
+						}
+					},
+					"reminder": {
+						"0": "Trouve le Maître des Mers. Dis ces mots exacts : le collectionneur de verre t'a envoyé. Rien de plus, rien de différent."
+					},
+					"askAround": {
+						"0": "J'ai dit ce que j'avais à dire. Le reste t'appartient à trouver.",
+						"1": "Les clés choisissent leur propriétaire. Arrête de courir et commence à écouter.",
+						"player": {
+							"0": "Tu n'aurais pas vu une clé ?"
 						}
 					}
+				}
 			},
 			"dad": {
+				"intro": {
+					"0": "Je crains que ce soit la fin, petit. La grande sieste féline. Le rayon de soleil éternel.",
+					"1": "Ne parle pas comme ça, Papa. Tu es juste... en train de cracher une très grosse boule de poils. Tu vas t'en sortir.",
+					"2": "Non... non. J'ai fait le calcul. J'ai survécu à la Guerre de l'Aspirateur de '12. J'ai survécu à la chute du frigo. J'ai même survécu à cette fois où j'ai mangé l'emballage plastique brillant. Ça fait huit vies, petit. J'en suis à la neuvième. Le réservoir est vide.",
+					"3": "Il y a... un moyen. Une légende que les Vieux Matous chuchotaient sur le continent. Un remède. De quoi étirer une vie de plus à un chat qui n'en a plus.",
+					"4": "Une dixième vie ? C'est un mythe. Comme le Point Rouge Infini.",
+					"5": "C'est réel. Je le sens dans mes moustaches. Mais je suis trop faible pour le chercher. Toi... tu dois être celui qui le fait. Tu dois trouver le\u2014",
+					"6": "La seule façon de continuer à respirer, c'est si tu me ramènes le\u2014",
+					"7": "...le\u2026",
+					"8": "Papa ? Papa ! Le quoi ?? Le QUOI, Papa ?!",
+					"9": "Hrk-shoooo. Hrk-shoooo.",
+					"10": "Incroyable. Il s'est endormi en pleine quête.",
+					"11": "Bon. Je vais le trouver. Quoi que soit \"ça\". Tout pour Papa."
+				},
 				"fallback": {
-					"0": "Je suis fier de toi. Je l'ai toujours été."
+					"0": "Viens ici, petit. Laisse-moi te regarder pendant que je peux encore."
 				},
 				"random": {
 					"0": {
-						"0": "Hé, gamin... Approche-toi.",
-						"1": "Je sais que les choses ont l'air difficiles en ce moment. Mais toi... tu as quelque chose que la plupart n'ont pas.",
-						"2": "Tu vas sauver ce monde. J'y crois de tout ce qu'il me reste."
+						"0": "Te voilà. Plus près. Ces vieilles moustaches n'arrivent plus à te repérer dans un rayon de soleil.",
+						"1": "J'y ai pensé. À ce que j'ai laissé inachevé. Ton nom n'était pas sur cette liste.",
+						"2": "Tu n'as pas besoin de prophétie. Tu as besoin d'un couteau affûté et d'un ventre plein. Va chercher les deux."
 					},
 					"1": {
-						"0": "Te voilà...",
-						"1": "J'aimerais pouvoir me lever et marcher à tes côtés. Mais mes jambes ont lâché il y a longtemps.",
-						"2": "Mais ça n'a pas d'importance. Tu es plus fort que je ne l'ai jamais été. Va le prouver."
+						"0": "Hé, gamin.",
+						"1": "Je patrouillais le salon comme un champ de bataille. Canapé, frigo. Frigo, fenêtre. Trajets légendaires. Disparus maintenant.",
+						"2": "Continue à bouger pour nous deux, d'accord ? Je ferai la sieste pour nous deux."
 					},
 					"2": {
-						"0": "De retour ? Bien. J'aime voir ton visage.",
-						"1": "Tout grand héros a commencé sans savoir ce qu'il faisait. Tu es pile dans les temps.",
+						"0": "De retour. Bien. Tu sens le sel et l'aventure. Mon odeur préférée.",
+						"1": "Tout grand chat qui a fait quelque chose a commencé sans rien savoir du tout. Tu es en avance. C'est tout ce que tu es.",
 						"2": "Tu crois vraiment que je peux y arriver ?",
-						"3": "Je ne le crois pas. Je le sais."
+						"3": "Je ne crois pas. Je sais. Je suis un chat. On ne \"croit\" pas."
 					},
 					"3": {
-						"0": "Le monde est en mauvais état, petit. Pire que quand j'avais ton âge.",
-						"1": "Mais il t'a choisi pour une raison. Et moi aussi, quand je t'ai amené ici.",
-						"2": "Ne porte pas ce poids tout seul. Trouve des amis. Fais-leur confiance. Et sauve-nous tous."
+						"0": "Le monde est devenu plus étrange depuis mon âge. Plus grand et plus meurtri.",
+						"1": "Mais l'étrange, c'est là où vivent les chats, petit. Tu es né pour l'étrange. Je m'en suis assuré.",
+						"2": "Ne le traverse pas seul. Choisis une petite bande. La confiance d'un chat vaut dix promesses d'étrangers."
 					},
 					"4": {
-						"0": "Tu sais ce qui m'a gardé debout toutes ces années là-bas ?",
+						"0": "Tu veux savoir ce qui m'a fait avancer toutes ces années sur le continent ?",
 						"1": "Quoi ?",
-						"2": "Savoir que je rentrerais à la maison pour toi. Et maintenant c'est toi qui pars.",
-						"3": "Fais que ça compte. Je serai là quand tu reviendras."
+						"2": "L'idée de rentrer et de te voir t'endormir sur le linge chaud. Et maintenant c'est toi qui pars.",
+						"3": "Fais que ça compte, petit. Je serai ici. Les yeux au repos. Surtout au repos."
 					},
 					"5": {
-						"0": "Hmm ? Ne t'inquiète pas pour moi. Je repose juste mes yeux.",
-						"1": "Écoute... quoi qu'il arrive là-bas, souviens-toi de qui tu es.",
-						"2": "Tu es mon enfant. Et mon enfant n'abandonne pas."
+						"0": "Hmm ? Oh. Je repose juste mes yeux. Professionnellement.",
+						"1": "Écoute. Quoi que tu rencontres là-bas — souviens-toi que tu es mon enfant.",
+						"2": "Mon enfant a des couteaux affûtés. Mon enfant ne flanche pas. Mon enfant rentre à la maison."
 					}
+				}
+			},
+			"mc": {
+				"arrival": {
+					"0": "Woah... où suis-je ?"
 				}
 			}
 		}
@@ -666,7 +901,8 @@
 		"restocksIn": "Réappro dans {time}",
 		"restockingSoon": "Réappro bientôt...",
 		"outOfStock": "Rupture de stock",
-		"selectItem": "Sélectionnez un article"
+		"selectItem": "Sélectionnez un article",
+		"close": "Fermer"
 	},
 	"system": {
 		"on": "ACTIVÉ",

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { ItemTextureLoader } from '../assets/ItemTextureLoader';
+import { LocaleManager } from '../i18n/LocaleManager';
 
 export class PlayerHud {
     private scene: Phaser.Scene;
@@ -17,6 +18,16 @@ export class PlayerHud {
     private rodNearWater = false;
     private onRodUse?: () => void;
     private onUsableSlotUse?: (slotIndex: number) => void;
+    private localeManager = LocaleManager.getInstance();
+    private skipToNightButton?: Phaser.GameObjects.Container;
+    private skipToNightBg?: Phaser.GameObjects.Image;
+    private skipToNightLabel?: Phaser.GameObjects.Text;
+    private skipToNightTextureKey?: string;
+    private skipToNightTextureCounter = 0;
+    private skipToNightCurrentW = 0;
+    private skipToNightCurrentH = 0;
+    private skipToNightVisible = false;
+    private onSkipToNight?: () => void;
     private equippedRodItemId: string | null = null;
     private equippedUsableItemIds: Array<string | null> = Array.from({ length: 4 }, () => null);
     private equippedUsableCounts: number[] = Array.from({ length: 4 }, () => 0);
@@ -120,6 +131,18 @@ export class PlayerHud {
         this.staminaFillMask = this.staminaFillMaskGraphics.createGeometryMask();
         this.staminaFill.setMask(this.staminaFillMask);
 
+        this.skipToNightLabel = this.scene.add.text(0, 0, this.localeManager.t('hud.skipToNight', undefined, 'Skip to Night'), {
+            fontFamily: 'Minecraft, monospace',
+            fontSize: '16px',
+            color: '#f2e9dd'
+        }).setOrigin(0.5).setAlign('center');
+        this.skipToNightBg = this.scene.add.image(0, 0, 'ui-group-button-selected').setOrigin(0.5);
+        this.skipToNightBg.setAlpha(0.6);
+        this.skipToNightButton = this.scene.add.container(0, 0, [this.skipToNightBg, this.skipToNightLabel]);
+        this.skipToNightButton.setVisible(false);
+        this.skipToNightBg.setInteractive({ useHandCursor: true });
+        this.skipToNightBg.on('pointerdown', () => this.handleSkipToNight());
+
         this.container.add([
             ...this.armorSlots,
             this.rodSlot,
@@ -130,7 +153,8 @@ export class PlayerHud {
             this.staminaBarBg,
             this.staminaFill,
             this.rodSlotShine,
-            this.rodKeyIcon
+            this.rodKeyIcon,
+            this.skipToNightButton
         ]);
         this.layout();
         this.updateHeartsVisual();
@@ -392,6 +416,8 @@ export class PlayerHud {
         const staminaBarWidth = Math.round(slotsRowWidth * this.staminaBarWidthScale);
         const staminaY = heartsY - heartHeight / 2 - this.staminaSpacing - staminaBarHeight / 2;
 
+        this.layoutSkipToNightButton(width, staminaY, staminaBarHeight);
+
         this.updateStaminaBarTexture(staminaBarWidth, staminaBarHeight);
 
         this.staminaBarBg.setPosition(width / 2, staminaY);
@@ -415,6 +441,9 @@ export class PlayerHud {
         if (this.staminaTextureKey && this.scene.textures.exists(this.staminaTextureKey)) {
             this.scene.textures.remove(this.staminaTextureKey);
         }
+        if (this.skipToNightTextureKey && this.scene.textures.exists(this.skipToNightTextureKey)) {
+            this.scene.textures.remove(this.skipToNightTextureKey);
+        }
         this.staminaFill.clearMask(true);
         this.staminaFillMask?.destroy();
         this.staminaFillMaskGraphics.destroy();
@@ -423,7 +452,61 @@ export class PlayerHud {
         this.usableIcons.forEach((icon) => icon?.destroy());
         this.usableCountTexts.forEach((countText) => countText.destroy());
         this.rodKeyIcon.destroy();
+        this.skipToNightButton?.destroy();
         this.container.destroy();
+    }
+
+    setSkipToNightVisible(visible: boolean) {
+        if (this.skipToNightVisible === visible) return;
+        this.skipToNightVisible = visible;
+        this.skipToNightButton?.setVisible(visible);
+    }
+
+    setOnSkipToNight(handler?: () => void) {
+        this.onSkipToNight = handler;
+    }
+
+    private handleSkipToNight() {
+        if (!this.skipToNightVisible) return;
+        if (this.scene.registry.get('guiOpen') === true) return;
+        if (this.scene.registry.get('inputBlocked') === true) return;
+        this.onSkipToNight?.();
+    }
+
+    private layoutSkipToNightButton(width: number, staminaY: number, staminaBarHeight: number) {
+        if (!this.skipToNightButton || !this.skipToNightBg || !this.skipToNightLabel) return;
+
+        const targetButtonWidth = Math.round(Math.max(140, this.skipToNightLabel.width + 28));
+        const targetButtonHeight = Math.max(30, Math.ceil(this.skipToNightLabel.height + 10));
+        this.updateSkipToNightTexture(targetButtonWidth, targetButtonHeight);
+
+        this.skipToNightBg.setDisplaySize(targetButtonWidth, targetButtonHeight);
+        this.skipToNightLabel.setPosition(0, -2);
+
+        const buttonX = width / 2;
+        const buttonY = staminaY - staminaBarHeight / 2 - 6 - targetButtonHeight / 2;
+        this.skipToNightButton.setPosition(buttonX, buttonY);
+    }
+
+    private updateSkipToNightTexture(width: number, height: number) {
+        if (
+            width === this.skipToNightCurrentW
+            && height === this.skipToNightCurrentH
+            && this.skipToNightTextureKey
+            && this.scene.textures.exists(this.skipToNightTextureKey)
+        ) {
+            return;
+        }
+        this.skipToNightCurrentW = width;
+        this.skipToNightCurrentH = height;
+
+        const newKey = this.createNineSliceTexture('ui-group-button-selected', width, height, 6, 6, `__hud_skip_night_${this.skipToNightTextureCounter++}`);
+        const oldKey = this.skipToNightTextureKey;
+        this.skipToNightTextureKey = newKey;
+        this.skipToNightBg?.setTexture(newKey);
+        if (oldKey && oldKey !== newKey && this.scene.textures.exists(oldKey)) {
+            this.scene.textures.remove(oldKey);
+        }
     }
 
     private updateUsableCountText(slotIndex: number) {
@@ -500,7 +583,7 @@ export class PlayerHud {
         }
     }
 
-    private createNineSliceTexture(key: string, width: number, height: number, borderX: number, borderY: number) {
+    private createNineSliceTexture(key: string, width: number, height: number, borderX: number, borderY: number, overrideKey?: string) {
         const srcTexture = this.scene.textures.get(key);
         const srcImage = srcTexture.getSourceImage() as HTMLImageElement;
         const srcW = srcImage.width;
@@ -511,7 +594,7 @@ export class PlayerHud {
         const centerW = Math.max(1, width - borderX * 2);
         const centerH = Math.max(1, height - borderY * 2);
 
-        const rtKey = `__hud_stamina_${this.staminaTextureCounter++}`;
+        const rtKey = overrideKey ?? `__hud_stamina_${this.staminaTextureCounter++}`;
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;

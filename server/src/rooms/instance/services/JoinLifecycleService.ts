@@ -5,10 +5,12 @@ import {
     DEFAULT_PLAYER_HEARTS_STATE,
     IGuideTutorialState,
     isEquippableUsableItem,
-    getItemDefinition
+    getItemDefinition,
+    REAL_MS_PER_GAME_SECOND
 } from "@cfwk/shared";
 import User from "../../../models/User";
 import { InstanceRoomHost } from "../context/InstanceRoomHost";
+import { sendAdvancements } from "./ProgressionService";
 import {
     enforceIpBan,
     getClientIP,
@@ -16,11 +18,13 @@ import {
     resolveJoinState
 } from "./JoinStateResolver";
 import { initializeJoinedPlayerState, sendInitialJoinPayloads } from "./JoinPayloadService";
+import { sendMovementReconcile } from "./MovementMessageService";
 import { wipePlayerGameplayData } from "./PlayerStateService";
 import { verifyJoinToken } from "../authority/JoinTokenAuthority";
 import { sanitizeEquippedRod, sanitizeEquippedUsables } from "../authority/EquipmentAuthority";
 import { sanitizeTutorialPatch } from "../authority/TutorialAuthority";
 import { validateClientInventoryEquipmentSnapshot } from "../authority/InventoryAuthority";
+import { DEFAULT_FIRST_CONNECT_LOCATION_ID } from "../../../config/instance";
 
 const DEMO_DURATION_MS = 15 * 60 * 1000;
 const DEMO_START_RESEND_DELAY_MS = 800;
@@ -69,11 +73,44 @@ export async function handleJoinLifecycle(
     registerJoinConnection(room, client, joinState.odcid);
     initializeJoinedPlayerState(room, client, options, joinState);
     await sendInitialJoinPayloads(room, client, joinState);
+    applyIntroCutsceneSpawnOverride(room, client);
     registerJoinInventoryAndProgressionHandlers(room);
 
     room.instanceManager.playerJoined(room.instanceId);
 
     await startDemoTimerIfNeeded(room, client, joinState.odcid);
+}
+
+function applyIntroCutsceneSpawnOverride(room: InstanceRoomHost, client: Client): void {
+    if (room.state.locationId !== DEFAULT_FIRST_CONNECT_LOCATION_ID) return;
+
+    const tutorial = room.tutorialStateBySession.get(client.sessionId);
+    if (!tutorial || tutorial.introCutsceneCompleted) return;
+
+    const poiPoints = room.advancementsManager.getPoiPointsByName('IntroPlayerLocation');
+    if (poiPoints.length === 0) return;
+
+    const poi = poiPoints[0];
+    const player = room.state.players.get(client.sessionId);
+    if (!player) return;
+
+    player.x = poi.x;
+    player.y = poi.y;
+    player.vx = 0;
+    player.vy = 0;
+
+    const history = room.positionHistoryBySession.get(client.sessionId);
+    if (history) {
+        history.length = 0;
+        history.push({ tick: room.gameTick, time: Date.now(), x: poi.x, y: poi.y });
+    }
+
+    const runtime = room.movementRuntimeBySession.get(client.sessionId);
+    if (runtime) {
+        runtime.hardAuthorityUntil = Date.now() + 2000;
+    }
+
+    sendMovementReconcile(room, client, player, 0, 'hard-server', true, 0, 'intro-cutscene-spawn');
 }
 
 async function startDemoTimerIfNeeded(room: InstanceRoomHost, client: Client, odcid: string) {
@@ -131,7 +168,51 @@ function sendDemoStartMessage(
     }
 }
 
+const MAX_CLIENT_TIME_OFFSET_MS = 24 * 60 * 60 * REAL_MS_PER_GAME_SECOND; // one full game day
+const BOWL_QUEST_ID = "bowl_that_shines";
+const BOWL_QUEST_SKIP_OBJECTIVE_INDICES = new Set([2, 3]);
+
 export function registerJoinInventoryAndProgressionHandlers(room: InstanceRoomHost) {
+    room.onMessage("quest:time-skip", async (client, data: { offsetMs?: number }) => {
+        room.markActivity(client);
+        const player = room.state.players.get(client.sessionId);
+        if (!player) return;
+
+        const rawOffset = Number(data?.offsetMs);
+        if (!Number.isFinite(rawOffset)) return;
+        const offsetMs = Math.max(0, Math.min(MAX_CLIENT_TIME_OFFSET_MS, Math.floor(rawOffset)));
+        if (offsetMs <= 0) return;
+
+        try {
+            const advancementsState = await room.advancementsManager.getStateForUser(player.odcid);
+            const progress = advancementsState.questProgress?.[BOWL_QUEST_ID];
+            if (!progress || progress.status !== "active") return;
+            const objectiveIndex = typeof progress.objectiveIndex === "number"
+                ? Math.floor(progress.objectiveIndex)
+                : -1;
+            if (!BOWL_QUEST_SKIP_OBJECTIVE_INDICES.has(objectiveIndex)) return;
+
+            room.clientTimeOffsetByUserId.set(player.odcid, offsetMs);
+
+            const updates = await room.advancementsManager.applyTimeWindowForUser(player.odcid, offsetMs);
+            if (updates.alerts.length > 0 || updates.delayedNewQuestCounts.length > 0) {
+                await sendAdvancements(room, client, updates);
+            } else {
+                const refreshedState = await room.advancementsManager.getStateForUser(player.odcid);
+                client.send("advancements:state", refreshedState);
+            }
+        } catch (error) {
+            console.error("[InstanceRoom] quest:time-skip failed:", error);
+        }
+    });
+
+    room.onMessage("quest:time-skip-clear", (client) => {
+        room.markActivity(client);
+        const player = room.state.players.get(client.sessionId);
+        if (!player) return;
+        room.clientTimeOffsetByUserId.delete(player.odcid);
+    });
+
     room.onMessage("advancements:get", async (client) => {
         room.markActivity(client);
         const player = room.state.players.get(client.sessionId);
@@ -167,6 +248,40 @@ export function registerJoinInventoryAndProgressionHandlers(room: InstanceRoomHo
             client.send("advancements:state", advancementsState);
         } catch (error) {
             console.error("[InstanceRoom] Failed to update guide tutorial state:", error);
+        }
+    });
+
+    room.onMessage("guide:tutorial-stab", async (client) => {
+        room.markActivity(client);
+        const player = room.state.players.get(client.sessionId);
+        if (!player) return;
+
+        const sessionId = client.sessionId;
+        if (room.tutorialStabAppliedBySession.get(sessionId) === true) return;
+
+        const tutorial = room.tutorialStateBySession.get(sessionId);
+        if (!tutorial) return;
+        if (tutorial.foodStep !== "consume_quickslot_1") return;
+        if (tutorial.forceFoodGuideHeal !== true) return;
+
+        const userId = player.odcid;
+        const current = room.heartsByUserId.get(userId) ?? { ...DEFAULT_PLAYER_HEARTS_STATE };
+        room.tutorialStabAppliedBySession.set(sessionId, true);
+        if (current.currentHearts <= 0) return;
+
+        const next = room.normalizeHeartsState({
+            currentHearts: current.currentHearts - 1,
+            maxHearts: current.maxHearts
+        });
+        room.heartsByUserId.set(userId, next);
+        client.send("player:hearts", next);
+
+        if (userId && userId !== sessionId) {
+            try {
+                await User.updateOne({ _id: userId }, { $set: { hearts: next } });
+            } catch (error) {
+                console.error("[InstanceRoom] Failed to persist tutorial stab hearts:", error);
+            }
         }
     });
 
@@ -288,7 +403,7 @@ export function registerJoinInventoryAndProgressionHandlers(room: InstanceRoomHo
             const guaranteed = Math.floor(score / 100);
             const remainder = score - guaranteed * 100;
             const bonus = Math.random() * 100 < remainder ? 1 : 0;
-            const restoreHearts = forceGuideFoodHeal ? Math.max(1, guaranteed + bonus) : (guaranteed + bonus);
+            const restoreHearts = forceGuideFoodHeal ? 1 : (guaranteed + bonus);
 
             if (restoreHearts > 0) {
                 const current = room.heartsByUserId.get(player.odcid) ?? { ...DEFAULT_PLAYER_HEARTS_STATE };

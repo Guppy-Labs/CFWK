@@ -21,14 +21,22 @@ export class MCAfkManager {
     private afkKickThreshold: number;
 
     private afkOverlayContainer?: Phaser.GameObjects.Container;
+    private afkOverlayBackdrop?: Phaser.GameObjects.Rectangle;
     private afkOverlayShadow?: Phaser.GameObjects.Image;
     private afkOverlayBg?: Phaser.GameObjects.Image;
+    private afkOverlayIcon?: Phaser.GameObjects.Text;
     private afkOverlayTitle?: Phaser.GameObjects.Text;
     private afkOverlayInfo?: Phaser.GameObjects.Text;
     private afkOverlayCountdown?: Phaser.GameObjects.Text;
+    private afkOverlayProgressBg?: Phaser.GameObjects.Rectangle;
+    private afkOverlayProgressFill?: Phaser.GameObjects.Rectangle;
+    private afkOverlayDivider?: Phaser.GameObjects.Rectangle;
     private afkOverlayNote?: Phaser.GameObjects.Text;
     private afkOverlayTextureKey?: string;
     private afkOverlayTextureCounter = 0;
+    private afkOverlayAppearTween?: Phaser.Tweens.Tween;
+    private afkOverlayPulseTween?: Phaser.Tweens.Tween;
+    private afkOverlayPulseActive = false;
 
     private afkActivityHandler?: (parent: Phaser.Data.DataManager, value: number) => void;
 
@@ -93,6 +101,9 @@ export class MCAfkManager {
         if (this.afkActivityHandler) {
             this.scene.registry.events.off('changedata-afkActivity', this.afkActivityHandler);
         }
+        this.afkOverlayAppearTween?.stop();
+        this.afkOverlayPulseTween?.stop();
+        this.afkOverlayBackdrop?.destroy();
         this.afkOverlayContainer?.destroy(true);
         if (this.afkOverlayTextureKey && this.scene.textures.exists(this.afkOverlayTextureKey)) {
             this.scene.textures.remove(this.afkOverlayTextureKey);
@@ -121,55 +132,138 @@ export class MCAfkManager {
         const uiScene = this.scene.scene.get('UIScene') as Phaser.Scene | undefined;
         if (!uiScene) return;
 
-        const frameWidth = 320;
-        const frameHeight = 170;
+        const frameWidth = 360;
+        const frameHeight = 200;
         const border = 4;
-        const padding = 14;
+        const padding = 18;
+        const progressBarWidth = frameWidth - padding * 2;
+        const progressBarHeight = 6;
 
         if (!this.afkOverlayContainer) {
+            const cam = uiScene.cameras.main;
+
+            this.afkOverlayBackdrop = uiScene.add.rectangle(
+                cam.centerX,
+                cam.centerY,
+                cam.width,
+                cam.height,
+                0x05070b,
+                0.55
+            ).setOrigin(0.5, 0.5);
+            this.afkOverlayBackdrop.setScrollFactor(0);
+            this.afkOverlayBackdrop.setDepth(9997);
+
             const textureKey = this.createNineSliceTexture(uiScene, 'ui-afk-frame', frameWidth, frameHeight, border, 3);
             this.afkOverlayTextureKey = textureKey;
 
             this.afkOverlayShadow = uiScene.add.image(0, 0, textureKey).setOrigin(0.5, 0.5);
             this.afkOverlayShadow.setTint(0x000000);
-            this.afkOverlayShadow.setAlpha(0.5);
-            this.afkOverlayShadow.setPosition(3, 4);
+            this.afkOverlayShadow.setAlpha(0.55);
+            this.afkOverlayShadow.setPosition(4, 6);
 
             this.afkOverlayBg = uiScene.add.image(0, 0, textureKey).setOrigin(0.5, 0.5);
+            this.afkOverlayBg.setTint(0x5a3a24);
+
+            this.afkOverlayIcon = uiScene.add.text(0, 0, '!', {
+                fontFamily: 'Minecraft, monospace',
+                fontSize: '24px',
+                color: '#ffd27a',
+                stroke: '#3a1f0c',
+                strokeThickness: 4
+            }).setOrigin(0.5, 0.5);
+
             this.afkOverlayTitle = uiScene.add.text(0, 0, 'AFK WARNING', {
                 fontFamily: 'Minecraft, monospace',
-                fontSize: '18px',
-                color: '#f2f2f2'
-            }).setOrigin(0, 0);
+                fontSize: '20px',
+                color: '#ffd27a',
+                stroke: '#3a1f0c',
+                strokeThickness: 4
+            }).setOrigin(0.5, 0.5);
 
             this.afkOverlayInfo = uiScene.add.text(0, 0, 'Move or press any key to stay in-game.', {
                 fontFamily: 'Minecraft, monospace',
                 fontSize: '12px',
-                color: '#d8d8d8'
-            }).setOrigin(0, 0);
+                color: '#f2e6cf',
+                stroke: '#2a1a10',
+                strokeThickness: 2,
+                align: 'center'
+            }).setOrigin(0.5, 0.5);
+
+            this.afkOverlayProgressBg = uiScene.add.rectangle(
+                0,
+                0,
+                progressBarWidth,
+                progressBarHeight,
+                0x1a110a,
+                0.9
+            ).setOrigin(0.5, 0.5);
+            this.afkOverlayProgressBg.setStrokeStyle(1, 0x6b4a2a, 1);
+
+            this.afkOverlayProgressFill = uiScene.add.rectangle(
+                0,
+                0,
+                progressBarWidth - 2,
+                progressBarHeight - 2,
+                0xffb060,
+                1
+            ).setOrigin(0, 0.5);
 
             this.afkOverlayCountdown = uiScene.add.text(0, 0, 'Disconnect in 0:00', {
                 fontFamily: 'Minecraft, monospace',
-                fontSize: '16px',
-                color: '#ff8b8b'
-            }).setOrigin(0, 0);
+                fontSize: '18px',
+                color: '#ff8b8b',
+                stroke: '#3a0e0e',
+                strokeThickness: 4
+            }).setOrigin(0.5, 0.5);
+
+            this.afkOverlayDivider = uiScene.add.rectangle(
+                0,
+                0,
+                frameWidth - padding * 2,
+                1,
+                0x6b4a2a,
+                0.7
+            ).setOrigin(0.5, 0.5);
 
             this.afkOverlayNote = uiScene.add.text(0, 0, 'Tip: Shark rank extends AFK time to 20 min.', {
                 fontFamily: 'Minecraft, monospace',
                 fontSize: '11px',
-                color: '#b9b9b9'
-            }).setOrigin(0, 0);
+                color: '#bfa98a',
+                align: 'center'
+            }).setOrigin(0.5, 0.5);
 
             this.afkOverlayContainer = uiScene.add.container(0, 0, [
                 this.afkOverlayShadow,
                 this.afkOverlayBg,
+                this.afkOverlayIcon,
                 this.afkOverlayTitle,
                 this.afkOverlayInfo,
+                this.afkOverlayProgressBg,
+                this.afkOverlayProgressFill,
                 this.afkOverlayCountdown,
+                this.afkOverlayDivider,
                 this.afkOverlayNote
             ]);
             this.afkOverlayContainer.setDepth(9998);
             this.afkOverlayContainer.setScrollFactor(0);
+
+            this.afkOverlayContainer.setAlpha(0);
+            this.afkOverlayContainer.setScale(0.9);
+            this.afkOverlayBackdrop.setAlpha(0);
+            this.afkOverlayAppearTween?.stop();
+            this.afkOverlayAppearTween = uiScene.tweens.add({
+                targets: [this.afkOverlayContainer],
+                alpha: 1,
+                scale: 1,
+                duration: 220,
+                ease: 'Back.easeOut'
+            });
+            uiScene.tweens.add({
+                targets: [this.afkOverlayBackdrop],
+                alpha: 0.55,
+                duration: 220,
+                ease: 'Sine.easeOut'
+            });
         }
 
         const totalSeconds = Math.ceil(remainingMs / 1000);
@@ -177,24 +271,87 @@ export class MCAfkManager {
         const seconds = totalSeconds % 60;
         this.afkOverlayCountdown?.setText(`Disconnect in ${minutes}:${seconds.toString().padStart(2, '0')}`);
 
-        if (this.afkOverlayContainer && this.afkOverlayBg && this.afkOverlayTitle && this.afkOverlayInfo && this.afkOverlayCountdown && this.afkOverlayNote) {
-            const centerX = uiScene.cameras.main.centerX;
-            const centerY = uiScene.cameras.main.centerY - 40;
+        const urgent = remainingMs <= 30000;
+        if (this.afkOverlayCountdown) {
+            this.afkOverlayCountdown.setColor(urgent ? '#ff6060' : '#ff9a8a');
+        }
+        if (urgent && !this.afkOverlayPulseActive && this.afkOverlayCountdown) {
+            this.afkOverlayPulseActive = true;
+            this.afkOverlayPulseTween?.stop();
+            this.afkOverlayPulseTween = uiScene.tweens.add({
+                targets: this.afkOverlayCountdown,
+                scale: { from: 1, to: 1.08 },
+                duration: 500,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+        } else if (!urgent && this.afkOverlayPulseActive) {
+            this.afkOverlayPulseActive = false;
+            this.afkOverlayPulseTween?.stop();
+            this.afkOverlayCountdown?.setScale(1);
+        }
+
+        if (
+            this.afkOverlayContainer &&
+            this.afkOverlayBg &&
+            this.afkOverlayIcon &&
+            this.afkOverlayTitle &&
+            this.afkOverlayInfo &&
+            this.afkOverlayCountdown &&
+            this.afkOverlayNote &&
+            this.afkOverlayProgressBg &&
+            this.afkOverlayProgressFill &&
+            this.afkOverlayDivider
+        ) {
+            const cam = uiScene.cameras.main;
+            const centerX = cam.centerX;
+            const centerY = cam.centerY - 20;
             this.afkOverlayContainer.setPosition(centerX, centerY);
             this.afkOverlayContainer.setVisible(true);
 
-            const left = -frameWidth / 2 + padding;
+            if (this.afkOverlayBackdrop) {
+                this.afkOverlayBackdrop.setPosition(cam.centerX, cam.centerY);
+                this.afkOverlayBackdrop.setSize(cam.width, cam.height);
+                this.afkOverlayBackdrop.setVisible(true);
+            }
+
             const top = -frameHeight / 2 + padding;
-            this.afkOverlayTitle.setPosition(left, top);
-            this.afkOverlayInfo.setPosition(left, top + 28);
-            this.afkOverlayCountdown.setPosition(left, top + 62);
-            this.afkOverlayNote.setPosition(left, top + frameHeight - padding - 26);
+            const titleY = top + 10;
+            const titleWidth = this.afkOverlayTitle.width;
+            this.afkOverlayTitle.setPosition(0, titleY);
+            this.afkOverlayIcon.setPosition(-titleWidth / 2 - 16, titleY);
+
+            this.afkOverlayInfo.setPosition(0, titleY + 26);
+
+            const progressY = titleY + 52;
+            this.afkOverlayProgressBg.setPosition(0, progressY);
+            this.afkOverlayProgressFill.setPosition(-progressBarWidth / 2 + 1, progressY);
+
+            const ratio = Phaser.Math.Clamp(remainingMs / this.afkKickThreshold, 0, 1);
+            const fillWidth = Math.max(0, (progressBarWidth - 2) * ratio);
+            this.afkOverlayProgressFill.width = fillWidth;
+            this.afkOverlayProgressFill.setFillStyle(urgent ? 0xff5a4a : 0xffb060, 1);
+
+            this.afkOverlayCountdown.setPosition(0, progressY + 24);
+
+            const dividerY = -frameHeight / 2 + frameHeight - padding - 28;
+            this.afkOverlayDivider.setPosition(0, dividerY);
+            this.afkOverlayNote.setPosition(0, dividerY + 14);
         }
     }
 
     private hideAfkOverlay() {
+        if (this.afkOverlayPulseActive) {
+            this.afkOverlayPulseActive = false;
+            this.afkOverlayPulseTween?.stop();
+            this.afkOverlayCountdown?.setScale(1);
+        }
         if (this.afkOverlayContainer) {
             this.afkOverlayContainer.setVisible(false);
+        }
+        if (this.afkOverlayBackdrop) {
+            this.afkOverlayBackdrop.setVisible(false);
         }
     }
 

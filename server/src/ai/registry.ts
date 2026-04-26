@@ -76,7 +76,7 @@ export const AI_NPC_DEFINITIONS: Record<AINpcKind, AiNpcDefinition> = {
         },
         controllerConfig: {
             ...DEFAULT_GENERAL_ENEMY_CONTROLLER_CONFIG,
-            speedPxPerSecond: 50,
+            speedPxPerSecond: 60,
             attackCooldownMs: 2800,
             meleeRangePx: 30,
             meleeDamageHearts: 1

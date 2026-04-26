@@ -9,7 +9,7 @@ import {
 } from "@cfwk/shared";
 import User from "../../../models/User";
 import { AI_METERS_TO_PIXELS, AI_NPC_DEFINITIONS, getAiControllerById } from "../../../ai/registry";
-import { AiNpcRuntimeState } from "../../../ai/types";
+import { AiAvoidanceEntity, AiNpcRuntimeState } from "../../../ai/types";
 import { InstanceRoomHost } from "../context/InstanceRoomHost";
 import { InstanceAiNpcSchema } from "../schema/InstanceAiNpcSchema";
 import { SoftCollisionBody, SpawnRegionRuntime } from "../InstanceRoomSchema";
@@ -110,6 +110,14 @@ export function tryEnemyMeleeAttack(room: InstanceRoomHost, attacker: AiNpcRunti
         { accumulate: false, recoveryTailMs: ENEMY_MELEE_KNOCKBACK_RECOVERY_TAIL_MS }
     );
     applyDamageToPlayerHearts(room, targetSessionId, Math.floor(damageHearts));
+
+    room.broadcast("ai:attack-hit", {
+        attackerId: attacker.id,
+        kind: attacker.kind,
+        targetSessionId,
+        x: attacker.x,
+        y: attacker.y
+    });
 }
 
 export function didPlayerDodgeMeleeAttack(room: InstanceRoomHost, targetSessionId: string, now: number): boolean {
@@ -298,6 +306,17 @@ export function stepAiNpcSimulation(room: InstanceRoomHost, deltaTimeMs: number)
         players.push({ sessionId, x: player.x, y: player.y });
     });
 
+    const aiEntities: AiAvoidanceEntity[] = [];
+    room.aiRuntimeById.forEach((runtime: AiNpcRuntimeState) => {
+        if (runtime.isDead) return;
+        aiEntities.push({
+            x: runtime.x,
+            y: runtime.y,
+            halfWidth: Math.max(1, runtime.hitbox.width) / 2,
+            halfHeight: Math.max(1, runtime.hitbox.collidableHeight || runtime.hitbox.height) / 2
+        });
+    });
+
     room.aiRuntimeById.forEach((runtime: AiNpcRuntimeState, id: string) => {
         if (runtime.isDead && runtime.deathAnimUntilMs > 0 && now >= runtime.deathAnimUntilMs) {
             despawnIds.push(id);
@@ -317,7 +336,9 @@ export function stepAiNpcSimulation(room: InstanceRoomHost, deltaTimeMs: number)
             random: () => Math.random(),
             onMeleeAttackAttempt: (attacker, targetSessionId, damageHearts) => {
                 tryEnemyMeleeAttack(room, attacker, targetSessionId, damageHearts);
-            }
+            },
+            aiEntities,
+            staticNpcs: []
         });
 
         const schema = room.state.aiNpcs.get(id);
@@ -544,7 +565,8 @@ export function spawnAiNpc(room: InstanceRoomHost, kind: AINpcKind, x: number, y
         pendingMeleeDamageHearts: undefined,
         deathAnimUntilMs: 0,
         isDead: false,
-        controllerConfig: { ...definition.controllerConfig }
+        controllerConfig: { ...definition.controllerConfig },
+        stuckAccumulatorMs: 0
     });
 
     if (spawnRegion) {

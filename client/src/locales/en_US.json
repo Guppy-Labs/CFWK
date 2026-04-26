@@ -126,6 +126,9 @@
       }
     }
   },
+  "hud": {
+    "skipToNight": "Skip to Night"
+  },
   "headbar": {
     "playersOnline": "Players Online",
     "datePattern": "{season} Day {day}",
@@ -197,8 +200,9 @@
         "nextLabel": "Next Objective",
         "fishCatch": "Catch a fish",
         "talkToNpc": "Talk to {name}",
-        "stayInRegion": "Stay in {region} for {seconds}s",
-        "waitForTimeWindow": "Wait until night ({start}:00-{end}:00)",
+      "stayInRegion": "Stay in {region} for {seconds}s",
+      "askAround": "Ask around town for rumors",
+      "waitForTimeWindow": "Wait until night ({start}:00-{end}:00)",
         "fishNearLocation": "Fish near {location}",
         "harvestInteractive": "Use nearby interactable",
         "openGlimmeringChest": "Open the Glimmering Chest",
@@ -214,28 +218,28 @@
         "completed": "Completed"
       },
       "first_catch": {
-        "description": "Speak with the Fisherman, then catch your first fish."
+        "description": "Talk to the Fisherman, pick up a rod, and pull your first catch out of Anchor Hollow's waters."
       },
       "travellers_errand": {
-        "description": "Talk to the Traveller, then report to the Guard."
+        "description": "A small favor for a stranger on the road. Hear them out, then report back to the Guard."
       },
       "heed_the_warning": {
-        "description": "Talk to the Guard, survive for 60 seconds in the danger zone, then return to the Guard."
+        "description": "The Guard doesn't think you can last 60 seconds past the bridge. Prove him wrong, then tell him about it."
       },
       "anti_death_measures": {
-        "description": "Talk to the Merchant, harvest yekberries, then return to the Merchant."
+        "description": "The Merchant's first survival lesson: find a Yekbush, harvest yekberries, and learn why a blade-cat never goes out empty-pawed."
       },
       "merchant_side_brew": {
-        "description": "Learn food refinement from the Merchant: stomp dropped yekberries into liquid, bottle it with a jar, then report back."
+        "description": "Lesson two from the Merchant. Stomp yekberries into liquid, bottle the juice with a jar, and drink to something stronger than survival food."
       },
       "village_weirdo": {
-        "description": "Talk to the Traveller, collect 1 yekberry, then return for your reward."
+        "description": "The Traveller wants exactly 19 yekberries. You'll find out why when you bring them."
       },
       "wares_galore": {
-        "description": "Talk to the Merchant about your new coin and hear about his wares."
+        "description": "Word's out that you have coin. The Merchant would like a word. A long one."
       },
       "bowl_that_shines": {
-        "description": "Speak with the Wise Man and follow his lead to the Sea Master."
+        "description": "The Wise Man holds a secret. He says take it to the Sea Master. The Sea Master says the docks, at night, under moonlight. Somewhere between those two is the Glimmering Key and the chest it opens."
       }
     },
     "achievementCategory": {
@@ -280,7 +284,17 @@
     "dialogueAdvance": "Dialogue advance",
     "cabinDoorOpen": "Cabin door opens",
     "cabinDoorClose": "Cabin door closes",
-    "cabinRoofToggle": "Cabin roof shifts"
+    "cabinRoofToggle": "Cabin roof shifts",
+    "gremlinFootstepGrass": "Gremlin footsteps on grass",
+    "gremlinFootstepGrassPlural": "Gremlins footsteps on grass",
+    "gremlinFootstepSand": "Gremlin footsteps on sand",
+    "gremlinFootstepSandPlural": "Gremlins footsteps on sand",
+    "gremlinFootstepStone": "Gremlin footsteps on stone",
+    "gremlinFootstepStonePlural": "Gremlins footsteps on stone",
+    "gremlinFootstepWood": "Gremlin footsteps on wood",
+    "gremlinFootstepWoodPlural": "Gremlins footsteps on wood",
+    "gremlinFootstepWater": "Gremlin footsteps in shallow water",
+    "gremlinFootstepWaterPlural": "Gremlins footsteps in shallow water"
   },
   "fishing": {
     "buttons": {
@@ -306,8 +320,7 @@
   },
   "guide": {
     "bowlThatShines": {
-      "travellerHint": "Hm... I wonder if the traveller has had the info all along.",
-      "returnToSeamaster": "Show the Sea Master what you found."
+      "returnToSeamaster": "Bring the key back to the Sea Master. He's been waiting for this longer than you've been alive."
     },
     "rod": {
       "openInventory": "To equip your new rod, open your inventory (press {key} on desktop).",
@@ -362,7 +375,7 @@
       "name": "Wise Man"
     },
     "dad": {
-      "name": "Dad"
+      "name": "Papa Cat"
     }
   },
   "dialogue": {
@@ -419,21 +432,21 @@
               "2": "The shard keeper sent me."
             },
             "wrong": {
-              "0": "What?? Is that supposed to mean something to me? SCRAM KID!",
-              "1": "What?? Is that supposed to mean something to me? SCRAM KID!"
+              "0": "Who do you think you are? I'm not giving you anything... not one bronze coin.",
+              "1": "Never heard of him. Never heard of you. Scram."
             }
           },
           "story": {
-            "0": "The Wise Man would only hand out that code if he trusted you.",
-            "1": "Listen closely. I used to be an archaeologist in the desert, always setting out on expeditions.",
-            "2": "One day, I found a chest unlike anything I'd seen.",
-            "3": "My top-secret sources said the key to that chest, the Glimmering Chest, was likely lost somewhere in the desert.",
-            "4": "So I brought the chest to Anchor Hollow and stayed. I set my sights on the sea and learned every current I could.",
-            "5": "In trying to find that key, I became the Sea Master.",
-            "6": "And now I grant you the privilege of helping me search for it.",
-            "7": "I know it's somewhere around the docks.",
-            "8": "You might ask around Anchor Hollow for new rumors... though avoid the Traveller. She's suspicious. Weird.",
-            "9": "Good luck.",
+            "0": "The Wise Man doesn't hand that code to just anyone. If he trusted you, I suppose I'll have to.",
+            "1": "Listen close. Before the salt, I was a dust creature — an archaeologist, desert-bred, expedition-fed.",
+            "2": "One dig, I pried up a chest that didn't match any century I knew.",
+            "3": "My sources — don't ask — told me the key was lost somewhere in the dunes I'd already walked past.",
+            "4": "So I hauled the chest to Anchor Hollow and never looked back. Swore to the sea. Learned every current it would teach.",
+            "5": "Chasing that key, I became the Sea Master.",
+            "6": "And now I grant you the privilege of helping me chase what I can't catch.",
+            "7": "It's under the docks somewhere. I can feel it the way you feel a tide turning.",
+            "8": "Ask around town. And mind who you trust — this place has its share of weirdos. Suspicious. Weird. You'll know them by the smell.",
+            "9": "Go on. Don't drown.",
             "choice": {
               "prompt": "How should I answer?",
               "justMet": "... I kinda met him 30 seconds ago",
@@ -441,44 +454,44 @@
             },
             "choiceResponse": {
               "justMet": "Thirty seconds? Hmph. Then your timing is suspiciously perfect.",
-              "pals": "Pals for life, huh? You don't look old enough for that claim."
+              "pals": "Pals for life, at your size? Only if life started last Tuesday. Fine. Close enough."
             },
             "player": {
-              "0": "What info have you collected so far?"
+              "0": "What have you managed to piece together so far?"
             }
           },
           "postKey": {
             "0": "By the rolling tide... that's the Glimmering Key.",
-            "1": "I am genuinely impressed. You found what I could not.",
-            "2": "And here's the twist: keep the treasure for yourself. I've taken enough from the sea in my lifetime.",
-            "3": "The chest is waiting. Go open it.",
+            "1": "Thirty years of current charts, and a stranger finds it in a week. Fate has a cruel sense of comedy.",
+            "2": "Keep what's inside. All of it. I've taken enough from the sea for one lifetime.",
+            "3": "Go on. The chest has been waiting longer than you've been alive. Don't make it wait more.",
             "player": {
               "0": "Thank you... seriously."
             }
           },
           "finalPlaceholder": {
-            "0": "So, what did the chest reveal? Hah, don't tell me yet.",
-            "1": "We'll speak again soon. For now, let this be your beginning."
+            "0": "So. Did the chest show you what I thought it would? Don't answer yet.",
+            "1": "Sit with it. Dream on it. Come find me when the shine has settled into something you can carry."
           }
         }
       },
       "guard": {
         "greeting": {
-          "0": "Stay sharp. Anchor Hollow is peaceful, but peace is work."
+          "0": "Stay sharp. Anchor Hollow is quiet — and quiet is a job."
         },
         "preUnlock": {
-          "0": "It's not safe out here... GET BACK TO TOWN!"
+          "0": "HEY — it's not safe out there. GET BACK TO TOWN before I have to tell your dad. Kidding. Mostly."
         },
         "bridgeBlocked": {
-          "0": "HOLD YOUR HORSES! Who said you could cross this bridge?"
+          "0": "HOLD YOUR HORSES — nobody crosses this bridge without me knowing their business first!"
         },
         "heed": {
           "intro": {
-            "0": "WOAH! Where do you think you're going??",
-            "1": "Well, what do you think is over there? A fancy hotel? Look kid, you aren't ready for what's across this bridge",
-            "2": "NO YOU AREN'T!",
-            "3": "Okay fine. If you're really so tough, cross this bridge, and stay a while. Let's say... 60 seconds. Sound good?",
-            "4": "HA! Alright, good luck!",
+            "0": "WOAH — where do you think YOU'RE going?",
+            "1": "What's over that bridge, huh? A spa? A bakery? Spoiler: wilder than that. And you're not ready.",
+            "2": "NO — YOU — AREN'T!",
+            "3": "Alright, fine. Prove it. Cross the bridge. Stay alive over there. Sixty seconds. On the clock.",
+            "4": "HA! Okay. May the tides favor you. And the wind. And literally anything else!",
             "player": {
               "0": "Yes I am.",
               "1": "Yes I am.",
@@ -490,13 +503,13 @@
             }
           },
           "wait": {
-            "0": "Cross this bridge, survive 60 seconds in the danger zone, then report back to me."
+            "0": "Bridge. Sixty seconds. Danger zone. Then you come running back. Hopefully attached to yourself."
           },
           "return": {
-            "0": "WHAT?? How did you survive that???",
-            "1": "Well, color me impressed. Not many in our town could survive out there...",
-            "2": "Tell you what, If you gear up right, and show me that you're ready, I'll help you learn how to fight these evil beasts.",
-            "3": "Don't worry, you'll know when you are ready. Until then, good luck.",
+            "0": "WHAT — how — HOW did you survive that?",
+            "1": "Okay. Okay. Color me... not prepared for that. Not many folks in Anchor Hollow last thirty seconds out there, let alone sixty.",
+            "2": "Tell you what, kid. When you're geared up and serious, find me again. I'll teach you how to actually fight what's over there — not just outrun it.",
+            "3": "You'll know when you're ready. Everyone does. Until then — don't get eaten.",
             "player": {
               "0": "I'm back!",
               "1": "I kinda just ran around..."
@@ -506,93 +519,149 @@
               "yay": "Yay!",
               "hooray": "Hooray!",
               "cool": "Cool."
+            },
+            "reaction": {
+              "yay": "'Yay'?? You just outran death and your reaction is 'yay.' I love it. I love this.",
+              "hooray": "HOORAY! That's the correct amount of volume for someone who forgot to be scared!",
+              "cool": "'Cool.' Look at you. Too cool for survival. Fine. Fine."
             }
           },
           "post": {
-            "0": "Come back when you are ready... you're not quite there yet."
+            "0": "Come back when you've got the gear and the guts. You're close. You're not quite there."
+          }
+        },
+        "bowlThatShines": {
+          "askAround": {
+            "0": "A LOST KEY? Oh, kid, if I had the key to everything, I'd RETIRE.",
+            "1": "I don't know about this one. Not a guard thing. Ask someone who actually LISTENS to the rumor mill.",
+            "player": {
+              "0": "Have you seen a key?"
+            }
           }
         }
       },
       "fisherman": {
         "greeting": {
-          "0": "Easy now. The fish bite when the water is calm and the hands are patient."
+          "0": "Easy. Fish bite when the water is calm — and the hands are patient."
+        },
+        "choice": {
+          "prompt": "What should I ask?",
+          "needRod": "Can I get a fishing rod?",
+          "basics": "How do I fish?"
+        },
+        "needRod": {
+          "hasRod": {
+            "0": "Got your rod. Good. Find water. Cast. Reel."
+          },
+          "noRod": {
+            "0": "Here. Your first rod. Don't drop it in the water.",
+            "1": "Equip it. Find a stretch of water. Cast. Reel when the line tells you."
+          }
+        },
+        "basics": {
+          "0": "Equip the rod. Find water. Cast the line. Reel when it bites.",
+          "1": "Land one and come back. You'll have the basics. Just the basics, mind. There's a secret down there — one I've never touched."
+        },
+        "postCatch": {
+          "0": "Ha. You did it. You've got the basics.",
+          "1": "There's a secret down there, kid. Older than the dock. Older than me. I've never touched the edge of it.",
+          "2": "Go further in. Meet the town. They'll teach you more than I can."
+        },
+        "bowlThatShines": {
+          "askAround": {
+            "0": "A key. Hm.",
+            "1": "Never pulled one out of the water. My trade is fish, not secrets.",
+            "2": "Try someone who watches people. That's not my hour.",
+            "player": {
+              "0": "Have you seen a key?"
+            }
+          }
         }
       },
       "merchant": {
         "greeting": {
-          "0": "If your pack feels light, my stall can fix that."
+          "0": "Light pack, heavy heart. I can fix both — for the right price."
         },
         "antiDeath": {
           "intro": {
             "0": "Looking to buy something?",
-            "1": "Then let's start with money. You got any?",
+            "1": "Alright. Step one of commerce: do you have any coin?",
             "2": "No... not a single coin.",
-            "3": "How are you even surviving in Anchor Hollow?",
-            "4": "I'm new here. Still figuring things out.",
-            "5": "Alright, I'll help. Find a nearby Yekbush and grab some yekberries for a barely nourishing meal.",
-            "6": "Bring them back to me when you've harvested one.",
+            "3": "Not one? How are you even upright in Anchor Hollow?",
+            "4": "I'm new here. Still figuring it out.",
+            "5": "Alright, alright. I'll help. No coin today — we'll skip straight to survival. Find a Yekbush nearby and pick some yekberries.",
+            "6": "Come back when you've harvested. Then we'll talk about real food.",
             "choice": {
               "prompt": "What do I even say?",
               "uhh": "Uhhh... I guess?"
             }
           },
           "harvest": {
-            "0": "Find a nearby Yekbush and gather some yekberries. Barely nourishing, but enough to keep you alive.",
-            "1": "Come back once you've picked a bush and we'll call you battle-ready."
+            "0": "Yekbush. Nearby. Pick some yekberries. Bitter, barely filling — but they keep a blade-cat upright.",
+            "1": "One bush's worth. That's all. Come back and I'll call you battle-ready."
           },
           "return": {
-            "0": "Good haul. Those yekberries keep fighters standing.",
-            "1": "For now. Come back when you want the advanced method, and I'll show you how to refine food.",
-            "2": "Keep a few slotted and use them before panic takes over. Then we'll upgrade your menu.",
+            "0": "Good haul. Those yekberries keep fighters standing when standing is the whole job.",
+            "1": "This is step one. Come back when you want the advanced method and I'll show you how to refine food.",
+            "2": "Slot a few. Use them before the panic hits, not during. Panic uses them wrong.",
             "player": {
               "0": "So this is just... survival food?"
             }
-          },
-          "sideBrew": {
+          }
+        },
+        "sideBrew": {
             "intro": {
-              "0": "Back for lesson two? Good. Raw food keeps you alive, refined food wins fights.",
-              "1": "Always. First trick: pressure extraction.",
-              "2": "Drop your berries, stomp them into liquid, then report back.",
+              "0": "Back for lesson two? Good. Raw food keeps you alive. Refined food wins fights.",
+              "1": "Always. First trick: pressure extraction. Sounds fancy. It isn't.",
+              "2": "Drop your berries on the ground. Stomp them into liquid. Come tell me when it's a puddle.",
               "player": {
                 "0": "So spending time on prep actually matters?"
               }
             },
             "stomp": {
-              "0": "Drop your yekberries on the ground and walk over them a few times.",
+              "0": "Drop the berries. Walk over them. Several times. Not gracefully.",
               "1": "No dainty steps. Mash them like they insulted your knife."
             },
             "jar": {
-              "0": "Perfect stomp-work. You wrung those berries into liquid.",
-              "1": "Hands can't hold a puddle, so use a jar. I'll spot you one for free.",
-              "2": "Next time, you pay. Glass doesn't grow on trees."
+              "0": "Perfect stomp. You reduced those berries to an insult of their former selves.",
+              "1": "Puddles slip through paws. Use a jar. I'll spot you one. Once.",
+              "2": "Next jar, you pay. Glass doesn't grow on trees — unless trees have really changed while I wasn't looking."
             },
             "collect": {
-              "0": "You made juice, now bottle it. Click the puddle and confirm the pour.",
-              "1": "One jar in, one serving of Yek Juice out. Chemistry with consequences."
+              "0": "You've got juice. Now bottle it. Tap the puddle. Confirm the pour.",
+              "1": "One jar in, one Yek Juice out. Chemistry. Consequences."
             },
             "finish": {
-              "0": "Now THAT is proper fuel. Smooth, sharp, and it actually keeps a blade-cat standing.",
-              "1": "Exactly. Skill in the kitchen is skill in combat, just with fewer screams.",
-              "2": "Come back later and I'll teach you deadlier recipes. Anchor Hollow feeds those who experiment.",
+              "0": "NOW that is fuel. Clean, sharp, and it actually keeps a blade-cat on its feet.",
+              "1": "Exactly. Skill in the kitchen is skill in combat — with fewer screams.",
+              "2": "Come back soon. Anchor Hollow feeds the ones who experiment. I'll teach you recipes that bite back.",
               "player": {
                 "0": "That healed way better than the raw berries."
               }
             }
           },
-          "waresGalore": {
-            "intro": {
-              "0": "I heard through the grapevine that you have some money now... are the stories true?",
-              "1": "Marvelous! A customer with coin is my favorite kind of miracle.",
-              "2": "Take a look at what I've got. Welcome to the stall!",
-              "player": {
-                "0": "I guess..."
-              }
-            },
-            "post": {
-              "0": "You've got the look of a customer now. My wares are ready when you are.",
-              "1": "Back again? Smart fish. Let's see what catches your eye.",
-              "2": "Coins burning a hole in your pocket? I've got just the thing.",
-              "3": "Welcome, welcome! Fresh stock, fair prices. Mostly."
+        "waresGalore": {
+          "intro": {
+            "0": "Heard a rumor on the wind — you've got coin now. True?",
+            "1": "Marvelous. A customer with actual currency is my favorite kind of miracle.",
+            "2": "Come see the stall. First look is on the house. First look only.",
+            "player": {
+              "0": "I guess..."
+            }
+          },
+          "post": {
+            "0": "You've got the walk of a paying customer. Stall's open.",
+            "1": "Back again? A shopkeeper loves a loyal nose.",
+            "2": "Coins? I have the thing. I have several things. I have a specific thing for you.",
+            "3": "Welcome back. Fresh stock. Fair prices. Mostly fair."
+          }
+        },
+        "bowlThatShines": {
+          "askAround": {
+            "0": "A lost key? Not on my shelf. I sell what I can count — and rumors don't stack.",
+            "1": "Try somebody who trades in whispers. I'm a knife-and-jar operation.",
+            "player": {
+              "0": "Have you seen a key?"
             }
           }
         }
@@ -603,9 +672,9 @@
         },
         "bowlThatShines": {
           "clue": {
-            "0": "What's up?",
-            "1": "Nope. But I heard this: when the sky is dark and the stars glimmer, the moon reveals treasure reflections in the water.",
-            "2": "If you're key hunting, check the docks at night.",
+            "0": "Oh — it's you again.",
+            "1": "A key. Hm. I heard this once, sitting on the docks alone: when the sky goes dark and the stars get loud, the moon spills treasure across the water.",
+            "2": "If you're hunting a key — docks, after nightfall. Go look.",
             "player": {
               "0": "Have you seen a key?"
             }
@@ -613,31 +682,31 @@
         },
         "villageWeirdo": {
           "intro": {
-            "0": "Traveler's request: could you bring me 1 yekberry?",
-            "1": "Specific goals build character. Please and thank you.",
+            "0": "A traveler's request, then. Bring me 19 yekberries. Exactly 19.",
+            "1": "Specific goals build character. Please. Thank you.",
             "player": {
-              "0": "One? That's oddly specific."
+              "0": "19? That's oddly specific."
             }
           },
           "collect": {
-            "0": "I still need 1 yekberry. Bring one and I'll make it worth your time."
+            "0": "Still waiting on those 19 yekberries. I keep my bargains specific — no one has an excuse."
           },
           "return": {
-            "0": "You actually came back with a yekberry. You're incredibly kind.",
-            "1": "Confession: this was a social experiment. I wanted to see if Anchor Hollow still had generous people.",
-            "2": "Fair. My budget is... less theatrical.",
-            "3": "I can spare one silver coin. It's not much, but it'll be useful.",
-            "4": "You've never had a coin? What, do you live under a rock?",
-            "5": "A silver coin is worth 100 bronze coins.",
-            "6": "And 100 silver coins make one gold coin.",
-            "7": "One silver might not look like much, but used properly, it can get you what you need.",
+            "0": "You actually came back. With exactly 19 yekberries. Hm.",
+            "1": "Confession — I wasn't really hungry. I wanted to see if anyone in this town still looks a stranger in the eye.",
+            "2": "Fair. It's a quiet way to run a test.",
+            "3": "Here — one silver. Not much. Silver has a way of becoming useful anyway.",
+            "4": "You've never had a coin? What, were you raised under a rock? Don't answer.",
+            "5": "One silver coin is worth a hundred bronze.",
+            "6": "A hundred silver make one gold.",
+            "7": "A single silver looks small. Spent carefully, it becomes exactly what you need.",
             "player": {
-              "0": "Bro is NOT MrBeast.",
+              "0": "Wait — this was a test?",
               "1": "I've never had a coin before..."
             }
           },
           "post": {
-            "0": "How's the silver treating you? Spend it wisely, not stylishly."
+            "0": "How's the silver treating you? Spend it wisely. Not stylishly."
           }
         }
       },
@@ -646,14 +715,14 @@
           "0": "A quiet mind hears what loud waves hide."
         },
         "bowlThatShines": {
-          "intro": {
-            "0": "You look tired.",
-            "1": "I've always been gifted.",
-            "2": "Ha! You're funny.",
-            "3": "I can share a secret. One that lifts weight from your shoulders and opens a whole new world.",
-            "4": "Good. Speak to the Sea Master.",
-            "5": "Tell him the collector of glass sent you.",
-            "6": "Do not improvise.",
+      "intro": {
+        "0": "You look tired.",
+        "1": "I've always been gifted.",
+        "2": "Ha! You're funny.",
+        "3": "I'll give you a secret. It trades weight on your shoulders for weight behind your eyes. I suspect you can carry it.",
+        "4": "Speak to the Sea Master.",
+        "5": "Tell him, word for word: the collector of glass sent you.",
+        "6": "Those exact words. A single word out of place and he'll turn you away.",
             "choice": {
               "prompt": "Do I want to hear it?",
               "yes": "Yes."
@@ -664,47 +733,73 @@
             }
           },
           "reminder": {
-            "0": "Find the Sea Master and say the collector of glass sent you."
+            "0": "Find the Sea Master. Say these exact words: the collector of glass sent you. Nothing more, nothing different."
+          },
+          "askAround": {
+            "0": "I've said my piece. The rest is yours to find.",
+            "1": "Keys choose their owners. Stop chasing and start listening.",
+            "player": {
+              "0": "Have you seen a key?"
+            }
           }
         }
       },
       "dad": {
+        "intro": {
+          "0": "I fear this is it, kid. The big cat nap. The eternal sunbeam.",
+          "1": "Don't talk like that, Pop. You're just... coughing up a really big hairball. You'll be fine.",
+          "2": "No... no. I've done the math. I survived the Vacuum War of '12. I survived falling off the fridge. I even survived that time I ate the shiny plastic wrapper. That's eight lives, kid. I'm on number nine. The tank is empty.",
+          "3": "There is... a way. A legend the Old Toms used to whisper back on the mainland. A cure. Enough to stretch one more life out of a cat who ran out.",
+          "4": "A tenth life? That's a myth. Like the Infinite Red Dot.",
+          "5": "It's real. I can feel it in my jellies. But I'm too weak to hunt for it. You... you have to be the one. You have to find the\u2014",
+          "6": "The only way I keep breathing is if you bring me the\u2014",
+          "7": "...the\u2026",
+          "8": "Pop? Pop! The what?? The WHAT, Pop?!",
+          "9": "Hrk-shoooo. Hrk-shoooo.",
+          "10": "Unbelievable. He fell asleep mid-quest.",
+          "11": "Fine. I'll find it. Whatever \"it\" is. Anything for pops."
+        },
         "fallback": {
-          "0": "I'm proud of you. Always have been."
+          "0": "Come here, kid. Let me look at you while I still can."
         },
         "random": {
           "0": {
-            "0": "Hey, kiddo... Come closer.",
-            "1": "I know things look rough right now. But you... you've got something most people don't.",
-            "2": "You're going to save this world. I believe that with everything I have left."
+            "0": "There you are. Closer. These old whiskers can't pick you out of a sunbeam anymore.",
+            "1": "I've been thinking about it. About what I left undone. Your name wasn't on that list.",
+            "2": "You don't need a prophecy. You need a sharp knife and a full belly. Go get both."
           },
           "1": {
-            "0": "There you are...",
-            "1": "I wish I could stand up and walk beside you. But my legs gave out a long time ago.",
-            "2": "That doesn't matter though. You're stronger than I ever was. Go prove it."
+            "0": "Hey, kiddo.",
+            "1": "I used to patrol the living room like it was a battlefield. Couch to fridge. Fridge to window. Legendary routes. Gone now.",
+            "2": "Keep moving for both of us, yeah? I'll nap for both of us."
           },
           "2": {
-            "0": "Back again? Good. I like seeing your face.",
-            "1": "Every great hero started out not knowing what they were doing. You're right on schedule.",
+            "0": "Back again. Good. You smell like salt and adventure. That's my favorite smell.",
+            "1": "Every great cat who ever did anything started out not knowing a single thing. You're early. That's all you are.",
             "2": "You really think I can do this?",
-            "3": "I don't think it. I know it."
+            "3": "I don't think. I know. I'm a cat. We don't do 'think.'"
           },
           "3": {
-            "0": "The world's in bad shape, kid. Worse than when I was your age.",
-            "1": "But it chose you for a reason. And so did I, when I brought you here.",
-            "2": "Don't carry the weight alone. Find friends. Trust them. Then save us all."
+            "0": "The world's gotten stranger since I was your age. Bigger and more bruised.",
+            "1": "But strange is where cats live, kid. You were born for strange. I made sure.",
+            "2": "Don't walk it alone. Pick a small crew. One cat's trust is worth ten strangers' promises."
           },
           "4": {
-            "0": "You know what kept me going all those years out there?",
+            "0": "Want to know the thing that kept me moving all those years on the mainland?",
             "1": "What?",
-            "2": "Knowing I'd come home to you. And now you're the one heading out.",
-            "3": "Make it count. I'll be right here when you get back."
+            "2": "The thought of coming home and watching you fall asleep on warm laundry. And now you're the one heading out.",
+            "3": "Make it count, kid. I'll be right here. Resting my eyes. Mostly resting."
           },
           "5": {
-            "0": "Hmm? Oh, don't mind me. Just resting my eyes.",
-            "1": "Listen... whatever happens out there, remember who you are.",
-            "2": "You're my kid. And my kid doesn't give up."
+            "0": "Hmm? Oh. Just resting my eyes. Professionally.",
+            "1": "Listen. Whatever you run into out there — remember you're my kid.",
+            "2": "My kid has sharp knives. My kid doesn't flinch. My kid comes home."
           }
+        }
+      },
+      "mc": {
+        "arrival": {
+          "0": "Woah... where am I?"
         }
       }
     }
@@ -847,7 +942,8 @@
     "restocksIn": "Restocks in {time}",
     "restockingSoon": "Restocking soon...",
     "outOfStock": "Out of Stock",
-    "selectItem": "Select an item"
+    "selectItem": "Select an item",
+    "close": "Close"
   },
   "system": {
     "on": "ON",

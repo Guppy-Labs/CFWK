@@ -7,6 +7,29 @@ import { LightingManager } from '../fx/LightingManager';
 import { WaterSystem } from '../fx/water/WaterSystem';
 import { PlayerShadow } from '../player/PlayerShadow';
 import { AINpcVisualDefinition } from './AINpcRegistry';
+import { getFootstepSurfaceAt } from '../audio/FootstepSurfaceDetector';
+import type { AINpcManager } from './AINpcManager';
+import type { AudioManager, FootstepSurface } from '../audio/AudioManager';
+
+const GREMLIN_FOOTSTEP_INTERVAL_MS = 420;
+const GREMLIN_FOOTSTEP_BASE_VOLUME = 0.07;
+const GREMLIN_FOOTSTEP_PITCH_MULTIPLIER = 0.7;
+const GREMLIN_FOOTSTEP_MAX_HEARING_RANGE_PX = 280;
+const GREMLIN_FOOTSTEP_PITCH_MIN = 0.85;
+const GREMLIN_FOOTSTEP_PITCH_MAX = 1.15;
+
+const GREMLIN_IDLE_GRUNT_MIN_MS = 3500;
+const GREMLIN_IDLE_GRUNT_MAX_MS = 8000;
+const GREMLIN_CHASE_GRUNT_MIN_MS = 1500;
+const GREMLIN_CHASE_GRUNT_MAX_MS = 3500;
+const GREMLIN_CHASE_SECOND_GRUNT_DELAY_MS = 190;
+
+const SURFACE_SOUND_KEYS: Record<FootstepSurface, string> = {
+    sand: 'footstep-sand',
+    grass: 'footstep-grass',
+    stone: 'footstep-stone',
+    wood: 'footstep-wood'
+};
 
 export type AINpcEntityConfig = {
     definition: AINpcVisualDefinition;
@@ -16,6 +39,7 @@ export type AINpcEntityConfig = {
     depthManager?: DepthManager;
     lightingManager?: LightingManager;
     groundLayers?: Phaser.Tilemaps.TilemapLayer[];
+    manager?: AINpcManager;
 };
 
 export class AINpcEntity {
@@ -36,10 +60,21 @@ export class AINpcEntity {
     private waterSystem?: WaterSystem;
     private shadow?: PlayerShadow;
     private destroyed = false;
+    private lastFootstepTime = 0;
+    private manager?: AINpcManager;
+    private lastOriginState: string = '';
+    private lastOriginFlipX = false;
+    private lastAnim: string = '';
+    private lastPathDebug: string = '';
+    private nextPeriodicGruntAtMs = 0;
+    private currentAttackSwingSound?: Phaser.Sound.WebAudioSound;
+    private attackSwingPendingLand = false;
+    private pendingSecondGruntTimer?: Phaser.Time.TimerEvent;
 
     constructor(scene: Phaser.Scene, config: AINpcEntityConfig) {
         this.scene = scene;
         this.definition = config.definition;
+        this.manager = config.manager;
         this.targetX = config.state.x;
         this.targetY = config.state.y;
         this.targetAnim = config.state.anim;
@@ -78,7 +113,19 @@ export class AINpcEntity {
 
         this.shadow = new PlayerShadow(this.scene, this.sprite, config.lightingManager);
 
+        this.lastAnim = config.state.anim;
+        this.lastPathDebug = config.state.pathDebug ?? '';
+        this.nextPeriodicGruntAtMs = Date.now() + this.randomPeriodicGruntInterval();
+
         this.applyDepth();
+    }
+
+    private randomPeriodicGruntInterval(): number {
+        const chasing = this.lastPathDebug.length > 0;
+        const minMs = chasing ? GREMLIN_CHASE_GRUNT_MIN_MS : GREMLIN_IDLE_GRUNT_MIN_MS;
+        const maxMs = chasing ? GREMLIN_CHASE_GRUNT_MAX_MS : GREMLIN_IDLE_GRUNT_MAX_MS;
+        const spread = Math.max(1, maxMs - minMs);
+        return minMs + Math.floor(Math.random() * spread);
     }
 
     updateFromState(nextState: IAiNpcState) {
@@ -95,8 +142,137 @@ export class AINpcEntity {
             height: nextState.hitbox?.height ?? this.hitbox.height,
             collidableHeight: nextState.hitbox?.collidableHeight ?? this.hitbox.collidableHeight
         };
-        this.applySpriteOrigin();
+        this.lastOriginState = '';
         this.debugPath = this.parseDebugPath(nextState.pathDebug);
+
+        this.handleGremlinStateTransitions(nextState);
+    }
+
+    private handleGremlinStateTransitions(nextState: IAiNpcState) {
+        if (this.destroyed) return;
+        if (this.definition.kind !== 'gremlin') return;
+
+        const prevAnim = this.lastAnim;
+        const prevPath = this.lastPathDebug;
+        const nextAnim = nextState.anim;
+        const nextPath = nextState.pathDebug ?? '';
+
+        this.lastAnim = nextAnim;
+        this.lastPathDebug = nextPath;
+
+        // Stop periodic grunts once dead and let any pending swing finish naturally.
+        if (nextAnim === 'death' || nextState.currentHealth <= 0) return;
+
+        const wasChasing = prevPath.length > 0;
+        const isChasing = nextPath.length > 0;
+
+        if (!wasChasing && isChasing) {
+            this.playChaseStartGrunts();
+        }
+
+        if (prevAnim !== 'attack' && nextAnim === 'attack') {
+            this.playAttackSwing();
+            // A vocalization alongside the swing reads well ("as they attack").
+            this.playGruntNow();
+        }
+    }
+
+    private getListenerDistance(): number | undefined {
+        const ctx = this.manager?.getFootstepContext();
+        const playerPos = ctx?.playerPos;
+        if (!playerPos) return undefined;
+        return Math.hypot(this.sprite.x - playerPos.x, this.sprite.y - playerPos.y);
+    }
+
+    private getAudioManager(): AudioManager | undefined {
+        return this.manager?.getFootstepContext().audioManager;
+    }
+
+    private playGruntNow() {
+        if (this.destroyed || this.definition.kind !== 'gremlin') return;
+        if (this.targetAnim === 'death') return;
+        const audio = this.getAudioManager();
+        const distance = this.getListenerDistance();
+        if (!audio || distance === undefined) return;
+        audio.playGremlinGrunt(distance);
+    }
+
+    private playChaseStartGrunts() {
+        this.playGruntNow();
+        // Second grunt back-to-back for emphasis when chase begins.
+        this.pendingSecondGruntTimer?.remove(false);
+        this.pendingSecondGruntTimer = this.scene.time.delayedCall(
+            GREMLIN_CHASE_SECOND_GRUNT_DELAY_MS,
+            () => {
+                this.pendingSecondGruntTimer = undefined;
+                this.playGruntNow();
+            }
+        );
+        // Re-seed the periodic timer so subsequent grunts use the faster chase cadence.
+        this.nextPeriodicGruntAtMs = Date.now() + this.randomPeriodicGruntInterval();
+    }
+
+    private playAttackSwing() {
+        if (this.destroyed || this.definition.kind !== 'gremlin') return;
+        const audio = this.getAudioManager();
+        const distance = this.getListenerDistance();
+        if (!audio || distance === undefined) return;
+
+        // If a previous swing is still going, replace it cleanly.
+        if (this.currentAttackSwingSound) {
+            this.currentAttackSwingSound.off('complete');
+            this.currentAttackSwingSound.stop();
+            this.currentAttackSwingSound.destroy();
+            this.currentAttackSwingSound = undefined;
+        }
+        this.attackSwingPendingLand = false;
+
+        const swing = audio.playGremlinWeaponSwing(distance);
+        if (!swing) return;
+
+        this.currentAttackSwingSound = swing;
+        swing.once('complete', () => {
+            if (this.currentAttackSwingSound === swing) {
+                this.currentAttackSwingSound = undefined;
+            }
+            if (this.attackSwingPendingLand) {
+                this.attackSwingPendingLand = false;
+                this.playAttackLand();
+            }
+        });
+    }
+
+    private playAttackLand() {
+        if (this.destroyed || this.definition.kind !== 'gremlin') return;
+        const audio = this.getAudioManager();
+        const distance = this.getListenerDistance();
+        if (!audio || distance === undefined) return;
+        audio.playGremlinWeaponLand(distance);
+    }
+
+    /**
+     * Called by the manager when the server confirms this gremlin's attack
+     * actually damaged a player. Chains the "land" sound back-to-back after
+     * the currently-playing swing (or plays immediately if swing is done).
+     */
+    onAttackHit() {
+        if (this.destroyed || this.definition.kind !== 'gremlin') return;
+        if (this.currentAttackSwingSound && this.currentAttackSwingSound.isPlaying) {
+            this.attackSwingPendingLand = true;
+            return;
+        }
+        this.playAttackLand();
+    }
+
+    private updatePeriodicGrunts() {
+        if (this.destroyed || this.definition.kind !== 'gremlin') return;
+        if (this.targetAnim === 'death') return;
+
+        const now = Date.now();
+        if (now < this.nextPeriodicGruntAtMs) return;
+
+        this.nextPeriodicGruntAtMs = now + this.randomPeriodicGruntInterval();
+        this.playGruntNow();
     }
 
     update(delta: number) {
@@ -120,6 +296,50 @@ export class AINpcEntity {
 
         this.waterSystem?.update(delta);
         this.shadow?.update();
+        this.updateFootsteps(movedX, movedY);
+        this.updatePeriodicGrunts();
+    }
+
+    private updateFootsteps(movedX: number, movedY: number) {
+        if (!this.manager || this.definition.kind !== 'gremlin') return;
+        if (this.targetAnim !== 'walk' && this.targetAnim !== 'idle') return;
+
+        const speed = Math.hypot(movedX, movedY);
+        if (speed < 0.15) return;
+
+        const now = Date.now();
+        if (now - this.lastFootstepTime < GREMLIN_FOOTSTEP_INTERVAL_MS) return;
+        this.lastFootstepTime = now;
+
+        const ctx = this.manager.getFootstepContext();
+        if (!ctx.audioManager || !ctx.map) return;
+
+        const surface = getFootstepSurfaceAt(ctx.map, this.sprite.x, this.sprite.y, ctx.mapFile);
+        const soundKey = SURFACE_SOUND_KEYS[surface];
+        if (!this.scene.cache.audio.exists(soundKey)) return;
+
+        const playerPos = ctx.playerPos;
+        if (!playerPos) return;
+
+        const dist = Math.hypot(this.sprite.x - playerPos.x, this.sprite.y - playerPos.y);
+        if (dist > GREMLIN_FOOTSTEP_MAX_HEARING_RANGE_PX) return;
+
+        const distanceFalloff = 1 - (dist / GREMLIN_FOOTSTEP_MAX_HEARING_RANGE_PX);
+        const volume = ctx.audioManager.getEffectiveNpcVolume(
+            GREMLIN_FOOTSTEP_BASE_VOLUME * distanceFalloff
+        );
+        if (volume < 0.001) return;
+
+        const pitchRange = GREMLIN_FOOTSTEP_PITCH_MAX - GREMLIN_FOOTSTEP_PITCH_MIN;
+        const pitchVariation = GREMLIN_FOOTSTEP_PITCH_MIN + Math.random() * pitchRange;
+        const rate = pitchVariation * GREMLIN_FOOTSTEP_PITCH_MULTIPLIER;
+        const detune = (pitchVariation * GREMLIN_FOOTSTEP_PITCH_MULTIPLIER - 1) * 200;
+
+        const footstep = this.scene.sound.add(soundKey, { volume, rate, detune }) as Phaser.Sound.WebAudioSound;
+        footstep.play();
+        footstep.once('complete', () => footstep.destroy());
+
+        this.manager.reportGremlinFootstep(surface);
     }
 
     destroy() {
@@ -127,6 +347,15 @@ export class AINpcEntity {
         this.destroyed = true;
         this.hitFlashTween?.stop();
         this.hitFlashTween = undefined;
+        this.pendingSecondGruntTimer?.remove(false);
+        this.pendingSecondGruntTimer = undefined;
+        if (this.currentAttackSwingSound) {
+            this.currentAttackSwingSound.off('complete');
+            this.currentAttackSwingSound.stop();
+            this.currentAttackSwingSound.destroy();
+            this.currentAttackSwingSound = undefined;
+        }
+        this.attackSwingPendingLand = false;
         this.waterSystem?.destroy();
         this.shadow?.destroy();
         this.sprite?.destroy();
@@ -263,6 +492,12 @@ export class AINpcEntity {
             this.sprite.play(animKey, true);
         }
 
+        if (state !== this.lastOriginState || shouldMirror !== this.lastOriginFlipX) {
+            this.lastOriginState = state;
+            this.lastOriginFlipX = shouldMirror;
+            this.applySpriteOrigin(state);
+        }
+
         if (this.sprite.anims.currentAnim && state === 'walk') {
             const t = Phaser.Math.Clamp(speed / this.definition.walkAnimSpeedMaxVelocity, 0, 1);
             const targetRate = Phaser.Math.Linear(this.definition.walkAnimSpeedMin, this.definition.walkAnimSpeedMax, t);
@@ -274,21 +509,30 @@ export class AINpcEntity {
         }
     }
 
-    private applySpriteOrigin() {
+    private applySpriteOrigin(displayedState?: 'idle' | 'walk' | 'attack' | 'death') {
         if (this.destroyed || !this.sprite || !this.sprite.active) return;
-        const state: 'idle' | 'walk' | 'attack' | 'death' =
-            this.targetAnim === 'death'
-                ? 'death'
-                : (this.targetAnim === 'attack' ? 'attack' : (this.targetAnim === 'walk' ? 'walk' : 'idle'));
-        const centerOffsetPx = this.definition.centerOffsetXByState?.[state] ?? 0;
-        // The configured offset assumes the mirrored-left visual case.
-        // Invert it for non-mirrored (right-facing) so the center correction matches direction.
-        const directionAdjustedOffsetPx = this.sprite.flipX ? centerOffsetPx : -centerOffsetPx;
-        const frameWidth = Math.max(1, this.sprite.frame?.realWidth ?? this.definition.frameWidth);
-        const collidableHeight = Math.max(1, this.hitbox.collidableHeight || this.hitbox.height);
-        const frameHeight = Math.max(1, this.sprite.frame?.realHeight ?? this.definition.frameHeight);
-        const originX = Phaser.Math.Clamp(0.5 - (directionAdjustedOffsetPx / frameWidth), 0, 1);
-        const originY = 1 - (collidableHeight / (2 * frameHeight));
+        const state: 'idle' | 'walk' | 'attack' | 'death' = displayedState ??
+            (this.targetAnim === 'death' ? 'death'
+                : (this.targetAnim === 'attack' ? 'attack'
+                    : (this.targetAnim === 'walk' ? 'walk' : 'idle')));
+
+        const centerOffsetXPx = this.definition.centerOffsetXByState?.[state] ?? 0;
+        const centerOffsetYPx = this.definition.centerOffsetYByState?.[state] ?? 0;
+
+        // Tuner measures offsets for the unflipped (right-facing) sprite.
+        // Negate X when flipped (left-facing) since mirroring swaps left/right.
+        const dirXPx = this.sprite.flipX ? -centerOffsetXPx : centerOffsetXPx;
+
+        const frameW = Math.max(1, this.sprite.frame?.realWidth ?? this.definition.frameWidth);
+        const frameH = Math.max(1, this.sprite.frame?.realHeight ?? this.definition.frameHeight);
+        const colH = Math.max(1, this.hitbox.collidableHeight || this.hitbox.height);
+        const idleH = Math.max(1, this.definition.frameHeightByState?.idle ?? this.definition.frameHeight);
+
+        const originX = 0.5 - (dirXPx / frameW);
+        // Anchor at feet using idle frame height as reference so that character
+        // center stays at a consistent screen position across all animation states.
+        const originY = 0.5 + (idleH - colH - 2 * centerOffsetYPx) / (2 * frameH);
+
         this.sprite.setOrigin(originX, originY);
     }
 

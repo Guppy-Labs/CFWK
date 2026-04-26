@@ -140,6 +140,7 @@ export class InstanceRoom extends Room<InstanceState> {
     private sprintStateBySession = new Map<string, boolean>();
     private pendingStatsDeltasBySession = new Map<string, IPlayerStatsDelta>();
     private tutorialStateBySession = new Map<string, IGuideTutorialState>();
+    private tutorialStabAppliedBySession = new Map<string, boolean>();
     private glimmerbowlUnlockedByUserId = new Map<string, boolean>();
     private hasOwnedScarByUserId = new Map<string, boolean>();
     private fishCombatByUserId = new Map<string, FishCombatRuntimeState>();
@@ -162,6 +163,7 @@ export class InstanceRoom extends Room<InstanceState> {
     private heedTheWarningStayObjectiveByUserId = new Map<string, boolean>();
     private dangerRegion: RegionRuntime | null = null;
     private wasInDangerByUserId = new Map<string, boolean>();
+    private clientTimeOffsetByUserId = new Map<string, number>();
     private dropRefineTouchByUserAndDrop = new Map<string, number>();
     private dropRefineInsideByUserAndDrop = new Map<string, boolean>();
     private advancementsManager = this.deps.createAdvancementsManager('lobby.tmj');

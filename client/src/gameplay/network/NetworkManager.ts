@@ -337,6 +337,7 @@ export class NetworkManager {
 
         this.isConnecting = true;
         this.connectionError = null;
+        this.advancementsCache = null;
 
         try {
             const joinToken = this.currentInstance.joinToken;
@@ -515,8 +516,7 @@ export class NetworkManager {
                     lines: [
                         {
                             speaker: 'npc',
-                            textKey: 'dialogue.npc.guard.bridgeBlocked.0',
-                            text: 'HOLD YOUR HORSES! Who said you could cross this bridge?'
+                            textKey: 'dialogue.npc.guard.bridgeBlocked.0'
                         }
                     ]
                 }
@@ -901,6 +901,12 @@ export class NetworkManager {
     sendGuideTutorialUpdate(tutorial: Partial<IGuideTutorialState>) {
         if (this.currentRoom) {
             this.currentRoom.send('guide:update', { tutorial });
+        }
+    }
+
+    sendGuideTutorialStab() {
+        if (this.currentRoom) {
+            this.currentRoom.send('guide:tutorial-stab', {});
         }
     }
 

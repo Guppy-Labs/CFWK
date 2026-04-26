@@ -295,9 +295,17 @@ export class MCAnimationController {
 
         if (player.anims.currentAnim && newAnimation === 'walk') {
             const walkSpeed = Math.max(0, actualSpeed);
-            const t = Phaser.Math.Clamp(walkSpeed / this.config.walkAnimSpeedMaxVelocity, 0, 1);
-            const targetRate = Phaser.Math.Linear(this.config.walkAnimSpeedMin, this.config.walkAnimSpeedMax, t);
-            const timeScale = targetRate / this.config.walkFrameRate;
+            // Scale animation rate proportionally to movement velocity. We treat
+            // half of `walkAnimSpeedMaxVelocity` (i.e. normal walk speed) as the
+            // reference point that plays at 1.0x timeScale. Sprint (2x walk) then
+            // plays near 2.0x, which visually reads as "running" even without a
+            // dedicated run clip. Clamps prevent degenerate rates.
+            const referenceSpeed = Math.max(0.001, this.config.walkAnimSpeedMaxVelocity * 0.5);
+            const proportional = walkSpeed / referenceSpeed;
+            // Translate the original min/max rate band into min/max timeScale multipliers.
+            const minScale = this.config.walkAnimSpeedMin / this.config.walkFrameRate;
+            const maxScale = this.config.walkAnimSpeedMax / this.config.walkFrameRate;
+            const timeScale = Phaser.Math.Clamp(proportional, minScale, maxScale);
             player.anims.timeScale = timeScale;
         } else if (player.anims.currentAnim) {
             player.anims.timeScale = 1.0;

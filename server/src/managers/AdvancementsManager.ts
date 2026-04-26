@@ -566,7 +566,12 @@ export class AdvancementsManager {
         return updates;
     }
 
-    async onPlayerMoved(userId: string, x: number, y: number): Promise<IAdvancementAlertMessage[]> {
+    async onPlayerMoved(
+        userId: string,
+        x: number,
+        y: number,
+        clientTimeOffsetMs: number = 0
+    ): Promise<IAdvancementAlertMessage[]> {
         if (!this.isPersistentUserId(userId)) return [];
         if (this.regions.length === 0) return [];
 
@@ -586,7 +591,7 @@ export class AdvancementsManager {
         const alerts: IAdvancementAlertMessage[] = [...timedUpdates.alerts];
         let shouldPersist = timedUpdates.alerts.length > 0 || timedUpdates.delayedNewQuestCounts.length > 0;
 
-        const currentHour = this.getCurrentWorldHour();
+        const currentHour = this.getCurrentWorldHour(clientTimeOffsetMs);
         const timeWindowUpdates = this.applyQuestEvent(state, {
             kind: 'time-window',
             hour: currentHour,
@@ -885,9 +890,37 @@ export class AdvancementsManager {
         return false;
     }
 
-    private getCurrentWorldHour(): number {
-        const worldTime = calculateWorldTime();
+    private getCurrentWorldHour(offsetMs: number = 0): number {
+        const normalizedOffset = Number.isFinite(offsetMs) ? Math.max(0, Math.floor(offsetMs)) : 0;
+        const worldTime = calculateWorldTime(Date.now() + normalizedOffset);
         return Math.max(0, Math.min(23, Math.floor(worldTime.hour)));
+    }
+
+    /**
+     * Applies a synthetic time-window event for the user using the supplied
+     * client time offset so the Skip to Night feature can advance the
+     * wait-for-time-window objective immediately without requiring the
+     * player to move.
+     */
+    async applyTimeWindowForUser(userId: string, clientTimeOffsetMs: number): Promise<AdvancementsUpdate> {
+        if (!this.isPersistentUserId(userId)) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+        const state = await this.getOrLoadState(userId);
+        if (!state) {
+            return { alerts: [], delayedNewQuestCounts: [] };
+        }
+        const hour = this.getCurrentWorldHour(clientTimeOffsetMs);
+        const updates = this.applyQuestEvent(state, {
+            kind: 'time-window',
+            hour,
+            startHour: hour,
+            endHourExclusive: hour
+        });
+        if (updates.alerts.length > 0 || updates.delayedNewQuestCounts.length > 0) {
+            await this.persistState(userId, state);
+        }
+        return updates;
     }
 
     private findRegionAtPosition(x: number, y: number): string | null {
@@ -1056,6 +1089,8 @@ export class AdvancementsManager {
                 : null,
             forceSalmonCatch: raw.forceSalmonCatch === true,
             forceFoodGuideHeal: raw.forceFoodGuideHeal === true,
+            introCutsceneCompleted: raw.introCutsceneCompleted === true,
+            introArrivalCompleted: raw.introArrivalCompleted === true,
             updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : null
         };
     }

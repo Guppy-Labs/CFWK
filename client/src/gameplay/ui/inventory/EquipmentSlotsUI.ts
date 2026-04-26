@@ -3,6 +3,7 @@ import { InventoryDisplayItem } from './InventorySlotsUI';
 import { MobileControls } from '../MobileControls';
 import { LocaleManager } from '../../i18n/LocaleManager';
 import { BitmapFontRenderer } from '../BitmapFontRenderer';
+import { ItemTextureLoader } from '../../assets/ItemTextureLoader';
 
 export type EquipmentSlotType = 'rod' | 'usable';
 
@@ -71,6 +72,7 @@ export class EquipmentSlotsUI {
     private localeManager = LocaleManager.getInstance();
     private localeChangedHandler?: (event: Event) => void;
     private readonly usableSlotTextureKey = 'ui-slot-base';
+    private itemTextureLoader = ItemTextureLoader.getInstance();
 
     private config: Required<EquipmentSlotsConfig>;
 
@@ -346,6 +348,26 @@ export class EquipmentSlotsUI {
         return this.isRodSlotSelected;
     }
 
+    /**
+     * Resolve the best currently-available texture key for an equipped item.
+     * If the preferred icon key is not yet loaded, kick off the texture loader
+     * and, once it resolves, swap the slot's icon texture in-place so the
+     * equipped rod/usable no longer shows the "__MISSING" placeholder.
+     */
+    private resolveEquippedIconKey(item: InventoryDisplayItem, onResolved: (textureKey: string) => void): string {
+        if (this.scene.textures.exists(item.iconKey)) return item.iconKey;
+
+        void this.itemTextureLoader.ensureItemIconTexture(this.scene, item.id, 18).then((loadedKey) => {
+            const finalKey = loadedKey ?? this.itemTextureLoader.getBestTextureKey(this.scene, item.id, 18);
+            if (finalKey && finalKey !== '__MISSING' && this.scene.textures.exists(finalKey)) {
+                onResolved(finalKey);
+            }
+        });
+
+        const fallback = this.itemTextureLoader.getBestTextureKey(this.scene, item.id, 18);
+        return fallback !== '__MISSING' && this.scene.textures.exists(fallback) ? fallback : '__MISSING';
+    }
+
     private getSlotScreenPosition(): { x: number; y: number } | undefined {
         if (!this.lastLayout) return undefined;
         const { rightPageLeftEdgeX, rightPageTopEdgeY, scale } = this.lastLayout;
@@ -457,8 +479,15 @@ export class EquipmentSlotsUI {
         // Update slot texture to filled
         this.rodSlot.setTexture('ui-slot-filled');
 
-        // Create the rod icon
-        this.rodIcon = this.scene.add.image(0, 0, rod.iconKey).setOrigin(0.5, 0.5);
+        // Resolve the best-available icon texture now; if it's not loaded yet,
+        // swap in the real texture as soon as the loader finishes so equipped
+        // icons no longer need an inventory reopen to appear.
+        const initialKey = this.resolveEquippedIconKey(rod, (loadedKey) => {
+            if (this.equippedRod !== rod) return;
+            if (!this.rodIcon || !this.rodIcon.active) return;
+            this.rodIcon.setTexture(loadedKey);
+        });
+        this.rodIcon = this.scene.add.image(0, 0, initialKey).setOrigin(0.5, 0.5);
         this.container.add(this.rodIcon);
 
         // Ensure icon is behind indicators
@@ -562,7 +591,14 @@ export class EquipmentSlotsUI {
         this.equippedUsables[slotIndex] = item;
         this.usableSlots[slotIndex].setTexture(this.usableSlotTextureKey);
 
-        const icon = this.scene.add.image(0, 0, item.iconKey).setOrigin(0.5, 0.5);
+        const initialKey = this.resolveEquippedIconKey(item, (loadedKey) => {
+            // Guard: the slot may have been reassigned or cleared in the meantime.
+            if (this.equippedUsables[slotIndex] !== item) return;
+            const currentIcon = this.usableIcons[slotIndex];
+            if (!currentIcon || !currentIcon.active) return;
+            currentIcon.setTexture(loadedKey);
+        });
+        const icon = this.scene.add.image(0, 0, initialKey).setOrigin(0.5, 0.5);
         icon.setPosition(0, this.getUsableSlotLocalY(slotIndex));
         this.usableIcons[slotIndex] = icon;
         this.container.add(icon);

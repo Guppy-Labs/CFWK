@@ -63,11 +63,8 @@ export const AUDIO_CONFIG = {
         questCompleted: {
             volume: 1,
         },
-        questTrack: {
-            volume: 0.72,
-        },
         achievementUnlocked: {
-            volume: 1,
+            volume: 0.7,
         },
         locationDiscovered: {
             volume: 0.95,
@@ -123,6 +120,30 @@ export const AUDIO_CONFIG = {
         },
         cabinRoofToggle: {
             volume: 0.72,
+        }
+    },
+
+    // Gremlin enemy SFX
+    gremlin: {
+        grunt: {
+            baseVolume: 0.55,
+            maxHearingRangePx: 420,
+            // Ambient grunts while idle/wandering.
+            idleIntervalMinMs: 3500,
+            idleIntervalMaxMs: 8000,
+            // More frequent when actively chasing a player.
+            chaseIntervalMinMs: 1500,
+            chaseIntervalMaxMs: 3500,
+            chaseStartSecondGruntDelayMs: 190,
+            pitchMin: 0.9,
+            pitchMax: 1.1,
+        },
+        weapon: {
+            swingBaseVolume: 0.55,
+            landBaseVolume: 0.7,
+            maxHearingRangePx: 450,
+            pitchMin: 0.95,
+            pitchMax: 1.06,
         }
     },
 };
@@ -187,7 +208,6 @@ const SUBTITLE_KEYS: Record<string, string> = {
     'advancement-quest-started': 'subtitles.questStarted',
     'advancement-quest-objective': 'subtitles.questObjective',
     'advancement-quest-completed': 'subtitles.questCompleted',
-    'advancement-quest-track': 'subtitles.questTracked',
     'advancement-achievement-unlocked': 'subtitles.achievementUnlocked',
     'advancement-location-discovered': 'subtitles.locationDiscovered',
     'dialogue-click': 'subtitles.dialogueText',
@@ -196,6 +216,14 @@ const SUBTITLE_KEYS: Record<string, string> = {
     'cabin-door-open': 'subtitles.cabinDoorOpen',
     'cabin-door-close': 'subtitles.cabinDoorClose',
     'cabin-roof-toggle': 'subtitles.cabinRoofToggle'
+};
+
+const GREMLIN_FOOTSTEP_SUBTITLE_KEYS: Record<string, { singular: string; plural: string }> = {
+    sand:  { singular: 'subtitles.gremlinFootstepSand',  plural: 'subtitles.gremlinFootstepSandPlural' },
+    grass: { singular: 'subtitles.gremlinFootstepGrass', plural: 'subtitles.gremlinFootstepGrassPlural' },
+    stone: { singular: 'subtitles.gremlinFootstepStone', plural: 'subtitles.gremlinFootstepStonePlural' },
+    wood:  { singular: 'subtitles.gremlinFootstepWood',  plural: 'subtitles.gremlinFootstepWoodPlural' },
+    water: { singular: 'subtitles.gremlinFootstepWater', plural: 'subtitles.gremlinFootstepWaterPlural' }
 };
 
 /**
@@ -214,6 +242,8 @@ export class AudioManager {
     // Music
     private currentMusic?: Phaser.Sound.BaseSound;
     private musicBaseVolume = AUDIO_CONFIG.music.volume;
+    private cutsceneMusic?: Phaser.Sound.BaseSound;
+    private cutsceneMusicBaseVolume = 0;
     
     // Ambient loops
     private ambientSounds: Map<string, Phaser.Sound.BaseSound> = new Map();
@@ -246,6 +276,8 @@ export class AudioManager {
     // State tracking
     private isInitialized = false;
     private currentMapKey?: string;
+    private mapAudioFadeTween?: Phaser.Tweens.Tween;
+    private cutsceneMusicFadeTween?: Phaser.Tweens.Tween;
     
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
@@ -327,6 +359,101 @@ export class AudioManager {
 
     private getEffectiveOverlaysVolume(baseVolume: number): number {
         return baseVolume * this.masterVolumeMultiplier * this.overlaysUserVolume * this.sfxVolumeMultiplier;
+    }
+
+    getEffectiveNpcVolume(baseVolume: number): number {
+        return baseVolume * this.masterVolumeMultiplier * this.playersUserVolume * this.sfxVolumeMultiplier;
+    }
+
+    /**
+     * Compute a spatially-attenuated NPC volume based on distance to the listener.
+     * Returns 0 when the source is out of range or effective volume is inaudible.
+     */
+    getEffectiveNpcVolumeAtDistance(baseVolume: number, distancePx: number, maxHearingRangePx: number): number {
+        if (!Number.isFinite(distancePx) || distancePx < 0) return 0;
+        if (distancePx > maxHearingRangePx) return 0;
+        const falloff = 1 - (distancePx / Math.max(1, maxHearingRangePx));
+        const volume = this.getEffectiveNpcVolume(Math.max(0, baseVolume) * falloff);
+        return volume < 0.001 ? 0 : volume;
+    }
+
+    /**
+     * Play a random gremlin grunt with distance-based volume and optional pitch variation.
+     * Returns the sound instance (or undefined if nothing played).
+     */
+    playGremlinGrunt(distancePx: number): Phaser.Sound.WebAudioSound | undefined {
+        const cfg = AUDIO_CONFIG.gremlin.grunt;
+        const volume = this.getEffectiveNpcVolumeAtDistance(cfg.baseVolume, distancePx, cfg.maxHearingRangePx);
+        if (volume <= 0) return undefined;
+
+        const index = Phaser.Math.Between(1, 4);
+        const key = `gremlin-grunt-${index}`;
+        if (!this.scene.cache.audio.exists(key)) return undefined;
+
+        const pitchRange = cfg.pitchMax - cfg.pitchMin;
+        const rate = cfg.pitchMin + Math.random() * pitchRange;
+        const detune = (rate - 1) * 200;
+
+        const sound = this.scene.sound.add(key, { volume, rate, detune }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        sound.once('complete', () => sound.destroy());
+        return sound;
+    }
+
+    /**
+     * Play the gremlin weapon swing sound. Returns the sound so the caller can chain
+     * a "land" sound after completion when the attack damages a player.
+     */
+    playGremlinWeaponSwing(distancePx: number): Phaser.Sound.WebAudioSound | undefined {
+        const cfg = AUDIO_CONFIG.gremlin.weapon;
+        const volume = this.getEffectiveNpcVolumeAtDistance(cfg.swingBaseVolume, distancePx, cfg.maxHearingRangePx);
+        if (volume <= 0) return undefined;
+
+        const key = 'gremlin-weapon-swing';
+        if (!this.scene.cache.audio.exists(key)) return undefined;
+
+        const pitchRange = cfg.pitchMax - cfg.pitchMin;
+        const rate = cfg.pitchMin + Math.random() * pitchRange;
+        const detune = (rate - 1) * 200;
+
+        const sound = this.scene.sound.add(key, { volume, rate, detune }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        sound.once('complete', () => sound.destroy());
+        return sound;
+    }
+
+    /**
+     * Play the gremlin weapon "land" impact sound (used after swing when damage connects).
+     */
+    playGremlinWeaponLand(distancePx: number): Phaser.Sound.WebAudioSound | undefined {
+        const cfg = AUDIO_CONFIG.gremlin.weapon;
+        const volume = this.getEffectiveNpcVolumeAtDistance(cfg.landBaseVolume, distancePx, cfg.maxHearingRangePx);
+        if (volume <= 0) return undefined;
+
+        const key = 'gremlin-weapon-land';
+        if (!this.scene.cache.audio.exists(key)) return undefined;
+
+        const pitchRange = cfg.pitchMax - cfg.pitchMin;
+        const rate = cfg.pitchMin + Math.random() * pitchRange;
+        const detune = (rate - 1) * 200;
+
+        const sound = this.scene.sound.add(key, { volume, rate, detune }) as Phaser.Sound.WebAudioSound;
+        sound.play();
+        sound.once('complete', () => sound.destroy());
+        return sound;
+    }
+
+    emitGremlinFootstepSubtitle(surface: string, isPlural: boolean) {
+        if (!this.subtitlesEnabled) return;
+        const entry = GREMLIN_FOOTSTEP_SUBTITLE_KEYS[surface];
+        if (!entry) return;
+        const localeKey = isPlural ? entry.plural : entry.singular;
+        const soundKey = `gremlin-footstep-${surface}`;
+        const label = this.localeManager.t(localeKey, undefined, soundKey);
+
+        window.dispatchEvent(new CustomEvent('audio:subtitle', {
+            detail: { soundKey, label }
+        }));
     }
 
     private emitSubtitle(soundKey: string) {
@@ -655,6 +782,9 @@ export class AudioManager {
         if (this.currentMusic && 'setVolume' in this.currentMusic) {
             (this.currentMusic as Phaser.Sound.WebAudioSound).setVolume(this.getEffectiveMusicVolume(this.musicBaseVolume));
         }
+        if (this.cutsceneMusic && 'setVolume' in this.cutsceneMusic) {
+            (this.cutsceneMusic as Phaser.Sound.WebAudioSound).setVolume(this.getEffectiveMusicVolume(this.cutsceneMusicBaseVolume));
+        }
     }
 
     private updateAmbientVolumes() {
@@ -773,6 +903,71 @@ export class AudioManager {
     pause() {
         this.currentMusic?.pause();
         this.ambientSounds.forEach(sound => sound.pause());
+    }
+
+    async fadeOutMapAudioAndPause(durationMs: number = 700): Promise<void> {
+        const fadeDurationMs = Math.max(0, Math.floor(durationMs));
+        if (fadeDurationMs === 0) {
+            this.pause();
+            return;
+        }
+
+        this.mapAudioFadeTween?.stop();
+        this.mapAudioFadeTween = undefined;
+
+        const activeMusic = (this.currentMusic && this.isSoundActivelyPlaying(this.currentMusic))
+            ? (this.currentMusic as Phaser.Sound.WebAudioSound)
+            : undefined;
+        const activeAmbient = Array.from(this.ambientSounds.entries())
+            .map(([key, sound]) => ({ key, sound: sound as Phaser.Sound.WebAudioSound }))
+            .filter(({ sound }) => this.isSoundActivelyPlaying(sound));
+
+        if (!activeMusic && activeAmbient.length === 0) {
+            this.pause();
+            return;
+        }
+
+        const musicStartVolume = activeMusic?.volume ?? 0;
+        const ambientStartVolumes = new Map<string, number>();
+        activeAmbient.forEach(({ key, sound }) => {
+            ambientStartVolumes.set(key, sound.volume ?? 0);
+        });
+
+        await new Promise<void>((resolve) => {
+            this.mapAudioFadeTween = this.scene.tweens.addCounter({
+                from: 1,
+                to: 0,
+                duration: fadeDurationMs,
+                ease: 'Sine.easeOut',
+                onUpdate: (tween) => {
+                    const tweenValue = tween.getValue();
+                    const ratio = Number.isFinite(tweenValue) ? Number(tweenValue) : 0;
+                    if (activeMusic) {
+                        activeMusic.setVolume(musicStartVolume * ratio);
+                    }
+                    activeAmbient.forEach(({ key, sound }) => {
+                        const startVolume = ambientStartVolumes.get(key) ?? 0;
+                        sound.setVolume(startVolume * ratio);
+                    });
+                },
+                onComplete: () => {
+                    this.mapAudioFadeTween = undefined;
+                    this.pause();
+                    if (activeMusic) {
+                        activeMusic.setVolume(musicStartVolume);
+                    }
+                    activeAmbient.forEach(({ key, sound }) => {
+                        const startVolume = ambientStartVolumes.get(key) ?? 0;
+                        sound.setVolume(startVolume);
+                    });
+                    resolve();
+                },
+                onStop: () => {
+                    this.mapAudioFadeTween = undefined;
+                    resolve();
+                }
+            });
+        });
     }
     
     /**
@@ -966,10 +1161,6 @@ export class AudioManager {
         this.playAdvancementSfx('advancement-quest-completed', AUDIO_CONFIG.sfx.questCompleted.volume);
     }
 
-    playQuestTrack() {
-        this.playAdvancementSfx('advancement-quest-track', AUDIO_CONFIG.sfx.questTrack.volume);
-    }
-
     playAchievementUnlocked() {
         this.playAdvancementSfx('advancement-achievement-unlocked', AUDIO_CONFIG.sfx.achievementUnlocked.volume);
     }
@@ -1032,6 +1223,73 @@ export class AudioManager {
         sound.once('complete', () => sound.destroy());
     }
 
+    playCutsceneMusic(key: string, volume: number = 0.5, loop: boolean = false): void {
+        this.stopCutsceneMusic();
+        if (!this.scene.cache.audio.exists(key)) {
+            console.warn(`[AudioManager] Cutscene music not found: ${key}`);
+            return;
+        }
+        this.cutsceneMusicBaseVolume = volume;
+        this.cutsceneMusic = this.scene.sound.add(key, {
+            volume: this.getEffectiveMusicVolume(volume),
+            loop
+        });
+        this.cutsceneMusic.play();
+    }
+
+    async fadeOutCutsceneMusicAndStop(durationMs: number = 1200): Promise<void> {
+        if (!this.cutsceneMusic) return;
+
+        const fadeDurationMs = Math.max(0, Math.floor(durationMs));
+        if (fadeDurationMs === 0) {
+            this.stopCutsceneMusic();
+            return;
+        }
+
+        this.cutsceneMusicFadeTween?.stop();
+        this.cutsceneMusicFadeTween = undefined;
+
+        const sound = this.cutsceneMusic as Phaser.Sound.WebAudioSound;
+        const startVolume = Number.isFinite(sound.volume) ? Number(sound.volume) : this.getEffectiveMusicVolume(this.cutsceneMusicBaseVolume);
+
+        await new Promise<void>((resolve) => {
+            this.cutsceneMusicFadeTween = this.scene.tweens.addCounter({
+                from: 1,
+                to: 0,
+                duration: fadeDurationMs,
+                ease: 'Sine.easeOut',
+                onUpdate: (tween) => {
+                    const tweenValue = tween.getValue();
+                    const ratio = Number.isFinite(tweenValue) ? Number(tweenValue) : 0;
+                    if (this.cutsceneMusic === sound) {
+                        sound.setVolume(startVolume * ratio);
+                    }
+                },
+                onComplete: () => {
+                    this.cutsceneMusicFadeTween = undefined;
+                    if (this.cutsceneMusic === sound) {
+                        this.stopCutsceneMusic();
+                    }
+                    resolve();
+                },
+                onStop: () => {
+                    this.cutsceneMusicFadeTween = undefined;
+                    resolve();
+                }
+            });
+        });
+    }
+
+    stopCutsceneMusic(): void {
+        this.cutsceneMusicFadeTween?.stop();
+        this.cutsceneMusicFadeTween = undefined;
+        if (!this.cutsceneMusic) return;
+        this.cutsceneMusic.stop();
+        this.cutsceneMusic.destroy();
+        this.cutsceneMusic = undefined;
+        this.cutsceneMusicBaseVolume = 0;
+    }
+
     private playSceneAmbientSfx(key: string, baseVolume: number) {
         if (!this.scene.cache.audio.exists(key)) return;
         const sound = this.scene.sound.add(key, {
@@ -1046,7 +1304,12 @@ export class AudioManager {
      * Stop and clean up all audio
      */
     destroy() {
-        // Stop music
+        this.mapAudioFadeTween?.stop();
+        this.mapAudioFadeTween = undefined;
+        this.cutsceneMusicFadeTween?.stop();
+        this.cutsceneMusicFadeTween = undefined;
+        this.stopCutsceneMusic();
+
         if (this.currentMusic) {
             this.currentMusic.stop();
             this.currentMusic.destroy();

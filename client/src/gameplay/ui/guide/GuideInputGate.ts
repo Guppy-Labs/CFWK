@@ -64,10 +64,8 @@ export class GuideInputGate {
             window.removeEventListener('touchstart', this.pointerHandler as EventListener, { capture: true } as any);
             this.pointerHandler = undefined;
         }
-        this.enabled = false;
-        this.allowedActions.clear();
-        this.allowedPointerRect = null;
-        this.allowedUsableSlotIndex = null;
+        // Keep registry state in sync during scene shutdown/reconnect.
+        this.clear();
     }
 
     apply(config: GuideInputGateConfig) {

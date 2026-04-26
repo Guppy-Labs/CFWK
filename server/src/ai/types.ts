@@ -34,6 +34,10 @@ export type AiNpcRuntimeState = {
     deathAnimUntilMs: number;
     isDead: boolean;
     controllerConfig: IGeneralEnemyControllerConfig;
+    // Accumulates simulation time (ms) during which the entity has not made
+    // meaningful positional progress while chasing. Used to detect choke-point
+    // sticking and trigger a forced repath with a small end-cell jitter.
+    stuckAccumulatorMs: number;
 };
 
 export interface NavCollisionAdapter {
@@ -47,6 +51,13 @@ export type AiObservedPlayer = {
     y: number;
 };
 
+export type AiAvoidanceEntity = {
+    x: number;
+    y: number;
+    halfWidth: number;
+    halfHeight: number;
+};
+
 export interface AiControllerContext {
     tick: number;
     now: number;
@@ -56,4 +67,6 @@ export interface AiControllerContext {
     nav: NavCollisionAdapter;
     random: () => number;
     onMeleeAttackAttempt: (attacker: AiNpcRuntimeState, targetSessionId: string, damageHearts: number) => void;
+    aiEntities: AiAvoidanceEntity[];
+    staticNpcs: Vec2[];
 }

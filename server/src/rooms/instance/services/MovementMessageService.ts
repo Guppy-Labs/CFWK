@@ -547,7 +547,8 @@ export function handleMovementFrame(room: InstanceRoomHost, client: Client, fram
     room.tryRefineDropsFromMovement(client, player, nextX, nextY, now);
     room.handleEnemyBridgeGate(client, player, nextX, nextY);
     room.handleDangerExitHeal(client, player, nextX, nextY);
-    void room.advancementsManager.onPlayerMoved(player.odcid, nextX, nextY)
+    const clientTimeOffsetMs = Number(room.clientTimeOffsetByUserId?.get(player.odcid) ?? 0);
+    void room.advancementsManager.onPlayerMoved(player.odcid, nextX, nextY, clientTimeOffsetMs)
         .then((alerts: any[]) => {
             alerts.forEach((alert) => client.send("advancement:alert", alert));
         })

@@ -5,6 +5,38 @@
             "checks": [
                 {
                     "type": "questObjective",
+                    "questId": "bowl_that_shines",
+                    "status": "active",
+                    "objectiveIndex": 1
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.fisherman.bowlThatShines.askAround.player.0"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.fisherman.bowlThatShines.askAround.0"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.fisherman.bowlThatShines.askAround.1"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.fisherman.bowlThatShines.askAround.2"
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
                     "questId": "first_catch",
                     "status": "active",
                     "objectiveIndex": 1
@@ -14,20 +46,17 @@
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.fisherman.postCatch.0",
-                    "text": "Ha! You did it. You've got the basics of fishing down now."
+                    "textKey": "dialogue.npc.fisherman.postCatch.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "surprise",
-                    "textKey": "dialogue.npc.fisherman.postCatch.1",
-                    "text": "But there's a big secret beneath these waters... and I still don't know what it is."
+                    "textKey": "dialogue.npc.fisherman.postCatch.1"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
-                    "textKey": "dialogue.npc.fisherman.postCatch.2",
-                    "text": "You should venture further onto the island to learn how things work around here."
+                    "textKey": "dialogue.npc.fisherman.postCatch.2"
                 }
             ]
         }
@@ -36,19 +65,16 @@
         {
             "speaker": "npc",
             "emotion": "happy",
-            "textKey": "dialogue.npc.fisherman.greeting.0",
-            "text": "Welcome to Anchor Hollow! Name's the Fisherman."
+            "textKey": "dialogue.npc.fisherman.greeting.0"
         },
         {
             "speaker": "player",
             "emotion": "surprise",
             "textKey": "dialogue.npc.fisherman.choice.prompt",
-            "text": "What should I ask?",
             "options": [
                 {
                     "id": "need_rod",
                     "textKey": "dialogue.npc.fisherman.choice.needRod",
-                    "text": "Can I get a fishing rod?",
                     "branches": [
                         {
                             "checks": [
@@ -61,8 +87,7 @@
                                 {
                                     "speaker": "npc",
                                     "emotion": "happy",
-                                    "textKey": "dialogue.npc.fisherman.needRod.hasRod.0",
-                                    "text": "You've already got your rod. Equip it, then head to the water and cast your line."
+                                    "textKey": "dialogue.npc.fisherman.needRod.hasRod.0"
                                 }
                             ]
                         },
@@ -71,14 +96,12 @@
                                 {
                                     "speaker": "npc",
                                     "emotion": "happy",
-                                    "textKey": "dialogue.npc.fisherman.needRod.noRod.0",
-                                    "text": "Aye, here you go — your first rod."
+                                    "textKey": "dialogue.npc.fisherman.needRod.noRod.0"
                                 },
                                 {
                                     "speaker": "npc",
                                     "emotion": "happy",
-                                    "textKey": "dialogue.npc.fisherman.needRod.noRod.1",
-                                    "text": "Equip your rod, find a good stretch of water, then cast and reel in your catch."
+                                    "textKey": "dialogue.npc.fisherman.needRod.noRod.1"
                                 }
                             ],
                             "actions": [
@@ -95,19 +118,16 @@
                 {
                     "id": "ask_basics",
                     "textKey": "dialogue.npc.fisherman.choice.basics",
-                    "text": "How do I fish?",
                     "lines": [
                         {
                             "speaker": "npc",
                             "emotion": "happy",
-                            "textKey": "dialogue.npc.fisherman.basics.0",
-                            "text": "Equip your rod, find water, cast your line, and reel when you feel a bite."
+                            "textKey": "dialogue.npc.fisherman.basics.0"
                         },
                         {
                             "speaker": "npc",
                             "emotion": "happy",
-                            "textKey": "dialogue.npc.fisherman.basics.1",
-                            "text": "Once you've landed one, come back to me. You’ll know the basics... but there's a big secret I still don't know."
+                            "textKey": "dialogue.npc.fisherman.basics.1"
                         }
                     ]
                 }

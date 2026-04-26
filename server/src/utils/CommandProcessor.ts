@@ -131,7 +131,6 @@ export class CommandProcessor {
         const user = await this.getUserByUsername(targetName);
         
         if (!user) return `User '${targetName}' not found.`;
-        if (user.permissions.includes('game.admin')) return "Cannot ban an admin.";
 
         // Ban forever (well, 1000 years)
         const banUntil = new Date(Date.now() + 1000 * 365 * 24 * 60 * 60 * 1000); 
@@ -169,7 +168,6 @@ export class CommandProcessor {
 
         const user = await this.getUserByUsername(targetName);
         if (!user) return `User '${targetName}' not found.`;
-        if (user.permissions.includes('game.admin')) return "Cannot ban an admin.";
 
         const banUntil = new Date(Date.now() + ms);
         user.bannedUntil = banUntil;
