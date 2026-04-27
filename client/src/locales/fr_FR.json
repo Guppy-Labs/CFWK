@@ -758,6 +758,7 @@
 			},
 			"mc": {
 				"arrival": {
+					"crash": "Oups... on dirait que je me suis endormi.",
 					"0": "Woah... où suis-je ?"
 				}
 			}

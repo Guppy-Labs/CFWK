@@ -227,6 +227,10 @@ export class DialogueManager {
 
         if (line.shake === 'mild') {
             this.gameScene.cameras.main.shake(180, 0.0025);
+        } else if (line.shake === 'snore') {
+            const cam = this.gameScene.cameras.main;
+            cam.shake(300, 0.002);
+            setTimeout(() => cam.shake(300, 0.002), 1000);
         }
 
         if (this.hasShownLine) {

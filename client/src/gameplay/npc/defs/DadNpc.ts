@@ -5,7 +5,7 @@ export const DAD_NPC_DEFINITION: NPCDefinition = {
     name: 'Papa Cat',
     nameKey: 'npc.dad.name',
     idleTexturePath: '/assets/npc/dad/idle.png',
-    scale: 1,
+    scale: 1.65,
     frameWidth: 40,
     frameHeight: 19,
     frameCount: 16,

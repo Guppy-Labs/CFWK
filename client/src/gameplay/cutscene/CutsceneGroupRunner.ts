@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { DialogueLine } from '../dialogue/DialogueTypes';
 import { CutsceneVideoPlayer, type VideoSegment } from './CutsceneVideoPlayer';
-import { CutsceneComicOverlay } from './CutsceneComicOverlay';
+import { CutsceneComicOverlay, type ComicPanelCover } from './CutsceneComicOverlay';
 import { CutsceneNavOverlay } from './CutsceneNavOverlay';
 import type { AudioManager } from '../audio/AudioManager';
 
@@ -9,7 +9,7 @@ export type CutsceneStep =
     | { kind: 'forcedDialogue'; npcId: string; npcName?: string; lines: DialogueLine[] }
     | { kind: 'freeRoam'; targetPoiName: string; arrivalRadiusPx?: number; onStart?: () => void }
     | { kind: 'videoSequence'; segments: VideoSegment[] }
-    | { kind: 'comic'; images: string[]; backgroundColor?: string }
+    | { kind: 'comic'; image: string; panels: ComicPanelCover[] }
     | { kind: 'mapTransfer'; locationId: string }
     | { kind: 'callback'; fn: () => void | Promise<void> };
 
@@ -58,10 +58,8 @@ export class CutsceneGroupRunner {
                 }
             }
             if (step.kind === 'comic') {
-                for (const src of step.images) {
-                    const img = new Image();
-                    img.src = src;
-                }
+                const img = new Image();
+                img.src = step.image;
             }
         }
         if (videoUrls.length > 0) {
@@ -221,8 +219,8 @@ export class CutsceneGroupRunner {
 
         this.comicOverlay = new CutsceneComicOverlay();
         await this.comicOverlay.show({
-            images: step.images,
-            backgroundColor: step.backgroundColor
+            image: step.image,
+            panels: step.panels,
         });
 
         if (this.destroyed) return;
@@ -242,6 +240,10 @@ export class CutsceneGroupRunner {
 
         this.resumeMapAudio();
         this.blockInput(false);
+
+        // Fire onComplete now — the transfer never resolves so runSteps
+        // will never reach its own completion logic.
+        this.onComplete();
 
         this.host.beginServerTransfer(step.locationId, true);
         return new Promise<void>(() => {});

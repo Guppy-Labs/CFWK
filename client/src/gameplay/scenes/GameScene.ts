@@ -1353,17 +1353,20 @@ export class GameScene extends Phaser.Scene {
         this.seasonalEffectsManager?.setInitialSeason(this.worldTimeManager.getTime().season);
         this.applyUserVideoSettings(this.currentVideoSettings);
 
-        // Initialize audio (music and ambient sounds for this map)
         const mapFile = this.instanceInfo?.mapFile || 'lobby.tmj';
         const mapKey = `map-${mapFile.replace('.tmj', '')}`;
-        this.audioManager?.initialize(mapKey);
 
-        // Map is fully loaded - hide the loader and show controls
-        hideLoader();
-        this.mcPlayerController?.getMobileControls()?.show();
+        // When the intro arrival sequence is about to run, it owns the
+        // loader hide, audio init, and control visibility.
+        const hasArrivalCover = !!document.getElementById('cutscene-black-cover');
+        if (!hasArrivalCover) {
+            this.audioManager?.initialize(mapKey);
+            hideLoader();
+            this.mcPlayerController?.getMobileControls()?.show();
+        }
 
         this.maybeStartIntroCutscene(mapFile);
-        this.maybeStartArrivalDialogue(mapFile);
+        this.maybeStartArrivalDialogue(mapFile, mapKey);
     }
 
     private async maybeStartIntroCutscene(mapFile: string): Promise<void> {
@@ -1394,8 +1397,11 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
-    private async maybeStartArrivalDialogue(mapFile: string): Promise<void> {
+    private async maybeStartArrivalDialogue(mapFile: string, mapKey: string): Promise<void> {
         if (!mapFile.startsWith('anchor-hollow')) return;
+
+        const blackCover = document.getElementById('cutscene-black-cover');
+        if (!blackCover) return;
 
         const freshState = await this.networkManager.awaitAdvancementsState(2000, true);
         if (freshState) {
@@ -1411,25 +1417,79 @@ export class GameScene extends Phaser.Scene {
         }
 
         const tut = this.advancementsState.tutorial;
-        if (!tut.introCutsceneCompleted || tut.introArrivalCompleted) return;
+        if (!tut.introCutsceneCompleted || tut.introArrivalCompleted) {
+            hideLoader();
+            blackCover.remove();
+            this.audioManager?.initialize(mapKey);
+            this.mcPlayerController?.getMobileControls()?.show();
+            return;
+        }
 
-        const handler = () => {
-            window.removeEventListener('dialogue:complete', handler);
-            this.networkManager.sendGuideTutorialUpdate({ introArrivalCompleted: true });
-        };
-        window.addEventListener('dialogue:complete', handler);
+        // Hide the DOM loader and block input for the arrival sequence.
+        this.registry.set('inputBlocked', true);
+        this.mcPlayerController?.getMobileControls()?.setInputBlocked(true);
+        hideLoader();
 
+        // Hide UIScene HUD during the black screen so only dialogue shows.
+        const uiScene = this.scene.get('UIScene');
+        if (uiScene) uiScene.scene.setVisible(false);
+
+        // Swap the DOM cover for a Phaser camera fade so dialogue
+        // (rendered by UIScene on the canvas) appears on top of the black.
+        this.cameras.main.fadeOut(0, 0, 0, 0);
+        blackCover.remove();
+
+        // Re-enable UIScene rendering so dialogue is visible (the game
+        // camera fade handles the black, not UIScene visibility).
+        if (uiScene) uiScene.scene.setVisible(true);
+
+        const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+        const waitForDialogue = () => new Promise<void>((resolve) => {
+            const h = () => { window.removeEventListener('dialogue:complete', h); resolve(); };
+            window.addEventListener('dialogue:complete', h);
+        });
+
+        const crash = new Audio('/audio/ambient/scene/cut/boat-crash.mp3');
+        crash.play().catch(() => {});
+
+        await wait(2000);
+
+        // "Oops... looks like I fell asleep." — still on black
+        const crashDialogueComplete = waitForDialogue();
         window.dispatchEvent(new CustomEvent('dialogue:forced', {
             detail: {
                 npcId: 'mc',
-                lines: [
-                    {
-                        speaker: 'player',
-                        textKey: 'dialogue.npc.mc.arrival.0'
-                    }
-                ]
+                lines: [{ speaker: 'player', textKey: 'dialogue.npc.mc.arrival.crash' }]
             }
         }));
+        await crashDialogueComplete;
+
+        await wait(750);
+
+        // Fade the camera in to reveal the game
+        this.cameras.main.fadeIn(800, 0, 0, 0);
+
+        await wait(2000);
+
+        // "Woah... where am I?"
+        const arrivalComplete = waitForDialogue();
+        window.dispatchEvent(new CustomEvent('dialogue:forced', {
+            detail: {
+                npcId: 'mc',
+                lines: [{ speaker: 'player', textKey: 'dialogue.npc.mc.arrival.0' }]
+            }
+        }));
+        await arrivalComplete;
+
+        this.networkManager.sendGuideTutorialUpdate({ introArrivalCompleted: true });
+
+        // Restore controls and start map audio
+        this.registry.set('inputBlocked', false);
+        this.mcPlayerController?.getMobileControls()?.setInputBlocked(false);
+        this.mcPlayerController?.getMobileControls()?.show();
+
+        await wait(1000);
+        this.audioManager?.initialize(mapKey);
     }
 
     private setupFireEffects(map: Phaser.Tilemaps.Tilemap) {

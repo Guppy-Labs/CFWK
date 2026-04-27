@@ -799,6 +799,7 @@
       },
       "mc": {
         "arrival": {
+          "crash": "Oops... looks like I fell asleep.",
           "0": "Woah... where am I?"
         }
       }

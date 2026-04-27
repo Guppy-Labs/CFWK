@@ -16,7 +16,7 @@ export type DialogueLine = {
     textKey?: string;
     text?: string;
     emotion?: DialogueEmotion;
-    shake?: 'mild';
+    shake?: 'mild' | 'snore';
     name?: string;
     nameKey?: string;
     options?: DialogueOption[];
