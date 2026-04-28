@@ -7,6 +7,8 @@ type LaunchUser = {
     betaAccessUntil?: string | null;
     premiumStatus?: string;
     premiumCurrentPeriodEnd?: string | null;
+    bannedUntil?: string | null;
+    ipBannedUntil?: string | null;
 };
 
 type NewsPost = {
@@ -40,6 +42,9 @@ const heroElement = document.querySelector('.hero') as HTMLElement;
 const newsElement = document.querySelector('.news') as HTMLElement;
 const launchCountdownValue = document.getElementById('launch-countdown-value') as HTMLParagraphElement;
 const fishbowlToggle = document.getElementById('fishbowl-toggle') as HTMLButtonElement;
+const banAlert = document.getElementById('ban-alert') as HTMLDivElement;
+const banAlertTitle = document.getElementById('ban-alert-title') as HTMLSpanElement;
+const banAlertMessage = document.getElementById('ban-alert-message') as HTMLSpanElement;
 const newsMeta = document.getElementById('news-meta') as HTMLSpanElement;
 const newsList = document.getElementById('news-list') as HTMLOListElement;
 const newsSkeleton = document.getElementById('news-skeleton') as HTMLDivElement;
@@ -264,6 +269,45 @@ function startLaunchCountdown() {
     countdownIntervalId = window.setInterval(update, 1000);
 }
 
+const FIFTY_YEARS_MS = 50 * 365 * 24 * 60 * 60 * 1000;
+
+function getActiveBanDate(user: LaunchUser): { date: Date; type: 'account' | 'ip' } | null {
+    if (user.bannedUntil) {
+        const d = new Date(user.bannedUntil);
+        if (!Number.isNaN(d.getTime()) && d.getTime() > Date.now()) {
+            return { date: d, type: 'account' };
+        }
+    }
+    if (user.ipBannedUntil) {
+        const d = new Date(user.ipBannedUntil);
+        if (!Number.isNaN(d.getTime()) && d.getTime() > Date.now()) {
+            return { date: d, type: 'ip' };
+        }
+    }
+    return null;
+}
+
+function renderBanState(user: LaunchUser): boolean {
+    const ban = getActiveBanDate(user);
+    if (!ban) {
+        banAlert.classList.remove('show');
+        playBtn.style.display = '';
+        playBtn.disabled = false;
+        return false;
+    }
+
+    const isPermanent = ban.date.getTime() - Date.now() > FIFTY_YEARS_MS;
+    banAlertTitle.textContent = ban.type === 'account' ? 'ACCOUNT BANNED' : 'BANNED';
+    banAlertMessage.textContent = isPermanent
+        ? 'You are permanently banned from playing.'
+        : `Banned until ${ban.date.toLocaleString()}`;
+
+    banAlert.classList.add('show');
+    playBtn.style.display = 'none';
+    playBtn.disabled = true;
+    return true;
+}
+
 function renderUser(user: LaunchUser) {
     currentUser = user;
     const permissions = Array.isArray(user.permissions) ? user.permissions : [];
@@ -279,6 +323,8 @@ function renderUser(user: LaunchUser) {
 
     premiumBadge.style.display = premiumOwned ? 'inline-flex' : 'none';
     premiumCtaBtn.style.display = premiumOwned ? 'none' : 'inline-flex';
+
+    renderBanState(user);
 }
 
 function renderNews(posts: NewsPost[]) {
@@ -361,7 +407,8 @@ async function init(): Promise<boolean> {
             return false;
         }
 
-        if (!canLaunch(data.user)) {
+        const banned = getActiveBanDate(data.user) !== null;
+        if (!canLaunch(data.user) && !banned) {
             window.location.href = '/account';
             return false;
         }
@@ -378,6 +425,7 @@ async function init(): Promise<boolean> {
 
 playBtn.addEventListener('click', () => {
     if (!currentUser) return;
+    if (getActiveBanDate(currentUser)) return;
     if (canLaunch(currentUser)) {
         stopPlayButtonIconCycle();
         playBtn.disabled = true;

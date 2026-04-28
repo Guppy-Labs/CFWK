@@ -28,7 +28,8 @@ type QuestEvent =
     | { kind: 'fish-near-location'; locationName: string }
     | { kind: 'inventory-count'; itemId: string; count: number }
     | { kind: 'refine-food'; itemId?: string; liquidItemId?: string }
-    | { kind: 'bottle-liquid'; liquidItemId?: string; containerItemId?: string; outputItemId?: string };
+    | { kind: 'bottle-liquid'; liquidItemId?: string; containerItemId?: string; outputItemId?: string }
+    | { kind: 'leave-npc-radius'; locationName: string; radiusPx: number };
 
 type QuestDefinition = {
     id: string;
@@ -123,6 +124,16 @@ function toQuestEvent(objective: IQuestObjectiveEntry | undefined | null): Quest
             liquidItemId: typeof objective.liquidItemId === 'string' ? objective.liquidItemId : undefined,
             containerItemId: typeof objective.containerItemId === 'string' ? objective.containerItemId : undefined,
             outputItemId: typeof objective.outputItemId === 'string' ? objective.outputItemId : undefined
+        };
+    }
+    if (objective.kind === 'leave-npc-radius') {
+        const locationName = typeof objective.locationName === 'string' ? objective.locationName.trim() : '';
+        if (!locationName) return null;
+        const radiusMeters = Number.isFinite(objective.radiusMeters) ? Math.max(1, objective.radiusMeters!) : 10;
+        return {
+            kind: 'leave-npc-radius',
+            locationName,
+            radiusPx: radiusMeters * AI_METERS_TO_PIXELS
         };
     }
     return null;
@@ -227,6 +238,9 @@ function matchesQuestEvent(expected: QuestEvent, received: QuestEvent): boolean 
         if (expected.containerItemId && received.containerItemId && expected.containerItemId !== received.containerItemId) return false;
         if (expected.outputItemId && received.outputItemId && expected.outputItemId !== received.outputItemId) return false;
         return true;
+    }
+    if (expected.kind === 'leave-npc-radius' && received.kind === 'leave-npc-radius') {
+        return expected.locationName === received.locationName && received.radiusPx >= expected.radiusPx;
     }
     return expected.kind === 'fish-catch' && received.kind === 'fish-catch';
 }
@@ -573,7 +587,6 @@ export class AdvancementsManager {
         clientTimeOffsetMs: number = 0
     ): Promise<IAdvancementAlertMessage[]> {
         if (!this.isPersistentUserId(userId)) return [];
-        if (this.regions.length === 0) return [];
 
         const now = Date.now();
         const regionName = this.findRegionAtPosition(x, y);
@@ -600,6 +613,12 @@ export class AdvancementsManager {
         });
         if (timeWindowUpdates.alerts.length > 0 || timeWindowUpdates.delayedNewQuestCounts.length > 0) {
             alerts.push(...timeWindowUpdates.alerts);
+            shouldPersist = true;
+        }
+
+        const leaveRadiusAlerts = this.checkLeaveNpcRadiusObjectives(state, x, y);
+        if (leaveRadiusAlerts.alerts.length > 0 || leaveRadiusAlerts.delayedNewQuestCounts.length > 0) {
+            alerts.push(...leaveRadiusAlerts.alerts);
             shouldPersist = true;
         }
 
@@ -704,6 +723,51 @@ export class AdvancementsManager {
             merged.delayedNewQuestCounts.push(...update.delayedNewQuestCounts);
         }
 
+        return merged;
+    }
+
+    private checkLeaveNpcRadiusObjectives(
+        state: IAdvancementsState,
+        playerX: number,
+        playerY: number
+    ): AdvancementsUpdate {
+        const events: QuestEvent[] = [];
+
+        for (const [questId, progress] of Object.entries(state.questProgress)) {
+            if (progress.status !== 'active') continue;
+            const definition = QUEST_DEFINITION_BY_ID.get(questId);
+            if (!definition) continue;
+
+            const objectives = definition.objectives.length > 0 ? definition.objectives : [definition.start];
+            const currentIndexRaw = typeof progress.objectiveIndex === 'number' ? Math.floor(progress.objectiveIndex) : 0;
+            const currentIndex = Math.max(0, Math.min(currentIndexRaw, objectives.length - 1));
+            const objective = objectives[currentIndex];
+
+            if (!objective || objective.kind !== 'leave-npc-radius') continue;
+
+            const poiPoints = this.poiPointsByName.get(objective.locationName);
+            if (!poiPoints || poiPoints.length === 0) continue;
+
+            const poi = poiPoints[0];
+            const dx = playerX - poi.x;
+            const dy = playerY - poi.y;
+            const distPx = Math.sqrt(dx * dx + dy * dy);
+
+            if (distPx >= objective.radiusPx) {
+                events.push({
+                    kind: 'leave-npc-radius',
+                    locationName: objective.locationName,
+                    radiusPx: distPx
+                });
+            }
+        }
+
+        const merged: AdvancementsUpdate = { alerts: [], delayedNewQuestCounts: [] };
+        for (const event of events) {
+            const update = this.applyQuestEvent(state, event);
+            merged.alerts.push(...update.alerts);
+            merged.delayedNewQuestCounts.push(...update.delayedNewQuestCounts);
+        }
         return merged;
     }
 

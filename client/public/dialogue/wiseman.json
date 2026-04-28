@@ -5,6 +5,97 @@
             "checks": [
                 {
                     "type": "questObjective",
+                    "questId": "wizards_scar",
+                    "status": "active",
+                    "objectiveIndex": 0
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.wiseman.wizardsScar.reminder.0"
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "bowl_that_shines",
+                    "status": "completed"
+                },
+                {
+                    "type": "questObjective",
+                    "questId": "wizards_scar",
+                    "status": "active",
+                    "negate": true
+                },
+                {
+                    "type": "questObjective",
+                    "questId": "wizards_scar",
+                    "status": "completed",
+                    "negate": true
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.wiseman.wizardsScar.intro.0"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.wiseman.wizardsScar.intro.player.0"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.wiseman.wizardsScar.intro.1"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.wiseman.wizardsScar.intro.2"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.wiseman.wizardsScar.intro.player.1"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.wiseman.wizardsScar.intro.3"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "surprise",
+                    "shake": "mild",
+                    "textKey": "dialogue.npc.wiseman.wizardsScar.intro.4"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.wiseman.wizardsScar.intro.player.2"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.wiseman.wizardsScar.intro.5"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.wiseman.wizardsScar.intro.player.3"
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
                     "questId": "bowl_that_shines",
                     "status": "active",
                     "objectiveIndex": 1

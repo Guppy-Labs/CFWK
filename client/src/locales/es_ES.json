@@ -165,6 +165,9 @@
 			},
 			"bowl_that_shines": {
 				"name": "El Cuenco que Brilla"
+			},
+			"wizards_scar": {
+				"name": "La Cicatriz del Mago"
 			}
 		}
 	},
@@ -188,7 +191,8 @@
 				"waitForTimeWindow": "Espera a la noche ({start}:00-{end}:00)",
 				"fishNearLocation": "Pesca cerca de {location}",
 				"harvestInteractive": "Usa un interactuable cercano",
-				"openGlimmeringChest": "Abre el Cofre Reluciente"
+				"openGlimmeringChest": "Abre el Cofre Reluciente",
+				"walkAway": "Aléjate"
 			},
 			"status": {
 				"label": "Estado",
@@ -197,7 +201,7 @@
 				"completed": "Completada"
 			},
 			"first_catch": {
-				"description": "Habla con el Pescador, consigue una caña y saca tu primera captura de las aguas de Anchor Hollow."
+				"description": "La marea te trajo a Anchor Hollow. El Pescador te ofreció una caña y un trato simple: pesca algo y hablamos. Saca tu primera captura de las aguas de la isla."
 			},
 			"travellers_errand": {
 				"description": "Un pequeño favor para una desconocida en el camino. Escúchala y luego informa al Guardia."
@@ -219,6 +223,9 @@
 			},
 			"bowl_that_shines": {
 				"description": "El Sabio guarda un secreto. Dice que se lo lleves al Maestro del Mar. El Maestro del Mar dice: los muelles, de noche, bajo la luz de la luna. Entre esos dos se esconden la Llave Reluciente y el cofre que abre."
+			},
+			"wizards_scar": {
+				"description": "El Sabio siente el despertar del Brillacuenco y te envía a un Mago solitario. Convence al Mago de que mereces su tiempo, aprende sobre cicatrices y forja tu primera."
 			}
 		}
 	},
@@ -296,6 +303,9 @@
 		"bowlThatShines": {
 			"returnToSeamaster": "Llévale la llave al Maestro del Mar. Lleva esperándolo más que tú llevas vivo."
 		},
+		"wizardsScar": {
+			"activateBowl": "Haz clic en el mundo para activar tu Brillacuenco."
+		},
 		"rod": {
 			"openInventory": "Para equipar tu nueva caña, abre tu inventario (pulsa {key} en escritorio).",
 			"openInventoryMobile": "Para equipar tu nueva caña, toca el botón de inventario.",
@@ -336,6 +346,9 @@
 		},
 		"dad": {
 			"name": "Papá Gato"
+		},
+		"wizard": {
+			"name": "Mago"
 		}
 	},
 	"dialogue": {
@@ -501,31 +514,73 @@
 				}
 			},
 			"fisherman": {
-				"greeting": {
-					"0": "Con calma. Los peces pican cuando el agua está tranquila — y las manos son pacientes."
-				},
-				"choice": {
-					"prompt": "¿Qué debería preguntar?",
-					"needRod": "¿Me puedes dar una caña de pescar?",
-					"basics": "¿Cómo se pesca?"
-				},
-				"needRod": {
-					"hasRod": {
-						"0": "Ya tienes caña. Bien. Busca agua. Lanza. Recoge."
+				"intro": {
+					"0": "Vaya. La marea trajo algo nuevo.",
+					"1": "Anchor Hollow. Isla pequeña, océano grande.",
+					"2": "Normal. ¿La tormenta te trajo aquí?",
+					"3": "Una cura. Hm. No puedo ayudarte con eso, chico. Yo sé de peces. Poco más.",
+					"4": "Pero primero — pareces medio ahogado y muerto de hambre. No se busca nada con el estómago vacío.",
+					"5": "La pesca es como sobrevivimos aquí. Te voy a equipar.",
+					"6": "Pesca uno y vuelve a verme. Luego hablamos.",
+					"player": {
+						"0": "¿Qu— dónde estoy?",
+						"1": "¿Anchor Hollow? Nunca he oído hablar de este lugar.",
+						"2": "Estaba navegando desde casa. Mi padre está enfermo — muy enfermo. Me fui a buscar una cura."
 					},
-					"noRod": {
-						"0": "Toma. Tu primera caña. No la dejes caer al agua.",
-						"1": "Equípala. Encuentra un tramo de agua. Lanza. Recoge cuando la línea te lo diga."
+					"choice": {
+						"prompt": "¿Qué debería preguntar?",
+						"island": "¿Qué es esta isla?",
+						"cure": "¿Alguien ha venido aquí buscando algo así?"
+					},
+					"island": {
+						"0": "Pequeña. Tranquila. Un puñado de nosotros vive aquí. Pescamos, comemos, nos ocupamos de lo nuestro.",
+						"1": "Hay un pueblo más adentro. Un guardia vigila el puente, un mercader vende cosas, un par más.",
+						"2": "Ellos saben más del mundo que yo. Yo solo conozco el agua."
+					},
+					"cure": {
+						"0": "La gente llega buscando todo tipo de cosas. La mayoría encuentra peces.",
+						"1": "Pero la isla tiene cosas viejas. Más viejas que los muelles. Más viejas que yo.",
+						"2": "Habla con la gente del pueblo. Alguien podría orientarte."
 					}
 				},
-				"basics": {
-					"0": "Equipa la caña. Busca agua. Lanza la línea. Recoge cuando pique.",
-					"1": "Saca uno y vuelve. Tendrás lo básico. Solo lo básico, ojo. Hay un secreto ahí abajo — uno que yo nunca he tocado."
+				"rod": {
+					"choice": {
+						"prompt": "¿Qué tengo que hacer?",
+						"takeRod": "Vale, dame una caña.",
+						"howFish": "Espera — ¿cómo funciona la pesca?"
+					},
+					"hasRod": {
+						"0": "Ya tienes una. Bien. Busca agua, lanza la línea y recoge cuando tire."
+					},
+					"noRod": {
+						"0": "Toma. Está destartalada, pero pesca. No la dejes caer al agua.",
+						"1": "Equípala, ve a la orilla y lanza. Cuando la línea tire — recoge."
+					},
+					"howFish": {
+						"0": "Equipa la caña. Busca agua. Lanza la línea.",
+						"1": "Cuando sientas un tirón, es un pique. Recoge antes de que se escape.",
+						"2": "Ah — vas a necesitar esto."
+					}
+				},
+				"reminder": {
+					"0": "¿Todavía seco? El agua está ahí mismo, chico.",
+					"1": "Lanza la línea. Recoge cuando pique. Tráeme lo que pesques."
 				},
 				"postCatch": {
-					"0": "Ja. Lo lograste. Ya tienes lo básico.",
-					"1": "Hay un secreto ahí abajo, chico. Más viejo que el muelle. Más viejo que yo. Nunca le he rozado el borde.",
-					"2": "Adéntrate más. Conoce al pueblo. Ellos te enseñarán más de lo que yo puedo."
+					"0": "¡Ja! Mira eso. Tu primera pesca.",
+					"1": "No dejes que el pez te oiga decir eso.",
+					"2": "Lo hiciste bien, chico. Buen agarre. La mayoría de los nuevos tiran demasiado fuerte y rompen la línea.",
+					"3": "Siempre hay más. Mejores cañas, aguas profundas, peces raros. Lo básico te alimenta. Todo lo demás te enriquece.",
+					"4": "Y luego está lo que hay debajo.",
+					"5": "Algo viejo. Bajo el agua, más allá de donde llegan las líneas. Llevo pescando en estos muelles más tiempo del que quiero admitir, y nunca he rozado el borde.",
+					"6": "Pero no es asunto mío. Yo pesco lo que pica.",
+					"7": "Ve al pueblo, chico. Conoce al Guardia, al Mercader. Te enseñarán cosas que yo no puedo.",
+					"8": "Y si alguna vez necesitas el agua — estaré aquí. Siempre estoy aquí.",
+					"player": {
+						"0": "Eso fue... ¿en realidad divertido?",
+						"1": "¿O sea que hay más que solo recoger?",
+						"2": "¿Debajo?"
+					}
 				},
 				"bowlThatShines": {
 					"askAround": {
@@ -702,6 +757,25 @@
 							"0": "¿Has visto una llave?"
 						}
 					}
+				},
+				"wizardsScar": {
+					"intro": {
+						"0": "No te muevas. Algo es... diferente en ti. Hay un zumbido. Una vibración. Has despertado el Brillacuenco, ¿verdad?",
+						"1": "El Brillacuenco no es una herramienta cualquiera. Hace mucho tiempo, criaturas de las profundidades lo forjaron con piedra lunar y vidrio de marea. Creían que cada pez llevaba un fragmento de alma—y este cuenco era la clave para canalizar esos fragmentos.",
+						"2": "Solo aquellos cuyo espíritu está en sintonía con el mar pueden manejarlo. Y parece... que tú eres uno de los muy pocos.",
+						"3": "Pero un poder en bruto sin comprensión es una tormenta sin puerto. Necesitas guía. Hay alguien que puede ayudarte—un Mago que vive en las afueras del pueblo.",
+						"4": "Encuentra al Mago. Dile estas palabras exactas: \"El buscador de cuencos me envía.\" Él sabrá lo que significa.",
+						"5": "Su ladrido es peor que su mordida. Probablemente. Ve ahora, y no olvides la frase.",
+						"player": {
+							"0": "¿El Brillacuenco? Quiero decir, lo encontré, pero no entiendo realmente lo que hace.",
+							"1": "¿Fragmentos de alma? Eso suena... intenso.",
+							"2": "¿Otra contraseña? ¿En serio? ¿Es que nadie en esta isla habla normalmente?",
+							"3": "Vale. \"El buscador de cuencos me envía.\" Entendido. Creo."
+						}
+					},
+					"reminder": {
+						"0": "El Mago está esperando. Dile: \"El buscador de cuencos me envía.\" Y trata de no molestarlo. Demasiado."
+					}
 				}
 			},
 			"dad": {
@@ -760,6 +834,72 @@
 			"mc": {
 				"arrival": {
 					"0": "Woah... ¿dónde estoy?"
+				}
+			},
+			"wizard": {
+				"greeting": {
+					"0": "Qué. ¿Tú otra vez? Estoy ocupado. Ve a molestar a alguien con cosas menos importantes que hacer."
+				},
+				"intro": {
+					"0": "¿Qué quieres? No tengo tiempo para charlas. Ni pequeñas, ni grandes, ni ninguna.",
+					"1": "Oh, una contraseña. Qué encantador. Qué deliciosamente mundano. ¿Crees que unas palabras te dan derecho a mi tiempo?",
+					"choice": {
+						"password": "\"El buscador de cuencos me envía.\"",
+						"bowl": "¡Tengo un Brillacuenco!"
+					},
+					"password": {
+						"0": "\"El buscador de cuencos.\" Maravilloso. Así que el viejo sigue mandando vagabundos a mi puerta. Eso no cambia nada.",
+						"1": "Pero me dijeron que usted podría ayudarme a entender—",
+						"player": {
+							"0": "Espera, ¿sabe quién me envía?"
+						}
+					},
+					"bowl": {
+						"0": "Un Brillacuenco. Fascinante. Todo el mundo y su abuela dice tener uno últimamente. La mayoría es un cuenco de sopa con purpurina.",
+						"1": "¡Este es real! El Sabio dijo—",
+						"player": {
+							"0": "¡Pero de verdad es un Brillacuenco! ¡Mire!"
+						}
+					},
+					"player": {
+						"0": "Eh... ¿hola? El Sabio me envía. Tengo una contraseña.",
+						"1": "Yo—"
+					}
+				},
+				"autoResume": {
+					"0": "Espera. ¡ESPERA! ¡Vuelve aquí!",
+					"1": "¿Acabas de... el cuenco te respondió de verdad? ¿Aquí? ¿Sin cicatriz, sin vínculo, sin nada?",
+					"2": "Eso... no debería ser posible. El Brillacuenco no se activa para cualquiera. Él elige. Y te eligió a TI.",
+					"3": "He pasado décadas estudiando estos artefactos y nunca he visto a alguien manejar uno en bruto así. Ni una sola vez.",
+					"4": "Siéntate. No, levántate. No—quédate donde estás. Tenemos que hablar de cicatrices.",
+					"5": "Una cicatriz es un sello mágico. Cuando se aplica a un pez, despierta algo dormido dentro de la criatura. El pez se convierte en un fragmento de tu alma—tus pensamientos, tu voluntad, fusionados en su ser.",
+					"6": "A partir de ahí, ese pez no solo nada. Lucha. Por ti. A través del Brillacuenco. Tu intención se convierte en su acción. Tu determinación se convierte en su fuerza.",
+					"7": "Puedo hacerte una. Una Cicatriz de Fuego Nocturno. Es nivel básico en cuanto a cicatrices, pero para alguien en tu etapa será más que suficiente.",
+					"8": "Pero necesito materiales. Diez frascos. Vacíos. El ritual de vinculación requiere recipientes de vidrio para contener el sello mientras se forma. Toma—llévate estas monedas. Dos de plata deberían bastar.",
+					"9": "Ahora ve. Consigue los frascos. No pierdas tiempo. Y no los rompas.",
+					"player": {
+						"0": "¡¿Qué?! ¡¿Qué acaba de pasar?!",
+						"1": "¿Un fragmento de mi alma? Eso es... bastante hermoso. Y bastante aterrador.",
+						"2": "Diez frascos. Dos de plata. Entendido. Ya vuelvo."
+					}
+				},
+				"jarReminder": {
+					"0": "Diez frascos. Vacíos. De vidrio. Sin romper. ¿Te está quedando claro?"
+				},
+				"jarReturn": {
+					"0": "Los tienes. Los diez. Y ninguno está rajado. Casi me impresionas.",
+					"1": "¡Aquí están! Los diez, sanos y salvos.",
+					"2": "Bien. Ahora no te muevas. No hables. Ni siquiera pienses demasiado fuerte. Este trabajo es delicado.",
+					"player": {
+						"0": "¿Y ahora qué pasa?"
+					}
+				},
+				"scarComplete": {
+					"0": "Está hecho. La Cicatriz de Fuego Nocturno. Tómala. Manéjala con cuidado—es más frágil de lo que parece, y más poderosa de lo que mereces.",
+					"1": "Cuando estés listo, aplícala a un pez. Sabrás qué hacer. Probablemente. Quizás. No la desperdicies.",
+					"player": {
+						"0": "Gracias. De verdad."
+					}
 				}
 			}
 		}

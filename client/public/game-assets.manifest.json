@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-04-27T09:22:45.168Z",
-  "totalAssets": 14344,
+  "generatedAt": "2026-04-28T01:14:27.851Z",
+  "totalAssets": 14346,
   "assets": [
     "/assets/animations/chest-open.png",
     "/assets/char/mc/idle/accessories/base/cape/idle_E_cape.png",
@@ -448,6 +448,7 @@
     "/assets/npc/seamaster/single.png",
     "/assets/npc/traveller/single.png",
     "/assets/npc/wiseman/single.png",
+    "/assets/npc/wizard/single.png",
     "/assets/scene/intro/audio_splash.mp3",
     "/assets/scene/intro/comic.png",
     "/assets/scene/intro/The Last Lights of Hope.mp3",
@@ -506,6 +507,7 @@
     "/dialogue/test.json",
     "/dialogue/traveller.json",
     "/dialogue/wiseman.json",
+    "/dialogue/wizard.json",
     "/items/food/goldenberries.png",
     "/items/food/yekberries.png",
     "/items/food/yekjuice.png",

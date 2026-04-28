@@ -23,6 +23,13 @@ const DIALOGUE_ITEM_GRANTS: Record<string, Record<string, { amount: number; ifMi
             ifMissingOnly: true,
             noSpaceMessage: "Clear one inventory slot so the Merchant can hand you a jar."
         }
+    },
+    wizard: {
+        nightfire_scar: {
+            amount: 1,
+            ifMissingOnly: true,
+            noSpaceMessage: "Clear one inventory slot so the Wizard can hand you the scar."
+        }
     }
 };
 

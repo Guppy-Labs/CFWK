@@ -8,6 +8,7 @@ Quick reference for quest order, objectives, and full quest-relevant dialogue te
 2. `heed_the_warning` (Heed the Warning) and `anti_death_measures` (Anti-death Measures)
 3. `village_weirdo` (The Village Weirdo)
 4. `bowl_that_shines` (The Bowl that Shines)
+5. `wizards_scar` (The Wizard's Scar)
 
 ## Side Quests
 
@@ -22,23 +23,57 @@ Quick reference for quest order, objectives, and full quest-relevant dialogue te
 1. Catch a fish
 2. Talk to Fisherman
 
-**Start / Fisherman dialogue**
-- NPC: "Welcome to Anchor Hollow! Name's the Fisherman."
+**Start / Fisherman dialogue (first encounter)**
+- NPC: "Huh. The tide dragged in something new."
+- Player: "Wh— where am I?"
+- NPC: "Anchor Hollow. Little island, big ocean."
+- Player: "Anchor Hollow? I've never heard of this place."
+- NPC: "Most haven't. Storm brought you in?"
+- Player: "I was sailing from home. My dad is sick — really sick. I left to find a cure for him."
+- NPC: "A cure. Hm. Can't help you there, kid. I know fish. That's about it."
 - Player prompt: "What should I ask?"
-  - Option: "Can I get a fishing rod?"
+  - Option: "What is this island?"
+    - NPC: "Small. Quiet. Handful of us live here. We fish, we eat, we mind our business."
+    - NPC: "There's a town further in. Guard watches the bridge, merchant sells things, couple others."
+    - NPC: "They'd know more about the world than I do. I just know the water."
+  - Option: "Has anyone come here looking for something like that?"
+    - NPC: "People wash up looking for all kinds of things. Most of them find fish."
+    - NPC: "But the island's got old things in it. Older than the docks. Older than me."
+    - NPC: "Talk to the folks in town. Someone might point you somewhere."
+- (Both options converge:)
+- NPC: "But first — you look half-drowned and fully starved. Can't look for anything on an empty stomach."
+- NPC: "Fishing's how we survive out here. I'll set you up."
+- Player prompt: "What do I need to do?"
+  - Option: "Alright, hand me a rod."
     - If player already has rod:
-      - NPC: "You've already got your rod. Equip it, then head to the water and cast your line."
+      - NPC: "You've already got one. Good. Find water, cast the line, and reel when it tugs."
     - If player does not have rod:
-      - NPC: "Aye, here you go - your first rod."
-      - NPC: "Equip your rod, find a good stretch of water, then cast and reel in your catch."
-  - Option: "How do I fish?"
-    - NPC: "Equip your rod, find water, cast your line, and reel when you feel a bite."
-    - NPC: "Once you've landed one, come back to me. You'll know the basics... but there's a big secret I still don't know."
+      - NPC: "Here. She's rickety, but she catches. Don't drop her in the water."
+      - NPC: "Equip it, walk to the water's edge, and cast. When the line pulls — reel."
+  - Option: "Wait — how does fishing even work?"
+    - NPC: "Equip the rod. Stand near water. Cast the line."
+    - NPC: "When you feel a tug, that's a bite. Reel it in before it swims off."
+    - (If player does not have rod:)
+      - NPC: "Oh — you'll need one of these."
+- NPC: "Land one and come back to me. Then we'll talk more."
+
+**Objective 1 (`objectiveIndex: 0`) reminder dialogue**
+- NPC: "Still dry? The water's right there, kid."
+- NPC: "Cast the line. Reel when it bites. Bring me what you catch."
 
 **Objective 2 (`objectiveIndex: 1`) return dialogue**
-- NPC: "Ha! You did it. You've got the basics of fishing down now."
-- NPC: "But there's a big secret beneath these waters... and I still don't know what it is."
-- NPC: "You should venture further onto the island to learn how things work around here."
+- NPC: "Ha! Look at that. Your first catch."
+- Player: "That was... actually kind of fun?"
+- NPC: "Don't let the fish hear you say that."
+- NPC: "You did good, kid. Natural grip. Most newcomers yank too hard and snap the line."
+- Player: "So there's more to it than just reeling?"
+- NPC: "There's always more. Better rods, deeper water, rarer fish. The basics get you fed. Everything past that gets you rich."
+- NPC: "And then there's whatever's underneath."
+- Player: "Underneath?"
+- NPC: "Something old. Past where the lines reach. I've fished these docks longer than I care to count, and I've never touched the edge of it."
+- NPC: "Not my business, though. I catch what bites."
+- NPC: "Head into town, kid. Meet the Guard, the Merchant. They'll teach you things I can't."
+- NPC: "And if you ever need the water — I'll be here. I'm always here."
 
 ---
 
@@ -267,3 +302,104 @@ Quick reference for quest order, objectives, and full quest-relevant dialogue te
 **Objective 7 (`objectiveIndex: 6`) Sea Master follow-up**
 - NPC: "So, what did the chest reveal? Hah, don't tell me yet."
 - NPC: "We'll speak again soon. For now, let this be your beginning."
+
+---
+
+## `wizards_scar` - The Wizard's Scar
+
+**Depends on:** `bowl_that_shines`
+
+**Description:** The Wise Man senses the Glimmerbowl's awakening and sends you to a reclusive Wizard. Convince the Wizard you're worth his time, learn about scars, and forge your first one.
+
+**Objectives:**
+0. Talk to Wizard (`talk-to-npc`, wizard)
+1. Walk away (`leave-npc-radius`, Wizard, 10m)
+2. Talk to Wizard (`talk-to-npc`, wizard, hideGuidance) — auto-resume forced dialogue
+3. Collect 10 Jars (`inventory-count`, jar, 10)
+4. Talk to Wizard (`talk-to-npc`, wizard)
+
+### Start: Wise Man dialogue
+
+**Wise Man sends MC to Wizard (triggers quest start)**
+- NPC (Wise Man): "Hold still. Something is... different about you. There's a hum. A vibration. You've awakened the Glimmerbowl, haven't you?"
+- Player: "The Glimmerbowl? I mean, I found it, but I don't really understand what it does."
+- NPC: "The Glimmerbowl is no ordinary tool. Long ago, creatures of the deep sea forged it from moonstone and tide-glass. They believed that every fish carried a fragment of a soul—and this bowl was the key to channeling those fragments."
+- NPC: "Only those whose spirit is in tune with the sea can command it. And it seems... you are one of the very few."
+- Player: "Fragments of a soul? That sounds... intense."
+- NPC: "But raw power without understanding is a storm without a harbor. You need guidance. There is someone who can help—a Wizard who lives on the outskirts of town."
+- NPC: "Find the Wizard. Tell him these exact words: 'The bowl scavenger sent me.' He'll know what it means."
+- Player: "Another password? Seriously? Does anyone on this island just talk to each other normally?"
+- NPC: "His bark is worse than his bite. Probably. Go now, and don't forget the phrase."
+- Player: "Fine. 'The bowl scavenger sent me.' Got it. I think."
+
+**Wise Man reminder (if quest active, objective 0)**
+- NPC: "The Wizard is waiting. Tell him: 'The bowl scavenger sent me.' And try not to annoy him. Too much."
+
+### Objective 0: Talk to Wizard
+
+**Wizard intro (rude, dismissive)**
+- NPC (Wizard): "What do you want? I don't have time for small talk. Or big talk. Or any talk."
+- Player: "Uh... hello? The Wise Man sent me. I have a password."
+- NPC: "Oh, a passphrase. How quaint. How delightfully pedestrian. You think a string of words entitles you to my time?"
+- Player choice:
+  - **"The bowl scavenger sent me."**
+    - NPC: "'The bowl scavenger.' Wonderful. So the old man is still sending strays to my door. That doesn't change anything."
+    - Player: "Wait, you know who sent me?"
+    - NPC: "But I was told you could help me understand—"
+  - **"I have a Glimmerbowl!"**
+    - NPC: "A Glimmerbowl. Fascinating. Everyone and their grandmother claims to have one these days. Mostly it's a soup bowl with glitter."
+    - Player: "But it's really a Glimmerbowl! Look!"
+    - NPC: "This one is real! The Wise Man said—"
+
+(Both paths result in the Wizard dismissing the player. Quest advances to objective 1: "Walk away.")
+
+### Objective 1: Walk away (leave-npc-radius, 10m)
+
+Player walks at least 10 meters away from the Wizard POI.
+
+**Client-side guide triggers:**
+- Guide overlay: "Click on the world to activate your Glimmerbowl."
+- Player clicks anywhere on the world (triggering `triggerWorldGlimmerbowl()` via normal input).
+- Guide clears.
+- 2-second delay.
+
+### Objective 2: Auto-resume forced dialogue
+
+**Wizard is stunned by the MC's raw Glimmerbowl control:**
+- NPC: "Wait. WAIT. Get back here!"
+- Player: "What?! What just happened?!"
+- NPC: "Did you just... did the bowl actually respond to you? Out here? Without a scar, without a binding, without anything?"
+- NPC: "That's... that shouldn't be possible. The Glimmerbowl doesn't just activate for anyone. It chooses. And it chose YOU."
+- NPC: "I've spent decades studying these artifacts and I've never seen someone command one raw like that. Not once."
+- NPC: "Sit down. No, stand up. No—just stay where you are. We need to talk about scars."
+- NPC: "A scar is a magical sigil. When applied to a fish, it awakens something dormant inside the creature. The fish becomes a figment of your soul—your thoughts, your will, fused into its being."
+- Player: "A figment of my soul? That's... kind of beautiful. And kind of terrifying."
+- NPC: "From that point on, that fish doesn't just swim. It fights. For you. Through the Glimmerbowl. Your intent becomes its action. Your resolve becomes its strength."
+- NPC: "I can make you one. A Nightfire Scar. It's entry-level as far as scars go, but for someone at your stage it'll be more than enough."
+- NPC: "But I need materials. Ten jars. Empty ones. The binding ritual requires glass vessels to contain the sigil while it forms. Here—take these coins. Two silver should cover it."
+- Player: "Ten jars. Two silver. Got it. I'll be back."
+- NPC: "Now go. Get the jars. Don't dawdle. And don't break them."
+
+(After dialogue completes, `sendNpcInteract('wizard')` advances objective 2 → 3. Server grants 200 money.)
+
+### Objective 3: Collect 10 Jars
+
+**Wizard jar reminder (if talked to during collection)**
+- NPC: "Ten jars. Empty. Glass. Not broken. Is any of this getting through?"
+
+### Objective 4: Return to Wizard
+
+**Wizard jar return dialogue**
+- NPC: "You got them. All ten. And none of them are cracked. I'm almost impressed."
+- Player: "So what happens now?"
+- Player: "Here they are! All ten, safe and sound."
+- NPC: "Good. Now don't move. Don't talk. Don't even think too loudly. This is delicate work."
+
+(Dialogue ends. Quest completes. Screen fades to black for 3 seconds.)
+
+**Scar completion forced dialogue (after fade-in)**
+- NPC: "It's done. The Nightfire Scar. Take it. Handle it carefully—it's more fragile than it looks, and more powerful than you deserve."
+- Player: "Thank you. Really."
+- NPC: "When you're ready, apply it to a fish. You'll know what to do. Probably. Maybe. Just don't waste it."
+
+(Player receives `nightfire_scar` via `dialogue:give-item`.)

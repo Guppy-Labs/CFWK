@@ -1,0 +1,137 @@
+{
+    "id": "wizard",
+    "forks": [
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "wizards_scar",
+                    "status": "active",
+                    "objectiveIndex": 4
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.wizard.jarReturn.0"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.wizard.jarReturn.player.0"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.wizard.jarReturn.1"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.wizard.jarReturn.2"
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "wizards_scar",
+                    "status": "active",
+                    "objectiveIndex": 3
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.wizard.jarReminder.0"
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "wizards_scar",
+                    "status": "active",
+                    "objectiveIndex": 0
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.wizard.intro.0"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.wizard.intro.player.0"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.wizard.intro.1"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.wizard.intro.player.1",
+                    "options": [
+                        {
+                            "id": "password",
+                            "textKey": "dialogue.npc.wizard.intro.choice.password",
+                            "lines": [
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "neutral",
+                                    "textKey": "dialogue.npc.wizard.intro.password.0"
+                                },
+                                {
+                                    "speaker": "player",
+                                    "emotion": "surprise",
+                                    "textKey": "dialogue.npc.wizard.intro.password.player.0"
+                                },
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "neutral",
+                                    "textKey": "dialogue.npc.wizard.intro.password.1"
+                                }
+                            ]
+                        },
+                        {
+                            "id": "bowl",
+                            "textKey": "dialogue.npc.wizard.intro.choice.bowl",
+                            "lines": [
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "neutral",
+                                    "textKey": "dialogue.npc.wizard.intro.bowl.0"
+                                },
+                                {
+                                    "speaker": "player",
+                                    "emotion": "surprise",
+                                    "textKey": "dialogue.npc.wizard.intro.bowl.player.0"
+                                },
+                                {
+                                    "speaker": "npc",
+                                    "emotion": "neutral",
+                                    "textKey": "dialogue.npc.wizard.intro.bowl.1"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "lines": [
+        {
+            "speaker": "npc",
+            "emotion": "neutral",
+            "textKey": "dialogue.npc.wizard.greeting.0"
+        }
+    ]
+}

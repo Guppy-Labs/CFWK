@@ -1892,6 +1892,7 @@ export class GameScene extends Phaser.Scene {
         this.setupFishingListener();
         this.setupHarvestListener();
         this.setupChestListener();
+        this.setupWizardQuestSequence();
         
         // Listen for server disconnection
         this.unsubscribeDisconnect = this.networkManager.onDisconnect((code) => {
@@ -2770,6 +2771,117 @@ export class GameScene extends Phaser.Scene {
             const centerX = Number.isFinite(data?.centerX) ? Number(data.centerX) : (fallback?.x ?? 0);
             const centerY = Number.isFinite(data?.centerY) ? Number(data.centerY) : (fallback?.y ?? 0);
             this.playChestOpenCinematic(centerX, centerY);
+        });
+    }
+
+    private setupWizardQuestSequence() {
+        const room = this.networkManager.getRoom();
+        if (!room) return;
+
+        let wizardQuestGuideActive = false;
+        let wizardQuestScarFadeActive = false;
+
+        room.onMessage('advancement:alert', (data: { type?: string; questId?: string; objectiveIndex?: number }) => {
+            if (!data || data.questId !== 'wizards_scar') return;
+
+            if (data.type === 'quest-objective' && data.objectiveIndex === 2) {
+                if (wizardQuestGuideActive) return;
+                wizardQuestGuideActive = true;
+
+                const uiScene = this.scene.get('UIScene') as UIScene | undefined;
+                if (!uiScene) { wizardQuestGuideActive = false; return; }
+
+                uiScene.showGuideOverlay({
+                    message: this.localeManager.t('guide.wizardsScar.activateBowl', undefined, 'Click on the world to activate your Glimmerbowl.'),
+                    dimBackground: true
+                });
+                uiScene.clearGuideInputGate();
+
+                const onPointerDown = () => {
+                    this.input.off('pointerdown', onPointerDown);
+                    uiScene.clearGuideOverlay();
+
+                    this.time.delayedCall(2000, () => {
+                        wizardQuestGuideActive = false;
+
+                        const waitForDialogue = new Promise<void>((resolve) => {
+                            const handler = () => {
+                                window.removeEventListener('dialogue:complete', handler);
+                                resolve();
+                            };
+                            window.addEventListener('dialogue:complete', handler);
+                        });
+
+                        window.dispatchEvent(new CustomEvent('dialogue:forced', {
+                            detail: {
+                                npcId: 'wizard',
+                                lines: [
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.autoResume.0' },
+                                    { speaker: 'player', emotion: 'surprise', textKey: 'dialogue.npc.wizard.autoResume.player.0' },
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.autoResume.1' },
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.autoResume.2' },
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.autoResume.3' },
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.autoResume.4' },
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.autoResume.5' },
+                                    { speaker: 'player', emotion: 'surprise', textKey: 'dialogue.npc.wizard.autoResume.player.1' },
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.autoResume.6' },
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.autoResume.7' },
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.autoResume.8' },
+                                    { speaker: 'player', textKey: 'dialogue.npc.wizard.autoResume.player.2' },
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.autoResume.9' }
+                                ]
+                            }
+                        }));
+
+                        waitForDialogue.then(() => {
+                            this.networkManager.sendNpcInteract('wizard');
+                        });
+                    });
+                };
+                this.input.on('pointerdown', onPointerDown);
+            }
+
+            if (data.type === 'quest-completed') {
+                if (wizardQuestScarFadeActive) return;
+                wizardQuestScarFadeActive = true;
+
+                this.cameras.main.fadeOut(500, 0, 0, 0);
+                this.time.delayedCall(500 + 3000, () => {
+                    this.cameras.main.fadeIn(500, 0, 0, 0);
+
+                    this.time.delayedCall(600, () => {
+                        wizardQuestScarFadeActive = false;
+
+                        const waitForDialogue = new Promise<void>((resolve) => {
+                            const handler = () => {
+                                window.removeEventListener('dialogue:complete', handler);
+                                resolve();
+                            };
+                            window.addEventListener('dialogue:complete', handler);
+                        });
+
+                        window.dispatchEvent(new CustomEvent('dialogue:forced', {
+                            detail: {
+                                npcId: 'wizard',
+                                lines: [
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.scarComplete.0' },
+                                    { speaker: 'player', textKey: 'dialogue.npc.wizard.scarComplete.player.0' },
+                                    { speaker: 'npc', textKey: 'dialogue.npc.wizard.scarComplete.1' }
+                                ]
+                            }
+                        }));
+
+                        waitForDialogue.then(() => {
+                            this.networkManager.sendDialogueGiveItem({
+                                npcId: 'wizard',
+                                itemId: 'nightfire_scar',
+                                amount: 1,
+                                ifMissing: true
+                            });
+                        });
+                    });
+                });
+            }
         });
     }
 

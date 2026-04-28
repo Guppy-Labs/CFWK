@@ -164,6 +164,9 @@
 			},
 			"bowl_that_shines": {
 				"name": "Le Bol qui Brille"
+			},
+			"wizards_scar": {
+				"name": "La Cicatrice du Sorcier"
 			}
 		}
 	},
@@ -187,7 +190,8 @@
 				"waitForTimeWindow": "Attendre la nuit ({start}:00-{end}:00)",
 				"fishNearLocation": "Pêcher près de {location}",
 				"harvestInteractive": "Utiliser l'interactable à proximité",
-				"openGlimmeringChest": "Ouvrir le Coffre Étincelant"
+				"openGlimmeringChest": "Ouvrir le Coffre Étincelant",
+				"walkAway": "S'éloigner"
 			},
 			"status": {
 				"label": "Statut",
@@ -196,7 +200,7 @@
 				"completed": "Terminée"
 			},
 			"first_catch": {
-				"description": "Parle au Pêcheur, récupère une canne et sors ta première prise des eaux d'Anchor Hollow."
+				"description": "La marée t'a amené à Anchor Hollow. Le Pêcheur t'a offert une canne et un marché simple : attrape un poisson, et on discute. Sors ta première prise des eaux de l'île."
 			},
 			"travellers_errand": {
 				"description": "Un petit service pour une inconnue sur la route. Écoute-la, puis va en parler au Garde."
@@ -218,6 +222,9 @@
 			},
 			"bowl_that_shines": {
 				"description": "Le Sage détient un secret. Il dit de le porter au Maître des Mers. Le Maître des Mers dit : les quais, la nuit, sous la lune. Entre les deux dort la Clé Étincelante et le coffre qu'elle ouvre."
+			},
+			"wizards_scar": {
+				"description": "Le Sage sent l'éveil du Brillécuelle et t'envoie chez un Sorcier reclus. Convaincs le Sorcier que tu mérites son temps, apprends les cicatrices, et forge ta première."
 			}
 		}
 	},
@@ -295,6 +302,9 @@
 		"bowlThatShines": {
 			"returnToSeamaster": "Rapporte la clé au Maître des Mers. Il l'attend depuis plus longtemps que tu es vivant."
 		},
+		"wizardsScar": {
+			"activateBowl": "Cliquez sur le monde pour activer votre Brillécuelle."
+		},
 		"rod": {
 			"openInventory": "Pour équiper votre nouvelle canne, ouvrez votre inventaire (appuyez sur {key} sur PC).",
 			"openInventoryMobile": "Pour équiper votre nouvelle canne, touchez le bouton d'inventaire.",
@@ -335,6 +345,9 @@
 		},
 		"dad": {
 			"name": "Papa Chat"
+		},
+		"wizard": {
+			"name": "Sorcier"
 		}
 	},
 	"dialogue": {
@@ -500,31 +513,73 @@
 				}
 			},
 			"fisherman": {
-				"greeting": {
-					"0": "Doucement. Les poissons mordent quand l'eau est calme — et les mains patientes."
-				},
-				"choice": {
-					"prompt": "Qu'est-ce que je devrais demander ?",
-					"needRod": "Je peux avoir une canne à pêche ?",
-					"basics": "Comment est-ce qu'on pêche ?"
-				},
-				"needRod": {
-					"hasRod": {
-						"0": "Tu as ta canne. Bien. Trouve de l'eau. Lance. Moulinet."
+				"intro": {
+					"0": "Hé. La marée a charrié quelque chose de nouveau.",
+					"1": "Anchor Hollow. Petite île, grand océan.",
+					"2": "Normal. Une tempête t'a amené ici ?",
+					"3": "Un remède. Hm. Je peux pas t'aider là-dessus, gamin. Je connais le poisson. C'est à peu près tout.",
+					"4": "Mais d'abord — t'as l'air à moitié noyé et complètement affamé. On cherche rien le ventre vide.",
+					"5": "La pêche, c'est comme ça qu'on survit ici. Je vais t'équiper.",
+					"6": "Attrape un poisson et reviens me voir. On parlera plus après.",
+					"player": {
+						"0": "Qu— où est-ce que je suis ?",
+						"1": "Anchor Hollow ? J'ai jamais entendu parler de cet endroit.",
+						"2": "Je naviguais depuis chez moi. Mon père est malade — vraiment malade. Je suis parti chercher un remède."
 					},
-					"noRod": {
-						"0": "Tiens. Ta première canne. Ne la laisse pas tomber à l'eau.",
-						"1": "Équipe-la. Trouve un coin d'eau. Lance. Mouline quand la ligne te le dira."
+					"choice": {
+						"prompt": "Qu'est-ce que je devrais demander ?",
+						"island": "C'est quoi, cette île ?",
+						"cure": "Quelqu'un est déjà venu chercher quelque chose comme ça ?"
+					},
+					"island": {
+						"0": "Petite. Tranquille. Une poignée d'entre nous vit ici. On pêche, on mange, on se mêle de nos affaires.",
+						"1": "Il y a un village plus loin. Un garde surveille le pont, un marchand vend des trucs, quelques autres.",
+						"2": "Ils en savent plus sur le monde que moi. Moi, je connais juste l'eau."
+					},
+					"cure": {
+						"0": "Des gens échouent ici en cherchant toutes sortes de choses. La plupart trouvent du poisson.",
+						"1": "Mais l'île a de vieilles choses. Plus vieilles que les quais. Plus vieilles que moi.",
+						"2": "Parle aux gens du village. Quelqu'un pourrait te mettre sur une piste."
 					}
 				},
-				"basics": {
-					"0": "Équipe la canne. Trouve de l'eau. Lance la ligne. Mouline quand ça mord.",
-					"1": "Sors-en un et reviens. Tu auras les bases. Juste les bases, attention. Il y a un secret là-dessous — un auquel je n'ai jamais touché."
+				"rod": {
+					"choice": {
+						"prompt": "Qu'est-ce que je dois faire ?",
+						"takeRod": "D'accord, donne-moi une canne.",
+						"howFish": "Attends — comment ça marche, la pêche ?"
+					},
+					"hasRod": {
+						"0": "T'en as déjà une. Bien. Trouve de l'eau, lance la ligne, et mouline quand ça tire."
+					},
+					"noRod": {
+						"0": "Tiens. Elle est bancale, mais elle attrape. Ne la laisse pas tomber à l'eau.",
+						"1": "Équipe-la, va au bord de l'eau, et lance. Quand la ligne tire — mouline."
+					},
+					"howFish": {
+						"0": "Équipe la canne. Trouve de l'eau. Lance la ligne.",
+						"1": "Quand tu sens une secousse, c'est une touche. Mouline avant que ça file.",
+						"2": "Oh — il te faudra ça."
+					}
+				},
+				"reminder": {
+					"0": "Toujours sec ? L'eau est juste là, gamin.",
+					"1": "Lance la ligne. Mouline quand ça mord. Rapporte-moi ce que t'attrapes."
 				},
 				"postCatch": {
-					"0": "Ha. Tu l'as fait. Tu as les bases.",
-					"1": "Il y a un secret là-dessous, petit. Plus vieux que le quai. Plus vieux que moi. Je n'en ai jamais effleuré le bord.",
-					"2": "Va plus loin. Rencontre le village. Ils t'apprendront bien plus que moi."
+					"0": "Ha ! Regarde-moi ça. Ta première prise.",
+					"1": "Dis pas ça devant le poisson.",
+					"2": "T'as bien fait, gamin. Bonne prise en main. La plupart des nouveaux tirent trop fort et cassent la ligne.",
+					"3": "C'est toujours plus compliqué. Meilleures cannes, eaux profondes, poissons rares. Les bases te nourrissent. Tout le reste t'enrichit.",
+					"4": "Et puis il y a ce qu'il y a en dessous.",
+					"5": "Quelque chose de vieux. Sous l'eau, plus loin que les lignes. Je pêche à ces quais depuis plus longtemps que je veux bien l'admettre, et j'en ai jamais effleuré le bord.",
+					"6": "C'est pas mes affaires, cela dit. Moi, j'attrape ce qui mord.",
+					"7": "Va en ville, gamin. Rencontre le Garde, le Marchand. Ils t'apprendront des choses que je peux pas.",
+					"8": "Et si t'as besoin de l'eau — je serai là. Je suis toujours là.",
+					"player": {
+						"0": "C'était... en fait plutôt marrant ?",
+						"1": "Donc c'est plus compliqué que juste mouliner ?",
+						"2": "En dessous ?"
+					}
 				},
 				"bowlThatShines": {
 					"askAround": {
@@ -701,6 +756,25 @@
 							"0": "Tu n'aurais pas vu une clé ?"
 						}
 					}
+				},
+				"wizardsScar": {
+					"intro": {
+						"0": "Ne bouge pas. Quelque chose est... différent chez toi. Il y a un bourdonnement. Une vibration. Tu as éveillé le Brillécuelle, n'est-ce pas ?",
+						"1": "Le Brillécuelle n'est pas un outil ordinaire. Il y a longtemps, des créatures des profondeurs l'ont forgé à partir de pierre de lune et de verre de marée. Elles croyaient que chaque poisson portait un fragment d'âme—et ce bol était la clé pour canaliser ces fragments.",
+						"2": "Seuls ceux dont l'esprit est en harmonie avec la mer peuvent le manier. Et il semblerait... que tu sois l'un des très rares.",
+						"3": "Mais un pouvoir brut sans compréhension est une tempête sans port. Tu as besoin d'un guide. Il y a quelqu'un qui peut t'aider—un Sorcier qui vit à la sortie de la ville.",
+						"4": "Trouve le Sorcier. Dis-lui ces mots exacts : « Le fouilleur de bols m'envoie. » Il saura ce que cela signifie.",
+						"5": "Il aboie plus qu'il ne mord. Probablement. Vas-y maintenant, et n'oublie pas la phrase.",
+						"player": {
+							"0": "Le Brillécuelle ? Oui, je l'ai trouvé, mais je ne comprends pas vraiment ce qu'il fait.",
+							"1": "Des fragments d'âme ? Ça a l'air... intense.",
+							"2": "Encore un mot de passe ? Sérieusement ? Est-ce que quelqu'un sur cette île se parle normalement ?",
+							"3": "D'accord. « Le fouilleur de bols m'envoie. » Compris. Je crois."
+						}
+					},
+					"reminder": {
+						"0": "Le Sorcier t'attend. Dis-lui : « Le fouilleur de bols m'envoie. » Et essaie de ne pas trop l'énerver."
+					}
 				}
 			},
 			"dad": {
@@ -760,6 +834,72 @@
 				"arrival": {
 					"crash": "Oups... on dirait que je me suis endormi.",
 					"0": "Woah... où suis-je ?"
+				}
+			},
+			"wizard": {
+				"greeting": {
+					"0": "Quoi. Encore toi ? Je suis occupé. Va embêter quelqu'un qui a des choses moins importantes à faire."
+				},
+				"intro": {
+					"0": "Qu'est-ce que tu veux ? Je n'ai pas de temps pour les bavardages. Ni petits, ni grands, ni aucun.",
+					"1": "Oh, un mot de passe. Comme c'est charmant. Comme c'est délicieusement banal. Tu crois qu'une suite de mots te donne droit à mon temps ?",
+					"choice": {
+						"password": "« Le fouilleur de bols m'envoie. »",
+						"bowl": "J'ai un Brillécuelle !"
+					},
+					"password": {
+						"0": "« Le fouilleur de bols. » Merveilleux. Alors le vieil homme envoie encore des errants à ma porte. Ça ne change rien.",
+						"1": "Mais on m'a dit que vous pourriez m'aider à comprendre—",
+						"player": {
+							"0": "Attendez, vous savez qui m'envoie ?"
+						}
+					},
+					"bowl": {
+						"0": "Un Brillécuelle. Fascinant. Tout le monde et sa grand-mère prétend en avoir un ces temps-ci. La plupart du temps c'est un bol de soupe avec des paillettes.",
+						"1": "Celui-ci est vrai ! Le Sage a dit—",
+						"player": {
+							"0": "Mais c'est vraiment un Brillécuelle ! Regardez !"
+						}
+					},
+					"player": {
+						"0": "Euh... bonjour ? Le Sage m'envoie. J'ai un mot de passe.",
+						"1": "Je—"
+					}
+				},
+				"autoResume": {
+					"0": "Attends. ATTENDS. Reviens ici !",
+					"1": "Tu viens de... est-ce que le bol t'a vraiment répondu ? Ici ? Sans cicatrice, sans lien, sans rien ?",
+					"2": "C'est... ça ne devrait pas être possible. Le Brillécuelle ne s'active pas pour n'importe qui. Il choisit. Et il t'a choisi TOI.",
+					"3": "J'ai passé des décennies à étudier ces artefacts et je n'ai jamais vu quelqu'un en commander un à l'état brut comme ça. Pas une seule fois.",
+					"4": "Assieds-toi. Non, lève-toi. Non—reste juste où tu es. On doit parler des cicatrices.",
+					"5": "Une cicatrice est un sceau magique. Appliquée à un poisson, elle éveille quelque chose de dormant dans la créature. Le poisson devient un fragment de ton âme—tes pensées, ta volonté, fusionnées dans son être.",
+					"6": "À partir de là, ce poisson ne fait pas que nager. Il se bat. Pour toi. À travers le Brillécuelle. Ton intention devient son action. Ta détermination devient sa force.",
+					"7": "Je peux t'en fabriquer une. Une Cicatrice de Feu Nocturne. C'est le niveau débutant en matière de cicatrices, mais pour quelqu'un à ton stade, ce sera plus que suffisant.",
+					"8": "Mais j'ai besoin de matériaux. Dix bocaux. Vides. Le rituel de liaison nécessite des récipients en verre pour contenir le sceau pendant qu'il se forme. Tiens—prends ces pièces. Deux argents devraient suffire.",
+					"9": "Maintenant va. Trouve les bocaux. Ne traîne pas. Et ne les casse pas.",
+					"player": {
+						"0": "Quoi ?! Qu'est-ce qui vient de se passer ?!",
+						"1": "Un fragment de mon âme ? C'est... plutôt beau. Et plutôt terrifiant.",
+						"2": "Dix bocaux. Deux argents. Compris. Je reviens."
+					}
+				},
+				"jarReminder": {
+					"0": "Dix bocaux. Vides. En verre. Pas cassés. Est-ce que ça rentre ?"
+				},
+				"jarReturn": {
+					"0": "Tu les as. Tous les dix. Et aucun n'est fêlé. Je suis presque impressionné.",
+					"1": "Les voilà ! Tous les dix, sains et saufs.",
+					"2": "Bien. Maintenant ne bouge pas. Ne parle pas. Ne pense même pas trop fort. C'est un travail délicat.",
+					"player": {
+						"0": "Alors qu'est-ce qui se passe maintenant ?"
+					}
+				},
+				"scarComplete": {
+					"0": "C'est fait. La Cicatrice de Feu Nocturne. Prends-la. Manipule-la avec soin—elle est plus fragile qu'elle n'en a l'air, et plus puissante que tu ne le mérites.",
+					"1": "Quand tu seras prêt, applique-la à un poisson. Tu sauras quoi faire. Probablement. Peut-être. Ne la gaspille pas.",
+					"player": {
+						"0": "Merci. Vraiment."
+					}
 				}
 			}
 		}

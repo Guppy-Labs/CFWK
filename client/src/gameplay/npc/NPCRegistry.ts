@@ -7,6 +7,7 @@ import { TRAVELLER_NPC_DEFINITION } from './defs/TravellerNpc';
 import { WISEMAN_NPC_DEFINITION } from './defs/WisemanNpc';
 import { DEBUG_NPC_DEFINITION } from './defs/DebugNpc';
 import { DAD_NPC_DEFINITION } from './defs/DadNpc';
+import { WIZARD_NPC_DEFINITION } from './defs/WizardNpc';
 
 export type NPCDefinition = {
     id: string;
@@ -33,7 +34,8 @@ const NPC_DEFINITIONS: Record<string, NPCDefinition> = {
     [TRAVELLER_NPC_DEFINITION.id]: TRAVELLER_NPC_DEFINITION,
     [WISEMAN_NPC_DEFINITION.id]: WISEMAN_NPC_DEFINITION,
     [DEBUG_NPC_DEFINITION.id]: DEBUG_NPC_DEFINITION,
-    [DAD_NPC_DEFINITION.id]: DAD_NPC_DEFINITION
+    [DAD_NPC_DEFINITION.id]: DAD_NPC_DEFINITION,
+    [WIZARD_NPC_DEFINITION.id]: WIZARD_NPC_DEFINITION
 };
 
 export function getNpcDefinition(id: string): NPCDefinition | undefined {

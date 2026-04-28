@@ -49,14 +49,81 @@
                     "textKey": "dialogue.npc.fisherman.postCatch.0"
                 },
                 {
-                    "speaker": "npc",
-                    "emotion": "surprise",
-                    "textKey": "dialogue.npc.fisherman.postCatch.1"
+                    "speaker": "player",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.fisherman.postCatch.player.0"
                 },
                 {
                     "speaker": "npc",
                     "emotion": "happy",
+                    "textKey": "dialogue.npc.fisherman.postCatch.1"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
                     "textKey": "dialogue.npc.fisherman.postCatch.2"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.fisherman.postCatch.player.1"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.fisherman.postCatch.3"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.fisherman.postCatch.4"
+                },
+                {
+                    "speaker": "player",
+                    "emotion": "surprise",
+                    "textKey": "dialogue.npc.fisherman.postCatch.player.2"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.fisherman.postCatch.5"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.fisherman.postCatch.6"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.fisherman.postCatch.7"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.fisherman.postCatch.8"
+                }
+            ]
+        },
+        {
+            "checks": [
+                {
+                    "type": "questObjective",
+                    "questId": "first_catch",
+                    "status": "active",
+                    "objectiveIndex": 0
+                }
+            ],
+            "lines": [
+                {
+                    "speaker": "npc",
+                    "emotion": "neutral",
+                    "textKey": "dialogue.npc.fisherman.reminder.0"
+                },
+                {
+                    "speaker": "npc",
+                    "emotion": "happy",
+                    "textKey": "dialogue.npc.fisherman.reminder.1"
                 }
             ]
         }
@@ -64,70 +131,349 @@
     "lines": [
         {
             "speaker": "npc",
-            "emotion": "happy",
-            "textKey": "dialogue.npc.fisherman.greeting.0"
+            "emotion": "surprise",
+            "textKey": "dialogue.npc.fisherman.intro.0"
         },
         {
             "speaker": "player",
             "emotion": "surprise",
-            "textKey": "dialogue.npc.fisherman.choice.prompt",
+            "textKey": "dialogue.npc.fisherman.intro.player.0"
+        },
+        {
+            "speaker": "npc",
+            "emotion": "neutral",
+            "textKey": "dialogue.npc.fisherman.intro.1"
+        },
+        {
+            "speaker": "player",
+            "emotion": "surprise",
+            "textKey": "dialogue.npc.fisherman.intro.player.1"
+        },
+        {
+            "speaker": "npc",
+            "emotion": "neutral",
+            "textKey": "dialogue.npc.fisherman.intro.2"
+        },
+        {
+            "speaker": "player",
+            "emotion": "sad",
+            "textKey": "dialogue.npc.fisherman.intro.player.2"
+        },
+        {
+            "speaker": "npc",
+            "emotion": "neutral",
+            "textKey": "dialogue.npc.fisherman.intro.3"
+        },
+        {
+            "speaker": "player",
+            "emotion": "surprise",
+            "textKey": "dialogue.npc.fisherman.intro.choice.prompt",
             "options": [
                 {
-                    "id": "need_rod",
-                    "textKey": "dialogue.npc.fisherman.choice.needRod",
-                    "branches": [
+                    "id": "island",
+                    "textKey": "dialogue.npc.fisherman.intro.choice.island",
+                    "lines": [
                         {
-                            "checks": [
-                                {
-                                    "type": "hasItem",
-                                    "itemId": "rickety_rod"
-                                }
-                            ],
-                            "lines": [
-                                {
-                                    "speaker": "npc",
-                                    "emotion": "happy",
-                                    "textKey": "dialogue.npc.fisherman.needRod.hasRod.0"
-                                }
-                            ]
+                            "speaker": "npc",
+                            "emotion": "neutral",
+                            "textKey": "dialogue.npc.fisherman.intro.island.0"
                         },
                         {
-                            "lines": [
+                            "speaker": "npc",
+                            "emotion": "neutral",
+                            "textKey": "dialogue.npc.fisherman.intro.island.1"
+                        },
+                        {
+                            "speaker": "npc",
+                            "emotion": "happy",
+                            "textKey": "dialogue.npc.fisherman.intro.island.2"
+                        },
+                        {
+                            "speaker": "npc",
+                            "emotion": "happy",
+                            "textKey": "dialogue.npc.fisherman.intro.4"
+                        },
+                        {
+                            "speaker": "npc",
+                            "emotion": "neutral",
+                            "textKey": "dialogue.npc.fisherman.intro.5"
+                        },
+                        {
+                            "speaker": "player",
+                            "emotion": "surprise",
+                            "textKey": "dialogue.npc.fisherman.rod.choice.prompt",
+                            "options": [
                                 {
-                                    "speaker": "npc",
-                                    "emotion": "happy",
-                                    "textKey": "dialogue.npc.fisherman.needRod.noRod.0"
+                                    "id": "take_rod",
+                                    "textKey": "dialogue.npc.fisherman.rod.choice.takeRod",
+                                    "branches": [
+                                        {
+                                            "checks": [
+                                                {
+                                                    "type": "hasItem",
+                                                    "itemId": "rickety_rod"
+                                                }
+                                            ],
+                                            "lines": [
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.fisherman.rod.hasRod.0"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.intro.6"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "lines": [
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.fisherman.rod.noRod.0"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.rod.noRod.1"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.intro.6"
+                                                }
+                                            ],
+                                            "actions": [
+                                                {
+                                                    "type": "giveItem",
+                                                    "itemId": "rickety_rod",
+                                                    "amount": 1,
+                                                    "ifMissing": true
+                                                }
+                                            ]
+                                        }
+                                    ]
                                 },
                                 {
-                                    "speaker": "npc",
-                                    "emotion": "happy",
-                                    "textKey": "dialogue.npc.fisherman.needRod.noRod.1"
-                                }
-                            ],
-                            "actions": [
-                                {
-                                    "type": "giveItem",
-                                    "itemId": "rickety_rod",
-                                    "amount": 1,
-                                    "ifMissing": true
+                                    "id": "how_fish",
+                                    "textKey": "dialogue.npc.fisherman.rod.choice.howFish",
+                                    "branches": [
+                                        {
+                                            "checks": [
+                                                {
+                                                    "type": "hasItem",
+                                                    "itemId": "rickety_rod"
+                                                }
+                                            ],
+                                            "lines": [
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.rod.howFish.0"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.rod.howFish.1"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.intro.6"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "lines": [
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.rod.howFish.0"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.rod.howFish.1"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.fisherman.rod.howFish.2"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.intro.6"
+                                                }
+                                            ],
+                                            "actions": [
+                                                {
+                                                    "type": "giveItem",
+                                                    "itemId": "rickety_rod",
+                                                    "amount": 1,
+                                                    "ifMissing": true
+                                                }
+                                            ]
+                                        }
+                                    ]
                                 }
                             ]
                         }
                     ]
                 },
                 {
-                    "id": "ask_basics",
-                    "textKey": "dialogue.npc.fisherman.choice.basics",
+                    "id": "cure",
+                    "textKey": "dialogue.npc.fisherman.intro.choice.cure",
                     "lines": [
                         {
                             "speaker": "npc",
-                            "emotion": "happy",
-                            "textKey": "dialogue.npc.fisherman.basics.0"
+                            "emotion": "neutral",
+                            "textKey": "dialogue.npc.fisherman.intro.cure.0"
+                        },
+                        {
+                            "speaker": "npc",
+                            "emotion": "neutral",
+                            "textKey": "dialogue.npc.fisherman.intro.cure.1"
+                        },
+                        {
+                            "speaker": "npc",
+                            "emotion": "neutral",
+                            "textKey": "dialogue.npc.fisherman.intro.cure.2"
                         },
                         {
                             "speaker": "npc",
                             "emotion": "happy",
-                            "textKey": "dialogue.npc.fisherman.basics.1"
+                            "textKey": "dialogue.npc.fisherman.intro.4"
+                        },
+                        {
+                            "speaker": "npc",
+                            "emotion": "neutral",
+                            "textKey": "dialogue.npc.fisherman.intro.5"
+                        },
+                        {
+                            "speaker": "player",
+                            "emotion": "surprise",
+                            "textKey": "dialogue.npc.fisherman.rod.choice.prompt",
+                            "options": [
+                                {
+                                    "id": "take_rod",
+                                    "textKey": "dialogue.npc.fisherman.rod.choice.takeRod",
+                                    "branches": [
+                                        {
+                                            "checks": [
+                                                {
+                                                    "type": "hasItem",
+                                                    "itemId": "rickety_rod"
+                                                }
+                                            ],
+                                            "lines": [
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.fisherman.rod.hasRod.0"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.intro.6"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "lines": [
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.fisherman.rod.noRod.0"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.rod.noRod.1"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.intro.6"
+                                                }
+                                            ],
+                                            "actions": [
+                                                {
+                                                    "type": "giveItem",
+                                                    "itemId": "rickety_rod",
+                                                    "amount": 1,
+                                                    "ifMissing": true
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "id": "how_fish",
+                                    "textKey": "dialogue.npc.fisherman.rod.choice.howFish",
+                                    "branches": [
+                                        {
+                                            "checks": [
+                                                {
+                                                    "type": "hasItem",
+                                                    "itemId": "rickety_rod"
+                                                }
+                                            ],
+                                            "lines": [
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.rod.howFish.0"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.rod.howFish.1"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.intro.6"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "lines": [
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.rod.howFish.0"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.rod.howFish.1"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "happy",
+                                                    "textKey": "dialogue.npc.fisherman.rod.howFish.2"
+                                                },
+                                                {
+                                                    "speaker": "npc",
+                                                    "emotion": "neutral",
+                                                    "textKey": "dialogue.npc.fisherman.intro.6"
+                                                }
+                                            ],
+                                            "actions": [
+                                                {
+                                                    "type": "giveItem",
+                                                    "itemId": "rickety_rod",
+                                                    "amount": 1,
+                                                    "ifMissing": true
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
                         }
                     ]
                 }

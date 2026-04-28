@@ -643,7 +643,8 @@ export type QuestObjectiveKind =
   | 'fish-near-location'
   | 'inventory-count'
   | 'refine-food'
-  | 'bottle-liquid';
+  | 'bottle-liquid'
+  | 'leave-npc-radius';
 
 export type IQuestObjectiveEntry = {
   kind: QuestObjectiveKind;
@@ -763,6 +764,7 @@ export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
     id: 'bowl_that_shines',
     dependencyQuestId: 'village_weirdo',
     dependencyQuestIds: ['village_weirdo'],
+    nextQuestIds: ['wizards_scar'],
     startObjective: { kind: 'talk-to-npc', npcId: 'wiseman' },
     objectives: [
       { kind: 'talk-to-npc', npcId: 'seamaster' },
@@ -774,6 +776,20 @@ export const ADVANCEMENT_QUEST_CATALOG: IQuestCatalogEntry[] = [
       { kind: 'talk-to-npc', npcId: 'seamaster' }
     ],
     objective: { kind: 'talk-to-npc', npcId: 'seamaster' }
+  },
+  {
+    id: 'wizards_scar',
+    dependencyQuestId: 'bowl_that_shines',
+    dependencyQuestIds: ['bowl_that_shines'],
+    startObjective: { kind: 'talk-to-npc', npcId: 'wiseman' },
+    objectives: [
+      { kind: 'talk-to-npc', npcId: 'wizard' },
+      { kind: 'leave-npc-radius', locationName: 'Wizard', radiusMeters: 10, labelKey: 'finbook.quest.objective.walkAway' },
+      { kind: 'talk-to-npc', npcId: 'wizard', hideGuidance: true },
+      { kind: 'inventory-count', itemId: 'jar', requiredCount: 10 },
+      { kind: 'talk-to-npc', npcId: 'wizard' }
+    ],
+    objective: { kind: 'talk-to-npc', npcId: 'wizard' }
   }
 ];
 

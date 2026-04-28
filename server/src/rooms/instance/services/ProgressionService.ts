@@ -80,14 +80,29 @@ export async function processQuestCompletionRewards(
     userId: string,
     alerts: IAdvancementAlertMessage[]
 ) {
+    let moneyDelta = 0;
+
     const completedQuestIds = alerts
         .filter((alert) => alert.type === "quest-completed" && typeof alert.questId === "string")
         .map((alert) => alert.questId as string);
 
-    if (!completedQuestIds.includes("village_weirdo")) return;
+    if (completedQuestIds.includes("village_weirdo")) {
+        moneyDelta += 100;
+    }
+
+    const wizardsScarJarObjective = alerts.some(
+        (alert) => alert.type === "quest-objective"
+            && alert.questId === "wizards_scar"
+            && alert.objectiveIndex === 3
+    );
+    if (wizardsScarJarObjective) {
+        moneyDelta += 200;
+    }
+
+    if (moneyDelta <= 0) return;
 
     const currentMoney = room.moneyByUserId.get(userId) ?? DEFAULT_PLAYER_MONEY_STATE.money;
-    const nextMoney = room.normalizeMoneyAmount(currentMoney + 100);
+    const nextMoney = room.normalizeMoneyAmount(currentMoney + moneyDelta);
     room.moneyByUserId.set(userId, nextMoney);
     if (userId !== client.sessionId) {
         await User.updateOne({ _id: userId }, { $set: { money: nextMoney } });

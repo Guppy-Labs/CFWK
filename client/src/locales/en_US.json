@@ -175,6 +175,9 @@
       },
       "bowl_that_shines": {
         "name": "The Bowl that Shines"
+      },
+      "wizards_scar": {
+        "name": "The Wizard's Scar"
       }
     },
     "achievement": {
@@ -209,7 +212,8 @@
         "inventoryCount": "Collect {count} {item}",
         "refineFood": "Refine {item} into liquid",
         "bottleLiquid": "Collect {liquid} using {container}",
-        "generic": "Complete the next task"
+        "generic": "Complete the next task",
+        "walkAway": "Walk away"
       },
       "status": {
         "label": "Status",
@@ -218,7 +222,7 @@
         "completed": "Completed"
       },
       "first_catch": {
-        "description": "Talk to the Fisherman, pick up a rod, and pull your first catch out of Anchor Hollow's waters."
+        "description": "The tide brought you to Anchor Hollow. The Fisherman offered a rod and a simple deal: catch a fish, then we talk. Pull your first catch from the island's waters."
       },
       "travellers_errand": {
         "description": "A small favor for a stranger on the road. Hear them out, then report back to the Guard."
@@ -240,6 +244,9 @@
       },
       "bowl_that_shines": {
         "description": "The Wise Man holds a secret. He says take it to the Sea Master. The Sea Master says the docks, at night, under moonlight. Somewhere between those two is the Glimmering Key and the chest it opens."
+      },
+      "wizards_scar": {
+        "description": "The Wise Man senses the Glimmerbowl's awakening and sends you to a reclusive Wizard. Convince the Wizard you're worth his time, learn about scars, and forge your first one."
       }
     },
     "achievementCategory": {
@@ -322,6 +329,9 @@
     "bowlThatShines": {
       "returnToSeamaster": "Bring the key back to the Sea Master. He's been waiting for this longer than you've been alive."
     },
+    "wizardsScar": {
+      "activateBowl": "Click on the world to activate your Glimmerbowl."
+    },
     "rod": {
       "openInventory": "To equip your new rod, open your inventory (press {key} on desktop).",
       "openInventoryMobile": "To equip your new rod, tap the inventory button.",
@@ -376,6 +386,9 @@
     },
     "dad": {
       "name": "Papa Cat"
+    },
+    "wizard": {
+      "name": "Wizard"
     }
   },
   "dialogue": {
@@ -541,31 +554,73 @@
         }
       },
       "fisherman": {
-        "greeting": {
-          "0": "Easy. Fish bite when the water is calm — and the hands are patient."
-        },
-        "choice": {
-          "prompt": "What should I ask?",
-          "needRod": "Can I get a fishing rod?",
-          "basics": "How do I fish?"
-        },
-        "needRod": {
-          "hasRod": {
-            "0": "Got your rod. Good. Find water. Cast. Reel."
+        "intro": {
+          "0": "Huh. The tide dragged in something new.",
+          "1": "Anchor Hollow. Little island, big ocean.",
+          "2": "Most haven't. Storm brought you in?",
+          "3": "A cure. Hm. Can't help you there, kid. I know fish. That's about it.",
+          "4": "But first — you look half-drowned and fully starved. Can't look for anything on an empty stomach.",
+          "5": "Fishing's how we survive out here. I'll set you up.",
+          "6": "Land one and come back to me. Then we'll talk more.",
+          "player": {
+            "0": "Wh— where am I?",
+            "1": "Anchor Hollow? I've never heard of this place.",
+            "2": "I was sailing from home. My dad is sick — really sick. I left to find a cure for him."
           },
-          "noRod": {
-            "0": "Here. Your first rod. Don't drop it in the water.",
-            "1": "Equip it. Find a stretch of water. Cast. Reel when the line tells you."
+          "choice": {
+            "prompt": "What should I ask?",
+            "island": "What is this island?",
+            "cure": "Has anyone come here looking for something like that?"
+          },
+          "island": {
+            "0": "Small. Quiet. Handful of us live here. We fish, we eat, we mind our business.",
+            "1": "There's a town further in. Guard watches the bridge, merchant sells things, couple others.",
+            "2": "They'd know more about the world than I do. I just know the water."
+          },
+          "cure": {
+            "0": "People wash up looking for all kinds of things. Most of them find fish.",
+            "1": "But the island's got old things in it. Older than the docks. Older than me.",
+            "2": "Talk to the folks in town. Someone might point you somewhere."
           }
         },
-        "basics": {
-          "0": "Equip the rod. Find water. Cast the line. Reel when it bites.",
-          "1": "Land one and come back. You'll have the basics. Just the basics, mind. There's a secret down there — one I've never touched."
+        "rod": {
+          "choice": {
+            "prompt": "What do I need to do?",
+            "takeRod": "Alright, hand me a rod.",
+            "howFish": "Wait — how does fishing even work?"
+          },
+          "hasRod": {
+            "0": "You've already got one. Good. Find water, cast the line, and reel when it tugs."
+          },
+          "noRod": {
+            "0": "Here. She's rickety, but she catches. Don't drop her in the water.",
+            "1": "Equip it, walk to the water's edge, and cast. When the line pulls — reel."
+          },
+          "howFish": {
+            "0": "Equip the rod. Stand near water. Cast the line.",
+            "1": "When you feel a tug, that's a bite. Reel it in before it swims off.",
+            "2": "Oh — you'll need one of these."
+          }
+        },
+        "reminder": {
+          "0": "Still dry? The water's right there, kid.",
+          "1": "Cast the line. Reel when it bites. Bring me what you catch."
         },
         "postCatch": {
-          "0": "Ha. You did it. You've got the basics.",
-          "1": "There's a secret down there, kid. Older than the dock. Older than me. I've never touched the edge of it.",
-          "2": "Go further in. Meet the town. They'll teach you more than I can."
+          "0": "Ha! Look at that. Your first catch.",
+          "1": "Don't let the fish hear you say that.",
+          "2": "You did good, kid. Natural grip. Most newcomers yank too hard and snap the line.",
+          "3": "There's always more. Better rods, deeper water, rarer fish. The basics get you fed. Everything past that gets you rich.",
+          "4": "And then there's whatever's underneath.",
+          "5": "Something old. Past where the lines reach. I've fished these docks longer than I care to count, and I've never touched the edge of it.",
+          "6": "Not my business, though. I catch what bites.",
+          "7": "Head into town, kid. Meet the Guard, the Merchant. They'll teach you things I can't.",
+          "8": "And if you ever need the water — I'll be here. I'm always here.",
+          "player": {
+            "0": "That was... actually kind of fun?",
+            "1": "So there's more to it than just reeling?",
+            "2": "Underneath?"
+          }
         },
         "bowlThatShines": {
           "askAround": {
@@ -742,6 +797,25 @@
               "0": "Have you seen a key?"
             }
           }
+        },
+        "wizardsScar": {
+          "intro": {
+            "0": "Hold still. Something is... different about you. There's a hum. A vibration. You've awakened the Glimmerbowl, haven't you?",
+            "1": "The Glimmerbowl is no ordinary tool. Long ago, creatures of the deep sea forged it from moonstone and tide-glass. They believed that every fish carried a fragment of a soul—and this bowl was the key to channeling those fragments.",
+            "2": "Only those whose spirit is in tune with the sea can command it. And it seems... you are one of the very few.",
+            "3": "But raw power without understanding is a storm without a harbor. You need guidance. There is someone who can help—a Wizard who lives on the outskirts of town.",
+            "4": "Find the Wizard. Tell him these exact words: \"The bowl scavenger sent me.\" He'll know what it means.",
+            "5": "His bark is worse than his bite. Probably. Go now, and don't forget the phrase.",
+            "player": {
+              "0": "The Glimmerbowl? I mean, I found it, but I don't really understand what it does.",
+              "1": "Fragments of a soul? That sounds... intense.",
+              "2": "Another password? Seriously? Does anyone on this island just talk to each other normally?",
+              "3": "Fine. \"The bowl scavenger sent me.\" Got it. I think."
+            }
+          },
+          "reminder": {
+            "0": "The Wizard is waiting. Tell him: \"The bowl scavenger sent me.\" And try not to annoy him. Too much."
+          }
         }
       },
       "dad": {
@@ -801,6 +875,72 @@
         "arrival": {
           "crash": "Oops... looks like I fell asleep.",
           "0": "Woah... where am I?"
+        }
+      },
+      "wizard": {
+        "greeting": {
+          "0": "What. You again? I'm busy. Go bother someone with less important things to do."
+        },
+        "intro": {
+          "0": "What do you want? I don't have time for small talk. Or big talk. Or any talk.",
+          "1": "Oh, a passphrase. How quaint. How delightfully pedestrian. You think a string of words entitles you to my time?",
+          "choice": {
+            "password": "\"The bowl scavenger sent me.\"",
+            "bowl": "I have a Glimmerbowl!"
+          },
+          "password": {
+            "0": "\"The bowl scavenger.\" Wonderful. So the old man is still sending strays to my door. That doesn't change anything.",
+            "1": "But I was told you could help me understand—",
+            "player": {
+              "0": "Wait, you know who sent me?"
+            }
+          },
+          "bowl": {
+            "0": "A Glimmerbowl. Fascinating. Everyone and their grandmother claims to have one these days. Mostly it's a soup bowl with glitter.",
+            "1": "This one is real! The Wise Man said—",
+            "player": {
+              "0": "But it's really a Glimmerbowl! Look!"
+            }
+          },
+          "player": {
+            "0": "Uh... hello? The Wise Man sent me. I have a password.",
+            "1": "I—"
+          }
+        },
+        "autoResume": {
+          "0": "Wait. WAIT. Get back here!",
+          "1": "Did you just... did the bowl actually respond to you? Out here? Without a scar, without a binding, without anything?",
+          "2": "That's... that shouldn't be possible. The Glimmerbowl doesn't just activate for anyone. It chooses. And it chose YOU.",
+          "3": "I've spent decades studying these artifacts and I've never seen someone command one raw like that. Not once.",
+          "4": "Sit down. No, stand up. No—just stay where you are. We need to talk about scars.",
+          "5": "A scar is a magical sigil. When applied to a fish, it awakens something dormant inside the creature. The fish becomes a figment of your soul—your thoughts, your will, fused into its being.",
+          "6": "From that point on, that fish doesn't just swim. It fights. For you. Through the Glimmerbowl. Your intent becomes its action. Your resolve becomes its strength.",
+          "7": "I can make you one. A Nightfire Scar. It's entry-level as far as scars go, but for someone at your stage it'll be more than enough.",
+          "8": "But I need materials. Ten jars. Empty ones. The binding ritual requires glass vessels to contain the sigil while it forms. Here—take these coins. Two silver should cover it.",
+          "9": "Now go. Get the jars. Don't dawdle. And don't break them.",
+          "player": {
+            "0": "What?! What just happened?!",
+            "1": "A figment of my soul? That's... kind of beautiful. And kind of terrifying.",
+            "2": "Ten jars. Two silver. Got it. I'll be back."
+          }
+        },
+        "jarReminder": {
+          "0": "Ten jars. Empty. Glass. Not broken. Is any of this getting through?"
+        },
+        "jarReturn": {
+          "0": "You got them. All ten. And none of them are cracked. I'm almost impressed.",
+          "1": "Here they are! All ten, safe and sound.",
+          "2": "Good. Now don't move. Don't talk. Don't even think too loudly. This is delicate work.",
+          "player": {
+            "0": "So what happens now?"
+          }
+        },
+        "scarComplete": {
+          "0": "It's done. The Nightfire Scar. Take it. Handle it carefully—it's more fragile than it looks, and more powerful than you deserve.",
+          "1": "When you're ready, apply it to a fish. You'll know what to do. Probably. Maybe. Just don't waste it.",
+          "player": {
+            "0": "Thank you. Really."
+          }
         }
       }
     }

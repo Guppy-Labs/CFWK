@@ -197,6 +197,57 @@
             transform: none;
         }
 
+        .ban-alert {
+            display: none;
+            align-items: center;
+            gap: 0.8rem;
+            border: 1px solid #ff4444;
+            background: rgba(255, 0, 0, 0.1);
+            color: #ff8888;
+            padding: 0.9rem 1rem;
+            margin-bottom: 1.2rem;
+            width: 94%;
+            margin-left: auto;
+            margin-right: auto;
+            box-sizing: border-box;
+            animation: banPulse 2.6s ease-in-out infinite;
+        }
+
+        .ban-alert.show {
+            display: flex;
+        }
+
+        .ban-alert-icon {
+            font-size: 1.5rem;
+            color: #ff4444;
+            flex-shrink: 0;
+        }
+
+        .ban-alert-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+        }
+
+        .ban-alert-title {
+            font-weight: bold;
+            font-size: 1rem;
+            color: #ff4444;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        .ban-alert-message {
+            font-size: 0.85rem;
+            color: #ff9999;
+        }
+
+        @keyframes banPulse {
+            0%, 100% { border-color: rgba(255, 68, 68, 0.6); }
+            50% { border-color: rgba(255, 68, 68, 1); }
+        }
+
+
         .actions {
             margin-top: 1rem;
             display: flex;
@@ -567,6 +618,14 @@
                     <span class="badge"><i class="fa-solid fa-user"></i> <span id="username-value">Loading...</span></span>
                     <span id="beta-badge" class="badge beta" style="display: none;"><i class="fa-solid fa-ticket"></i> <span id="beta-status-value"></span></span>
                     <span id="premium-badge" class="badge premium" style="display: none;"><i class="fa-solid fa-crown"></i> Premium Active</span>
+                </div>
+
+                <div id="ban-alert" class="ban-alert" role="alert">
+                    <i class="fa-solid fa-ban ban-alert-icon" aria-hidden="true"></i>
+                    <div class="ban-alert-body">
+                        <span id="ban-alert-title" class="ban-alert-title"></span>
+                        <span id="ban-alert-message" class="ban-alert-message"></span>
+                    </div>
                 </div>
 
                 <button id="play-btn" class="play-btn" type="button">
